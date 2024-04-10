@@ -705,51 +705,27 @@ void BackupsWorker::writeBackupEntries(
             backup_entries.size());
     }
 
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
+
+    std::atomic_bool failed = false;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP_COPY_FILES);
-    auto thread_group = CurrentThread::getGroup();
 
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
+        if (failed)
+            break;
+
         auto & entry = backup_entries[i].second;
         const auto & file_info = file_infos[i];
 
+        auto job = [&]()
         {
-            std::unique_lock lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
-
-        auto job = [&](bool async)
-        {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-
+            if (failed)
+                return;
             try
             {
-                if (async && thread_group)
-                    CurrentThread::attachToGroup(thread_group);
-
-                if (async)
-                    setThreadName("BackupWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
-
                 if (process_list_element)
                     process_list_element->checkTimeLimit();
 
@@ -772,27 +748,21 @@ void BackupsWorker::writeBackupEntries(
             }
             catch (...)
             {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
+                failed = true;
+                throw;
             }
         };
 
         if (always_single_threaded)
         {
-            job(false);
+            job();
             continue;
         }
 
-        thread_pool.scheduleOrThrowOnError([job] { job(true); });
+        runner(std::move(job));
     }
 
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 

@@ -585,9 +585,6 @@ thread_local bool CannotAllocateThreadFaultInjector::block_fault_injections = fa
 scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
 {
     auto & ins = instance();
-    if (!ins.enabled.load(std::memory_order_relaxed))
-        return {};
-
     ins.block_fault_injections = true;
     return [&ins](){ ins.block_fault_injections = false; };
 }
