@@ -5,13 +5,11 @@
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
-#include <Common/CurrentThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/LoggingFormatStringHelpers.h>
-#include <Common/Logger.h>
 #include <Common/AtomicLogger.h>
-
-namespace Poco { class Logger; }
+#include <Common/CurrentThreadHelpers.h>
+#include <Common/Logger.h>
+#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/ProfileEvents.h>
 
 
 #define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
@@ -22,7 +20,7 @@ using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
 namespace impl
 {
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
-    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const AtomicLogger & logger) { return logger.load(); }
+    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
     [[maybe_unused]] inline std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
     [[maybe_unused]] inline std::unique_ptr<LogFrequencyLimiterIml> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
@@ -66,8 +64,7 @@ namespace impl
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
     auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
-    const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&                                      \
-        (DB::CurrentThread::get().getClientLogsLevel() >= (priority));                                              \
+    const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (priority);         \
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
         break;                                                                                                      \
                                                                                                                     \

@@ -70,6 +70,16 @@ static void removeNonCommonColumns(const Block & src_header, Block & target_head
     target_header.erase(target_only_positions);
 }
 
+namespace
+{
+    void checkTargetTableHasQueryOutputColumns(const ColumnsDescription & target_table_columns, const ColumnsDescription & select_query_output_columns)
+    {
+        for (const auto & column : select_query_output_columns)
+            if (!target_table_columns.has(column.name))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
+    }
+}
+
 StorageMaterializedView::StorageMaterializedView(
     const StorageID & table_id_,
     ContextPtr local_context,
@@ -402,11 +412,13 @@ void StorageMaterializedView::alter(
     /// Check the materialized view's inner table structure.
     if (has_inner_table)
     {
-        const Block & block = InterpreterSelectWithUnionQuery::getSampleBlock(new_select.select_query, local_context);
-        const auto & inner_table_metadata = tryGetTargetTable()->getInMemoryMetadata().columns;
-        for (const auto & name : block.getNames())
-            if (!inner_table_metadata.has(name))
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", name);
+        /// If this materialized view has an inner table it should always have the same columns as this materialized view.
+        /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner table).
+        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr();
+        const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
+        checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
+        /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
+        new_metadata.columns = target_table_metadata->columns;
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
