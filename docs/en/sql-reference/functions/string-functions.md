@@ -254,7 +254,35 @@ Result:
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
+*Syntax**
+
+``` sql
+lower(input)
+```
+
 Alias: `lcase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT lower('CLICKHOUSE');
+```
+
+```response
+┌─lower('CLICKHOUSE')─┐
+│ clickhouse          │
+└─────────────────────┘
+```
 
 ## upper
 
@@ -281,13 +309,13 @@ Alias: `ucase`
 Query:
 
 ``` sql
-SELECT upper('value') as Upper;
+SELECT upper('clickhouse');
 ```
 
 ``` response
-┌─Upper─┐
-│ VALUE │
-└───────┘
+┌─upper('clickhouse')─┐
+│ CLICKHOUSE          │
+└─────────────────────┘
 ```
 
 ## lowerUTF8
