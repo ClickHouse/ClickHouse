@@ -21,8 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace fs = std::filesystem;
-
 /// The key-value format of rocks db will be
 /// - key: Int8 (depth of the path) + String (path)
 /// - value: SizeOf(keeperRocksNodeInfo) (meta of the node) + String (data)
@@ -214,7 +212,7 @@ public:
             rocksdb_ptr->Close();
             rocksdb_ptr = nullptr;
 
-            fs::remove_all(rocksdb_dir);
+            std::filesystem::remove_all(rocksdb_dir);
         }
     }
 
