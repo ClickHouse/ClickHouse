@@ -45,7 +45,7 @@ void writeNumpyStrings(const ColumnPtr & column, size_t length, WriteBuffer & bu
 
 }
 
-String NpyOutputFormat::NumpyDataType::str()
+String NpyOutputFormat::NumpyDataType::str() const
 {
     WriteBufferFromOwnString dtype;
     writeChar(endianness, dtype);
@@ -188,7 +188,7 @@ void NpyOutputFormat::writeHeader()
 
 void NpyOutputFormat::writeColumns()
 {
-    for (auto column : columns)
+    for (const auto & column : columns)
     {
         switch (nested_data_type->getTypeId())
         {

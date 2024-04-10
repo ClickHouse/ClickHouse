@@ -9,7 +9,6 @@
 #include <Common/PODArray_fwd.h>
 
 #include <vector>
-#include <sstream>
 #include <string>
 
 
@@ -38,7 +37,7 @@ private:
       NumpyDataType() = default;
       NumpyDataType(char endianness_, char type_, size_t size_)
         : endianness(endianness_), type(type_), size(size_) {}
-      String str();
+      String str() const;
     };
 
     void initialize(const ColumnPtr & column);
