@@ -44,10 +44,10 @@ Default: 1
 
 ## auth_use_forwarded_address
 
-Use originating address for authentification for clients connected through proxy.
+Use originating address for authentication for clients connected through proxy.
 
 :::note
-This setting should be used with extra caution since forwarded address can be easely spoofed - server accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
+This setting should be used with extra caution since forwarded address can be easily spoofed - server accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
 :::
 
 Type: Bool
