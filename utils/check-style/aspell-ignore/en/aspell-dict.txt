@@ -452,6 +452,9 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Konstantin
+kostik
+kostikConsistentHash
 Korzeniewski
 Kubernetes
 LDAP
@@ -552,6 +555,17 @@ MinMax
 MindsDB
 Mongodb
 MsgPack
+multiSearchAllPositionsCaseInsensitive
+multiSearchAllPositionsCaseInsensitiveUTF
+multiSearchAnyCaseInsensitive
+multiSearchAnyCaseInsensitiveUTF
+multiSearchAnyUTF
+multiSearchFirstIndexCaseInsensitive
+multiSearchFirstIndexCaseInsensitiveUTF
+multiSearchFirstIndexUTF
+multiSearchFirstPositionCaseInsensitive
+multiSearchFirstPositionCaseInsensitiveUTF
+multiSearchFirstPositionUTF
 MultiPolygon
 Multiline
 Multiqueries
@@ -653,6 +667,7 @@ OTLP
 OUTFILE
 ObjectId
 Observability
+Oblakov
 Octonica
 Ok
 OnTime
@@ -858,6 +873,7 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
+SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -1935,6 +1951,7 @@ mmap
 mmapped
 modularization
 moduloOrZero
+moduli
 mongodb
 monthName
 mortonDecode
@@ -2648,6 +2665,12 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
+tupleModulo
+tupleModuloByNumber
 turbostat
 txt
 typename
@@ -2762,6 +2785,7 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
+wyHash
 xcode
 xeus
 xkcd
