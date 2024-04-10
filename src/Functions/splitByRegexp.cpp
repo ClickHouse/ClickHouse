@@ -81,7 +81,7 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (!re) [[unlikely]]
+        if (!re)
         {
             if (pos == end)
                 return false;
@@ -110,12 +110,12 @@ public:
         }
         else
         {
-            if (!pos || pos > end) [[unlikely]]
+            if (!pos || pos > end)
                 return false;
 
             token_begin = pos;
 
-            if (max_splits) [[unlikely]]
+            if (max_splits)
             {
                 if (max_substrings_includes_remaining_string)
                 {
@@ -131,7 +131,7 @@ public:
                         return false;
             }
 
-            if (!re->match(pos, end - pos, matches) || !matches[0].length) [[unlikely]]
+            if (!re->match(pos, end - pos, matches) || !matches[0].length)
             {
                 token_end = end;
                 pos = end + 1;

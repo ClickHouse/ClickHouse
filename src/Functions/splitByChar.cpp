@@ -78,7 +78,7 @@ public:
 
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (!pos) [[unlikely]]
+        if (!pos)
             return false;
 
         token_begin = pos;
