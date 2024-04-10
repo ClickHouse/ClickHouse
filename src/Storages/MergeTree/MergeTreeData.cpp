@@ -1031,19 +1031,26 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
 const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version"};
 
-Block MergeTreeData::getHeaderWithVirtualsForFilter() const
+Block MergeTreeData::getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const
 {
+    const auto columns = metadata->getColumns().getAllPhysical();
     Block header;
     auto virtuals_desc = getVirtualsPtr();
     for (const auto & name : virtuals_useful_for_filter)
+    {
+        if (columns.contains(name))
+            continue;
         if (auto column = virtuals_desc->tryGet(name))
             header.insert({column->type->createColumn(), column->type, name});
+    }
+
     return header;
 }
 
-Block MergeTreeData::getBlockWithVirtualsForFilter(const MergeTreeData::DataPartsVector & parts, bool ignore_empty) const
+Block MergeTreeData::getBlockWithVirtualsForFilter(
+    const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty) const
 {
-    auto block = getHeaderWithVirtualsForFilter();
+    auto block = getHeaderWithVirtualsForFilter(metadata);
 
     for (const auto & part_or_projection : parts)
     {
@@ -1072,7 +1079,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
         return 0;
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto virtual_columns_block = getBlockWithVirtualsForFilter({parts[0]});
+    auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
     auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
     if (!filter_dag)
@@ -1091,7 +1098,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     std::unordered_set<String> part_values;
     if (valid)
     {
-        virtual_columns_block = getBlockWithVirtualsForFilter(parts);
+        virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts);
         VirtualColumnUtils::filterBlockWithDAG(filter_dag, virtual_columns_block, local_context);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
@@ -6694,11 +6701,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     };
 
     Block virtual_columns_block;
-    auto virtual_block = getHeaderWithVirtualsForFilter();
+    auto virtual_block = getHeaderWithVirtualsForFilter(metadata_snapshot);
     bool has_virtual_column = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
     if (has_virtual_column || filter_dag)
     {
-        virtual_columns_block = getBlockWithVirtualsForFilter(parts, /*ignore_empty=*/ true);
+        virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
         if (virtual_columns_block.rows() == 0)
             return {};
     }
