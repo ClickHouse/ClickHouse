@@ -86,6 +86,10 @@ public:
     BalanceTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
     Chunk add(Block && input_block);
+    bool isDataLeft()
+    {
+        return !chunks_to_merge_vec.empty();
+    }
 
 private:
     std::vector<Chunk> chunks_to_merge_vec = {};

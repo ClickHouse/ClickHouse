@@ -218,10 +218,7 @@ Chunk BalanceTransform::convertToChunk(std::vector<Chunk> &chunks)
         info->chunks.push_back(chunk.clone());
     info->data_type = data_type;
 
-    if (!info->chunks.empty()) /// Note: This if is only for debugging, structure of chunk copies the structure of info
-    {                          /// it's possible to use only 'Chunk(header.cloneEmptyColumns(), 0, info)'
-        return Chunk({info->chunks[0].getColumns(), info->chunks[0].getNumRows(), info});
-    }
+    chunks.clear();
 
     return Chunk(header.cloneEmptyColumns(), 0, info);
 }

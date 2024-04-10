@@ -1,6 +1,7 @@
 #include <Processors/Transforms/BalancingTransform.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include "Processors/IProcessor.h"
 
 namespace DB
 {
@@ -17,6 +18,7 @@ BalancingChunksTransform::BalancingChunksTransform(const Block & header, size_t 
 
 IProcessor::Status BalancingChunksTransform::prepare()
 {
+    LOG_TRACE(getLogger("balancingProcessor"), "prepare");
     Status status = Status::Ready;
 
     while (status == Status::Ready)
@@ -31,49 +33,58 @@ IProcessor::Status BalancingChunksTransform::prepare()
 IProcessor::Status BalancingChunksTransform::prepareConsume()
 {
     LOG_TRACE(getLogger("balancingProcessor"), "prepareConsume");
-    for (auto & input : inputs)
+    finished = false;
+    while (!chunk.hasChunkInfo())
     {
-        bool all_finished = true;
-        for (auto & output : outputs)
+        for (auto & input : inputs)
         {
-            if (output.isFinished())
-                continue;
-
-            all_finished = false;
-        }
-
-        if (all_finished)
-        {
-            input.close();
-            return Status::Finished;
-        }
-
-        if (input.isFinished())
-        {
+            bool all_finished = true;
             for (auto & output : outputs)
-                output.finish();
+            {
+                if (output.isFinished())
+                    continue;
 
-            return Status::Finished;
-        }
+                all_finished = false;
+            }
 
-        input.setNeeded();
-        if (!input.hasData())
-            return Status::NeedData;
+            if (all_finished)
+            {
+                input.close();
+                return Status::Finished;
+            }
 
-        chunk = input.pull();
-        was_output_processed.assign(outputs.size(), false);
-        transform(chunk);
-        if (chunk.hasChunkInfo())
-        {
-            LOG_TRACE(getLogger("balancingProcessor"), "hasData");
-            has_data = true;
-        }
-        else
-        {
-            finished = true;
-            LOG_TRACE(getLogger("balancingProcessor"), "hasData, finished");
+            if (input.isFinished())
+            {
+                for (auto & output : outputs)
+                    output.finish();
+
+                return Status::Finished;
+            }
+
+            input.setNeeded();
+            if (!input.hasData())
+            {
+                finished = true;
+                if (!balance.isDataLeft())
+                    return Status::NeedData;
+                else
+                {
+                    transform(chunk);
+                    has_data = true;
+                    return Status::Ready;
+                }
+            }
+
+            chunk = input.pull();
             transform(chunk);
-            has_data = true;
+            was_output_processed.assign(outputs.size(), false);
+            if (chunk.hasChunkInfo())
+            {
+                LOG_TRACE(getLogger("balancingProcessor"), "hasData");
+                has_data = true;
+                return Status::Ready;
+            }
+
         }
     }
     return Status::Ready;
@@ -121,8 +132,9 @@ IProcessor::Status BalancingChunksTransform::prepareSend()
         }
 
         LOG_TRACE(getLogger("balancingProcessor"), "chunk struct: {}", chunk.dumpStructure());
-        output.push(chunk.clone());
+        output.push(std::move(chunk));
         was_processed = true;
+        break;
     }
 
     if (all_outputs_processed)
