@@ -712,11 +712,20 @@ void ClientBase::adjustSettings()
         settings.input_format_values_allow_data_after_semicolon.changed = false;
     }
 
-    /// If pager is specified then output_format_pretty_max_rows is ignored, this should be handled by pager.
-    if (!pager.empty() && !global_context->getSettingsRef().output_format_pretty_max_rows.changed)
+    /// Do not limit pretty format output in case of --pager specified.
+    if (!pager.empty())
     {
-        settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
-        settings.output_format_pretty_max_rows.changed = false;
+        if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
+        {
+            settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
+            settings.output_format_pretty_max_rows.changed = false;
+        }
+
+        if (!global_context->getSettingsRef().output_format_pretty_max_value_width.changed)
+        {
+            settings.output_format_pretty_max_value_width = std::numeric_limits<UInt64>::max();
+            settings.output_format_pretty_max_value_width.changed = false;
+        }
     }
 
     global_context->setSettings(settings);
