@@ -148,6 +148,11 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
+
+    if pr_info.is_merge_queue():
+        # skip report creation for the MQ
+        return
+
     # to reduce number of parameters, the Github is constructed on the fly
     gh = Github()
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
@@ -441,7 +446,9 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
         or pr_info.release_pr
         or pr_info.number == 0
     )
-    if not_run:
+
+    # FIXME: For now, always set mergeable check in the Merge Queue. It's required to pass MQ
+    if not_run and not pr_info.is_merge_queue():
         # Let's avoid unnecessary work
         return
 
