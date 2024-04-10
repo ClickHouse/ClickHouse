@@ -1,19 +1,17 @@
 #pragma once
-#include <Common/Exception.h>
-#include "config.h"
-#if USE_SSH
-#    include <string_view>
-#    include <base/types.h>
 
+#include <Common/Exception.h>
+
+#include <string_view>
+#include <base/types.h>
+
+#include "config.h"
+
+#if USE_SSH
 using ssh_key = struct ssh_key_struct *;
 
 namespace DB
 {
-
-namespace ssh
-{
-
-class SSHKeyFactory;
 
 class SSHKey
 {
@@ -22,11 +20,7 @@ public:
     ~SSHKey();
 
     SSHKey(const SSHKey & other);
-    SSHKey(SSHKey && other) noexcept
-    {
-        key = other.key;
-        other.key = nullptr;
-    }
+    SSHKey(SSHKey && other) noexcept;
     SSHKey & operator=(const SSHKey & other);
     SSHKey & operator=(SSHKey && other) noexcept;
 
@@ -43,7 +37,7 @@ public:
     String getBase64() const;
     String getKeyType() const;
 
-    friend SSHKeyFactory;
+    friend class SSHKeyFactory;
 private:
     explicit SSHKey(ssh_key key_) : key(key_) { }
     ssh_key key = nullptr;
@@ -56,17 +50,14 @@ public:
     /// The check whether the path is allowed to read for ClickHouse has
     /// (e.g. a file is inside `user_files` directory)
     /// to be done outside of this functions.
-    static SSHKey makePrivateFromFile(String filename, String passphrase);
-    static SSHKey makePublicFromFile(String filename);
-    static SSHKey makePublicFromBase64(String base64_key, String type_name);
+    static SSHKey makePrivateKeyFromFile(String filename, String passphrase);
+    static SSHKey makePublicKeyFromFile(String filename);
+    static SSHKey makePublicKeyFromBase64(String base64_key, String type_name);
 };
 
 }
-}
 
 #else
-namespace ssh
-{
 class SSHKey
 {
 public:
@@ -74,5 +65,4 @@ public:
     [[ noreturn ]] bool isEmpty() { std::terminate(); }
     [[ noreturn ]] String signString(std::string_view) const { std::terminate(); }
 };
-}
 #endif
