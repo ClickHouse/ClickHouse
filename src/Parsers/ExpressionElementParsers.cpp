@@ -5,9 +5,10 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/BinStringDecodeHelper.h>
+#include <Common/PODArray.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include "Parsers/CommonParsers.h"
 
 #include <Parsers/DumpASTNode.h>
@@ -277,7 +278,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr id_list;
-    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter), std::make_unique<ParserToken>(TokenType::Dot), false)
+    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type), std::make_unique<ParserToken>(TokenType::Dot), false)
              .parse(pos, id_list, expected))
         return false;
 
@@ -1490,7 +1491,7 @@ const char * ParserAlias::restricted_keywords[] =
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_as(Keyword::AS);
-    ParserIdentifier id_p;
+    ParserIdentifier id_p(false, Highlight::alias);
 
     bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
@@ -1545,8 +1546,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         {
             if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
-                if (func->arguments->children.size() != 2)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda requires two arguments");
+                if (!isASTLambdaFunction(*func))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
 
                 const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
@@ -2120,17 +2121,16 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     auto elem = std::make_shared<ASTOrderByElement>();
 
+    elem->children.push_back(expr_elem);
+
     elem->direction = direction;
     elem->nulls_direction = nulls_direction;
     elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-    elem->collation = locale_node;
+    elem->setCollation(locale_node);
     elem->with_fill = has_with_fill;
-    elem->fill_from = fill_from;
-    elem->fill_to = fill_to;
-    elem->fill_step = fill_step;
-    elem->children.push_back(expr_elem);
-    if (locale_node)
-        elem->children.push_back(locale_node);
+    elem->setFillFrom(fill_from);
+    elem->setFillTo(fill_to);
+    elem->setFillStep(fill_step);
 
     node = elem;
 
