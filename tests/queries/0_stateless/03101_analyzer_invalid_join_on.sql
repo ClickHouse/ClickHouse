@@ -22,4 +22,4 @@ select
   where subq_0.c_6_c28_15 = (select c11 from t2 order by c11 limit 1);
 
 drop table if exists t1;
-drop table if exists t2;03098_prefer_column_to_alias_subquery.sql
+drop table if exists t2;

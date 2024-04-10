@@ -49,4 +49,5 @@ SELECT
   value11 AS v11,
   value12 AS v12,
   value13 AS v13,
-  value14 AS v14;
+  value14 AS v14
+FORMAT Null;
