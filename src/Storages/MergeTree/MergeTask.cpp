@@ -1205,6 +1205,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 {
     // These merging modes may or may not reduce number of rows. It's not known until the horizontal stage is finished.
     const bool merge_may_reduce_rows =
+        global_ctx->cleanup ||
         global_ctx->deduplicate ||
         ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
         ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
