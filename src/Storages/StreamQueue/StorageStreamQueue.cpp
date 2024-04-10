@@ -5,6 +5,7 @@
 #include <Storages/StreamQueue/StorageStreamQueue.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include "Parsers/ASTSelectQuery.h"
 
 namespace DB
 {
@@ -49,6 +50,7 @@ StorageStreamQueue::StorageStreamQueue(
     const StorageID & table_id_,
     ContextPtr context_,
     const StorageID & source_table_id_,
+    const Names & column_names_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
@@ -56,6 +58,8 @@ StorageStreamQueue::StorageStreamQueue(
     , WithContext(context_)
     , settings(std::move(settings_))
     , source_table_id(source_table_id_)
+    , column_names(column_names_)
+    , key_column(column_names_[0])
     , log(getLogger("StorageStreamQueue (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -92,6 +96,23 @@ void StorageStreamQueue::threadFunc()
     if (shutdown_called)
         return;
 
+    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, getContext());
+    if (!source_table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source table {} doesn't exist.", source_table_id.getNameForLogs());
+
+    auto table_id = getStorageID();
+    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (!source_table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
+
+    auto select = std::make_shared<ASTSelectQuery>();
+    select->replaceDatabaseAndTable(source_table_id);
+
+    auto select_expr_list = std::make_shared<ASTExpressionList>();
+    for (const auto & name : column_names)
+        select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
+
     task->scheduleAfter(settings->streamqueue_polling_min_timeout_ms);
 }
 
@@ -104,7 +125,7 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
 
     if (engine_args.size() != 1)
         throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage StreamQueue requires exactly 1 argument: {}", StreamQueueArgumentName);
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage StreamQueue requires exactly 1 arguments: {}", StreamQueueArgumentName);
 
     const auto arg = engine_args[0];
 
@@ -121,7 +142,6 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
     const ASTIdentifier & identifier_expression = *arg->as<ASTIdentifier>();
     auto source_storage_id = getSourceStorage(args.getLocalContext(), identifier_expression);
 
-
     auto source_columns_description = getColumns(args.getLocalContext(), source_storage_id);
 
     if (args.columns != source_columns_description)
@@ -132,13 +152,20 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
             args.columns.toString(),
             source_columns_description.toString());
     }
+    Names column_names;
+    for (const auto & column : args.columns.getOrdinary()) {
+        column_names.push_back(column.name);
+    }
+    if (column_names.empty()) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table must have at least 1 column");
+    }
 
     auto settings = std::make_unique<StreamQueueSettings>();
     if (args.storage_def->settings)
         settings->loadFromQuery(*args.storage_def);
 
     return std::make_shared<StorageStreamQueue>(
-        std::move(settings), args.table_id, args.getContext(), source_storage_id, args.columns, args.constraints, args.comment);
+        std::move(settings), args.table_id, args.getContext(), source_storage_id, column_names, args.columns, args.constraints, args.comment);
 }
 
 void registerStorageStreamQueue(StorageFactory & factory)

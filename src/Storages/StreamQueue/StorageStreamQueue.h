@@ -4,7 +4,6 @@
 #include <Storages/StreamQueue/StreamQueueSettings.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
-#include "config.h"
 
 namespace DB
 {
@@ -22,6 +21,7 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const StorageID & source_table_id_,
+        const Names & column_names_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment);
@@ -35,6 +35,9 @@ private:
 
     std::unique_ptr<StreamQueueSettings> settings;
     const StorageID & source_table_id;
+
+    Names column_names;
+    String key_column;
 
     BackgroundSchedulePool::TaskHolder task;
     bool shutdown_called = false;
