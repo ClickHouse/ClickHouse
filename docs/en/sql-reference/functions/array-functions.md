@@ -1424,7 +1424,7 @@ Elements are reordered in such a way that each possible permutation of those ele
 **Syntax**
 
 ```sql
-arrayShuffle(arr, seed)
+arrayShuffle(arr[, seed])
 ```
 
 **Parameters**
@@ -1476,12 +1476,12 @@ Result:
 
 ## arrayPartialShuffle
 
-Returns an array of the same size as the original array where elements in range `[1..limit]` are a random subset of the original array. Remaining `(limit..N]` shall contain the elements not in `[1..limit]` range in an undefined order.
+Given an input array of cardinality `N`, returns an array of size N where elements in the range `[1...limit]`are shuffled and the remaining elements in the range `(limit...n]` are unshuffled.
 
 **Syntax**
 
 ```sql
-arrayPartialShuffle(arr, limit, seed)
+arrayPartialShuffle(arr[, limit[, seed]])
 ```
 
 **Parameters**
@@ -1504,34 +1504,35 @@ The value of `limit` should be in the range `[1..N]`. Values outside of that ran
 
 **Examples**
 
-In this example, `arrayPartialShuffle` is used without the `limit` and `seed` parameters. 
+Note: when using [ClickHouse Fiddle](https://fiddle.clickhouse.com/), the exact response may differ due to random nature of the function. 
 
 Query:
 
 ```sql
-SELECT arrayPartialShuffle([1, 2, 3, 4], 0);
-SELECT arrayPartialShuffle([1, 2, 3, 4]);
+SELECT arrayPartialShuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 1)
 ```
 
-Note: when using [ClickHouse Fiddle](https://fiddle.clickhouse.com/), the exact response may differ due to random nature of the function.
+Result:
 
-Result: 
+The order of elements is preserved (`[2,3,4,5], [7,8,9,10]`) except for the 2 shuffled elements `[1, 6]`. No `seed` is provided so the function selects its own randomly.
+
 ```response
-[3,1,2,4]
-[4,1,3,2]
+[6,2,3,4,5,1,7,8,9,10]
 ```
 
-In this example, the `arrayPartialShuffle` function is provided a `limit` and a `seed`. 
+In this example, the `limit` is increased to `2` and a `seed` value is provided. The order 
 
 Query:
 
 ```sql
-SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10], 5, 0xbad_cafe);
+SELECT arrayPartialShuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 2);
 ```
+
+The order of elements is preserved (`[4, 5, 6, 7, 8], [10]`) except for the 4 shuffled elements `[1, 2, 3, 9]`.
 
 Result: 
 ```response
-[10,9,4,2,5,6,7,8,3,1]
+[3,9,1,4,5,6,7,8,2,10]
 ```
 
 ## arrayUniq(arr, …)
