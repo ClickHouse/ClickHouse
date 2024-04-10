@@ -2280,6 +2280,18 @@ Result:
 \N
 ```
 
+Query:
+
+```sql
+SELECT arrayLastOrNull((x,f) -> f, [1,2,3,NULL], [0,1,0,1]);
+```
+
+Result:
+
+```response
+\N
+```
+
 ## arrayLast(func, arr1, …)
 
 Returns the last element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0.
