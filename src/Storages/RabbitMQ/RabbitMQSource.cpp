@@ -46,6 +46,7 @@ RabbitMQSource::RabbitMQSource(
     size_t max_block_size_,
     UInt64 max_execution_time_,
     StreamingHandleErrorMode handle_error_mode_,
+    bool nack_broken_messages_,
     bool ack_in_suffix_)
     : RabbitMQSource(
         storage_,
@@ -56,6 +57,7 @@ RabbitMQSource::RabbitMQSource(
         max_block_size_,
         max_execution_time_,
         handle_error_mode_,
+        nack_broken_messages_,
         ack_in_suffix_)
 {
 }
@@ -69,6 +71,7 @@ RabbitMQSource::RabbitMQSource(
     size_t max_block_size_,
     UInt64 max_execution_time_,
     StreamingHandleErrorMode handle_error_mode_,
+    bool nack_broken_messages_,
     bool ack_in_suffix_)
     : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
@@ -78,6 +81,7 @@ RabbitMQSource::RabbitMQSource(
     , max_block_size(max_block_size_)
     , handle_error_mode(handle_error_mode_)
     , ack_in_suffix(ack_in_suffix_)
+    , nack_broken_messages(nack_broken_messages_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
     , log(getLogger("RabbitMQSource"))
@@ -207,7 +211,7 @@ Chunk RabbitMQSource::generateImpl()
                      commit_info.failed_delivery_tags.size(),
                      exception_message.has_value() ? exception_message.value() : "None");
 
-            if (exception_message.has_value())
+            if (exception_message.has_value() && nack_broken_messages)
             {
                 commit_info.failed_delivery_tags.push_back(message.delivery_tag);
             }
