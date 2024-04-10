@@ -8,20 +8,12 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+#include "Common/logger_useful.h"
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SimpleIncrement.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ThreadFuzzer.h>
-#include <Common/escapeForFileName.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/typeid_cast.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -42,19 +34,20 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTHelpers.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTPartition.h>
@@ -62,24 +55,31 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Freeze.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MergeTree/MergeTreeDataPartCloner.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/Statistics/Estimator.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/escapeForFileName.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -188,6 +188,50 @@ namespace ErrorCodes
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
+}
+
+static size_t getPartitionAstFieldsCount(const ASTPartition & partition_ast, ASTPtr partition_value_ast)
+{
+    if (partition_ast.fields_count.has_value())
+        return *partition_ast.fields_count;
+
+    if (partition_value_ast->as<ASTLiteral>())
+        return 1;
+
+    const auto * tuple_ast = partition_value_ast->as<ASTFunction>();
+
+    if (!tuple_ast)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_PARTITION_VALUE, "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
+    }
+
+    if (tuple_ast->name != "tuple")
+    {
+        if (!isFunctionCast(tuple_ast))
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+
+        if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+
+        auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
+        if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
+        {
+            const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+            return arguments_ast ? arguments_ast->children.size() : 0;
+        }
+        else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
+        {
+            return inner_literal_tuple->value.getType() == Field::Types::Tuple ? inner_literal_tuple->value.safeGet<Tuple>().size() : 1;
+        }
+
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+    }
+    else
+    {
+        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+        return arguments_ast ? arguments_ast->children.size() : 0;
+    }
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -4879,13 +4923,23 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 }
                 else
                 {
-                    String partition_id = getPartitionIDFromQuery(command.partition, local_context);
-                    if (command.type == PartitionCommand::FORGET_PARTITION)
+                    // The below `getPartitionIDFromQuery` call will not work for attach / replace because it assumes the partition expressions
+                    // are the same and deliberately uses this storage. Later on, `MergeTreeData::replaceFrom` is called, and it makes the right
+                    // call to `getPartitionIDFromQuery` using source storage.
+                    // Note: `PartitionCommand::REPLACE_PARTITION` is used both for `REPLACE PARTITION` and `ATTACH PARTITION FROM` queries.
+                    // But not for `ATTACH PARTITION` queries.
+                    // It is fine not to block `PartitionCommand::MOVE_PARTITION` for different partition expressions
+                    // because it happens on source object, so it will always be valid
+                    if (command.type != PartitionCommand::REPLACE_PARTITION)
                     {
-                        DataPartsLock lock = lockParts();
-                        auto parts_in_partition = getDataPartsPartitionRange(partition_id);
-                        if (!parts_in_partition.empty())
-                            throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION, "Partition {} is not empty", partition_id);
+                        String partition_id = getPartitionIDFromQuery(command.partition, local_context);
+                        if (command.type == PartitionCommand::FORGET_PARTITION)
+                        {
+                            DataPartsLock lock = lockParts();
+                            auto parts_in_partition = getDataPartsPartitionRange(partition_id);
+                            if (!parts_in_partition.empty())
+                                throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION, "Partition {} is not empty", partition_id);
+                        }
                     }
                 }
             }
@@ -5633,69 +5687,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         MergeTreePartInfo::validatePartitionID(partition_ast.id->clone(), format_version);
         return partition_ast.id->as<ASTLiteral>()->value.safeGet<String>();
     }
-    size_t partition_ast_fields_count = 0;
     ASTPtr partition_value_ast = partition_ast.value->clone();
-    if (!partition_ast.fields_count.has_value())
-    {
-        if (partition_value_ast->as<ASTLiteral>())
-        {
-            partition_ast_fields_count = 1;
-        }
-        else if (const auto * tuple_ast = partition_value_ast->as<ASTFunction>())
-        {
-            if (tuple_ast->name != "tuple")
-            {
-                if (isFunctionCast(tuple_ast))
-                {
-                    if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-                    }
-                    auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
-                    if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
-                    {
-                        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                        if (arguments_ast)
-                            partition_ast_fields_count = arguments_ast->children.size();
-                        else
-                            partition_ast_fields_count = 0;
-                    }
-                    else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
-                    {
-                        if (inner_literal_tuple->value.getType() == Field::Types::Tuple)
-                            partition_ast_fields_count = inner_literal_tuple->value.safeGet<Tuple>().size();
-                        else
-                            partition_ast_fields_count = 1;
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-                    }
-                }
-                else
-                    throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-            }
-            else
-            {
-                const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                if (arguments_ast)
-                    partition_ast_fields_count = arguments_ast->children.size();
-                else
-                    partition_ast_fields_count = 0;
-            }
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::INVALID_PARTITION_VALUE, "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
-        }
-    }
-    else
-    {
-        partition_ast_fields_count = *partition_ast.fields_count;
-    }
+    auto partition_ast_fields_count = getPartitionAstFieldsCount(partition_ast, partition_value_ast);
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -7015,7 +7008,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     }
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot, bool replace) const
 {
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
     if (!src_data)
@@ -7026,22 +7019,50 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
-    auto query_to_string = [] (const ASTPtr & ast)
-    {
-        return ast ? queryToString(ast) : "";
-    };
-
-    if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
+    if (queryToStringNullable(my_snapshot->getSortingKeyAST()) != queryToStringNullable(src_snapshot->getSortingKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
-
-    if (query_to_string(my_snapshot->getPartitionKeyAST()) != query_to_string(src_snapshot->getPartitionKeyAST()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
 
     if (format_version != src_data->format_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different format_version");
 
-    if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
+    if (queryToStringNullable(my_snapshot->getPrimaryKeyAST()) != queryToStringNullable(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+
+
+    if (queryToStringNullable(my_snapshot->getPartitionKeyAST()) != queryToStringNullable(src_snapshot->getPartitionKeyAST()))
+    {
+        if (replace)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot replace partition because it has different partition expression. "
+                            "There is no way to calculate the destination partition id");
+        }
+        if (!getSettings()->allow_experimental_alter_partition_with_different_key)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key. "
+                                                       "This is only allowed if `allow_experimental_alter_partition_with_different_key` is set");
+        }
+
+        const auto is_a_subset_of = [](const auto & lhs, const auto & rhs)
+        {
+            if (lhs.size() > rhs.size())
+                return false;
+
+            const auto rhs_set = NameSet(rhs.begin(), rhs.end());
+            for (const auto & lhs_element : lhs)
+                if (!rhs_set.contains(lhs_element))
+                    return false;
+
+            return true;
+        };
+
+        if (!is_a_subset_of(my_snapshot->getColumnsRequiredForPartitionKey(), src_snapshot->getColumnsRequiredForPartitionKey()))
+        {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Destination table partition expression columns must be a subset of source table partition expression columns");
+        }
+    }
 
     const auto check_definitions = [](const auto & my_descriptions, const auto & src_descriptions)
     {
@@ -7069,9 +7090,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
-    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot, bool replace) const
 {
-    return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
+    return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot, replace);
 }
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPart(
@@ -7083,120 +7104,34 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
-    chassert(!isStaticStorage());
-    bool on_same_disk = false;
-    for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
-    {
-        if (disk->getName() == src_part->getDataPartStorage().getDiskName())
-        {
-            on_same_disk = true;
-            break;
-        }
-    }
-
-
-    String dst_part_name = src_part->getNewName(dst_part_info);
-    String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
-    auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
-
-    /// Why it is needed if we only hardlink files?
-    /// Answer: In issue #59377, add copy when attach from different disk.
-    auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
-    auto src_part_storage = src_part->getDataPartStoragePtr();
-
-    scope_guard src_flushed_tmp_dir_lock;
-    MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
-
-    String with_copy;
-    if (params.copy_instead_of_hardlink || !on_same_disk)
-        with_copy = " (copying data)";
-
-
-    std::shared_ptr<IDataPartStorage> dst_part_storage{};
-    if (on_same_disk && !params.copy_instead_of_hardlink)
-    {
-        dst_part_storage = src_part_storage->freeze(
-            relative_data_path,
-            tmp_dst_part_name,
-            read_settings,
-            write_settings,
-            /* save_metadata_callback= */ {},
-            params);
-    }
-    else
-    {
-        auto reservation_on_dst = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
-        if (!reservation_on_dst)
-            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
-        dst_part_storage = src_part_storage->clonePart(
-            this->getRelativeDataPath(), tmp_dst_part_name, reservation_on_dst->getDisk(), read_settings, write_settings, {}, {});
-    }
-
-
-    if (params.metadata_version_to_write.has_value())
-    {
-        chassert(!params.keep_metadata_version);
-        auto out_metadata = dst_part_storage->writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, getContext()->getWriteSettings());
-        writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
-        out_metadata->finalize();
-        if (getSettings()->fsync_after_insert)
-            out_metadata->sync();
-    }
-
-    LOG_DEBUG(log, "Clone{} part {} to {}{}",
-              src_flushed_tmp_part ? " flushed" : "",
-              src_part_storage->getFullPath(),
-              std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
-              with_copy);
-
-    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage)
-        .withPartFormatFromDisk()
-        .build();
-
-    if (on_same_disk && !params.copy_instead_of_hardlink && params.hardlinked_files)
-    {
-        params.hardlinked_files->source_part_name = src_part->name;
-        params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
-
-        for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
-        {
-            if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
-                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
-            {
-                params.hardlinked_files->hardlinks_from_source_part.insert(it->name());
-            }
-        }
-
-        auto projections = src_part->getProjectionParts();
-        for (const auto & [name, projection_part] : projections)
-        {
-            const auto & projection_storage = projection_part->getDataPartStorage();
-            for (auto it = projection_storage.iterate(); it->isValid(); it->next())
-            {
-                auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
-                if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
-                    && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                    && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
-                {
-                    params.hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
-                }
-            }
-        }
-    }
-
-    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-    TransactionID tid = params.txn ? params.txn->tid : Tx::PrehistoricTID;
-    dst_data_part->version.setCreationTID(tid, nullptr);
-    dst_data_part->storeVersionMetadata();
-
-    dst_data_part->is_temp = true;
-
-    dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-    dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
-    return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
+    return MergeTreeDataPartCloner::clone(
+        this, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, require_part_metadata, params, read_settings, write_settings);
 }
 
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+    const MergeTreeData::DataPartPtr & src_part,
+    const MergeTreePartition & new_partition,
+    const MergeTreePartInfo & destination_part_info,
+    const IMergeTreeDataPart::MinMaxIndex & min_max_index,
+    const String & tmp_part_prefix,
+    const StorageMetadataPtr & my_metadata_snapshot,
+    const IDataPartStorage::ClonePartParams & clone_params,
+    ContextPtr local_context
+)
+{
+    return MergeTreeDataPartCloner::cloneWithDistinctPartitionExpression(
+        this,
+        src_part,
+        my_metadata_snapshot,
+        destination_part_info,
+        tmp_part_prefix,
+        local_context->getReadSettings(),
+        local_context->getWriteSettings(),
+        new_partition,
+        min_max_index,
+        getSettings()->fsync_after_insert,
+        clone_params);
+}
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {

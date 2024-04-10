@@ -230,6 +230,7 @@ public:
         }
     };
 
+
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
@@ -836,8 +837,8 @@ public:
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
-    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
-    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot, bool replace = false) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot, bool replace = false) const;
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
@@ -847,6 +848,16 @@ public:
         const IDataPartStorage::ClonePartParams & params,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
+
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+        const MergeTreeData::DataPartPtr & src_part,
+        const MergeTreePartition & new_partition,
+        const MergeTreePartInfo & destination_part_info,
+        const IMergeTreeDataPart::MinMaxIndex & min_max_index,
+        const String & tmp_part_prefix,
+        const StorageMetadataPtr & my_metadata_snapshot,
+        const IDataPartStorage::ClonePartParams & clone_params,
+        ContextPtr local_context);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
