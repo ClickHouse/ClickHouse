@@ -18,6 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/FailPoint.h>
+#include <Common/randomDelay.h>
 
 #include <Core/ServerUUID.h>
 
@@ -1836,7 +1837,7 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
                             "(it may rarely happen on race condition with KILL MUTATION).", part_name, replica);
         }
 
-        replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
+        replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
         break;
     }
 
@@ -1982,7 +1983,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
 
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
-        for (const auto it = disk->iterateDirectory(fs::path(relative_data_path) / "detached/"); it->isValid(); it->next())
+        for (const auto it = disk->iterateDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME); it->isValid(); it->next())
         {
             const auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version);
 
@@ -1992,7 +1993,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const auto part_old_name = part_info->getPartNameV1();
             const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path("detached") / part_old_name)
+            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name)
                 .withPartFormatFromDisk()
                 .build();
 
@@ -2439,7 +2440,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
             {
                 String part_dir = part_to_detach->getDataPartStorage().getPartDirectory();
                 LOG_INFO(log, "Detaching {}", part_dir);
-                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(fs::path(DETACHED_DIR_NAME) / part_dir);
                 part_to_detach->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
         }
@@ -2966,7 +2967,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         part = get_part();
         // The fetched part is valuable and should not be cleaned like a temp part.
         part->is_temp = false;
-        part->renameTo("detached/" + entry.new_part_name, true);
+        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true);
 
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
     }
@@ -3129,6 +3130,10 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     Strings active_parts = get_part_set.getParts();
 
     /// Remove local parts if source replica does not have them, because such parts will never be fetched by other replicas.
+    static const auto test_delay = getContext()->getConfigRef().getUInt64("test.clone_replica.delay_before_removing_local_parts_ms", 0);
+    if (test_delay)
+        randomDelayForMaxMilliseconds(test_delay, log.load(), "cloneReplica: Before removing local parts");
+
     Strings local_parts_in_zk = zookeeper->getChildren(fs::path(replica_path) / "parts");
     Strings parts_to_remove_from_zk;
 
@@ -3827,7 +3832,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merge_pred.emplace(queue.getMergePredicate(zookeeper, partitions_to_merge_in));
         }
 
-        String out_reason;
+        PreformattedMessage out_reason;
         if (can_assign_merge &&
             merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, *merge_pred,
                 merge_with_ttl_allowed, NO_TRANSACTION_PTR, out_reason, &partitions_to_merge_in) == SelectPartsDecision::SELECTED)
@@ -4982,7 +4987,7 @@ bool StorageReplicatedMergeTree::fetchPart(
         {
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
-            part->renameTo(fs::path("detached") / part_name, true);
+            part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
         }
     }
     catch (const Exception & e)
@@ -5670,7 +5675,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -5809,7 +5814,7 @@ bool StorageReplicatedMergeTree::optimize(
                 future_merged_part->uuid = UUIDHelpers::generateV4();
 
             constexpr const char * unknown_disable_reason = "unknown reason";
-            String disable_reason = unknown_disable_reason;
+            PreformattedMessage disable_reason = PreformattedMessage::create(unknown_disable_reason);
             SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
             if (partition_id.empty())
@@ -5832,10 +5837,10 @@ bool StorageReplicatedMergeTree::optimize(
             if (select_decision != SelectPartsDecision::SELECTED)
             {
                 constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
-                assert(disable_reason != unknown_disable_reason);
+                assert(disable_reason.text != unknown_disable_reason);
                 if (!partition_id.empty())
-                    disable_reason += fmt::format(" (in partition {})", partition_id);
-                return handle_noop(message_fmt, disable_reason);
+                    disable_reason.text += fmt::format(" (in partition {})", partition_id);
+                return handle_noop(message_fmt, disable_reason.text);
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
@@ -6542,13 +6547,13 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         assertNotReadonly();
 
     PartitionCommandsResultInfo results;
-    PartsTemporaryRename renamed_parts(*this, "detached/");
+    PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(*this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0,
                                    /* quorum_parallel */ false, query_context->getSettingsRef().insert_deduplicate,
-                                   /* majority_quorum */ false, query_context, /*is_attach*/true);
+                                   /* majority_quorum */ false, query_context, /* is_attach */ true, /* allow_attach_while_readonly */ true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
@@ -7017,7 +7022,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
             }
 
             res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
-            res.total_replicas = all_replicas.size();
+            res.total_replicas = UInt32(all_replicas.size());
             if (get_result[1].error == Coordination::Error::ZNONODE)
                 res.lost_part_count = 0;
             else
@@ -8504,9 +8509,9 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         }
 
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
-        String out_reason;
+        PreformattedMessage out_reason;
         if (!merge_pred.canMergeSinglePart(part, out_reason))
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", out_reason);
+            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", out_reason.text);
     }
 
     {
@@ -8764,18 +8769,18 @@ bool StorageReplicatedMergeTree::dropPartImpl(
 
         /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
         /// finished the merge.
-        String out_reason;
+        PreformattedMessage out_reason;
         if (!merge_pred.canMergeSinglePart(part, out_reason))
         {
             if (throw_if_noop)
-                throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+                throw Exception(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 
         if (merge_pred.partParticipatesInReplaceRange(part, out_reason))
         {
             if (throw_if_noop)
-                throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+                throw Exception(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 
@@ -9981,7 +9986,7 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_n
 {
     fs::directory_iterator dir_end;
     for (const std::string & path : getDataPaths())
-        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
+        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
             if (dir_it->path().filename().string() == part_name)
                 return true;
     return false;
@@ -9994,7 +9999,7 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 
     for (const std::string & path : getDataPaths())
     {
-        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
+        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
         {
             const String file_name = dir_it->path().filename().string();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
@@ -10535,7 +10540,11 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
+
+    auto sink = std::make_shared<ReplicatedMergeTreeSink>(
+        *this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0, /* quorum_parallel */ false,
+        /* deduplicate */ false, /* majority_quorum */ false, getContext(), /* is_attach */ true, /* allow_attach_while_readonly */ false);
+
     for (auto part : parts)
         sink->writeExistingPart(part);
 }

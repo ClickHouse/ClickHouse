@@ -1,5 +1,6 @@
 #include <type_traits>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -90,7 +91,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int CANNOT_PARSE_BOOL;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
@@ -279,7 +279,7 @@ struct ToDate32Transform32Or64Signed
 
     static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
+        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -1092,7 +1092,7 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
                     {
-                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
+                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()); /// NOLINT(readability-static-accessed-through-instance)
                     }
                     else
                     {
@@ -1816,6 +1816,7 @@ struct ConvertImpl
 
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
+template <bool throw_on_error>
 struct ConvertImplGenericFromString
 {
     static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
@@ -1855,29 +1856,34 @@ struct ConvertImplGenericFromString
             {
                 serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
             }
-            catch (const Exception & e)
+            catch (const Exception &)
             {
-                auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to);
-                if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && nullable_column)
-                {
-                    auto & col_nullmap = nullable_column->getNullMapData();
-                    if (col_nullmap.size() != nullable_column->size())
-                        col_nullmap.resize_fill(nullable_column->size());
-                    if (nullable_column->size() == (i + 1))
-                        nullable_column->popBack(1);
-                    nullable_column->insertDefault();
-                    continue;
-                }
-                throw;
+                if constexpr (throw_on_error)
+                    throw;
+                /// Check if exception happened after we inserted the value
+                /// (deserializeWholeText should not do it, but let's check anyway).
+                if (column_to.size() > i)
+                    column_to.popBack(column_to.size() - i);
+                column_to.insertDefault();
             }
 
+            /// Usually deserializeWholeText checks for eof after parsing, but let's check one more time just in case.
             if (!read_buffer.eof())
             {
-                if (result_type)
-                    throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                if constexpr (throw_on_error)
+                {
+                    if (result_type)
+                        throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                    else
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to column {}. Expected eof", column_to.getName());
+                }
                 else
-                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                        "Cannot parse string to column {}. Expected eof", column_to.getName());
+                {
+                    if (column_to.size() > i)
+                        column_to.popBack(column_to.size() - i);
+                    column_to.insertDefault();
+                }
             }
         }
     }
@@ -3280,7 +3286,9 @@ private:
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            if (cast_type == CastType::accurateOrNull)
+                return &ConvertImplGenericFromString<false>::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
@@ -3443,7 +3451,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
         else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
         {
@@ -3486,7 +3494,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         DataTypePtr from_type_holder;
@@ -3577,7 +3585,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
@@ -3922,7 +3930,7 @@ private:
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
+                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
                 res->finalize();
                 return res;
             };
@@ -4077,6 +4085,29 @@ private:
         return ColumnVariant::create(discriminators, variants);
     }
 
+    WrapperType createStringToVariantWrapper() const
+    {
+        return [&](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+        {
+            auto column = arguments[0].column->convertToFullColumnIfLowCardinality();
+            auto args = arguments;
+            args[0].column = column;
+
+            const ColumnNullable * column_nullable = nullptr;
+            if (isColumnNullable(*args[0].column))
+            {
+                column_nullable = assert_cast<const ColumnNullable *>(args[0].column.get());
+                args[0].column = column_nullable->getNestedColumnPtr();
+            }
+
+            args[0].type = removeNullable(removeLowCardinality(args[0].type));
+
+            if (cast_type == CastType::accurateOrNull)
+                return ConvertImplGenericFromString<false>::execute(args, result_type, column_nullable, input_rows_count);
+            return ConvertImplGenericFromString<true>::execute(args, result_type, column_nullable, input_rows_count);
+        };
+    }
+
     WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const
     {
         /// We allow converting NULL to Variant(...) as Variant can store NULLs.
@@ -4091,6 +4122,10 @@ private:
         }
 
         auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(*removeNullableOrLowCardinalityNullable(from_type));
+        /// Cast String to Variant through parsing if it's not Variant(String).
+        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
+            return createStringToVariantWrapper();
+
         if (!variant_discr_opt)
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
 
@@ -4692,7 +4727,7 @@ private:
 
                 if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
-                    ret = [requested_result_is_nullable](
+                    ret = [this, requested_result_is_nullable](
                               ColumnsWithTypeAndName & arguments,
                               const DataTypePtr & result_type,
                               const ColumnNullable * column_nullable,
@@ -4701,7 +4736,10 @@ private:
                         auto wrapped_result_type = result_type;
                         if (requested_result_is_nullable)
                             wrapped_result_type = makeNullable(result_type);
-                        return ConvertImplGenericFromString::execute(
+                        if (this->cast_type == CastType::accurateOrNull)
+                            return ConvertImplGenericFromString<false>::execute(
+                                arguments, wrapped_result_type, column_nullable, input_rows_count);
+                        return ConvertImplGenericFromString<true>::execute(
                             arguments, wrapped_result_type, column_nullable, input_rows_count);
                     };
                     return true;

@@ -17,6 +17,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+EvictionCandidates::EvictionCandidates()
+    : log(getLogger("EvictionCandidates"))
+{
+}
+
 EvictionCandidates::~EvictionCandidates()
 {
     /// Here `queue_entries_to_invalidate` contains queue entries
@@ -30,6 +35,10 @@ EvictionCandidates::~EvictionCandidates()
         /// consistent state of cache.
         iterator->invalidate();
     }
+
+    /// We cannot reset evicting flag if we already removed queue entries.
+    if (removed_queue_entries)
+        return;
 
     /// Here `candidates` contain only those file segments
     /// which failed to be removed during evict()
@@ -58,13 +67,37 @@ void EvictionCandidates::add(
     ++candidates_size;
 }
 
+void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
+{
+    /// Remove queue entries of eviction candidates.
+    /// This will release space we consider to be hold for them.
+
+    LOG_TEST(log, "Will remove {} eviction candidates", size());
+
+    for (const auto & [key, key_candidates] : candidates)
+    {
+        for (const auto & candidate : key_candidates.candidates)
+        {
+            auto queue_iterator = candidate->getQueueIterator();
+            queue_iterator->invalidate();
+
+            candidate->file_segment->resetQueueIterator();
+            queue_iterator->remove(lock);
+        }
+    }
+    removed_queue_entries = true;
+}
+
 void EvictionCandidates::evict()
 {
     if (candidates.empty())
         return;
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
-    queue_entries_to_invalidate.reserve(candidates_size);
+
+    /// If queue entries are already removed, then nothing to invalidate.
+    if (!removed_queue_entries)
+        queue_entries_to_invalidate.reserve(candidates_size);
 
     for (auto & [key, key_candidates] : candidates)
     {
@@ -80,10 +113,14 @@ void EvictionCandidates::evict()
         {
             auto & candidate = key_candidates.candidates.back();
             chassert(candidate->releasable());
-
             const auto segment = candidate->file_segment;
-            auto iterator = segment->getQueueIterator();
-            chassert(iterator);
+
+            IFileCachePriority::IteratorPtr iterator;
+            if (!removed_queue_entries)
+            {
+                iterator = segment->getQueueIterator();
+                chassert(iterator);
+            }
 
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
@@ -112,7 +149,9 @@ void EvictionCandidates::evict()
             ///   it was freed in favour of some reserver, so we can make it visibly
             ///   free only for that particular reserver.
 
-            queue_entries_to_invalidate.push_back(iterator);
+            if (iterator)
+                queue_entries_to_invalidate.push_back(iterator);
+
             key_candidates.candidates.pop_back();
         }
     }
@@ -152,6 +191,12 @@ void EvictionCandidates::finalize(
     /// Finalize functions might hold something (like HoldSpace object),
     /// so we need to clear them now.
     on_finalize.clear();
+}
+
+bool EvictionCandidates::needFinalize() const
+{
+    /// Do we need to call finalize()?
+    return !on_finalize.empty() || !queue_entries_to_invalidate.empty();
 }
 
 void EvictionCandidates::setSpaceHolder(
