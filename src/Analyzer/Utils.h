@@ -108,4 +108,7 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// Checks that node has only one source and returns it
 QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
 
+/// Build subquery which we execute for `IN table` function.
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr table_node, const ContextPtr & context);
+
 }

@@ -27,6 +27,8 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 #include "config.h"
 
 #if USE_MYSQL
@@ -1602,6 +1604,9 @@ void DatabaseCatalog::reloadDisksTask()
 
     for (auto & database : getDatabases())
     {
+        // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
+        // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
+        // TODO: We can split this task by table or by database to make loaded table operate as usual.
         auto it = database.second->getTablesIterator(getContext());
         while (it->isValid())
         {
@@ -1739,10 +1744,9 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
-    Names result;
     if (database)
-        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-            result.emplace_back(table_it->name());
-    return result;
+        return database->getAllTableNames(context);
+    return {};
 }
+
 }
