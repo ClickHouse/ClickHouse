@@ -237,7 +237,7 @@ public:
 private:
     using ListObjectsOutcome = Aws::S3::Model::ListObjectsV2Outcome;
 
-    bool fillBufferForKey(const std::string & uri_key)
+    void fillBufferForKey(const std::string & uri_key)
     {
         is_finished_for_key = false;
         const String key_prefix = uri_key.substr(0, uri_key.find_first_of("*?{"));
@@ -251,7 +251,7 @@ private:
             if (read_keys)
                 read_keys->insert(read_keys->end(), buffer.begin(), buffer.end());
             is_finished_for_key = true;
-            return true;
+            return;
         }
 
         request = {};
@@ -270,7 +270,7 @@ private:
 
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         fillInternalBufferAssumeLocked();
-        return false;
+        return;
     }
 
     KeyWithInfoPtr nextAssumeLocked()
