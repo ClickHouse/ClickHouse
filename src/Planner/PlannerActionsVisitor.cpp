@@ -523,10 +523,7 @@ private:
 
         void add(Levels levels) { mask |= levels.mask; }
 
-        size_t max() const
-        {
-            return mask ? (64 - __builtin_clzll(mask)) : 0;
-        }
+        size_t max() const { return 64 - getLeadingZeroBits(mask); }
 
     private:
         uint64_t mask = 0;
