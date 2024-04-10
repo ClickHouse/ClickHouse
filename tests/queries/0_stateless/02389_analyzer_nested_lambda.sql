@@ -133,3 +133,8 @@ SELECT
     arraySum(arrayMap(x -> (x + 1), counts)) as hello,
     arrayMap(x -> (x / hello), counts) AS res
 FROM numbers(1000000) FORMAT Null;
+
+SELECT
+  arrayWithConstant(pow(10,6), 1) AS nums,
+  arrayMap(x -> x, nums) AS m,
+  arrayMap(x -> x + arraySum(m), m) AS res FORMAT Null;
