@@ -2328,9 +2328,9 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const std::string & filter_name,
     bool removes_filter,
     const Names & left_stream_available_columns_to_push_down,
-    const ColumnsWithTypeAndName & left_stream_all_inputs,
+    const Block & left_stream_header,
     const Names & right_stream_available_columns_to_push_down,
-    const ColumnsWithTypeAndName & right_stream_all_inputs,
+    const Block & right_stream_header,
     const Names & equivalent_columns_to_push_down,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
@@ -2418,15 +2418,28 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         }
     }
 
-    auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_all_inputs);
-    auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_all_inputs);
+    auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
+    auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
 
     auto replace_equivalent_columns_in_filter = [](const ActionsDAGPtr & filter,
-        const ColumnsWithTypeAndName & stream_inputs,
+        const Block & stream_header,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
     {
         auto updated_filter = ActionsDAG::buildFilterActionsDAG({filter->getOutputs()[0]}, columns_to_replace);
         chassert(updated_filter->getOutputs().size() == 1);
+
+        /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
+          * actual input column. It is necessary because after filter step, filter column became constant column with value 1, and
+          * not all JOIN algorithms properly work with constants.
+          *
+          * Example: SELECT key FROM ( SELECT key FROM t1 ) AS t1 JOIN ( SELECT key FROM t1 ) AS t2 ON t1.key = t2.key WHERE key;
+          */
+        const auto * stream_filter_node = updated_filter->getOutputs()[0];
+        if (stream_header.has(stream_filter_node->result_name))
+        {
+            const auto & alias_node = updated_filter->addAlias(*stream_filter_node, "__filter" + stream_filter_node->result_name);
+            updated_filter->getOutputs()[0] = &alias_node;
+        }
 
         std::unordered_map<std::string, std::list<const Node *>> updated_filter_inputs;
 
@@ -2449,7 +2462,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             updated_filter_inputs[input->result_name].push_back(updated_filter_input_node);
         }
 
-        for (const auto & input_column : stream_inputs)
+        for (const auto & input_column : stream_header.getColumnsWithTypeAndName())
         {
             const Node * input;
             auto & list = updated_filter_inputs[input_column.name];
@@ -2472,12 +2485,12 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     if (left_stream_filter_to_push_down)
         left_stream_filter_to_push_down = replace_equivalent_columns_in_filter(left_stream_filter_to_push_down,
-            left_stream_all_inputs,
+            left_stream_header,
             equivalent_right_stream_column_to_left_stream_column);
 
     if (right_stream_filter_to_push_down)
         right_stream_filter_to_push_down = replace_equivalent_columns_in_filter(right_stream_filter_to_push_down,
-            right_stream_all_inputs,
+            right_stream_header,
             equivalent_left_stream_column_to_right_stream_column);
 
     /*
@@ -2492,27 +2505,16 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     bool left_stream_filter_removes_filter = true;
     bool right_stream_filter_removes_filter = true;
 
-    auto columns_have_column_with_name = [](const ColumnsWithTypeAndName & columns, const std::string & column_name)
-    {
-        for (const auto & column : columns)
-        {
-            if (column.name == column_name)
-                return true;
-        }
-
-        return false;
-    };
-
     if (left_stream_filter_to_push_down)
     {
         const auto & left_stream_filter_column_name = left_stream_filter_to_push_down->getOutputs()[0]->result_name;
-        left_stream_filter_removes_filter = !columns_have_column_with_name(left_stream_all_inputs, left_stream_filter_column_name);
+        left_stream_filter_removes_filter = !left_stream_header.has(left_stream_filter_column_name);
     }
 
     if (right_stream_filter_to_push_down)
     {
         const auto & right_stream_filter_column_name = right_stream_filter_to_push_down->getOutputs()[0]->result_name;
-        right_stream_filter_removes_filter = !columns_have_column_with_name(right_stream_all_inputs, right_stream_filter_column_name);
+        right_stream_filter_removes_filter = !right_stream_header.has(right_stream_filter_column_name);
     }
 
     ActionsDAG::ActionsForJOINFilterPushDown result

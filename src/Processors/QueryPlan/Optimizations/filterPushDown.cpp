@@ -242,10 +242,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       * to RIGHT/LEFT JOIN side.
       */
 
-    const auto & left_stream_input_header = child->getInputStreams().front().header;
-    const auto & right_stream_input_header = child->getInputStreams().back().header;
     const auto & join_header = child->getOutputStream().header;
     const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
+    const auto & left_stream_input_header = child->getInputStreams().front().header;
+    const auto & right_stream_input_header = child->getInputStreams().back().header;
 
     if (table_join.kind() == JoinKind::Full)
         return 0;
@@ -349,30 +349,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     size_t updated_steps = 0;
 
-    /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
-      * actual input column. It is necessary because after filter step, filter column became constant column with value 1, and
-      * not all JOIN algorithms properly work with constants.
-      *
-      * Example: SELECT key FROM ( SELECT key FROM t1 ) AS t1 JOIN ( SELECT key FROM t1 ) AS t2 ON t1.key = t2.key WHERE key;
-      */
-    auto update_stream_filter_node_if_needed = [&](ActionsDAG & stream_filter, const Block & stream_header)
-    {
-        auto & stream_filter_output_nodes = stream_filter.getOutputs();
-        const auto & stream_filter_node = stream_filter_output_nodes[0];
-        if (!stream_header.has(stream_filter_node->result_name))
-            return false;
-
-        const auto & alias_node = stream_filter.addAlias(*stream_filter_node, "__filter" + stream_filter_node->result_name);
-        stream_filter_output_nodes.insert(stream_filter_output_nodes.begin(), &alias_node);
-        return true;
-    };
-
     if (join_filter_push_down_actions.left_stream_filter_to_push_down)
     {
-        bool updated_filter = update_stream_filter_node_if_needed(*join_filter_push_down_actions.left_stream_filter_to_push_down, left_stream_input_header);
-        if (updated_filter)
-            join_filter_push_down_actions.left_stream_filter_removes_filter = true;
-
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
             join_filter_push_down_actions.left_stream_filter_to_push_down,
@@ -387,10 +365,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (join_filter_push_down_actions.right_stream_filter_to_push_down)
     {
-        bool updated_filter = update_stream_filter_node_if_needed(*join_filter_push_down_actions.right_stream_filter_to_push_down, right_stream_input_header);
-        if (updated_filter)
-            join_filter_push_down_actions.right_stream_filter_removes_filter = true;
-
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
             join_filter_push_down_actions.right_stream_filter_to_push_down,

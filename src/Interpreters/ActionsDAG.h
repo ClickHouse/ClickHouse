@@ -392,10 +392,10 @@ public:
       * @param removes_filter - if filter is removed after it is applied.
       * @param left_stream_available_columns_to_push_down - columns from left stream that are safe to use in push down conditions
       * to left stream.
-      * @param left_stream_all_inputs - all left streams columns.
+      * @param left_stream_header - left stream header.
       * @param right_stream_available_columns_to_push_down - columns from right stream that are safe to use in push down conditions
       * to right stream.
-      * @param right_stream_all_inputs - all right stream columns.
+      * @param right_stream_header - right stream header.
       * @param equivalent_columns_to_push_down - columns from left and right streams that are safe to use in push down conditions
       * to left and right streams.
       * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
@@ -405,9 +405,9 @@ public:
         const std::string & filter_name,
         bool removes_filter,
         const Names & left_stream_available_columns_to_push_down,
-        const ColumnsWithTypeAndName & left_stream_all_inputs,
+        const Block & left_stream_header,
         const Names & right_stream_available_columns_to_push_down,
-        const ColumnsWithTypeAndName & right_stream_all_inputs,
+        const Block & right_stream_header,
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
