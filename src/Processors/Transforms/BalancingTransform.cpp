@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 BalancingChunksTransform::BalancingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t max_memory_usage_, size_t num_ports)
     : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header)), max_memory_usage(max_memory_usage_), balance(header, min_block_size_rows, min_block_size_bytes)
 {
