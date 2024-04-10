@@ -305,7 +305,7 @@ bool applyTrivialCountIfPossible(
     AggregateDataPtr place = state.data();
     agg_count.create(place);
     SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    agg_count.set(place, num_rows.value());
+    AggregateFunctionCount::set(place, num_rows.value());
 
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
@@ -814,7 +814,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     bool optimize_move_to_prewhere
                         = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
-                    if (storage->supportsPrewhere() && optimize_move_to_prewhere)
+                    auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
                             prewhere_info = std::make_shared<PrewhereInfo>();
