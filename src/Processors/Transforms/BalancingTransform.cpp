@@ -53,7 +53,7 @@ IProcessor::Status BalancingChunksTransform::prepareConsume()
                 return Status::Finished;
             }
 
-            if (input.isFinished())
+            if (input.isFinished() && !balance.isDataLeft())
             {
                 for (auto & output : outputs)
                     output.finish();
@@ -117,7 +117,10 @@ IProcessor::Status BalancingChunksTransform::prepareSend()
         ++chunk_number;
 
         if (!chunk.hasChunkInfo())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info must be not empty in prepareGenerate()");
+        {
+            has_data = false;
+            return Status::Ready;
+        }
 
         if (was_processed)
             continue;
