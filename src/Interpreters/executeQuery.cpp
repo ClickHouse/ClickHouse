@@ -316,14 +316,13 @@ QueryLogElement logQueryStart(
 
     bool log_queries = settings.log_queries && !internal;
 
-    if (!context->getQueryLog())
+    auto query_log = context->getQueryLog();
+    if (!query_log)
         return elem;
 
     /// Log into system table start of query execution, if need.
     if (log_queries)
     {
-        auto query_log = context->getQueryLog();
-
         /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
         if (pipeline.initialized())
         {
@@ -642,7 +641,6 @@ void logExceptionBeforeStart(
 
     if (settings.log_query_settings)
         elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
-
 
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
