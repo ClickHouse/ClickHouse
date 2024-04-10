@@ -916,6 +916,34 @@ Returns the larger value of a and b.
 Returns the server’s uptime in seconds.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
+**Syntax**
+
+``` sql
+uptime()
+```
+
+**Returned value**
+
+- Time value of seconds.
+
+Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT uptime() as Uptime;
+```
+
+Result:
+
+``` response
+┌─Uptime─┐
+│  55867 │
+└────────┘
+```
+
 ## version()
 
 Returns the current version of ClickHouse as a string in the form of:

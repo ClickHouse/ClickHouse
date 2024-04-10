@@ -432,7 +432,8 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             try
             {
                 result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            } catch (const Azure::Storage::StorageException & e)
+            }
+            catch (const Azure::Storage::StorageException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
                       && e.ReasonPhrase == "The specified container already exists.")

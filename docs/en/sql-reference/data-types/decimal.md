@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/decimal
-sidebar_position: 42
+sidebar_position: 6
 sidebar_label: Decimal
 ---
 

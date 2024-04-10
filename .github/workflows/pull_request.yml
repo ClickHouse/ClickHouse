@@ -157,7 +157,7 @@ jobs:
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !failure() && !cancelled() && github.event_name != 'merge_group' }}
     needs: [Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker]
     steps:

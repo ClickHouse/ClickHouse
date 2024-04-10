@@ -176,6 +176,7 @@ struct FormatSettings
         char fields_delimiter = '\x01';
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
+        bool allow_variable_number_of_columns = true;
         Names input_field_names;
     } hive_text{};
 
