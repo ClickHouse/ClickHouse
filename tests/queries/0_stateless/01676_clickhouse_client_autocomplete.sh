@@ -43,7 +43,7 @@ expect_after {
     -i \$any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "$* --highlight 0"
+spawn bash -c "$*"
 expect ":) "
 
 # Make a query
