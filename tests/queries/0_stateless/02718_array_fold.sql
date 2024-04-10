@@ -57,4 +57,4 @@ DROP TABLE tab;
 
 SELECT ' -- Bug 57816';
 
-SELECT arrayFold(acc, x -> arrayIntersect(acc, x), [['qwe', 'asd'], ['qwe','asde']], emptyArrayString());
+SELECT arrayFold(acc, x -> arrayIntersect(acc, x), [['qwe', 'asd'], ['qwe','asde']], []);
