@@ -9,6 +9,8 @@ ORDER BY k;
 
 INSERT INTO test_table SELECT number FROM numbers(10000000);
 
+SET allow_experimental_analyzer = 1;
+
 SELECT * FROM test_table WHERE k in (100) = 1;
 SELECT * FROM test_table WHERE k = (100) = 1;
 SELECT * FROM test_table WHERE k not in (100) = 0;
