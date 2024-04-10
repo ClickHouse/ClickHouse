@@ -46,7 +46,7 @@ INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
   *
   * The following steps are performed:
   *
-  * - copying the binary to binary directory (/usr/bin).
+  * - copying the binary to binary directory (/usr/local/bin (Apple macOS) or /usr/bin (Others)).
   * - creation of symlinks for tools.
   * - creation of clickhouse user and group.
   * - creation of config directory (/etc/clickhouse-server).
@@ -226,7 +226,11 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "where to install binaries")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "where to install binaries")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "where to install configs")
             ("log-path", po::value<std::string>()->default_value("var/log/clickhouse-server"), "where to create log directory")
             ("data-path", po::value<std::string>()->default_value("var/lib/clickhouse"), "directory for data")
@@ -1216,7 +1220,11 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
@@ -1332,7 +1340,11 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
