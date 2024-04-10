@@ -988,12 +988,13 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     FileCacheReserveStat stat;
     EvictionCandidates eviction_candidates;
 
+    bool limits_satisfied = true;
     try
     {
         /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
         /// (we use batches to make sure we do not block cache for too long,
         /// by default the batch size is quite small).
-        const bool limits_satisfied = main_priority->collectCandidatesForEviction(
+        limits_satisfied = main_priority->collectCandidatesForEviction(
             desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, eviction_candidates, lock);
 
 #ifdef ABORT_ON_LOGICAL_ERROR
@@ -1012,8 +1013,6 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
                         || current_elements_count <= desired_elements_num
                         || current_elements_count - stat.total_stat.releasable_count <= desired_elements_num);
         }
-#else
-        UNUSED(limits_satisfied);
 #endif
 
         if (shutdown)
@@ -1040,10 +1039,6 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             lock.lock();
             eviction_candidates.finalize(nullptr, lock);
         }
-        else
-        {
-            keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
-        }
     }
     catch (...)
     {
@@ -1052,14 +1047,17 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         if (eviction_candidates.size() > 0)
             eviction_candidates.finalize(nullptr, lockCache());
 
-        keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
-
         /// Let's catch such cases in ci,
         /// in general there should not be exceptions.
         chassert(false);
     }
 
     LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms", watch.elapsedMilliseconds());
+
+    if (limits_satisfied)
+        keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
+    else
+        keep_up_free_space_ratio_task->schedule();
 }
 
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
