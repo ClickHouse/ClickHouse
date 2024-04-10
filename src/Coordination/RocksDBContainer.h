@@ -218,14 +218,15 @@ public:
         }
     }
 
-    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key)
+    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key_)
     {
         rocksdb::ReadOptions read_options;
         read_options.total_order_seek = true;
 
-        size_t len = key.size() + 2;
+        std::string key = key_;
         if (!key.ends_with('/'))
-            len ++;
+            key += '/';
+        size_t len = key.size() + 2;
 
         auto iter = std::unique_ptr<rocksdb::Iterator>(rocksdb_ptr->NewIterator(read_options));
         std::string encoded_string = getEncodedKey(key, true);
