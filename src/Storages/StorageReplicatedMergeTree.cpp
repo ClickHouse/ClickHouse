@@ -1837,7 +1837,7 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
                             "(it may rarely happen on race condition with KILL MUTATION).", part_name, replica);
         }
 
-        replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
+        replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
         break;
     }
 
@@ -5675,7 +5675,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
