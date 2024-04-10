@@ -858,7 +858,7 @@ Result:
 
 ## flattenTuple
 
-Returns a flattened `output` Tuple from a nested named `input` Tuple. Elements of the `output` Tuple are the paths from the original `Tuple`. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
+Returns a flattened `output` tuple from a nested named `input` tuple. Elements of the `output` tuple are the paths from the original `input` tuple. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
 
 **Syntax**
 
@@ -868,11 +868,11 @@ flattenTuple(input)
 
 **Parameters**
 
-- `input`: Nested named Tuple to flatten. [Tuple](../data-types/tuple).
+- `input`: Nested named tuple to flatten. [Tuple](../data-types/tuple).
 
 **Returned value**
 
-- `output` Tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
+- `output` tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
 
 **Example**
 
