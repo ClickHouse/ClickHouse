@@ -215,11 +215,11 @@ translateUTF8(s, from, to)
 Query:
 
 ``` sql
-SELECT translateUTF8('Hello, World!', 'delor', 'DELOR') AS res;
+SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
 ```
 
 ``` response
-┌─res───────────┐
-│ HELLO, WORLD! │
-└───────────────┘
+┌─res──────────────┐
+│ Munchener Strase │
+└──────────────────┘
 ```
