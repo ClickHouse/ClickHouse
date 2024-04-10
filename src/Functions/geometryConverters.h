@@ -29,6 +29,9 @@ namespace ErrorCodes
 }
 
 template <typename Point>
+using LineString = boost::geometry::model::linestring<Point>;
+
+template <typename Point>
 using Ring = boost::geometry::model::ring<Point>;
 
 template <typename Point>
@@ -38,11 +41,13 @@ template <typename Point>
 using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>>;
 
 using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
+using CartesianLineString = LineString<CartesianPoint>;
 using CartesianRing = Ring<CartesianPoint>;
 using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
+using SphericalLineString = LineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;
 using SphericalPolygon = Polygon<SphericalPoint>;
 using SphericalMultiPolygon = MultiPolygon<SphericalPoint>;
@@ -208,6 +213,39 @@ private:
     ColumnFloat64::Container & second_container;
 };
 
+/// Serialize Point, LineString as LineString
+template <typename Point>
+class LineStringSerializer
+{
+public:
+    LineStringSerializer()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    explicit LineStringSerializer(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void add(const LineString<Point> & ring)
+    {
+        size += ring.size();
+        offsets->insertValue(size);
+        for (const auto & point : ring)
+            point_serializer.add(point);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(point_serializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size = 0;
+    PointSerializer<Point> point_serializer;
+    ColumnUInt64::MutablePtr offsets;
+};
+
+/// Almost the same as LineStringSerializer
 /// Serialize Point, Ring as Ring
 template <typename Point>
 class RingSerializer
