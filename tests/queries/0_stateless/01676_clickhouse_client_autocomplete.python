@@ -4,8 +4,8 @@ import shlex
 import time
 import multiprocessing
 
-COMPLETION_TIMEOUT_SECONDS = 10
-
+COMPLETION_TIMEOUT_SECONDS = 30
+DEBUG_LOG = os.path.join(os.environ["CLICKHOUSE_TMP"], os.path.basename(os.path.abspath(__file__)) + ".debuglog")
 
 def run_with_timeout(func, args, timeout):
     process = multiprocessing.Process(target=func, args=args)
@@ -25,19 +25,31 @@ def test_completion(program, argv, comp_word):
         os.execv(program, argv)
     else:
         try:
-            output = os.read(master, 4096).decode()
+            debug_log_fd = open(DEBUG_LOG, "a")
+
+            output_b = os.read(master, 4096)
+            output = output_b.decode()
+            debug_log_fd.write(repr(output_b) + "\n")
             while not ":)" in output:
-                output += os.read(master, 4096).decode()
+                output_b = os.read(master, 4096)
+                output += output_b.decode()
+                debug_log_fd.write(repr(output_b) + "\n")
 
             os.write(master, b"SET " + bytes(comp_begin.encode()))
-            output = os.read(master, 4096).decode()
+            output_b = os.read(master, 4096)
+            output = output_b.decode()
+            debug_log_fd.write(repr(output_b) + "\n")
             while not comp_begin in output:
-                output += os.read(master, 4096).decode()
+                output_b = os.read(master, 4096)
+                output += output_b.decode()
+                debug_log_fd.write(repr(output_b) + "\n")
 
-            time.sleep(0.25)
+            time.sleep(0.01)
             os.write(master, b"\t")
 
-            output = os.read(master, 4096).decode()
+            output_b = os.read(master, 4096)
+            output = output_b.decode()
+            debug_log_fd.write(repr(output_b) + "\n")
             # fail fast if there is a bell character in the output,
             # meaning no concise completion is found
             if "\x07" in output:
@@ -45,11 +57,14 @@ def test_completion(program, argv, comp_word):
                 return
 
             while not comp_word in output:
-                output += os.read(master, 4096).decode()
+                output_b = os.read(master, 4096)
+                output += output_b.decode()
+                debug_log_fd.write(repr(output_b) + "\n")
 
             print(f"{comp_word}: OK")
         finally:
             os.close(master)
+            debug_log_fd.close()
 
 
 client_compwords_positive = [
