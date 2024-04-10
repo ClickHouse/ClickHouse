@@ -712,11 +712,20 @@ void ClientBase::adjustSettings()
         settings.input_format_values_allow_data_after_semicolon.changed = false;
     }
 
-    /// If pager is specified then output_format_pretty_max_rows is ignored, this should be handled by pager.
-    if (!pager.empty() && !global_context->getSettingsRef().output_format_pretty_max_rows.changed)
+    /// Do not limit pretty format output in case of --pager specified.
+    if (!pager.empty())
     {
-        settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
-        settings.output_format_pretty_max_rows.changed = false;
+        if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
+        {
+            settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
+            settings.output_format_pretty_max_rows.changed = false;
+        }
+
+        if (!global_context->getSettingsRef().output_format_pretty_max_value_width.changed)
+        {
+            settings.output_format_pretty_max_value_width = std::numeric_limits<UInt64>::max();
+            settings.output_format_pretty_max_value_width.changed = false;
+        }
     }
 
     global_context->setSettings(settings);
@@ -1964,7 +1973,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert_with_inlined_data)
+        if (insert && (!insert->select || input_function) && !is_async_insert_with_inlined_data)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
