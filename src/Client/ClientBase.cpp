@@ -329,12 +329,11 @@ void ClientBase::setupSignalHandler()
 }
 
 
-ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
+ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error)
 {
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
 
-    const auto & settings = global_context->getSettingsRef();
     size_t max_length = 0;
 
     if (!allow_multi_statements)
@@ -343,11 +342,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     const Dialect & dialect = settings.dialect;
 
     if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
+        parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     else
-        parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
+        parser = std::make_unique<ParserQuery>(end, settings.allow_settings_after_format_in_insert);
 
     if (is_interactive || ignore_error)
     {
@@ -916,7 +915,11 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
     const char * begin = full_query.data();
-    auto parsed_query = parseQuery(begin, begin + full_query.size(), false);
+    auto parsed_query = parseQuery(begin, begin + full_query.size(),
+        global_context->getSettingsRef(),
+        /*allow_multi_statements=*/ false,
+        is_interactive,
+        ignore_error);
 
     if (!parsed_query)
         return;
@@ -2061,7 +2064,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::QUERIES_END;
 
     // Remove leading empty newlines and other whitespace, because they
-    // are annoying to filter in the query log. This is mostly relevant for
+    // are annoying to filter in query log. This is mostly relevant for
     // the tests.
     while (this_query_begin < all_queries_end && isWhitespaceASCII(*this_query_begin))
         ++this_query_begin;
@@ -2089,9 +2092,13 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     this_query_end = this_query_begin;
     try
     {
-        parsed_query = parseQuery(this_query_end, all_queries_end, true);
+        parsed_query = parseQuery(this_query_end, all_queries_end,
+            global_context->getSettingsRef(),
+            /*allow_multi_statements=*/ true,
+            is_interactive,
+            ignore_error);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         current_exception.reset(e.clone());
         return MultiQueryProcessingStage::PARSING_EXCEPTION;
@@ -2116,9 +2123,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // INSERT queries may have the inserted data in the query text
     // that follow the query itself, e.g. "insert into t format CSV 1;2".
     // They need special handling. First of all, here we find where the
-    // inserted data ends. In multi-query mode, it is delimited by a
+    // inserted data ends. In multy-query mode, it is delimited by a
     // newline.
-    // The VALUES format needs even more handling - we also allow the
+    // The VALUES format needs even more handling -- we also allow the
     // data to be delimited by semicolon. This case is handled later by
     // the format parser itself.
     // We can't do multiline INSERTs with inline data, because most
