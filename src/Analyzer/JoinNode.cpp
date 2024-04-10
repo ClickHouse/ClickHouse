@@ -1,16 +1,14 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
-
+#include <Analyzer/Utils.h>
+#include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-
-#include <Analyzer/Utils.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
