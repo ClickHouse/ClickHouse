@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/IFunction.h>
 #include <Common/DateLUT.h>
