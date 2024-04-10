@@ -996,6 +996,7 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unshuffled
 Updatable
 Uppercased
 Uptime
