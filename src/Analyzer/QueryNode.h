@@ -99,6 +99,11 @@ public:
         return settings_changes;
     }
 
+    void clearSettingsChanges()
+    {
+        settings_changes.clear();
+    }
+
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
     {
@@ -584,9 +589,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState &) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

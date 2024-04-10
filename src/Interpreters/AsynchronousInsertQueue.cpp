@@ -11,6 +11,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -218,7 +219,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
         dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
 }
 
-AsynchronousInsertQueue::~AsynchronousInsertQueue()
+void AsynchronousInsertQueue::flushAndShutdown()
 {
     try
     {
@@ -257,6 +258,19 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     }
 }
 
+AsynchronousInsertQueue::~AsynchronousInsertQueue()
+{
+    for (const auto & shard : queue_shards)
+    {
+        for (const auto & [first_update, elem] : shard.queue)
+        {
+            const auto & insert_query = elem.key.query->as<const ASTInsertQuery &>();
+            LOG_WARNING(log, "Has unprocessed async insert for {}.{}",
+                        backQuoteIfNeed(insert_query.getDatabase()), backQuoteIfNeed(insert_query.getTable()));
+        }
+    }
+}
+
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
     const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num)
 {
@@ -280,7 +294,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 
     InterpreterInsertQuery interpreter(query, query_context, query_context->getSettingsRef().insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
-    auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
+    auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);

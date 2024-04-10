@@ -9,6 +9,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -23,6 +24,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeUUID.h>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 namespace DB

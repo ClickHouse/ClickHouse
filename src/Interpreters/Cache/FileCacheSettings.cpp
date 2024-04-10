@@ -5,6 +5,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -96,6 +97,63 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
     auto collection_get_string = [&](std::string_view key) { return collection.get<String>(std::string(key)); };
     auto collection_get_double = [&](std::string_view key) { return collection.get<Float64>(std::string(key)); };
     loadImpl(std::move(collection_has), std::move(collection_get_uint), std::move(collection_get_string), std::move(collection_get_double));
+}
+
+std::string FileCacheSettings::toString() const
+{
+    WriteBufferFromOwnString res;
+    res << "base_path: " << base_path << ", ";
+    res << "max_size: " << max_size << ", ";
+    res << "max_elements: " << max_elements << ", ";
+    res << "max_file_segment_size: " << max_file_segment_size << ", ";
+    res << "cache_on_write_operations: " << cache_on_write_operations << ", ";
+    res << "cache_hits_threshold: " << cache_hits_threshold << ", ";
+    res << "enable_filesystem_query_cache_limit: " << enable_filesystem_query_cache_limit << ", ";
+    res << "bypass_cache_threshold: " << bypass_cache_threshold << ", ";
+    res << "boundary_alignment: " << boundary_alignment << ", ";
+    res << "background_download_threads: " << background_download_threads << ", ";
+    res << "background_download_queue_size_limit: " << background_download_queue_size_limit << ", ";
+    res << "load_metadata_threads: " << load_metadata_threads << ", ";
+    res << "write_cache_per_user_id_directory: " << write_cache_per_user_id_directory << ", ";
+    res << "cache_policy: " << cache_policy << ", ";
+    res << "slru_size_ratio: " << slru_size_ratio << ", ";
+    return res.str();
+}
+
+std::vector<std::string> FileCacheSettings::getSettingsDiff(const FileCacheSettings & other) const
+{
+    std::vector<std::string> res;
+    if (base_path != other.base_path)
+        res.push_back("base_path");
+    if (max_size != other.max_size)
+        res.push_back("max_size");
+    if (max_elements != other.max_elements)
+        res.push_back("max_elements");
+    if (max_file_segment_size != other.max_file_segment_size)
+        res.push_back("max_file_segment_size");
+    if (cache_on_write_operations != other.cache_on_write_operations)
+        res.push_back("cache_on_write_operations");
+    if (cache_hits_threshold != other.cache_hits_threshold)
+        res.push_back("cache_hits_threshold");
+    if (enable_filesystem_query_cache_limit != other.enable_filesystem_query_cache_limit)
+        res.push_back("enable_filesystem_query_cache_limit");
+    if (bypass_cache_threshold != other.bypass_cache_threshold)
+        res.push_back("bypass_cache_threshold");
+    if (boundary_alignment != other.boundary_alignment)
+        res.push_back("boundary_alignment");
+    if (background_download_threads != other.background_download_threads)
+        res.push_back("background_download_threads");
+    if (background_download_queue_size_limit != other.background_download_queue_size_limit)
+        res.push_back("background_download_queue_size_limit");
+    if (load_metadata_threads != other.load_metadata_threads)
+        res.push_back("load_metadata_threads");
+    if (write_cache_per_user_id_directory != other.write_cache_per_user_id_directory)
+        res.push_back("write_cache_per_user_directory");
+    if (cache_policy != other.cache_policy)
+        res.push_back("cache_policy");
+    if (slru_size_ratio != other.slru_size_ratio)
+        res.push_back("slru_size_ratio");
+    return res;
 }
 
 }
