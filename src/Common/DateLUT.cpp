@@ -182,7 +182,9 @@ DateLUT::DateLUT()
 }
 
 
-const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
+/// skip thread sanitizer, because the initialization of each time zone data will only happen once.
+/// There should be no serious data race here.
+const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const __attribute__((no_sanitize("thread")))
 {
     // First check without acquiring the lock
     auto it = impls.find(time_zone);
