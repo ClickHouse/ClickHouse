@@ -48,8 +48,6 @@ namespace ErrorCodes
   */
 
 
-class URLHierarchy;
-class URLPathHierarchy;
 /// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
 class FunctionTokens : public IFunction
@@ -111,11 +109,11 @@ public:
 
             res_offsets.resize_exact(src_offsets.size());
             res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
-            ssize_t res_chars_reserve_size = generator.getResultReserveSize();
-            if (res_chars_reserve_size < 0)
-                res_strings_chars.reserve(src_chars.size());
+            std::optional<size_t> res_chars_reserve_size = generator.getResultReserveSize();
+            if (res_chars_reserve_size.has_value())
+                res_strings_chars.reserve_exact(*res_chars_reserve_size);
             else
-                res_strings_chars.reserve_exact(res_chars_reserve_size);
+                res_strings_chars.reserve(src_chars.size());
 
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
@@ -147,14 +145,14 @@ public:
                 res_offsets[i] = current_dst_offset; \
             }
 
-            if (res_chars_reserve_size < 0)
-            {
-                PROCESS_WITH_CUSTOM_RESIZE(resize)
-            }
-            else
+            if (res_chars_reserve_size.has_value())
             {
                 /// If res_chars_reserve_size is not -1, then we are sure that the actual size of res_strings_chars doesn't exceed res_chars_reserve_size.
                 PROCESS_WITH_CUSTOM_RESIZE(resize_assume_reserved)
+            }
+            else
+            {
+                PROCESS_WITH_CUSTOM_RESIZE(resize)
             }
             return col_res;
 #undef PROCESS_WITH_CUSTOM_RESIZE

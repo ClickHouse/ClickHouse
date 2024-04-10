@@ -70,7 +70,7 @@ public:
         max_splits = extractMaxSplits(arguments, 2);
     }
 
-    ssize_t getResultReserveSize() const { return -1; }
+    std::optional<size_t> getResultReserveSize() const { return std::nullopt; }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -170,7 +170,7 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         /// If the first argument is a trivial char, fallback splitByRegexp to splitByChar for better performance
-        if (couldFallbackToSplitByChar(arguments))
+        if (patternIsTrivialChar(arguments))
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
@@ -183,7 +183,7 @@ public:
     }
 
 private:
-    bool couldFallbackToSplitByChar(const ColumnsWithTypeAndName & arguments) const
+    bool patternIsTrivialChar(const ColumnsWithTypeAndName & arguments) const
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
         if (!col)
@@ -197,12 +197,12 @@ private:
         String pattern = col->getValue<String>();
         if (pattern.size() == 1)
         {
-            auto re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
 
             std::string required_substring;
             bool is_trivial;
             bool required_substring_is_prefix;
-            re->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            re.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
             return is_trivial && required_substring == pattern;
         }
         return false;

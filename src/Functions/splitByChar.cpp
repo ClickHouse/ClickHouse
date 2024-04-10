@@ -34,7 +34,7 @@ private:
     std::optional<size_t> max_splits;
     size_t splits;
     bool max_substrings_includes_remaining_string;
-    ssize_t result_reserve_size = -1;
+    std::optional<size_t> result_reserve_size;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -68,7 +68,6 @@ public:
         max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
         max_splits = extractMaxSplits(arguments, 2);
 
-
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(arguments[strings_argument_position].column.get());
         if (col_str)
         {
@@ -79,7 +78,7 @@ public:
         }
     }
 
-    ssize_t getResultReserveSize() const
+    std::optional<size_t> getResultReserveSize() const
     {
         return result_reserve_size;
     }

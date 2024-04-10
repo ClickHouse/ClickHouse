@@ -4,7 +4,7 @@ select splitByRegexp('<[^<>]*>', x) from (select arrayJoin(['<h1>hello<h2>world<
 select splitByRegexp('ab', '');
 select splitByRegexp('', '');
 
--- Test fallback of splitByRegexp to splitByChar if regexp is trivial
+SELECT 'Test fallback of splitByRegexp to splitByChar if regexp is trivial';
 select splitByRegexp(' ', 'a b c');
 select splitByRegexp('-', 'a-b-c');
 select splitByRegexp('.', 'a.b.c');

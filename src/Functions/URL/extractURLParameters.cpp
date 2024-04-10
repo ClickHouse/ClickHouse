@@ -36,7 +36,7 @@ public:
 
     void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substrings_includes_remaining_string*/) {}
 
-    ssize_t getResultReserveSize() const { return -1; }
+    std::optional<size_t> getResultReserveSize() const { return std::nullopt; }
 
     static constexpr auto strings_argument_position = 0uz;
 
