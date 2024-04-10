@@ -38,7 +38,7 @@ struct ASTWindowDefinition;
 class QueryFuzzer
 {
 public:
-    QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)
+    explicit QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)
         : fuzz_rand(fuzz_rand_)
         , out_stream(out_stream_)
         , debug_stream(debug_stream_)
