@@ -274,7 +274,18 @@ public:
         }
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (!need_rerun_resolve)
+            return;
+
+        if (auto * function_node = node->as<FunctionNode>())
+            rerunFunctionResolve(function_node, getContext());
+    }
+
 private:
+    bool need_rerun_resolve = false;
+
     void tryOptimizeAndEqualsNotEqualsChain(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
@@ -615,6 +626,10 @@ private:
 
         if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
             return;
+
+        if (function_node.getResultType()->isNullable() && !child_function->getResultType()->isNullable())
+            need_rerun_resolve = true;
+
         if (maybe_invert)
         {
             auto not_resolver = FunctionFactory::instance().get("not", getContext());
