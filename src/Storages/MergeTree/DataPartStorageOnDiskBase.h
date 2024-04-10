@@ -38,6 +38,7 @@ public:
     bool isStoredOnRemoteDisk() const override;
     std::optional<String> getCacheName() const override;
     bool supportZeroCopyReplication() const override;
+    bool supportVFS() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
     bool isReadonly() const override;
@@ -47,8 +48,8 @@ public:
     ReservationPtr reserve(UInt64 bytes) const override;
     ReservationPtr tryReserve(UInt64 bytes) const override;
 
-    ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const override;
-    ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
+    ReplicatedFilesDescription getReplicatedFilesDescription(
+        const NameSet & file_names, RemoteDiskFeature feature) const override;
 
     void backup(
         const MergeTreeDataPartChecksums & checksums,

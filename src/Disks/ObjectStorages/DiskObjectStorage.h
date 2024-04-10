@@ -192,7 +192,7 @@ public:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
-    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
+    virtual String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// Add a cache layer.
@@ -211,12 +211,10 @@ public:
     bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override;
 
-private:
-
-    /// Create actual disk object storage transaction for operations
-    /// execution.
-    DiskTransactionPtr createObjectStorageTransaction();
-    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
+protected:
+    /// Create actual disk object storage transaction for operations execution.
+    virtual DiskTransactionPtr createObjectStorageTransaction();
+    virtual DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk);
 
     String getReadResourceName() const;
     String getWriteResourceName() const;

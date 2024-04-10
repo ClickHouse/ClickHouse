@@ -23,6 +23,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Disks/ObjectStorages/VFSTransactionGroup.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -7366,7 +7367,14 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
-    for (const auto & disk : getStoragePolicy()->getDisks())
+    auto disks = getStoragePolicy()->getDisks();
+
+    std::vector<VFSTransactionGroup> groups;
+    groups.reserve(disks.size());
+    for (const auto & disk : disks)
+        groups.emplace_back(disk);
+
+    for (const auto & disk : disks)
         disk->onFreeze(backup_path);
 
     PartitionCommandsResultInfo result;
@@ -7456,6 +7464,11 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
 
     auto disks = getStoragePolicy()->getDisks();
+
+    std::vector<VFSTransactionGroup> groups;
+    groups.reserve(disks.size());
+    for (const auto & disk : disks)
+        groups.emplace_back(disk);
 
     return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path);
 }
@@ -7616,6 +7629,9 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
+bool MergeTreeData::lockSharedPart(const IDisk &, std::string_view, bool) const { return true; }
+void MergeTreeData::unlockSharedPart(const IDisk &, std::string_view) const {}
+
 std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async)
 {
     auto finish_move_promise = std::make_shared<std::promise<MovePartsOutcome>>();
@@ -7731,6 +7747,11 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             moving_part.reserved_space->getDisk()->getPath(),
             moving_part.part->getBytesOnDisk());
 
+        auto disk = moving_part.reserved_space->getDisk();
+
+        // TODO myrrc move this out of cycle if multiple parts are to be moved onto a single VFS disk
+        const VFSTransactionGroup group{disk};
+
         try
         {
             /// If zero-copy replication enabled than replicas shouldn't try to
@@ -7743,7 +7764,6 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             /// FIXME: this code is related to Replicated merge tree, and not
             /// common for ordinary merge tree. So it's a bad design and should
             /// be fixed.
-            auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
             {
                 /// This loop is not endless, if shutdown called/connection failed/replica became readonly
@@ -7785,6 +7805,15 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
+                if (!lockSharedPart(*disk, moving_part.part->name, wait_for_move_if_zero_copy))
+                {
+                    write_part_log({});
+                    LOG_DEBUG(log, "Move contention, rescheduling");
+                    // TODO myrrc reschedule time hint regarding part size
+                    return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
+                }
+                SCOPE_EXIT(unlockSharedPart(*disk, moving_part.part->name));
+
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
                 parts_mover.swapClonedPart(cloned_part);
             }

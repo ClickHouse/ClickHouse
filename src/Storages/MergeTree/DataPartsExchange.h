@@ -8,6 +8,7 @@
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
+#include <Disks/RemoteDiskFeature.h>
 
 
 namespace zkutil
@@ -45,7 +46,7 @@ private:
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
-        bool from_remote_disk,
+        RemoteDiskFeature feature,
         bool send_projections);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -78,7 +79,12 @@ public:
         bool to_detached = false,
         const String & tmp_prefix_ = "",
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_zero_copy = true,
+        // Why not RemoteDiskFeature? Throughout other code, features are distinct --
+        // VFS is incompatible with 0copy. However, here we want to check both features
+        // so we either need to transform RemoteDiskFeature into a bitset (which is bad
+        // as in other places it's not a bitset logically) or use explicit bool flags
+        bool try_use_zero_copy = true,
+        bool try_use_vfs = true,
         DiskPtr dest_disk = nullptr);
 
     /// You need to stop the data transfer.
@@ -102,7 +108,7 @@ private:
         bool to_detached,
         const String & tmp_prefix_,
         DiskPtr disk,
-        bool to_remote_disk,
+        RemoteDiskFeature feature,
         ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,

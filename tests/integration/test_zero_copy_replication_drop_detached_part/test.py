@@ -5,21 +5,18 @@ import random
 import string
 import time
 import os
-
 from multiprocessing.dummy import Pool
 import pytest
 from helpers.cluster import ClickHouseCluster
 
 
-cluster = ClickHouseCluster(__file__)
-
-
-@pytest.fixture(scope="module")
-def started_cluster():
+@pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
+def started_cluster(request):
+    cluster = ClickHouseCluster(__file__)
     try:
         cluster.add_instance(
             "node1",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml"] + request.param,
             with_minio=True,
             with_zookeeper=True,
         )
@@ -31,7 +28,7 @@ def started_cluster():
 
 
 def test_drop_detached_part(started_cluster):
-    node1 = cluster.instances["node1"]
+    node1 = started_cluster.instances["node1"]
 
     node1.query(
         """

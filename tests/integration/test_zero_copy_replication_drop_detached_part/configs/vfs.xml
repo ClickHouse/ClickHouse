@@ -1,0 +1,7 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3> <allow_vfs>true</allow_vfs> </s3>
+        </disks>
+    </storage_configuration>
+</clickhouse>

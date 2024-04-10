@@ -5090,7 +5090,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
             metadata_snapshot, getContext(), part_name, zookeeper_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
-            interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
+            interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true, true,
             replaced_disk);
         part_temp_directory_lock = std::move(lock);
         return fetched_part;
@@ -9238,6 +9238,42 @@ zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTempora
 
     LOG_TRACE(log, "Zookeeper temporary ephemeral lock {} created", zookeeper_node);
     return zkutil::EphemeralNodeHolder::existing(zookeeper_node, *zookeeper);
+}
+
+bool StorageReplicatedMergeTree::lockSharedPart(const IDisk & disk, std::string_view part_name, bool block) const
+{
+    if (!disk.isObjectStorageVFS())
+        return true;
+    using enum Coordination::Error;
+    const String lock_path_full = fmt::format("/{}_{}", getTableSharedID(), part_name);
+    const auto mode = zkutil::CreateMode::Ephemeral;
+    ZooKeeperWithFaultInjection zookeeper{getZooKeeper()};
+
+    LOG_TRACE(log, "Creating lock for {} (zk path {}), block={}", part_name, lock_path_full, block);
+
+    int attempts = 5;
+    do
+    {
+        if (block)
+            zookeeper.waitForDisappear(lock_path_full);
+        const auto code = zookeeper.tryCreate(lock_path_full, "", mode);
+        if (code == ZOK)
+            return true;
+        if (code == ZNODEEXISTS && !block)
+            return false;
+        if (code != ZNODEEXISTS)
+            throw Coordination::Exception(code, "While trying to create lock {}", lock_path_full);
+    } while (attempts-- > 0);
+    throw Exception(ErrorCodes::NOT_FOUND_NODE, "All attempts failed while trying to create lock {}", lock_path_full);
+}
+
+void StorageReplicatedMergeTree::unlockSharedPart(const IDisk & disk, std::string_view part_name) const
+{
+    if (!disk.isObjectStorageVFS())
+        return;
+    const String lock_path_full = fmt::format("/{}_{}", getTableSharedID(), part_name);
+    LOG_TRACE(log, "Removing lock for {} (zk path {})", part_name, lock_path_full);
+    ZooKeeperWithFaultInjection{getZooKeeper()}.remove(lock_path_full);
 }
 
 void StorageReplicatedMergeTree::lockSharedData(

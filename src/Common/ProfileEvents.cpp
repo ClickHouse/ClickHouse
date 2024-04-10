@@ -642,6 +642,12 @@ The server successfully detected this situation and will download merged part fr
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.") \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.") \
     \
+    M(VFSGcRunsCompleted, "Number of successful VFS garbage collector runs.")\
+    M(VFSGcRunsException, "Number of VFS garbage collector runs that raised an exception.")\
+    M(VFSGcRunsSkipped, "Number of VFS garbage collector skipped runs.")\
+    M(VFSGcTotalSeconds, "Total time taken by VFS garbage gollector.")\
+    M(VFSGcCumulativeSnapshotBytesRead, "Total size of snapshots read from object storage by VFS garbage collector.")\
+    M(VFSGcCumulativeLogItemsRead, "Total number of log items read from Keeper by VFS garbage collector.")\
     M(DistrCacheServerSwitches, "Number of server switches between distributed cache servers in read/write-through cache") \
     M(DistrCacheReadMicroseconds, "Time spent reading from distributed cache") \
     M(DistrCacheFallbackReadMicroseconds, "Time spend reading from fallback buffer instead of distribted cache") \

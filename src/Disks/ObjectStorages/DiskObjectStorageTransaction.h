@@ -69,6 +69,12 @@ protected:
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
         MetadataTransactionPtr metadata_transaction_);
 
+    void writeFileUsingBlobWritingFunctionOps(
+        const String & path, WriteMode mode, WriteBlobFunction && write_blob_function, StoredObject & object);
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFileOps(
+        const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit, StoredObject & object);
+
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
@@ -122,6 +128,8 @@ public:
     void chmod(const String & path, mode_t mode) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
+
+    virtual void writeMetadataFile(const String & path, const String & data);
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>

@@ -106,7 +106,7 @@
 #include <Core/ServerSettings.h>
 #include <filesystem>
 #include <unordered_set>
-
+#include "magic_enum.hpp"
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -144,6 +144,7 @@
 /// A minimal file used when the server is run without installation
 INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
 
+using namespace magic_enum::bitwise_operators;
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -673,7 +674,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ false);
+    registerDisks(DiskStartupFlags::ALLOW_VFS | DiskStartupFlags::ALLOW_VFS_GC);
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();

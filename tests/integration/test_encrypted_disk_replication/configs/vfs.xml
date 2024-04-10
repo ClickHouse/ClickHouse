@@ -1,0 +1,9 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3> <allow_vfs>true</allow_vfs> </disk_s3>
+            <disk_s3_encrypted> <allow_vfs>true</allow_vfs> </disk_s3_encrypted>
+            <disk_s3_encrypted_with_diff_keys> <allow_vfs>true</allow_vfs> </disk_s3_encrypted_with_diff_keys>
+        </disks>
+    </storage_configuration>
+</clickhouse>

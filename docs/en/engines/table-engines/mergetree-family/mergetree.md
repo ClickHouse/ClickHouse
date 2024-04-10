@@ -826,6 +826,7 @@ Tags:
 - `<disk_name_N>` — Disk name. Names must be different for all disks.
 - `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
 - `keep_free_space_bytes` — the amount of free disk space to be reserved.
+- `allow_vfs` and number of settings with prefix `vfs` (e.g. `vfs_gc_sleep_ms`) -- settings for [Disk VFS](#disk-vfs).
 
 The order of the disk definition is not important.
 
@@ -945,6 +946,31 @@ The `default` storage policy implies using only one volume, which consists of on
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
+
+### Disk VFS {#disk-vfs}
+
+`allow_vfs` disk flag (off by default) activates a feature that integrates elements of a distributed virtual
+filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference
+counting.
+
+If turned on, disables `allow_remote_fs_zero_copy_replication` for disk. Unlike the former, can't be set in
+runtime, a server restart is needed.
+ClickHouse Keeper can not use VFS disk as a backup storage.
+VFS is incompatible with `send_metadata`.
+
+When turned on, reuses the following settings:
+- `remote_fs_execute_merges_on_single_replica_time_threshold`
+- `zero_copy_merge_mutation_min_parts_size_sleep_before_lock`
+
+Additional settings:
+
+- `vfs_gc_sleep_ms` -- sleep timeout between garbage collector iterations (default: 10000).
+- `vfs_batch_min_size` -- skip garbage collector run if log batch size is smaller (default: 1).
+- `vfs_batch_max_size` -- max log batch size to process at once (default: 100000).
+- `vfs_batch_can_wait_ms` -- skip garbage collector run if log batch size is smaller than
+  `vfs_batch_min_size` and log batch first item was created in last `vfs_batch_can_wait_ms` milliseconds.
+  (default: 0, always skip).
+- `vfs_snapshot_lz4_compression_level` -- self-describing (default: 8).
 
 ### Details {#details}
 
