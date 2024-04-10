@@ -67,7 +67,7 @@ Connection::~Connection() = default;
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
-    const ssh::SSHKey & ssh_private_key_,
+    [[maybe_unused]] const SSHKey & ssh_private_key_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
@@ -76,7 +76,9 @@ Connection::Connection(const String & host_, UInt16 port_,
     Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
+#if USE_SSH
     , ssh_private_key(ssh_private_key_)
+#endif
     , quota_key(quota_key_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
@@ -141,7 +143,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
 
                     if (auto err = socket->impl()->socketError())
-                        socket->impl()->error(err); // Throws an exception
+                        socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
 
                     socket->setBlocking(true);
                 }
@@ -276,17 +278,6 @@ void Connection::disconnect()
 }
 
 
-String Connection::packStringForSshSign(String challenge)
-{
-    String message;
-    message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
-    message.append(default_database);
-    message.append(user);
-    message.append(challenge);
-    return message;
-}
-
-
 void Connection::sendHello()
 {
     /** Disallow control characters in user controlled parameters
@@ -334,10 +325,10 @@ void Connection::sendHello()
 #endif
     }
 #if USE_SSH
-    /// Just inform server that we will authenticate using SSH keys.
     else if (!ssh_private_key.isEmpty())
     {
-        writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, user), *out);
+        /// Inform server that we will authenticate using SSH keys.
+        writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
         performHandshakeForSSHAuth();
@@ -361,9 +352,9 @@ void Connection::sendAddendum()
 }
 
 
+#if USE_SSH
 void Connection::performHandshakeForSSHAuth()
 {
-#if USE_SSH
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -388,12 +379,23 @@ void Connection::performHandshakeForSSHAuth()
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
-    String to_sign = packStringForSshSign(challenge);
+
+    auto pack_string_for_ssh_sign = [&](String challenge_)
+    {
+        String message;
+        message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
+        message.append(default_database);
+        message.append(user);
+        message.append(challenge_);
+        return message;
+    };
+
+    String to_sign = pack_string_for_ssh_sign(challenge);
     String signature = ssh_private_key.signString(to_sign);
     writeStringBinary(signature, *out);
     out->next();
-#endif
 }
+#endif
 
 
 void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
