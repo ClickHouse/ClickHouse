@@ -108,12 +108,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (group_by_all)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY ALL" << (s.hilite ? hilite_none : "");
 
-    if (group_by_with_rollup)
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
-
-    if (group_by_with_cube)
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
-
     if (group_by_with_grouping_sets && groupBy())
     {
         auto nested_frame = frame;
@@ -127,6 +121,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, nested_frame);
         s.ostr << ")";
     }
+
+    if (group_by_with_rollup)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
+
+    if (group_by_with_cube)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
 
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");

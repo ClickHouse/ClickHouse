@@ -9,10 +9,8 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc99-extensions"
-#endif
 
 namespace DB
 {
@@ -297,6 +295,4 @@ protected:
 
 }
 
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif

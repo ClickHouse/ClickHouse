@@ -1,6 +1,7 @@
 #include <Backups/BackupCoordinationRemote.h>
 
 #include <base/hex.h>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
@@ -13,6 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -162,7 +165,8 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     const Strings & all_hosts_,
     const String & current_host_,
     bool plain_backup_,
-    bool is_internal_)
+    bool is_internal_,
+    QueryStatusPtr process_list_element_)
     : root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
     , keeper_settings(keeper_settings_)
@@ -172,11 +176,12 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     , current_host_index(findCurrentHostIndex(all_hosts, current_host))
     , plain_backup(plain_backup_)
     , is_internal(is_internal_)
-    , log(&Poco::Logger::get("BackupCoordinationRemote"))
+    , log(getLogger("BackupCoordinationRemote"))
     , with_retries(
         log,
         get_zookeeper_,
         keeper_settings,
+        process_list_element_,
         [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {

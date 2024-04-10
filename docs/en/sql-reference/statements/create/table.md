@@ -514,6 +514,10 @@ ENGINE = MergeTree ORDER BY x;
 
 ## Temporary Tables
 
+:::note
+Please note that temporary tables are not replicated. As a result, there is no guarantee that data inserted into a temporary table will be available in other replicas. The primary use case where temporary tables can be useful is for querying or joining small external datasets during a single session.
+:::
+
 ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.

@@ -59,7 +59,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
 
     if (!const_column && !non_const_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: hash column must be Const Column or UInt64 Column.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash column must be Const or UInt64.");
 
     if (const_column)
     {
@@ -590,7 +590,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
                 for (const auto & f : value_field.get<Array>())
                 {
-                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
+                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
                         return false;
 
                     auto converted = convertFieldToType(f, *actual_type);

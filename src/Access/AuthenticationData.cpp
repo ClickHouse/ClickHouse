@@ -105,7 +105,10 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
         && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names)
-        && (lhs.ssh_keys == rhs.ssh_keys) && (lhs.http_auth_scheme == rhs.http_auth_scheme)
+#if USE_SSH
+        && (lhs.ssh_keys == rhs.ssh_keys)
+#endif
+        && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name);
 }
 
@@ -320,13 +323,13 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSH_KEY:
         {
-#if USE_SSL
+#if USE_SSH
             for (const auto & key : getSSHKeys())
                 node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
             break;
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
         }
         case AuthenticationType::HTTP:
@@ -353,9 +356,9 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     /// For this type of authentication we have ASTPublicSSHKey as children for ASTAuthenticationData
     if (query.type && query.type == AuthenticationType::SSH_KEY)
     {
-#if USE_SSL
+#if USE_SSH
         AuthenticationData auth_data(*query.type);
-        std::vector<ssh::SSHKey> keys;
+        std::vector<SSHKey> keys;
 
         size_t args_size = query.children.size();
         for (size_t i = 0; i < args_size; ++i)
@@ -366,7 +369,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
             try
             {
-                keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(key_base64, type));
+                keys.emplace_back(SSHKeyFactory::makePublicKeyFromBase64(key_base64, type));
             }
             catch (const std::invalid_argument &)
             {
@@ -377,7 +380,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         auth_data.setSSHKeys(std::move(keys));
         return auth_data;
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
     }
 

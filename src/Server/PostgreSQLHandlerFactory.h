@@ -14,7 +14,7 @@ class PostgreSQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
 

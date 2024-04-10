@@ -6,7 +6,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -14,7 +13,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -88,21 +86,21 @@ public:
             /// Determine result type for default overload (no origin)
             switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
             {
-                case IntervalKind::Nanosecond:
-                case IntervalKind::Microsecond:
-                case IntervalKind::Millisecond:
+                case IntervalKind::Kind::Nanosecond:
+                case IntervalKind::Kind::Microsecond:
+                case IntervalKind::Kind::Millisecond:
                     result_type = ResultType::DateTime64;
                     break;
-                case IntervalKind::Second:
-                case IntervalKind::Minute:
-                case IntervalKind::Hour:
-                case IntervalKind::Day: /// weird why Day leads to DateTime but too afraid to change it
+                case IntervalKind::Kind::Second:
+                case IntervalKind::Kind::Minute:
+                case IntervalKind::Kind::Hour:
+                case IntervalKind::Kind::Day: /// weird why Day leads to DateTime but too afraid to change it
                     result_type = ResultType::DateTime;
                     break;
-                case IntervalKind::Week:
-                case IntervalKind::Month:
-                case IntervalKind::Quarter:
-                case IntervalKind::Year:
+                case IntervalKind::Kind::Week:
+                case IntervalKind::Kind::Month:
+                case IntervalKind::Kind::Quarter:
+                case IntervalKind::Kind::Year:
                     result_type = ResultType::Date;
                     break;
             }

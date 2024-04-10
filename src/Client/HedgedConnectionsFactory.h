@@ -133,7 +133,7 @@ private:
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
     Epoll epoll;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string fail_messages;
 
     /// The maximum number of attempts to connect to replicas.
@@ -158,8 +158,8 @@ private:
     /// checking the number of requested replicas that are still in process).
     size_t requested_connections_count = 0;
 
-    const size_t max_parallel_replicas = 0;
-    const bool skip_unavailable_shards = 0;
+    const size_t max_parallel_replicas = 1;
+    const bool skip_unavailable_shards = false;
 };
 
 }

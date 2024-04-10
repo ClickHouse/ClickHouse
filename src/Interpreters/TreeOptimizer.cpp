@@ -24,6 +24,7 @@
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 #include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
+#include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -76,11 +77,10 @@ const std::unordered_set<String> possibly_injective_function_names
   */
 void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
-    /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
-    /// might be in positional GROUP BY.
+    /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
+    /// and do not need to worry about it conflict with the name of the column in the table.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -144,7 +144,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             }
             else
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
+                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
@@ -277,7 +277,7 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         if (order_by_elem.with_fill /// Always keep elements WITH FILL as they affects other.
-            || elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+            || elems_set.emplace(name, order_by_elem.getCollation() ? order_by_elem.getCollation()->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
@@ -641,6 +641,12 @@ void optimizeDateFilters(ASTSelectQuery * select_query, const std::vector<TableW
     }
 }
 
+void rewriteSumFunctionWithSumAndCount(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns)
+{
+    RewriteSumFunctionWithSumAndCountVisitor::Data data = {tables_with_columns};
+    RewriteSumFunctionWithSumAndCountVisitor(data).visit(query);
+}
+
 void transformIfStringsIntoEnum(ASTPtr & query)
 {
     std::unordered_set<String> function_names = {"if", "transform"};
@@ -744,8 +750,13 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
                 tables_with_columns, result.storage_snapshot->metadata, result.storage);
     }
 
+    /// Rewrite sum(column +/- literal) function with sum(column) +/- literal * count(column).
+    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+        rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
+
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
-    optimizeDateFilters(select_query, tables_with_columns, context);
+    if (settings.optimize_time_filter_with_preimage)
+        optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);

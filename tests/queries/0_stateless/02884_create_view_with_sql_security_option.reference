@@ -1,0 +1,34 @@
+===== StorageView =====
+OK
+OK
+OK
+2
+2
+OK
+OK
+2
+2
+OK
+2
+2
+OK
+1
+===== MaterializedView =====
+OK
+1
+0
+0
+OK
+OK
+OK
+2
+OK
+OK
+===== TestGrants =====
+OK
+OK
+===== TestRowPolicy =====
+1	1
+2	2
+6	6
+9	9

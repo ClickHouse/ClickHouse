@@ -50,6 +50,7 @@ struct AlterCommand
         MODIFY_DATABASE_SETTING,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
+        MODIFY_SQL_SECURITY,
     };
 
     /// Which property user wants to remove from column
@@ -64,7 +65,8 @@ struct AlterCommand
         /// Other properties
         COMMENT,
         CODEC,
-        TTL
+        TTL,
+        SETTINGS
     };
 
     Type type = UNKNOWN;
@@ -137,14 +139,17 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
 
-    /// For MODIFY SETTING
+    /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;
 
-    /// For RESET SETTING
+    /// For RESET SETTING or MODIFY COLUMN RESET SETTING
     std::set<String> settings_resets;
 
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
+
+    /// For MODIFY_SQL_SECURITY
+    ASTPtr sql_security = nullptr;
 
     /// For MODIFY_REFRESH
     ASTPtr refresh = nullptr;
@@ -154,6 +159,9 @@ struct AlterCommand
 
     /// What to remove from column (or TTL)
     RemoveProperty to_remove = RemoveProperty::NO_PROPERTY;
+
+    /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN column with settings declaration)
+    bool append_column_setting = false;
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 

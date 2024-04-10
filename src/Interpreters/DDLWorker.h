@@ -151,7 +151,7 @@ protected:
     void runCleanupThread();
 
     ContextMutablePtr context;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::optional<std::string> config_host_name; /// host_name from config
 

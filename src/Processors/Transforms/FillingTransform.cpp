@@ -28,7 +28,7 @@ void logDebug(String key, const T & value, const char * separator = " : ")
         else
             ss << value;
 
-        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
+        LOG_DEBUG(getLogger("FillingTransform"), "{}{}{}", key, separator, ss.str());
     }
 }
 
@@ -53,13 +53,13 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
-    IntervalKind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
+    IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
     static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
     switch (kind) // NOLINT(bugprone-switch-missing-default-case)
     {
 #define DECLARE_CASE(NAME) \
-        case IntervalKind::NAME: \
+        case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
                     field.get<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
@@ -161,7 +161,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
             switch (*descr.step_kind) // NOLINT(bugprone-switch-missing-default-case)
             {
 #define DECLARE_CASE(NAME) \
-                case IntervalKind::NAME: \
+                case IntervalKind::Kind::NAME: \
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
                         auto field_decimal = field.get<DecimalField<DateTime64>>(); \
@@ -237,10 +237,21 @@ FillingTransform::FillingTransform(
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
-    std::set<size_t> unique_positions;
+    std::unordered_set<size_t> ordinary_sort_positions;
+    for (const auto & desc : sort_description)
+    {
+        if (!desc.with_fill)
+            ordinary_sort_positions.insert(header_.getPositionByName(desc.column_name));
+    }
+
+    std::unordered_set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
+    {
         if (!unique_positions.insert(pos).second)
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
+        if (ordinary_sort_positions.contains(pos))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "ORDER BY containing the same expression with and without WITH FILL modifier is not supported");
+    }
 
     if (use_with_fill_by_sorting_prefix)
     {

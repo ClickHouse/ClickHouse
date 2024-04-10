@@ -72,7 +72,11 @@ Specifying the `sharding_key` is necessary for the following:
 
 #### fsync_directories
 
-`fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc).
+`fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).
+
+#### skip_unavailable_shards
+
+`skip_unavailable_shards` - If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard. Default false.
 
 #### bytes_to_throw_insert
 
@@ -101,6 +105,10 @@ Specifying the `sharding_key` is necessary for the following:
 #### background_insert_max_sleep_time_ms
 
 `background_insert_max_sleep_time_ms` - same as [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
+
+#### flush_on_detach
+
+`flush_on_detach` - Flush data to remote nodes on DETACH/DROP/server shutdown. Default true.
 
 :::note
 **Durability settings** (`fsync_...`):
@@ -220,7 +228,7 @@ Second, you can perform `INSERT` statements on a `Distributed` table. In this ca
 
 Each shard can have a `<weight>` defined in the config file. By default, the weight is `1`. Data is distributed across shards in the amount proportional to the shard weight. All shard weights are summed up, then each shard's weight is divided by the total to determine each shard's proportion. For example, if there are two shards and the first has a weight of 1 while the second has a weight of 2, the first will be sent one third (1 / 3) of inserted rows and the second will be sent two thirds (2 / 3).
 
-Each shard can have the `internal_replication` parameter defined in the config file. If this parameter is set to `true`, the write operation selects the first healthy replica and writes data to it. Use this if the tables underlying the `Distributed` table are replicated tables (e.g. any of the `Replicated*MergeTree` table engines). One of the table replicas will receive the write and it will be replicated to the other replicas automatically.
+Each shard can have the `internal_replication` parameter defined in the config file. If this parameter is set to `true`, the write operation selects the first healthy replica and writes data to it. Use this if the tables underlying the `Distributed` table are replicated tables (e.g. any of the `Replicated*MergeTree` table engines). One of the table replicas will receive the write, and it will be replicated to the other replicas automatically.
 
 If `internal_replication` is set to `false` (the default), data is written to all replicas. In this case, the `Distributed` table replicates data itself. This is worse than using replicated tables because the consistency of replicas is not checked and, over time, they will contain slightly different data.
 

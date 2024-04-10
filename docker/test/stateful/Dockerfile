@@ -9,16 +9,9 @@ RUN apt-get update -y \
         python3-requests \
         nodejs \
         npm \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY s3downloader /s3downloader
-
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
-ENV DATASETS="hits visits"
-
-# The following is already done in clickhouse/stateless-test
-# RUN npm install -g azurite
-# RUN npm install tslib
-
+COPY create.sql /
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

@@ -2,10 +2,7 @@
 
 #include <Common/FieldVisitorToString.h>
 
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -32,13 +29,11 @@
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/WindowNode.h>
-#include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -49,7 +44,6 @@
 
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
-#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -450,8 +444,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             nulls_sort_direction = order_by_element.nulls_direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
 
         std::shared_ptr<Collator> collator;
-        if (order_by_element.collation)
-            collator = std::make_shared<Collator>(order_by_element.collation->as<ASTLiteral &>().value.get<String &>());
+        if (order_by_element.getCollation())
+            collator = std::make_shared<Collator>(order_by_element.getCollation()->as<ASTLiteral &>().value.get<String &>());
 
         const auto & sort_expression_ast = order_by_element.children.at(0);
         auto sort_expression = buildExpression(sort_expression_ast, context);
@@ -461,12 +455,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             std::move(collator),
             order_by_element.with_fill);
 
-        if (order_by_element.fill_from)
-            sort_node->getFillFrom() = buildExpression(order_by_element.fill_from, context);
-        if (order_by_element.fill_to)
-            sort_node->getFillTo() = buildExpression(order_by_element.fill_to, context);
-        if (order_by_element.fill_step)
-            sort_node->getFillStep() = buildExpression(order_by_element.fill_step, context);
+        if (order_by_element.getFillFrom())
+            sort_node->getFillFrom() = buildExpression(order_by_element.getFillFrom(), context);
+        if (order_by_element.getFillTo())
+            sort_node->getFillTo() = buildExpression(order_by_element.getFillTo(), context);
+        if (order_by_element.getFillStep())
+            sort_node->getFillStep() = buildExpression(order_by_element.getFillStep(), context);
 
         list_node->getNodes().push_back(std::move(sort_node));
     }
@@ -557,11 +551,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
-        result = std::make_shared<ConstantNode>(ast_literal->value);
+        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+            result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
+        else
+            result = std::make_shared<ConstantNode>(ast_literal->value);
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
-        if (function->is_lambda_function)
+        if (function->is_lambda_function || isASTLambdaFunction(*function))
         {
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();
@@ -657,7 +654,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * columns_regexp_matcher = expression->as<ASTColumnsRegexpMatcher>())
     {
         auto column_transformers = buildColumnTransformers(columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(columns_regexp_matcher->getMatcher(), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
     {
@@ -677,7 +674,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getMatcher(), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {

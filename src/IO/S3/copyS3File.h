@@ -5,7 +5,7 @@
 #if USE_AWS_S3
 
 #include <Storages/StorageS3Settings.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 #include <base/types.h>
 #include <functional>
@@ -14,6 +14,7 @@
 
 namespace DB
 {
+struct ReadSettings;
 class SeekableReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;

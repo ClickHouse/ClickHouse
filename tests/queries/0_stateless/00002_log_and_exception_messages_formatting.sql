@@ -56,13 +56,13 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
 WHERE
   (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%';
+  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%';
 
 
 -- FIXME some of the following messages are not informative and it has to be fixed
@@ -203,7 +203,7 @@ select
 with 0.16 as threshold
 select
     'noisy Trace messages',
-    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}')
+    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}', 'Query {} to stage {}{}', 'Query {} from stage {} to stage {}{}')
                         group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
     r <= threshold ? '' : top_message.1;
 

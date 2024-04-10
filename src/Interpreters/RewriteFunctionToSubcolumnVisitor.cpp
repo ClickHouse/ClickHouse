@@ -1,9 +1,10 @@
-#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -119,6 +120,21 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
             else
                 return;
 
+            ast = transformToSubcolumn(name_in_storage, subcolumn_name);
+            ast->setAlias(alias);
+        }
+        else if (function.name == "variantElement" && column_type_id == TypeIndex::Variant)
+        {
+            const auto * literal = arguments[1]->as<ASTLiteral>();
+            if (!literal)
+                return;
+
+            String subcolumn_name;
+            auto value_type = literal->value.getType();
+            if (value_type != Field::Types::String)
+                return;
+
+            subcolumn_name = literal->value.get<const String &>();
             ast = transformToSubcolumn(name_in_storage, subcolumn_name);
             ast->setAlias(alias);
         }

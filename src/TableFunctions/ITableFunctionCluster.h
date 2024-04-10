@@ -4,7 +4,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/StorageS3Cluster.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionAzureBlobStorage.h>
@@ -29,14 +28,14 @@ public:
     String getName() const override = 0;
     String getSignature() const override = 0;
 
-    static void addColumnsStructureToArguments(ASTs & args, const String & desired_structure, const ContextPtr & context)
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context)
     {
         if (args.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty list of arguments for {}Cluster table function", Base::name);
 
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        Base::addColumnsStructureToArguments(args, desired_structure, context);
+        Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
         args.insert(args.begin(), cluster_name_arg);
     }
 
