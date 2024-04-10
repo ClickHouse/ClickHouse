@@ -5,7 +5,11 @@ import time
 import multiprocessing
 
 COMPLETION_TIMEOUT_SECONDS = 30
-DEBUG_LOG = os.path.join(os.environ["CLICKHOUSE_TMP"], os.path.basename(os.path.abspath(__file__)) + ".debuglog")
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)) + ".debuglog",
+)
+
 
 def run_with_timeout(func, args, timeout):
     process = multiprocessing.Process(target=func, args=args)
