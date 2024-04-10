@@ -776,7 +776,13 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
-    QueryTreeNodePtrWithHashSet nullable_group_by_keys;
+    QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
+    /// Here we count the number of nullable GROUP BY keys we met resolving expression.
+    /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
+    /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
+    /// But when we resolve `tuple(tuple(number))` we should figure out that `tuple(number)` is already a key,
+    /// and we should not convert `number` to nullable.
+    size_t found_nullable_group_by_key_in_scope = 0;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column casted to supertype)
@@ -1934,8 +1940,7 @@ std::vector<String> QueryAnalyzer::collectIdentifierTypoHints(const Identifier &
     for (const auto & valid_identifier : valid_identifiers)
         prompting_strings.push_back(valid_identifier.getFullName());
 
-    NamePrompter<1> prompter;
-    return prompter.getHints(unresolved_identifier.getFullName(), prompting_strings);
+    return NamePrompter<1>::getHints(unresolved_identifier.getFullName(), prompting_strings);
 }
 
 /** Wrap expression node in tuple element function calls for nested paths.
@@ -2059,12 +2064,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
+        options.only_analyze = only_analyze;
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
-
-        auto io = interpreter->execute();
-        PullingAsyncPipelineExecutor executor(io.pipeline);
-        io.pipeline.setProgressCallback(context->getProgressCallback());
-        io.pipeline.setProcessListElement(context->getProcessListElement());
 
         if (only_analyze)
         {
@@ -2082,6 +2083,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         }
         else
         {
+            auto io = interpreter->execute();
+            PullingAsyncPipelineExecutor executor(io.pipeline);
+            io.pipeline.setProgressCallback(context->getProgressCallback());
+            io.pipeline.setProcessListElement(context->getProcessListElement());
+
             Block block;
 
             while (block.rows() == 0 && executor.pull(block))
@@ -2193,7 +2199,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
     auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
+    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
 
     if (mutable_context->hasQueryContext())
         mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
@@ -2269,6 +2275,10 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   */
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
+    const auto & settings = scope.context->getSettingsRef();
+    if (!settings.enable_positional_arguments || scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return;
+
     auto & node_list_typed = node_list->as<ListNode &>();
 
     for (auto & node : node_list_typed.getNodes())
@@ -2281,7 +2291,8 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         auto * constant_node = (*node_to_replace)->as<ConstantNode>();
 
         if (!constant_node
-            || (constant_node->getValue().getType() != Field::Types::UInt64 && constant_node->getValue().getType() != Field::Types::Int64))
+            || (constant_node->getValue().getType() != Field::Types::UInt64
+                && constant_node->getValue().getType() != Field::Types::Int64))
             continue;
 
         UInt64 pos;
@@ -3986,8 +3997,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
             }
             else if (resolved_identifier->as<ConstantNode>())
             {
-                lookup_result.resolved_identifier = resolved_identifier;
                 return lookup_result;
+            }
+            else if (auto * resolved_function = resolved_identifier->as<FunctionNode>())
+            {
+                /// Special case: scalar subquery was executed and replaced by __getScalar function.
+                /// Handle it as a constant.
+                if (resolved_function->getFunctionName() == "__getScalar")
+                    return lookup_result;
             }
 
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -5787,7 +5804,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         return result_projection_names;
     }
 
-    FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
+    FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     bool is_executable_udf = true;
 
     IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
@@ -5817,7 +5834,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             std::vector<std::string> possible_function_names;
 
-            auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context);
+            auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
             function_names = UserDefinedSQLFunctionFactory::instance().getAllRegisteredNames();
@@ -5835,8 +5852,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     possible_function_names.push_back(name);
             }
 
-            NamePrompter<2> name_prompter;
-            auto hints = name_prompter.getHints(function_name, possible_function_names);
+            auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
                 "Function with name '{}' does not exists. In scope {}{}",
@@ -6076,7 +6092,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
             if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
-                (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin")))
+                !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
+                /// Sanity check: do not convert large columns to constants
+                column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
                 Field column_constant_value;
@@ -6439,10 +6457,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
 
-    if (scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
-        node = node->clone();
-        node->convertToNullable();
+        auto it = scope.nullable_group_by_keys.find(node);
+        if (it != scope.nullable_group_by_keys.end())
+        {
+            node = it->node->clone();
+            node->convertToNullable();
+        }
     }
 
     /** Update aliases after expression node was resolved.
@@ -6662,14 +6684,11 @@ void expandTuplesInList(QueryTreeNodes & key_list)
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
-    const auto & settings = scope.context->getSettingsRef();
-
     if (query_node_typed.isGroupByWithGroupingSets())
     {
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
         {
-            if (settings.enable_positional_arguments)
-                replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
+            replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
 
             resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -6690,8 +6709,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
     else
     {
-        if (settings.enable_positional_arguments)
-            replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
+        replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -7360,7 +7378,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                             ColumnDescription column = insert_columns.get(*insert_column_name_it);
                             /// Change ephemeral columns to default columns.
                             column.default_desc.kind = ColumnDefaultKind::Default;
-                            structure_hint.add(insert_columns.get(*insert_column_name_it));
+                            structure_hint.add(std::move(column));
                         }
                     }
 
@@ -7838,8 +7856,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.isCTE())
         cte_in_resolve_process.insert(query_node_typed.getCTEName());
 
-    const auto & settings = scope.context->getSettingsRef();
-
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
     if (query_node_typed.isGroupByWithGroupingSets()
@@ -8015,6 +8031,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasGroupBy())
         resolveGroupByNode(query_node_typed, scope);
 
+    if (scope.group_by_use_nulls)
+    {
+        resolved_expressions.clear();
+        /// Clone is needed cause aliases share subtrees.
+        /// If not clone, the same (shared) subtree could be resolved again with different (Nullable) type
+        /// See 03023_group_by_use_nulls_analyzer_crashes
+        for (auto & [_, node] : scope.alias_name_to_expression_node)
+            node = node->clone();
+    }
+
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -8023,8 +8049,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasOrderBy())
     {
-        if (settings.enable_positional_arguments)
-            replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
+        replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
+
+        const auto & settings = scope.context->getSettingsRef();
 
         expandOrderByAll(query_node_typed, settings);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
@@ -8047,8 +8074,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasLimitBy())
     {
-        if (settings.enable_positional_arguments)
-            replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
+        replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }

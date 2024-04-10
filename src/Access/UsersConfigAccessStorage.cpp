@@ -1,6 +1,5 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/Quota.h>
-#include <Common/SSH/Wrappers.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -10,6 +9,7 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
+#include <Common/SSHWrapper.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
@@ -214,7 +214,7 @@ namespace
 
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
-            std::vector<ssh::SSHKey> keys;
+            std::vector<SSHKey> keys;
             for (const String& entry : entries)
             {
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
@@ -237,7 +237,7 @@ namespace
 
                     try
                     {
-                        keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(base64_key, type));
+                        keys.emplace_back(SSHKeyFactory::makePublicKeyFromBase64(base64_key, type));
                     }
                     catch (const std::invalid_argument &)
                     {
@@ -249,7 +249,7 @@ namespace
             }
             user->auth_data.setSSHKeys(std::move(keys));
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
         }
         else if (has_http_auth)
