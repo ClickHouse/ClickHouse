@@ -82,6 +82,11 @@ struct ReadWKTPointNameHolder
     static constexpr const char * name = "readWKTPoint";
 };
 
+struct ReadWKTLineStringNameHolder
+{
+    static constexpr const char * name = "readWKTLineString";
+};
+
 struct ReadWKTRingNameHolder
 {
     static constexpr const char * name = "readWKTRing";
@@ -102,6 +107,7 @@ struct ReadWKTMultiPolygonNameHolder
 REGISTER_FUNCTION(ReadWKT)
 {
     factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKTLineStringNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWKTMultiPolygonNameHolder>>();
