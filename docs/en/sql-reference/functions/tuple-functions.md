@@ -874,7 +874,7 @@ flattenTuple(input)
 
 - `output` Tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
 
-**Examples**
+**Example**
 
 Query:
 
