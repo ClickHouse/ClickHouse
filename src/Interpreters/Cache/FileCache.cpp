@@ -191,9 +191,10 @@ void FileCache::initialize()
     metadata.startup();
 
     if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
+    {
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
-
-    keep_up_free_space_ratio_task->schedule();
+        keep_up_free_space_ratio_task->schedule();
+    }
 
     is_initialized = true;
 }
