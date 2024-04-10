@@ -133,7 +133,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
-        add_virtual_row = false;
+
         if (add_virtual_row)
         {
             /// Turn on virtual row just once.
@@ -147,12 +147,14 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             /// Reorder the columns according to result_header
             Columns ordered_columns;
             ordered_columns.reserve(result_header.columns());
-            for (size_t i = 0; i < result_header.columns(); ++i)
+            for (size_t i = 0, j = 0; i < result_header.columns(); ++i)
             {
-                // TODO: composite pk???
                 const ColumnWithTypeAndName & type_and_name = result_header.getByPosition(i);
-                if (type_and_name.name == primary_key.column_names[0] && type_and_name.type == primary_key.data_types[0])
-                    ordered_columns.push_back(index[0]->cloneResized(1)); // TODO: use the first range pk whose range might contain results
+                if (j < index.size() && type_and_name.name == primary_key.column_names[j] && type_and_name.type == primary_key.data_types[j])
+                {
+                    ordered_columns.push_back(index[j]->cloneResized(1)); // TODO: use the first range pk whose range might contain results
+                    ++j;
+                }
                 else
                     ordered_columns.push_back(type_and_name.type->createColumn()->cloneResized(1));
             }
