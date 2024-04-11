@@ -4325,6 +4325,40 @@ Result:
 └────┴────┴─────┘
 ```
 
+## enable_limit_by_all {#enable-limit-by-all}
+
+Enables or disables `ALL` argument for `LIMIT BY` statements, see [LIMIT BY](../../sql-reference/statements/select/limit-by.md).
+
+Possible values:
+
+- 0 — Disable LIMIT BY ALL.
+- 1 — Enable LIMIT BY ALL.
+
+Default value: `1`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE TAB(C1 Int,ALL Int) ENGINE=Memory();
+
+INSERT INTO TAB VALUES (10, 10), (20, 10), (30, 30), (40, 30);
+
+SELECT * FROM TAB ORDER BY C1 LIMIT 1 BY ALL; -- returns an error that ALL is ambiguous
+
+SELECT * FROM TAB ORDER BY C1 LIMIT 1 BY ALL SETTINGS enable_limit_by_all = 0;
+```
+
+Result:
+
+```text
+┌─C1─┬─ALL─┐
+│ 10 │  10 │
+│ 30 │  30 │
+└────┴─────┘
+```
+
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.

@@ -826,6 +826,37 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_expression_list);
 }
 
+
+void expandLimitByAll(ASTSelectQuery * select_query, [[maybe_unused]] const TablesWithColumns & tables_with_columns)
+{
+    auto limit_expression_list=std::make_shared<ASTExpressionList>();
+
+    for (const auto & expr : select_query->select()->children)
+    {
+        static const String all = "all";
+        if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
+            if (boost::iequals(identifier->name(), all) || boost::iequals(identifier->alias, all))
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use LIMIT BY ALL to a column with name 'all', please disable setting `enable_limit_by_all` and try again");
+
+        if (auto * function = expr->as<ASTFunction>(); function != nullptr)
+            if (boost::iequals(function->alias, all))
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use LIMIT BY ALL to a column with name 'all', please disable setting `enable_limit_by_all` and try again");
+        for (const auto & table_with_columns : tables_with_columns)
+        {
+            const auto & columns = table_with_columns.columns;
+            if (columns.containsCaseInsensitive(all))
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use LIMIT BY ALL to the table that has a column with name 'all', please disable setting `enable_limit_by_all` and try again");
+        }
+
+        limit_expression_list->children.push_back(expr);
+    }
+
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_expression_list);
+}
+
 ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -1333,6 +1364,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // expand ORDER BY ALL
     if (settings.enable_order_by_all && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
+
+    // expand LIMIT BY ALL
+    if (settings.enable_limit_by_all && select_query->limit_by_all)
+        expandLimitByAll(select_query, tables_with_columns);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.

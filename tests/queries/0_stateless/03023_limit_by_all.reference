@@ -1,0 +1,75 @@
+-- no modifiers
+A	1
+A	2
+B	1
+B	2
+A	1
+A	2
+B	1
+B	2
+A
+A
+B
+B
+A
+B
+A	1
+A	2
+B	1
+B	2
+A	1
+A	2
+B	1
+B	2
+A
+A
+B
+B
+A
+B
+-- SELECT *
+A	1
+A	2
+B	1
+B	2
+A	1
+A	2
+B	1
+B	2
+-- using "limit by all" with column named by all is ambiguous
+  -- columns named all
+A	1	10
+A	2	20
+A
+A
+A	1	10
+A	2	20
+A	1	10
+A	2	20
+A
+A
+A	1	10
+A	2	20
+  -- column aliases
+A	1
+A	2
+A	1
+A	2
+  -- expressions
+A 1
+A 2
+B 1
+B 2
+A 1
+A 2
+B 1
+B 2
+  -- LIMIT BY ALL loses its special meaning when used in conjunction with other columns
+A	1	10
+A	2	20
+B	1	10
+B	2	20
+A	1	10
+A	2	20
+B	1	10
+B	2	20

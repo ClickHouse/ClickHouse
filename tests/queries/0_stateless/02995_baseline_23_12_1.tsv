@@ -208,6 +208,7 @@ enable_multiple_prewhere_read_steps	1
 enable_optimize_predicate_expression	1
 enable_optimize_predicate_expression_to_final_subquery	1
 enable_order_by_all	1
+enable_limit_by_all	1
 enable_positional_arguments	1
 enable_reads_from_query_cache	1
 enable_s3_requests_logging	0

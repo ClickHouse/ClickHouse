@@ -93,6 +93,7 @@ public:
     bool group_by_with_grouping_sets = false;
     bool order_by_all = false;
     bool limit_with_ties = false;
+    bool limit_by_all = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }

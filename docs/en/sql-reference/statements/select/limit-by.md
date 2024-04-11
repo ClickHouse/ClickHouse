@@ -20,6 +20,7 @@ During query processing, ClickHouse selects data ordered by sorting key. The sor
 
 If you want to use column numbers instead of column names in the `LIMIT BY` clause, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).	
 	
+`ALL` means all columns of the `SELECT` clause, e.g. `LIMIT 1 BY ALL`.To disable limiting by `ALL`, set setting [enable_limit_by_all](../../../operations/settings/settings.md#enable-limit-by-all) = 0.
 
 ## Examples
 

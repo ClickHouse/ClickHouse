@@ -369,6 +369,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (!exp_list.parse(pos, limit_by_expression_list, expected))
                 return false;
+
+            if (limit_by_expression_list->children.size() == 1)
+            {
+                /// LIMIT BY ALL
+                auto * identifier = limit_by_expression_list->children[0]->as<ASTIdentifier>();
+                if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
+                    select_query->limit_by_all = true;
+            }
         }
 
         if (top_length && limit_length)

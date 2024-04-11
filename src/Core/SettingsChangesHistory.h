@@ -87,6 +87,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
 {
     {"24.5", {{"allow_deprecated_functions", true, false, "Allow usage of deprecated functions"},
               {"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
+              {"enable_limit_by_all", false, true, "enable limit by clause limit by all"},
               {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
               }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},

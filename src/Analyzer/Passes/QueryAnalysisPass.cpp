@@ -1259,6 +1259,8 @@ private:
 
     void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
+    void expandLimitByAll(QueryNode & query_tree_node_typed, const Settings & settings);
+
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
 
@@ -2529,6 +2531,31 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
 
     query_tree_node_typed.getOrderByNode() = list_node;
     query_tree_node_typed.setIsOrderByAll(false);
+}
+
+void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed, const Settings & settings)
+{
+    if (!settings.enable_limit_by_all || !query_tree_node_typed.isLimitByAll())
+        return;
+
+    auto & projection_nodes = query_tree_node_typed.getProjection().getNodes();
+    auto list_node = std::make_shared<ListNode>();
+    list_node->getNodes().reserve(projection_nodes.size());
+
+    for (auto & node : projection_nodes)
+    {
+        auto resolved_expression_it = resolved_expressions.find(node);
+        if (resolved_expression_it != resolved_expressions.end())
+        {
+            auto projection_names = resolved_expression_it->second;
+            if (boost::iequals(projection_names[0], "all"))
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use LIMIT BY ALL to a column with name 'all', please disable setting `enable_limit_by_all` and try again");
+        }
+        list_node->getNodes().push_back(node);
+    }
+    query_tree_node_typed.getLimitByNode() = list_node;
+    query_tree_node_typed.setIsLimitByAll(false);
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
@@ -8104,7 +8131,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimitBy())
     {
         replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
-
+        const auto & settings = scope.context->getSettingsRef();
+        expandLimitByAll(query_node_typed, settings);
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
 
