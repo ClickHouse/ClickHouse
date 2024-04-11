@@ -274,18 +274,7 @@ public:
         }
     }
 
-    void leaveImpl(QueryTreeNodePtr & node)
-    {
-        if (!need_rerun_resolve)
-            return;
-
-        if (auto * function_node = node->as<FunctionNode>())
-            rerunFunctionResolve(function_node, getContext());
-    }
-
 private:
-    bool need_rerun_resolve = false;
-
     void tryOptimizeAndEqualsNotEqualsChain(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
@@ -588,12 +577,6 @@ private:
         auto & function_node = node->as<FunctionNode &>();
         assert(function_node.getFunctionName() == "equals");
 
-        bool lhs_const;
-        bool maybe_invert;
-
-        const ConstantNode * constant;
-        const FunctionNode * child_function;
-
         const auto function_arguments = function_node.getArguments().getNodes();
         if (function_arguments.size() != 2)
             return;
@@ -601,47 +584,44 @@ private:
         const auto & lhs = function_arguments[0];
         const auto & rhs = function_arguments[1];
 
-        if ((constant = lhs->as<ConstantNode>()))
-            lhs_const = true;
-        else if ((constant = rhs->as<ConstantNode>()))
-            lhs_const = false;
+        UInt64 constant_value;
+        bool is_lhs_const;
+        if (const auto * lhs_constant = lhs->as<ConstantNode>())
+        {
+            if (!lhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
+                || isNullableOrLowCardinalityNullable(lhs_constant->getResultType()))
+                return;
+            is_lhs_const = true;
+        }
+        else if (const auto * rhs_constant = rhs->as<ConstantNode>())
+        {
+            if (!rhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
+                || isNullableOrLowCardinalityNullable(rhs_constant->getResultType()))
+                return;
+            is_lhs_const = false;
+        }
         else
             return;
 
-        UInt64 val;
-        if (!constant->getValue().tryGet<UInt64>(val))
-            return;
+        bool need_invert = (constant_value == 0);
 
-        if (val == 1)
-            maybe_invert = false;
-        else if (val == 0)
-            maybe_invert = true;
-        else
-            return;
-
-        if (lhs_const)
-            child_function = rhs->as<FunctionNode>();
-        else
-            child_function = lhs->as<FunctionNode>();
+        const FunctionNode * child_function = is_lhs_const ? rhs->as<FunctionNode>() : lhs->as<FunctionNode>();
 
         if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
             return;
 
-        if (removeLowCardinality(constant->getResultType())->isNullable())
-            need_rerun_resolve = true;
-
-        if (maybe_invert)
+        if (need_invert)
         {
             auto not_resolver = FunctionFactory::instance().get("not", getContext());
             const auto not_node = std::make_shared<FunctionNode>("not");
             auto & arguments = not_node->getArguments().getNodes();
             arguments.reserve(1);
-            arguments.push_back(lhs_const ? rhs : lhs);
+            arguments.push_back(is_lhs_const ? rhs : lhs);
             not_node->resolveAsFunction(not_resolver->build(not_node->getArgumentColumns()));
             node = not_node;
         }
         else
-            node = lhs_const ? rhs : lhs;
+            node = is_lhs_const ? rhs : lhs;
     }
 };
 
