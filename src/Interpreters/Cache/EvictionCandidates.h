@@ -25,9 +25,9 @@ public:
 
     void finalize(
         FileCacheQueryLimit::QueryContext * query_context,
-        const CachePriorityGuard::Lock &);
+        const CachePriorityGuard::Lock * lock = nullptr);
 
-    bool needFinalize() const;
+    bool requiresLockToFinalize() const;
 
     size_t size() const { return candidates_size; }
 
@@ -35,13 +35,15 @@ public:
 
     auto end() const { return candidates.end(); }
 
-    void setSpaceHolder(
+    void addSpaceHolder(
         size_t size,
         size_t elements,
         IFileCachePriority & priority,
         const CachePriorityGuard::Lock &);
 
 private:
+    void releaseSpaceHolders();
+
     struct KeyCandidates
     {
         KeyMetadataPtr key_metadata;
@@ -56,7 +58,7 @@ private:
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
     bool removed_queue_entries = false;
 
-    IFileCachePriority::HoldSpacePtr hold_space;
+    std::vector<IFileCachePriority::HoldSpacePtr> hold_space;
 
     LoggerPtr log;
 };

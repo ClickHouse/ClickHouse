@@ -890,14 +890,14 @@ bool FileCache::tryReserve(
         {
             cache_lock.lock();
             /// Invalidate queue entries if some succeeded to be removed.
-            eviction_candidates.finalize(query_context.get(), cache_lock);
+            eviction_candidates.finalize(query_context.get(), &cache_lock);
             throw;
         }
 
         cache_lock.lock();
 
         /// Invalidate and remove queue entries and execute finalize func.
-        eviction_candidates.finalize(query_context.get(), cache_lock);
+        eviction_candidates.finalize(query_context.get(), &cache_lock);
     }
     else if (!main_priority->canFit(size, required_elements_num, cache_lock, queue_iterator))
     {
@@ -1414,19 +1414,55 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */,
                     stat, eviction_candidates, cache_lock))
             {
-                /// Remove only queue entries of eviction candidates.
-                eviction_candidates.removeQueueEntries(cache_lock);
-                /// Note that (in-memory) metadata about corresponding file segments
-                /// (e.g. file segment info in CacheMetadata) will be removed
-                /// only after eviction from filesystem. This is needed to avoid
-                /// a race on removal of file from filesystsem and
-                /// addition of the same file as part of a newly cached file segment.
+                if (eviction_candidates.size() == 0)
+                {
+                    main_priority->modifySizeLimits(
+                        new_settings.max_size, new_settings.max_elements,
+                        new_settings.slru_size_ratio, cache_lock);
+                }
+                else
+                {
+                    /// Remove only queue entries of eviction candidates.
+                    eviction_candidates.removeQueueEntries(cache_lock);
+                    /// Note that (in-memory) metadata about corresponding file segments
+                    /// (e.g. file segment info in CacheMetadata) will be removed
+                    /// only after eviction from filesystem. This is needed to avoid
+                    /// a race on removal of file from filesystsem and
+                    /// addition of the same file as part of a newly cached file segment.
 
-                /// Modify cache size limits.
-                /// From this point cache eviction will follow them.
-                main_priority->modifySizeLimits(
-                    new_settings.max_size, new_settings.max_elements,
-                    new_settings.slru_size_ratio, cache_lock);
+                    /// Modify cache size limits.
+                    /// From this point cache eviction will follow them.
+                    main_priority->modifySizeLimits(
+                        new_settings.max_size, new_settings.max_elements,
+                        new_settings.slru_size_ratio, cache_lock);
+
+                    cache_lock.unlock();
+
+                    auto finalize_eviction = [&]()
+                    {
+                        if (eviction_candidates.requiresLockToFinalize())
+                        {
+                            cache_lock.lock();
+                            eviction_candidates.finalize(nullptr, &cache_lock);
+                        }
+                        else
+                            eviction_candidates.finalize(nullptr);
+                    };
+
+                    try
+                    {
+                        /// Do actual eviction from filesystem.
+                        eviction_candidates.evict();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        finalize_eviction();
+                        throw;
+                    }
+
+                    finalize_eviction();
+                }
 
                 modified_size_limit = true;
             }
@@ -1434,24 +1470,12 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
         if (modified_size_limit)
         {
-            try
-            {
-                /// Do actual eviction from filesystem.
-                eviction_candidates.evict();
-            }
-            catch (...)
-            {
-                if (eviction_candidates.needFinalize())
-                    eviction_candidates.finalize(nullptr, lockCache());
-                throw;
-            }
-
-            if (eviction_candidates.needFinalize())
-                eviction_candidates.finalize(nullptr, lockCache());
-
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                     actual_settings.max_size, new_settings.max_size,
                     actual_settings.max_elements, new_settings.max_elements);
+
+            chassert(main_priority->getSizeApprox() <= new_settings.max_size);
+            chassert(main_priority->getElementsCountApprox() <= new_settings.max_elements);
 
             actual_settings.max_size = new_settings.max_size;
             actual_settings.max_elements = new_settings.max_elements;

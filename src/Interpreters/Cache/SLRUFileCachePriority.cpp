@@ -269,8 +269,13 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 
     stat += probationary_stat;
 
-    LOG_TEST(log, "Collected {} to evict from probationary queue. Total size: {}",
-             res.size(), probationary_stat.total_stat.releasable_size);
+    LOG_TEST(log, "Collected {} to evict from probationary queue "
+             "with total size: {} (result: {}). "
+             "Desired size: {}, desired elements count: {}, current state: {}",
+             probationary_stat.total_stat.releasable_count,
+             probationary_stat.total_stat.releasable_size, res.size(),
+             desired_probationary_size, desired_probationary_elements_num,
+             probationary_queue.getStateInfoForLog(lock));
 
     chassert(!max_candidates_to_evict || res.size() <= max_candidates_to_evict);
     chassert(res.size() == stat.total_stat.releasable_count);
@@ -288,8 +293,13 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 
     stat += protected_stat;
 
-    LOG_TEST(log, "Collected {} to evict from protected queue. Total size: {}",
-             res.size(), protected_stat.total_stat.releasable_size);
+    LOG_TEST(log, "Collected {} to evict from protected queue "
+             "with total size: {} (result: {})"
+             "Desired size: {}, desired elements count: {}, current state: {}",
+             protected_stat.total_stat.releasable_count,
+             protected_stat.total_stat.releasable_size, res.size(),
+             desired_protected_size, desired_protected_elements_num,
+             protected_queue.getStateInfoForLog(lock));
 
     return probationary_limit_satisfied && protected_limit_satisfied;
 }
@@ -377,7 +387,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         }
 
         eviction_candidates.evict();
-        eviction_candidates.finalize(nullptr, lock);
+        eviction_candidates.finalize(nullptr, &lock);
     }
     catch (...)
     {
