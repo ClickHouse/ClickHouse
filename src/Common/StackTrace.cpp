@@ -8,6 +8,7 @@
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/MemorySanitizer.h>
+#include <Common/SharedMutex.h>
 #include <Common/SymbolIndex.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -18,12 +19,9 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
-#include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
 #include <libunwind.h>
-
-#include "config.h"
 
 #include <boost/algorithm/string/split.hpp>
 
@@ -481,7 +479,15 @@ void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, si
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
-using StackTraceCache = std::map<StackTraceTriple, String, std::less<>>;
+struct CacheEntry
+{
+    std::mutex mutex;
+    std::optional<String> stacktrace_string;
+};
+
+using CacheEntryPtr = std::shared_ptr<CacheEntry>;
+
+using StackTraceCache = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
 
 static StackTraceCache & cacheInstance()
 {
@@ -489,27 +495,47 @@ static StackTraceCache & cacheInstance()
     return cache;
 }
 
-static std::mutex stacktrace_cache_mutex;
+static DB::SharedMutex stacktrace_cache_mutex;
 
 String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    /// Note that this cache can grow unconditionally, but practically it should be small.
-    std::lock_guard lock{stacktrace_cache_mutex};
-
-    StackTraceCache & cache = cacheInstance();
     const StackTraceRefTriple key{pointers, offset, size};
 
-    if (auto it = cache.find(key); it != cache.end())
-        return it->second;
-    else
+    /// Calculation of stack trace text is extremely slow.
+    /// We use cache because otherwise the server could be overloaded by trash queries.
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+    StackTraceCache & cache = cacheInstance();
+    CacheEntryPtr cache_entry;
+
+    // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
+    {
+        std::shared_lock read_lock{stacktrace_cache_mutex};
+        if (auto it = cache.find(key); it != cache.end())
+            cache_entry = it->second;
+    }
+
+    // Create a new entry in case of a cache miss
+    if (!cache_entry)
+    {
+        std::unique_lock write_lock{stacktrace_cache_mutex};
+
+        // We should recheck because `shared_lock` was released before we acquired `write_lock`
+        if (auto it = cache.find(key); it != cache.end())
+            cache_entry = it->second; // Another thread managed to created this entry before us
+        else
+            cache_entry = cache.emplace(StackTraceTriple{pointers, offset, size}, std::make_shared<CacheEntry>()).first->second;
+    }
+
+    // Do not hold `stacktrace_cache_mutex` while running possibly slow calculation of stack trace text
+    std::scoped_lock lock(cache_entry->mutex);
+    if (!cache_entry->stacktrace_string.has_value())
     {
         DB::WriteBufferFromOwnString out;
         toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
-
-        return cache.emplace(StackTraceTriple{pointers, offset, size}, out.str()).first->second;
+        cache_entry->stacktrace_string = out.str();
     }
+
+    return *cache_entry->stacktrace_string;
 }
 
 std::string StackTrace::toString() const
