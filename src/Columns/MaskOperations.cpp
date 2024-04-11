@@ -96,47 +96,73 @@ static size_t extractMaskNumericImpl(
 
     size_t mask_size = mask.size();
     size_t data_size = data.size();
-
-    for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
+    if (nulls && null_bytemap)
     {
-        // Change mask only where value is 1.
-        if (!mask[i])
-            continue;
-
-        UInt8 value;
-        size_t index;
-        if constexpr (column_is_short)
+        for (size_t i = 0; i < mask_size; ++i)
         {
-            index = data_index;
-            ++data_index;
+            (*nulls)[i] |= !!(*null_bytemap)[i];
         }
-        else
-            index = i;
-
-        if (null_bytemap && (*null_bytemap)[index])
-        {
-            value = null_value;
-            if (nulls)
-                (*nulls)[i] = 1;
-        }
-        else
-            value = static_cast<bool>(data[index]);
-
-        if constexpr (inverted)
-            value = !value;
-
-        if (value)
-            ++ones_count;
-
-        mask[i] = value;
     }
 
+    if (null_bytemap)
+    {
+        if (null_value)
+        {
+            for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
+            {
+                size_t index;
+                if constexpr (column_is_short)
+                {
+                    index = data_index;
+                    data_index += !!mask[i];
+                }
+                else
+                    index = i;
+                if constexpr (inverted)
+                    mask[i] &= !(*null_bytemap)[index] && static_cast<bool>(data[index]);
+                else
+                    mask[i] &= (*null_bytemap)[index] || static_cast<bool>(data[index]);
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
+            {
+                size_t index;
+                if constexpr (column_is_short)
+                {
+                    index = data_index;
+                    data_index += !!mask[i];
+                }
+                else
+                    index = i;
+                if constexpr (inverted)
+                    mask[i] &= (*null_bytemap)[index] || static_cast<bool>(data[index]);
+                else
+                    mask[i] &= !(*null_bytemap)[index] && static_cast<bool>(data[index]);
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i != mask_size; ++i)
+        {
+            if constexpr (inverted)
+                mask[i] &= !static_cast<bool>(data[i]);
+            else
+                mask[i] &= static_cast<bool>(data[i]);
+        }
+
+    }
     if constexpr (column_is_short)
     {
         if (data_index != data_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
     }
-
+    for (size_t i = 0; i != mask_size; ++i)
+    {
+        ones_count += !!mask[i];
+    }
     return ones_count;
 }
 
