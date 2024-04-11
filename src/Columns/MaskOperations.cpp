@@ -77,7 +77,7 @@ INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
-template <bool inverted, bool column_is_short, typename Container>
+template <bool inverted, typename Container>
 static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
@@ -85,7 +85,8 @@ static size_t extractMaskNumericImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    if constexpr (!column_is_short)
+    bool column_is_short = data.size() < mask.size();
+    if (!column_is_short)
     {
         if (data.size() != mask.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
@@ -96,65 +97,88 @@ static size_t extractMaskNumericImpl(
 
     size_t mask_size = mask.size();
     size_t data_size = data.size();
+    
+    /**
+     * if column_is_short = true, data_index increases only when mask[i] = 1, otherwise it stays the same
+     * if column_is_short = false, data_index increases every iteration
+     */
     if (nulls && null_bytemap)
     {
-        for (size_t i = 0; i < mask_size; ++i)
+        for (size_t i = 0; i < mask_size && data_index != data_size; ++i)
         {
-            (*nulls)[i] |= !!(*null_bytemap)[i];
+            (*nulls)[i] |= !!(*null_bytemap)[data_index];
+            data_index += !column_is_short || !!mask[i];
         }
     }
 
+    data_index = 0;
     if (null_bytemap)
     {
-        if (null_value)
+        /**
+         * update mask[i] as following:
+         * +------------+----------+-------------+----------------------+---------+
+         * | null_value | inverted | data[index] | null_byte_map[index] | mask[i] |
+         * +------------+----------+-------------+----------------------+---------+
+         * | 0          | 0        | 0           | 0                    | 0       |
+         * | 0          | 0        | 0           | 1                    | 0       |
+         * | 0          | 0        | 1           | 0                    | 1       |
+         * | 0          | 0        | 1           | 1                    | 0       |
+         * | 0          | 1        | 0           | 0                    | 1       |
+         * | 0          | 1        | 0           | 1                    | 1       |
+         * | 0          | 1        | 1           | 0                    | 0       |
+         * | 0          | 1        | 1           | 1                    | 1       |
+         * | 1          | 0        | 0           | 0                    | 0       |
+         * | 1          | 0        | 0           | 1                    | 1       |
+         * | 1          | 0        | 1           | 0                    | 1       |
+         * | 1          | 0        | 1           | 1                    | 1       |
+         * | 1          | 1        | 0           | 0                    | 1       |
+         * | 1          | 1        | 0           | 1                    | 0       |
+         * | 1          | 1        | 1           | 0                    | 0       |
+         * | 1          | 1        | 1           | 1                    | 0       |
+         * +------------+----------+-------------+----------------------+---------+
+         */
+        bool null_value_true = !!null_value;
+        if (null_value_true ^ inverted) 
         {
             for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
             {
-                size_t index;
-                if constexpr (column_is_short)
-                {
-                    index = data_index;
-                    data_index += !!mask[i];
-                }
-                else
-                    index = i;
-                if constexpr (inverted)
-                    mask[i] &= !(*null_bytemap)[index] && static_cast<bool>(data[index]);
-                else
-                    mask[i] &= (*null_bytemap)[index] || static_cast<bool>(data[index]);
+                size_t index = data_index;
+                data_index += !column_is_short || !!mask[i];
+                mask[i] &= (*null_bytemap)[index] || (static_cast<bool>(data[index]) ^ inverted);
             }
         }
         else
         {
             for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
             {
-                size_t index;
-                if constexpr (column_is_short)
-                {
-                    index = data_index;
-                    data_index += !!mask[i];
-                }
-                else
-                    index = i;
-                if constexpr (inverted)
-                    mask[i] &= (*null_bytemap)[index] || static_cast<bool>(data[index]);
-                else
-                    mask[i] &= !(*null_bytemap)[index] && static_cast<bool>(data[index]);
+                size_t index = data_index;
+                data_index += !column_is_short || !!mask[i];
+                mask[i] &= !(*null_bytemap)[index] && (static_cast<bool>(data[index]) ^ inverted);
             }
         }
     }
     else
     {
+        /**
+         * update mask[i] as following:
+         * +----------+-------------+---------+
+         * | inverted | data[index] | mask[i] |
+         * +----------+-------------+---------+
+         * | 0        | 0           | 0       |
+         * | 0        | 1           | 1       |
+         * | 1        | 0           | 1       |
+         * | 1        | 1           | 0       |
+         * +----------+-------------+---------+
+         */
         for (size_t i = 0; i != mask_size; ++i)
         {
-            if constexpr (inverted)
-                mask[i] &= !static_cast<bool>(data[i]);
-            else
-                mask[i] &= static_cast<bool>(data[i]);
+            size_t index = data_index;
+            data_index += !column_is_short || !!mask[i];
+            mask[i] &= static_cast<bool>(data[index]) ^ inverted;
         }
 
     }
-    if constexpr (column_is_short)
+    if (column_is_short)
     {
         if (data_index != data_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
@@ -181,10 +205,7 @@ static bool extractMaskNumeric(
 
     const auto & data = numeric_column->getData();
     size_t ones_count;
-    if (column->size() < mask.size())
-        ones_count = extractMaskNumericImpl<inverted, true>(mask, data, null_value, null_bytemap, nulls);
-    else
-        ones_count = extractMaskNumericImpl<inverted, false>(mask, data, null_value, null_bytemap, nulls);
+    ones_count = extractMaskNumericImpl<inverted>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
