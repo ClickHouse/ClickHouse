@@ -859,7 +859,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         part->info.min_block = block_number;
         part->info.max_block = block_number;
         part->info.level = 0;
-        part->info.mutation = metadata_snapshot->getMetadataVersion();
+        part->info.mutation = 0;
 
         part->setName(part->getNewName(part->info));
         retry_context.actual_part_name = part->name;
