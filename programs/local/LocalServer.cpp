@@ -413,8 +413,20 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config(), "localhost");
+
+    ReadBuffer * in;
+    auto table_file = config().getString("table-file", "-");
+    if (table_file == "-" || table_file == "stdin")
+    {
+        in = &std_in;
+    }
+    else
+    {
+        input = std::make_unique<ReadBufferFromFile>(table_file);
+        in = input.get();
+    }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 

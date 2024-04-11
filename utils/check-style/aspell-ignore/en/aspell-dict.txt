@@ -183,6 +183,8 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
+Composable
+composable
 Config
 ConnectionDetails
 Const
@@ -697,6 +699,7 @@ PCRE
 PRCP
 PREWHERE
 PROCESSLIST
+PROXYv
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
