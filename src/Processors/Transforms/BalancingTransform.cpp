@@ -1,7 +1,5 @@
 #include <Processors/Transforms/BalancingTransform.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include "Processors/IProcessor.h"
+#include <Processors/IProcessor.h>
 
 namespace DB
 {
@@ -13,7 +11,6 @@ BalancingChunksTransform::BalancingChunksTransform(const Block & header, size_t 
 
 IProcessor::Status BalancingChunksTransform::prepare()
 {
-    LOG_TRACE(getLogger("balancingProcessor"), "prepare");
     Status status = Status::Ready;
 
     while (status == Status::Ready)
@@ -27,7 +24,6 @@ IProcessor::Status BalancingChunksTransform::prepare()
 
 IProcessor::Status BalancingChunksTransform::prepareConsume()
 {
-    LOG_TRACE(getLogger("balancingProcessor"), "prepareConsume");
     finished = false;
     while (!chunk.hasChunkInfo())
     {
@@ -75,7 +71,6 @@ IProcessor::Status BalancingChunksTransform::prepareConsume()
             was_output_processed.assign(outputs.size(), false);
             if (chunk.hasChunkInfo())
             {
-                LOG_TRACE(getLogger("balancingProcessor"), "hasData");
                 has_data = true;
                 return Status::Ready;
             }
@@ -97,12 +92,10 @@ void BalancingChunksTransform::transform(Chunk & chunk_)
         Chunk res_chunk = balance.add({});
         std::swap(res_chunk, chunk_);
     }
-    LOG_TRACE(getLogger("balancing"), "{}, BalancingTransform: struct of output chunk: {}, hasInfo: {}", reinterpret_cast<void*>(this), chunk_.dumpStructure(), chunk.hasChunkInfo());
 }
 
 IProcessor::Status BalancingChunksTransform::prepareSend()
 {
-    LOG_TRACE(getLogger("balancingProcessor"), "prepareGenerate {}", chunk.dumpStructure());
     bool all_outputs_processed = true;
 
     size_t chunk_number = 0;
@@ -129,7 +122,6 @@ IProcessor::Status BalancingChunksTransform::prepareSend()
             continue;
         }
 
-        LOG_TRACE(getLogger("balancingProcessor"), "chunk struct: {}", chunk.dumpStructure());
         output.push(std::move(chunk));
         was_processed = true;
         break;

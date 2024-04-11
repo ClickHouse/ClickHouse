@@ -14,7 +14,6 @@ namespace DB
 struct ChunksToSquash : public ChunkInfo
 {
     mutable std::vector<Chunk> chunks = {};
-    DataTypes data_types = {};
 };
 
 /** Merging consecutive passed blocks to specified minimum size.
@@ -60,7 +59,7 @@ private:
 class NewSquashingTransform
 {
 public:
-    NewSquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    NewSquashingTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
     Block add(Chunk && input_chunk);
 
@@ -69,12 +68,13 @@ private:
     size_t min_block_size_bytes;
 
     Block accumulated_block;
+    const Block header;
 
-    template <typename ReferenceType>
-    Block addImpl(ReferenceType chunk);
+    Block addImpl(Chunk && chunk);
 
-    template <typename ReferenceType>
-    void append(ReferenceType input_chunk, DataTypes data_types);
+    const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
+
+    void append(Chunk && input_chunk);
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;
@@ -96,78 +96,17 @@ private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
 
-    Chunk accumulated_block;
     const Block header;
 
-    template <typename ReferenceType>
-    Chunk addImpl(ReferenceType input_block);
+    Chunk addImpl(Block && input_block);
 
-    bool isEnoughSize(const Chunk & chunk);
     bool isEnoughSize(const std::vector<Chunk> & chunks);
     bool isEnoughSize(size_t rows, size_t bytes) const;
     void checkAndWaitMemoryAvailability(size_t bytes);
-    DataTypes data_types = {};
 
     MemoryTracker * memory_tracker;
 
     Chunk convertToChunk(std::vector<Chunk> &chunks);
-};
-
-class NewSquashingBlockTransform
-{
-public:
-    NewSquashingBlockTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_);
-
-    Block add(Chunk && input_chunk);
-
-private:
-    size_t min_block_size_rows;
-    size_t min_block_size_bytes;
-
-    Block accumulated_block;
-
-    Block addImpl(Chunk && chunk);
-
-    void append(Block && input_block);
-
-    bool isEnoughSize(const Block & block);
-    bool isEnoughSize(size_t rows, size_t bytes) const;
-};
-
-struct BlocksToSquash : public ChunkInfo
-{
-    mutable std::vector<Block> blocks = {};
-};
-
-class BalanceBlockTransform
-{
-public:
-    BalanceBlockTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
-
-    Chunk add(Block && input_block);
-    bool isDataLeft()
-    {
-        return !blocks_to_merge_vec.empty();
-    }
-
-private:
-    std::vector<Block> blocks_to_merge_vec = {};
-    size_t min_block_size_rows;
-    size_t min_block_size_bytes;
-
-    Block accumulated_block;
-    const Block header;
-
-    // template <typename ReferenceType>
-    Chunk addImpl(Block && input_block);
-
-    bool isEnoughSize(const std::vector<Block> & blocks);
-    bool isEnoughSize(size_t rows, size_t bytes) const;
-    void checkAndWaitMemoryAvailability(size_t bytes);
-
-    MemoryTracker * memory_tracker;
-
-    Chunk convertToChunk(std::vector<Block> &blocks);
 };
 
 }

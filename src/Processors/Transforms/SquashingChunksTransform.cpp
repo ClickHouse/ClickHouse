@@ -7,13 +7,12 @@ namespace DB
 SquashingChunksTransform::SquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void SquashingChunksTransform::onConsume(Chunk chunk)
 {
-    LOG_TRACE(getLogger("squashing"), "{}, SquashingTransform: !finished, hasInfo: {}", reinterpret_cast<void*>(this), chunk.hasChunkInfo());
     if (auto block = squashing.add(std::move(chunk)))
         cur_chunk.setColumns(block.getColumns(), block.rows());
 }
@@ -29,9 +28,7 @@ SquashingChunksTransform::GenerateResult SquashingChunksTransform::onGenerate()
 void SquashingChunksTransform::onFinish()
 {
     auto block = squashing.add({});
-    LOG_TRACE(getLogger("squashing"), "{}, SquashingTransform: finished, structure of block: {}", reinterpret_cast<void*>(this), block.dumpStructure());
     finish_chunk.setColumns(block.getColumns(), block.rows());
-    LOG_TRACE(getLogger("squashing"), "{}, SquashingTransform: finished, hasInfo: {}", reinterpret_cast<void*>(this), finish_chunk.hasChunkInfo());
 }
 
 void SquashingChunksTransform::work()
@@ -52,7 +49,7 @@ void SquashingChunksTransform::work()
 }
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, [[maybe_unused]] bool skip_empty_chunks_)
+    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ISimpleTransform(header, header, false), squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
@@ -61,13 +58,11 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        LOG_TRACE(getLogger("squashing"), "{}, SquashingTransform: !finished, hasInfo: {}", reinterpret_cast<void*>(this), chunk.hasChunkInfo());
-        if (auto block = squashing.add(std::move(chunk)))
+        if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
             chunk.setColumns(block.getColumns(), block.rows());
     }
     else
     {
-        LOG_TRACE(getLogger("squashing"), "{}, SquashingTransform: finished, hasInfo: {}", reinterpret_cast<void*>(this), chunk.hasChunkInfo());
         auto block = squashing.add({});
         chunk.setColumns(block.getColumns(), block.rows());
     }

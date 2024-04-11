@@ -32,7 +32,7 @@ private:
 class SimpleSquashingChunksTransform : public ISimpleTransform
 {
 public:
-    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, bool skip_empty_chunks_ = true);
+    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
@@ -42,7 +42,7 @@ protected:
     IProcessor::Status prepare() override;
 
 private:
-    NewSquashingTransform squashing;
+    SquashingTransform squashing;
 
     bool finished = false;
 };

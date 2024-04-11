@@ -669,20 +669,20 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(
+            auto squashing = std::make_shared<SquashingChunksTransform>(
                 chain.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
 
             chain.addSource(std::move(squashing));
 
-            // auto balancing = std::make_shared<LBalancingChunksTransform>(
-            //         chain.getInputHeader(),
-            //         table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-            //         table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-            //         settings.max_memory_usage, true);
+            auto balancing = std::make_shared<BalancingChunksTransform>(
+                    chain.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
+                    settings.max_memory_usage, true);
 
-            // chain.addSource(std::move(balancing));
+            chain.addSource(std::move(balancing));
         }
 
         auto context_ptr = getContext();
