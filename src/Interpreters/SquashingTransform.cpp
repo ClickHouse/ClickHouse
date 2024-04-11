@@ -1,5 +1,7 @@
 #include <Interpreters/SquashingTransform.h>
+#include "Common/logger_useful.h"
 #include <Common/CurrentThread.h>
+#include "IO/WriteHelpers.h"
 
 
 namespace DB
@@ -141,7 +143,7 @@ Block NewSquashingTransform::add(Chunk && input_chunk)
 
 const ChunksToSquash * getInfoFromChunk(const Chunk & chunk)
 {
-    auto info = chunk.getChunkInfo();
+    const auto& info = chunk.getChunkInfo();
     const auto * agg_info = typeid_cast<const ChunksToSquash *>(info.get());
 
     return agg_info;
@@ -158,8 +160,10 @@ Block NewSquashingTransform::addImpl(ReferenceType input_chunk)
     }
 
     const auto *info = getInfoFromChunk(input_chunk);
-    for (auto & one : info->chunks)
-        append(std::move(one), info->data_type);
+    for (size_t i = 0; i < info->chunks.size(); i++)
+        append(std::move(info->chunks[i]), info->data_types);
+    // for (auto & one : info->chunks)
+    //     append(std::move(one), info->data_types);
 
     {
         Block to_return;
@@ -169,15 +173,19 @@ Block NewSquashingTransform::addImpl(ReferenceType input_chunk)
 }
 
 template <typename ReferenceType>
-void NewSquashingTransform::append(ReferenceType input_chunk, DataTypePtr data_type)
+void NewSquashingTransform::append(ReferenceType input_chunk, DataTypes data_types)
 {
+    // LOG_TRACE(getLogger("Squashing"), "data_type: {}", data_type->getName());
     if (input_chunk.getNumColumns() == 0)
         return;
     if (!accumulated_block)
     {
-        for (const ColumnPtr& column : input_chunk.getColumns())
+        // for (const ColumnPtr& column : input_chunk.getColumns())
+        for (size_t i = 0; i < input_chunk.getNumColumns(); ++ i)
         {
-            ColumnWithTypeAndName col = ColumnWithTypeAndName(column, data_type, " ");
+            String name = data_types[i]->getName() + toString(i);
+            LOG_TRACE(getLogger("Squashing"), "data_type: {}", data_types[i]->getName());
+            ColumnWithTypeAndName col = ColumnWithTypeAndName(input_chunk.getColumns()[i], data_types[i], name);
             accumulated_block.insert(accumulated_block.columns(), col);
         }
         return;
@@ -216,7 +224,7 @@ Chunk BalanceTransform::convertToChunk(std::vector<Chunk> &chunks)
     auto info = std::make_shared<ChunksToSquash>();
     for (auto &chunk : chunks)
         info->chunks.push_back(chunk.clone());
-    info->data_type = data_type;
+    info->data_types = data_types;
 
     chunks.clear();
 
@@ -228,8 +236,8 @@ template <typename ReferenceType>
 Chunk BalanceTransform::addImpl(ReferenceType input_block)
 {
     Chunk input_chunk(input_block.getColumns(), input_block.rows());
-    if (!data_type && !input_block.getDataTypes().empty())
-        data_type = input_block.getDataTypes()[0];
+    if (!input_block.getDataTypes().empty())
+        data_types = input_block.getDataTypes();
     if (!input_chunk)
     {
         Chunk res_chunk = convertToChunk(chunks_to_merge_vec);

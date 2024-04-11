@@ -14,7 +14,7 @@ namespace DB
 struct ChunksToSquash : public ChunkInfo
 {
     mutable std::vector<Chunk> chunks = {};
-    DataTypePtr data_type = nullptr;
+    DataTypes data_types = {};
 };
 
 /** Merging consecutive passed blocks to specified minimum size.
@@ -74,7 +74,7 @@ private:
     Block addImpl(ReferenceType chunk);
 
     template <typename ReferenceType>
-    void append(ReferenceType input_chunk, DataTypePtr data_type);
+    void append(ReferenceType input_chunk, DataTypes data_types);
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;
@@ -106,7 +106,7 @@ private:
     bool isEnoughSize(const std::vector<Chunk> & chunks);
     bool isEnoughSize(size_t rows, size_t bytes) const;
     void checkAndWaitMemoryAvailability(size_t bytes);
-    DataTypePtr data_type = nullptr;
+    DataTypes data_types = {};
 
     MemoryTracker * memory_tracker;
 
