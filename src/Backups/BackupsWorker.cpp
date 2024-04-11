@@ -564,7 +564,7 @@ void BackupsWorker::doBackup(
 
     /// Checks access rights if this is not ON CLUSTER query.
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = getRequiredAccessToBackup(backup_query->elements);
+    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
         context->checkAccess(required_access);
 

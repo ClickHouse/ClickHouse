@@ -110,7 +110,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 }
 
 template <typename ConnectionType>
-void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
+void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
     loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
@@ -152,6 +152,9 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
     });
+
+    if (wait_for_load)
+        loading_thread.join();
 }
 
 void Suggest::load(IServerConnection & connection,
@@ -228,8 +231,8 @@ void Suggest::fillWordsFromBlock(const Block & block)
 }
 
 template
-void Suggest::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
+void Suggest::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
 
 template
-void Suggest::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
+void Suggest::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
 }

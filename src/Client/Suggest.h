@@ -27,7 +27,7 @@ public:
 
     /// Load suggestions for clickhouse-client.
     template <typename ConnectionType>
-    void load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
+    void load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
 
     void load(IServerConnection & connection,
               const ConnectionTimeouts & timeouts,
