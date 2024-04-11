@@ -262,12 +262,17 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
+    ThreadPoolCallbackRunner<void> scheduler;
+    if (write_settings.azure_allow_parallel_part_upload)
+        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
         buf_size,
         patchSettings(write_settings),
-        settings.get());
+        settings.get(),
+        std::move(scheduler));
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
