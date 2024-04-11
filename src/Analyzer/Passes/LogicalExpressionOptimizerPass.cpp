@@ -603,14 +603,12 @@ private:
         else
             return;
 
-        bool need_invert = (constant_value == 0);
-
         const FunctionNode * child_function = is_lhs_const ? rhs->as<FunctionNode>() : lhs->as<FunctionNode>();
-
         if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
             return;
 
-        if (need_invert)
+        // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
+        if (constant_value == 0)
         {
             auto not_resolver = FunctionFactory::instance().get("not", getContext());
             const auto not_node = std::make_shared<FunctionNode>("not");
