@@ -1059,7 +1059,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Replacing)
     {
-        if (version_column == is_deleted_column)
+        if (!version_column.empty() && version_column == is_deleted_column)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and is_deleted column cannot be the same column ({})", version_column);
 
         check_is_deleted_column(true, "ReplacingMergeTree");
@@ -1068,7 +1068,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::VersionedCollapsing)
     {
-        if (version_column == sign_column)
+        if (!version_column.empty() && version_column == sign_column)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and sign column cannot be the same column ({})", version_column);
 
         check_sign_column(false, "VersionedCollapsingMergeTree");
