@@ -776,7 +776,7 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
-    QueryTreeNodePtrWithHashWithoutAliasSet nullable_group_by_keys;
+    QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
     /// Here we count the number of nullable GROUP BY keys we met resolving expression.
     /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
     /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
@@ -6166,12 +6166,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         return resolved_expression_it->second;
     }
 
-    bool is_nullable_group_by_key = scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction();
-    if (is_nullable_group_by_key)
-        ++scope.found_nullable_group_by_key_in_scope;
-
-    SCOPE_EXIT(scope.found_nullable_group_by_key_in_scope -= is_nullable_group_by_key);
-
     String node_alias = node->getAlias();
     ProjectionNames result_projection_names;
 
@@ -6463,10 +6457,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
 
-    if (is_nullable_group_by_key && scope.found_nullable_group_by_key_in_scope == 1)
+    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
-        node = node->clone();
-        node->convertToNullable();
+        auto it = scope.nullable_group_by_keys.find(node);
+        if (it != scope.nullable_group_by_keys.end())
+        {
+            node = it->node->clone();
+            node->convertToNullable();
+        }
     }
 
     /** Update aliases after expression node was resolved.
@@ -6688,46 +6686,43 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 {
     if (query_node_typed.isGroupByWithGroupingSets())
     {
-        QueryTreeNodes nullable_group_by_keys;
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
         {
             replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
+
+            resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
             // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
             // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
             auto & group_by_list = grouping_sets_keys_list_node->as<ListNode &>().getNodes();
             expandTuplesInList(group_by_list);
-
-            if (scope.group_by_use_nulls)
-                for (const auto & group_by_elem : group_by_list)
-                    nullable_group_by_keys.push_back(group_by_elem->clone());
-
-            resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         }
 
-        for (auto & nullable_group_by_key : nullable_group_by_keys)
-            scope.nullable_group_by_keys.insert(std::move(nullable_group_by_key));
+        if (scope.group_by_use_nulls)
+        {
+            for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
+            {
+                for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
+                    scope.nullable_group_by_keys.insert(group_by_elem);
+            }
+        }
     }
     else
     {
         replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
+
+        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
         // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
         auto & group_by_list = query_node_typed.getGroupBy().getNodes();
         expandTuplesInList(group_by_list);
 
-        QueryTreeNodes nullable_group_by_keys;
         if (scope.group_by_use_nulls)
         {
             for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-                nullable_group_by_keys.push_back(group_by_elem->clone());
+                scope.nullable_group_by_keys.insert(group_by_elem);
         }
-
-        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        for (auto & nullable_group_by_key : nullable_group_by_keys)
-            scope.nullable_group_by_keys.insert(std::move(nullable_group_by_key));
     }
 }
 
@@ -8035,6 +8030,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasGroupBy())
         resolveGroupByNode(query_node_typed, scope);
+
+    if (scope.group_by_use_nulls)
+    {
+        resolved_expressions.clear();
+        /// Clone is needed cause aliases share subtrees.
+        /// If not clone, the same (shared) subtree could be resolved again with different (Nullable) type
+        /// See 03023_group_by_use_nulls_analyzer_crashes
+        for (auto & [_, node] : scope.alias_name_to_expression_node)
+            node = node->clone();
+    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
