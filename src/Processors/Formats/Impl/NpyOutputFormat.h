@@ -40,14 +40,20 @@ private:
       String str() const;
     };
 
-    void initialize(const ColumnPtr & column);
+    String shapeStr() const;
+
+    bool getNumpyDataType(const DataTypePtr & type);
+
     void consume(Chunk) override;
+    void initShape(const ColumnPtr & column);
+    bool checkShape(const ColumnPtr & column);
+
     void finalizeImpl() override;
     void writeHeader();
     void writeColumns();
 
     bool is_initialized = false;
-    bool has_exception = false;
+    bool invalid_shape = false;
 
     DataTypePtr data_type;
     DataTypePtr nested_data_type;

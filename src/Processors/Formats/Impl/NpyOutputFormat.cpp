@@ -55,6 +55,20 @@ String NpyOutputFormat::NumpyDataType::str() const
     return dtype.str();
 }
 
+String NpyOutputFormat::shapeStr() const
+{
+    WriteBufferFromOwnString shape;
+    writeIntText(num_rows, shape);
+    writeChar(',', shape);
+    for (UInt64 dim : numpy_shape)
+    {
+        writeIntText(dim, shape);
+        writeChar(',', shape);
+    }
+
+    return shape.str();
+}
+
 NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, const Block & header_) : IOutputFormat(header_, out_)
 {
     const auto & header = getPort(PortKind::Main).getHeader();
@@ -62,20 +76,13 @@ NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, const Block & header_) : IO
     if (data_types.size() > 1)
         throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Expected single column for Npy output format, got {}", data_types.size());
     data_type = data_types[0];
+
+    if (!getNumpyDataType(data_type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type {} is not supported for Npy output format", nested_data_type->getName());
 }
 
-void NpyOutputFormat::initialize(const ColumnPtr & column)
+bool NpyOutputFormat::getNumpyDataType(const DataTypePtr & type)
 {
-    auto type = data_type;
-    ColumnPtr nested_column = column;
-    while (type->getTypeId() == TypeIndex::Array)
-    {
-        const auto * array_column = assert_cast<const ColumnArray *>(nested_column.get());
-        numpy_shape.push_back(array_column->getOffsets()[0]);
-        type = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
-        nested_column = array_column->getDataPtr();
-    }
-
     switch (type->getTypeId())
     {
         case TypeIndex::Int8: numpy_data_type = NumpyDataType('<', 'i', sizeof(Int8)); break;
@@ -90,65 +97,86 @@ void NpyOutputFormat::initialize(const ColumnPtr & column)
         case TypeIndex::Float64: numpy_data_type = NumpyDataType('<', 'f', sizeof(Float64)); break;
         case TypeIndex::FixedString: numpy_data_type = NumpyDataType('|', 'S', assert_cast<const DataTypeFixedString *>(type.get())->getN()); break;
         case TypeIndex::String: numpy_data_type = NumpyDataType('|', 'S', 0); break;
-        default:
-            has_exception = true;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type {} is not supported for Npy output format", type->getName());
+        case TypeIndex::Array: return getNumpyDataType(assert_cast<const DataTypeArray *>(type.get())->getNestedType());
+        default: nested_data_type = type; return false;
     }
+
     nested_data_type = type;
+    return true;
 }
 
 void NpyOutputFormat::consume(Chunk chunk)
 {
-    if (!has_exception)
+    if (!invalid_shape)
     {
         num_rows += chunk.getNumRows();
-        auto column = chunk.getColumns()[0];
+        const auto & column = chunk.getColumns()[0];
 
         if (!is_initialized)
         {
-            initialize(column);
+            initShape(column);
             is_initialized = true;
         }
 
-        /// check shape
-        auto type = data_type;
-        ColumnPtr nested_column = column;
-        int dim = 0;
-        while (type->getTypeId() == TypeIndex::Array)
+        if (!checkShape(column))
         {
-            const auto * array_column = assert_cast<const ColumnArray *>(nested_column.get());
-            const auto & array_offset = array_column->getOffsets();
-            for (size_t i = 1; i < array_offset.size(); ++i)
-            {
-                if (array_offset[i] - array_offset[i - 1] != numpy_shape[dim])
-                {
-                    has_exception = true;
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse doesn't support object types, cannot format ragged nested sequences (which is a list of arrays with different shapes)");
-                }
-            }
-            type = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
-            nested_column = array_column->getDataPtr();
-            dim++;
+            invalid_shape = true;
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse doesn't support object types, cannot format ragged nested sequences (which is a list of arrays with different shapes)");
         }
-
-        /// for type String, get maximum string length
-        if (type->getTypeId() == TypeIndex::String)
-        {
-            const auto & string_offsets = assert_cast<const ColumnString *>(nested_column.get())->getOffsets();
-            for (size_t i = 0; i < string_offsets.size(); ++i)
-            {
-                size_t string_length = static_cast<size_t>(string_offsets[i] - 1 - string_offsets[i - 1]);
-                numpy_data_type.size = numpy_data_type.size > string_length ? numpy_data_type.size : string_length;
-            }
-        }
-
-        columns.push_back(nested_column);
     }
+}
+
+void NpyOutputFormat::initShape(const ColumnPtr & column)
+{
+    auto type = data_type;
+    ColumnPtr nested_column = column;
+    while (type->getTypeId() == TypeIndex::Array)
+    {
+        const auto * array_column = assert_cast<const ColumnArray *>(nested_column.get());
+
+        numpy_shape.push_back(array_column->getOffsets()[0]);
+
+        type = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
+        nested_column = array_column->getDataPtr();
+    }
+}
+
+bool NpyOutputFormat::checkShape(const ColumnPtr & column)
+{
+    auto type = data_type;
+    ColumnPtr nested_column = column;
+    int dim = 0;
+    while (type->getTypeId() == TypeIndex::Array)
+    {
+        const auto * array_column = assert_cast<const ColumnArray *>(nested_column.get());
+        const auto & array_offset = array_column->getOffsets();
+
+        for (size_t i = 1; i < array_offset.size(); ++i)
+            if (array_offset[i] - array_offset[i - 1] != numpy_shape[dim])
+                return false;
+
+        type = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
+        nested_column = array_column->getDataPtr();
+        dim += 1;
+    }
+
+    if (type->getTypeId() == TypeIndex::String)
+    {
+        const auto & string_offsets = assert_cast<const ColumnString *>(nested_column.get())->getOffsets();
+        for (size_t i = 0; i < string_offsets.size(); ++i)
+        {
+            size_t string_length = static_cast<size_t>(string_offsets[i] - 1 - string_offsets[i - 1]);
+            numpy_data_type.size = numpy_data_type.size > string_length ? numpy_data_type.size : string_length;
+        }
+    }
+
+    columns.push_back(nested_column);
+    return true;
 }
 
 void NpyOutputFormat::finalizeImpl()
 {
-    if (!has_exception)
+    if (!invalid_shape)
     {
         writeHeader();
         writeColumns();
@@ -157,16 +185,7 @@ void NpyOutputFormat::finalizeImpl()
 
 void NpyOutputFormat::writeHeader()
 {
-    WriteBufferFromOwnString shape;
-    writeIntText(num_rows, shape);
-    writeChar(',', shape);
-    for (auto dim : numpy_shape)
-    {
-        writeIntText(dim, shape);
-        writeChar(',', shape);
-    }
-
-    String dict = "{'descr':'" + numpy_data_type.str() + "','fortran_order':False,'shape':(" + shape.str() + "),}";
+    String dict = "{'descr':'" + numpy_data_type.str() + "','fortran_order':False,'shape':(" + shapeStr() + "),}";
     String padding = "\n";
 
     /// completes the length of the header, which is divisible by 64.
@@ -181,7 +200,7 @@ void NpyOutputFormat::writeHeader()
     }
 
     out.write(STATIC_HEADER, STATIC_HEADER_LENGTH);
-    writeBinaryLittleEndian(assert_cast<UInt32>(dict_length), out);
+    writeBinaryLittleEndian(static_cast<UInt32>(dict_length), out);
     out.write(dict.data(), dict.length());
     out.write(padding.data(), padding.length());
 }
