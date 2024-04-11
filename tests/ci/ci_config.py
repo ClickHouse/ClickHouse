@@ -1221,7 +1221,7 @@ CI_CONFIG = CIConfig(
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
-        JobNames.STRESS_TEST_TSAN: TestConfig(
+        JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(

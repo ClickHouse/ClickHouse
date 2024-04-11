@@ -18,7 +18,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 
-def get_additional_envs(check_name) -> List[str]:
+def get_additional_envs(check_name: str) -> List[str]:
     result = []
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
