@@ -1902,8 +1902,11 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 
 MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
+    int32_t part_metadata_version = part->getMetadataVersion();
+    int32_t metadata_version = storage.getInMemoryMetadataPtr()->getMetadataVersion();
+
     chassert(alter_conversions_mutations >= 0);
-    if (alter_conversions_mutations == 0)
+    if (alter_conversions_mutations == 0 && metadata_version == part_metadata_version)
         return {};
 
     std::unique_lock lock(state_mutex);
@@ -1913,7 +1916,6 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
         return {};
 
     Int64 part_data_version = part->info.getDataVersion();
-    Int64 part_metadata_version = part->getMetadataVersion();
 
     MutationCommands result;
 
@@ -1939,7 +1941,7 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
         auto alter_version = entry->alter_version;
         if (alter_version != -1)
         {
-            if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
+            if (alter_version > metadata_version)
                 continue;
 
             /// We take commands with bigger metadata version
