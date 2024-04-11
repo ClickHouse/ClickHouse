@@ -2433,6 +2433,9 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 
 MutationCommands StorageMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
+    /// NOTE: there is no need to check part metadata_version, since
+    /// ALTER_METADATA cannot be done asynchronously, like in
+    /// ReplicatedMergeTree.
     chassert(alter_conversions_mutations >= 0);
     if (alter_conversions_mutations == 0)
         return {};

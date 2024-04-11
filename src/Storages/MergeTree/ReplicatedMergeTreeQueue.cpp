@@ -1906,6 +1906,8 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
     int32_t metadata_version = storage.getInMemoryMetadataPtr()->getMetadataVersion();
 
     chassert(alter_conversions_mutations >= 0);
+    /// NOTE: that just checking part_metadata_version is not enough, since we
+    /// need to check for non-metadata mutations as well.
     if (alter_conversions_mutations == 0 && metadata_version == part_metadata_version)
         return {};
 
