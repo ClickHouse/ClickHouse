@@ -34,19 +34,23 @@ def test_completion(program, argv, comp_word):
             output_b = os.read(master, 4096)
             output = output_b.decode()
             debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
             while not ":)" in output:
                 output_b = os.read(master, 4096)
                 output += output_b.decode()
                 debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
 
             os.write(master, b"SET " + bytes(comp_begin.encode()))
             output_b = os.read(master, 4096)
             output = output_b.decode()
             debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
             while not comp_begin in output:
                 output_b = os.read(master, 4096)
                 output += output_b.decode()
                 debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
 
             time.sleep(0.01)
             os.write(master, b"\t")
@@ -54,6 +58,7 @@ def test_completion(program, argv, comp_word):
             output_b = os.read(master, 4096)
             output = output_b.decode()
             debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
             # fail fast if there is a bell character in the output,
             # meaning no concise completion is found
             if "\x07" in output:
@@ -64,6 +69,7 @@ def test_completion(program, argv, comp_word):
                 output_b = os.read(master, 4096)
                 output += output_b.decode()
                 debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
 
             print(f"{comp_word}: OK")
         finally:
