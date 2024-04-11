@@ -120,6 +120,6 @@ int main(int, char **)
     chassert(x->get() == 0 && y->get() == 3);
     chassert(x->use_count() == y->use_count() == 1);
     chassert(x.get() != y.get());
-    
+
     return 0;
 }
