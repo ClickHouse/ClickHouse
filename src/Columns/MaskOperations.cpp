@@ -77,7 +77,7 @@ INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
-template <bool inverted, typename Container>
+template <bool inverted, bool column_is_short, typename Container>
 static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
@@ -85,8 +85,7 @@ static size_t extractMaskNumericImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    bool column_is_short = data.size() < mask.size();
-    if (!column_is_short)
+    if constexpr (!column_is_short)
     {
         if (data.size() != mask.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
@@ -97,7 +96,6 @@ static size_t extractMaskNumericImpl(
 
     size_t mask_size = mask.size();
     size_t data_size = data.size();
-    
     /**
      * if column_is_short = true, data_index increases only when mask[i] = 1, otherwise it stays the same
      * if column_is_short = false, data_index increases every iteration
@@ -205,7 +203,10 @@ static bool extractMaskNumeric(
 
     const auto & data = numeric_column->getData();
     size_t ones_count;
-    ones_count = extractMaskNumericImpl<inverted>(mask, data, null_value, null_bytemap, nulls);
+    if (column->size() < mask.size())
+        ones_count = extractMaskNumericImpl<inverted, true>(mask, data, null_value, null_bytemap, nulls);
+    else
+        ones_count = extractMaskNumericImpl<inverted, false>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
