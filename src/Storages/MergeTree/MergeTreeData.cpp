@@ -1022,6 +1022,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Summing)
     {
+        auto columns_to_sum_copy = columns_to_sum;
+        std::sort(columns_to_sum_copy.begin(), columns_to_sum_copy.end());
+        if (const auto it = std::adjacent_find(columns_to_sum_copy.begin(), columns_to_sum_copy.end()); it != columns_to_sum_copy.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} is listed multiple times in the list of columns to sum", *it);
+
         /// If columns_to_sum are set, then check that such columns exist.
         for (const auto & column_to_sum : columns_to_sum)
         {
@@ -1063,12 +1068,18 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Replacing)
     {
+        if (version_column == is_deleted_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and is_deleted column cannot be the same column ({})", version_column);
+
         check_is_deleted_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
 
     if (mode == MergingParams::VersionedCollapsing)
     {
+        if (version_column == sign_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and sign column cannot be the same column ({})", version_column);
+
         check_sign_column(false, "VersionedCollapsingMergeTree");
         check_version_column(false, "VersionedCollapsingMergeTree");
     }
@@ -3159,9 +3170,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
             }
         }
-
-        // Technically it is possible to specify the same column for `version` and `is_deleted`, thus let's be sure and don't use -if-else here
-        if (command.column_name == merging_params.is_deleted_column)
+        else if (command.column_name == merging_params.is_deleted_column)
         {
             checkSpecialColumn<DataTypeUInt8>("is_deleted", command);
         }
