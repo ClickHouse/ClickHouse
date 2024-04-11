@@ -98,9 +98,8 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
-        size_t replicas_num
+        size_t replicas_num,
         std::optional<EphemeralLockInZooKeeper> * lock_holder = nullptr);
-
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
