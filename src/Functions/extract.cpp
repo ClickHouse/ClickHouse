@@ -35,7 +35,7 @@ struct ExtractImpl
 
             unsigned count
                 = regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
-            if (count > capture && matches[capture].offset != std::string::npos)
+            if (count > capture && matches[capture].length)
             {
                 const auto & match = matches[capture];
                 res_data.resize(res_offset + match.length + 1);

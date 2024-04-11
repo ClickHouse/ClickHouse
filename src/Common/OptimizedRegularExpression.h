@@ -75,7 +75,13 @@ public:
 
     bool match(const char * subject, size_t subject_size) const;
     bool match(const char * subject, size_t subject_size, Match & match) const;
-    unsigned match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const;
+    unsigned match(std::string_view text, const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const;
+
+    unsigned match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+    {
+        std::string_view text{subject, subject};
+        return match(text, subject, subject_size, matches, limit);
+    }
 
     unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
 

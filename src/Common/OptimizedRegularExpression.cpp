@@ -639,7 +639,8 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 }
 
 
-unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+unsigned OptimizedRegularExpression::match(
+    std::string_view text, const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -694,9 +695,9 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
         DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
 
         if (!re2->Match(
-            {subject, subject_size},
-            0,
-            subject_size,
+            text,
+            subject - text.data(),
+            subject - text.data() + subject_size,
             re2::RE2::UNANCHORED,
             pieces.data(),
             static_cast<int>(pieces.size())))
@@ -710,7 +711,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
             {
                 if (pieces[i].empty())
                 {
-                    matches[i].offset = std::string::npos;
+                    matches[i].offset = pieces[i].data() - subject;
                     matches[i].length = 0;
                 }
                 else

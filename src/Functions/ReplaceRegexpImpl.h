@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 struct ReplaceRegexpTraits
@@ -109,25 +110,24 @@ struct ReplaceRegexpImpl
             /// If no more replacements possible for current string
             bool can_finish_current_string = false;
 
-            if (searcher->match(haystack_data + match_pos, haystack_length - match_pos, matches, num_captures))
+            if (searcher->match(haystack, haystack_data + match_pos, haystack_length - match_pos, matches, num_captures))
             {
-                // std::cout << "match size:" << matches.size() << std::endl;
+                // std::cout << "match_pos:" << match_pos << ", length:" << haystack_length - match_pos << ", match size:" << matches.size() << std::endl;
                 // for (size_t i = 0; i < matches.size(); ++i)
                 // {
-                //     if (matches[i].offset == std::string::npos)
-                //         std::cout << i << ":empty" << std::endl;
-                //     else
-                //         std::cout << i << ":" << std::string(haystack_data + match_pos + matches[i].offset, matches[i].length) << std::endl;
+                //     std::cout << i << ":" << std::string(haystack_data + match_pos + matches[i].offset, matches[i].length) << std::endl;
                 // }
 
                 const auto & match = matches[0]; /// Complete match (\0)
-                size_t bytes_to_copy = match_pos + (match.offset == std::string::npos ? 0 : match.offset) - copy_pos;
+                size_t bytes_to_copy = match_pos + match.offset - copy_pos;
+                // std::cout << "match_pos:" << match_pos << ", match offset:" << match.offset << ", copy_pos:" << copy_pos << ", bytes_to_copy:" << bytes_to_copy << std::endl;
 
                 /// Copy prefix before current match without modification
                 res_data.resize(res_data.size() + bytes_to_copy);
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data() + copy_pos, bytes_to_copy);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack_data + copy_pos, bytes_to_copy);
+                std::string_view prefix{haystack_data + copy_pos, bytes_to_copy};
                 res_offset += bytes_to_copy;
-                copy_pos += bytes_to_copy + match.length;
+                copy_pos += bytes_to_copy;
                 match_pos = copy_pos;
 
                 /// Substitute inside current match using instructions
@@ -137,23 +137,23 @@ struct ReplaceRegexpImpl
                     if (instr.substitution_num >= 0)
                     {
                         const auto & m = matches[instr.substitution_num];
-                        if (m.offset != std::string::npos)
-                            replacement = std::string_view(haystack_data + match_pos + m.offset, m.length);
-                        else
-                            replacement = std::string_view(haystack_data + match_pos, 0);
+                        replacement = std::string_view(haystack_data + match_pos + m.offset, m.length);
                     }
                     else
                         replacement = instr.literal;
 
                     res_data.resize(res_data.size() + replacement.size());
+                    // std::cout << "copy instruction:" << replacement << std::endl;
                     memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replacement.data(), replacement.size());
                     res_offset += replacement.size();
                 }
+                copy_pos += match.length;
+                match_pos = copy_pos;
 
                 if constexpr (replace == ReplaceRegexpTraits::Replace::First)
                     can_finish_current_string = true;
 
-                if (match.offset == std::string::npos)
+                if (match.length == 0)
                 {
                     /// Step one character to avoid infinite loop if match is empty
                     ++match_pos;
@@ -201,7 +201,7 @@ struct ReplaceRegexpImpl
         {
             searcher = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(needle));
         }
-        catch (const DB::Exception & e)
+        catch (const Exception & e)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
         }
@@ -264,9 +264,12 @@ struct ReplaceRegexpImpl
                 res_offsets[i] = res_offset;
             }
         }
-        catch (const DB::Exception & e)
+        catch (const Exception & e)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
+            if (e.code() == ErrorCodes::CANNOT_COMPILE_REGEXP)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
+            else
+                throw;
         }
     }
 
@@ -294,7 +297,7 @@ struct ReplaceRegexpImpl
         {
             searcher = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(needle));
         }
-        catch (const DB::Exception & e)
+        catch (const Exception & e)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
         }
@@ -366,9 +369,12 @@ struct ReplaceRegexpImpl
                 res_offsets[i] = res_offset;
             }
         }
-        catch (const DB::Exception & e)
+        catch (const Exception & e)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
+            if (e.code() == ErrorCodes::CANNOT_COMPILE_REGEXP)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
+            else
+                throw;
         }
     }
 
@@ -393,7 +399,7 @@ struct ReplaceRegexpImpl
         {
             searcher = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(needle));
         }
-        catch (const DB::Exception & e)
+        catch (const Exception & e)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
         }
