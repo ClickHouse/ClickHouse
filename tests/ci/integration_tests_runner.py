@@ -398,7 +398,7 @@ class ClickhouseIntegrationTestsRunner:
     @staticmethod
     def _compress_logs(directory, relpaths, result_path):
         retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            f"tar --use-compress-program='zstd --threads=0' -cf {result_path} -C "
+            f"sudo tar --use-compress-program='zstd --threads=0' -cf {result_path} -C "
             f"{directory} {' '.join(relpaths)}",
             shell=True,
         )
