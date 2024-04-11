@@ -127,8 +127,12 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
 
     if (stream)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
-            << "STREAM" << (settings.hilite ? hilite_none : "");
+        settings.ostr << settings.nl_or_ws << indent_str;
+
+        if (stream_settings)
+            stream_settings->formatImpl(settings, state, frame);
+        else
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "STREAM" << (settings.hilite ? hilite_none : "");
     }
 
     if (final)

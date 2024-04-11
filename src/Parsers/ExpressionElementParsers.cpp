@@ -1485,6 +1485,8 @@ const char * ParserAlias::restricted_keywords[] =
     "EXCEPT",
     "ELSE",
     "STREAM",
+    "TAIL",
+    "CURSOR",
     nullptr
 };
 

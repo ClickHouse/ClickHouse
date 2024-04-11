@@ -5,6 +5,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
 
@@ -31,7 +32,11 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     /// STREAM
     if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
+    {
         res->stream = true;
+        ParserStreamSettings stream_settings_p;
+        stream_settings_p.parse(pos, res->stream_settings, expected);
+    }
 
     /// FINAL
     if (ParserKeyword(Keyword::FINAL).ignore(pos, expected))
