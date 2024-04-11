@@ -1,17 +1,17 @@
 #include <gtest/gtest.h>
 
-#include <Core/Streaming/ICursor.h>
+#include <Core/Streaming/CursorTree.h>
 
 using namespace DB;
 
 GTEST_TEST(Cursor, Parsing)
 {
     Map collapsed_tree = {
-      Tuple{"shard-1.partition-1.block_number", 10},
-      Tuple{"shard-1.partition-1.block_offset", 42},
+        Tuple{"shard-1.partition-1.block_number", 10},
+        Tuple{"shard-1.partition-1.block_offset", 42},
     };
 
-    CursorTree tree = CursorTree::fromMap(collapsed_tree);
+    CursorTree tree(collapsed_tree);
     Map collapsed_tree_2 = tree.collapse();
 
     ASSERT_EQ(collapsed_tree.size(), collapsed_tree_2.size());
@@ -40,11 +40,11 @@ GTEST_TEST(Cursor, Parsing)
 GTEST_TEST(Cursor, Get)
 {
     Map collapsed_tree = {
-      Tuple{"shard-1.partition-1.block_number", 10},
-      Tuple{"shard-1.partition-1.block_offset", 42},
+        Tuple{"shard-1.partition-1.block_number", 10},
+        Tuple{"shard-1.partition-1.block_offset", 42},
     };
 
-    CursorTree tree = CursorTree::fromMap(collapsed_tree);
+    CursorTree tree(collapsed_tree);
     ASSERT_EQ(tree.getValue({"shard-1", "partition-1", "block_number"}), 10);
     ASSERT_EQ(tree.getValue({"shard-1", "partition-1", "block_offset"}), 42);
 
@@ -60,22 +60,22 @@ GTEST_TEST(Cursor, Get)
 GTEST_TEST(Cursor, SimpleOperations)
 {
     Map collapsed_tree = {
-      Tuple{"shard-1.partition-1.block_number", 10},
-      Tuple{"shard-1.partition-1.block_offset", 42},
+        Tuple{"shard-1.partition-1.block_number", 10},
+        Tuple{"shard-1.partition-1.block_offset", 42},
     };
 
-    CursorTree tree = CursorTree::fromMap(collapsed_tree);
+    CursorTree tree(collapsed_tree);
     ASSERT_EQ(tree.getValue({"shard-1", "partition-1", "block_number"}), 10);
 
     tree.updateTree({"shard-1", "partition-1", "block_number"}, 27);
     ASSERT_EQ(tree.getValue({"shard-1", "partition-1", "block_number"}), 27);
 
     Map collapsed_partition_tree = {
-      Tuple{"block_number", 100},
-      Tuple{"block_offset", 200},
+        Tuple{"block_number", 100},
+        Tuple{"block_offset", 200},
     };
 
-    CursorTree partition_tree = CursorTree::fromMap(collapsed_partition_tree);
+    CursorTree partition_tree(collapsed_partition_tree);
     tree.updateTree({"shard-1", "partition-1"}, partition_tree);
     ASSERT_EQ(tree.getValue({"shard-1", "partition-1", "block_number"}), 100);
     ASSERT_EQ(tree.getValue({"shard-1", "partition-1", "block_offset"}), 200);
