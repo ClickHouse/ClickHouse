@@ -17,7 +17,7 @@ class StorageFuzzQuery final : public IStorage
 public:
     struct Configuration : public StatelessTableEngineConfiguration
     {
-        String query = "";
+        String query;
         UInt64 random_seed = randomSeed();
     };
 
