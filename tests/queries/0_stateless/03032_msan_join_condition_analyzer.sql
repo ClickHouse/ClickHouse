@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS t2;
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE t2 (`key` Int32, `val` Int64) ENGINE = MergeTree ORDER BY key;
 insert into t1 Select number, number from numbers(100000);
-insert into t2 Select number, number from numbers(100000);
+insert into t2 Select number, number from numbers(10000);
 
 SELECT
     1 * 1000.0001,
@@ -23,3 +23,6 @@ FROM
 GROUP BY '65537'
     WITH CUBE
 SETTINGS max_block_size = 100, receive_timeout = 10., receive_data_timeout_ms = 10000, alter_sync = 2, allow_suspicious_low_cardinality_types = 1, log_queries = 1, table_function_remote_max_addresses = 200, join_use_nulls = 1, allow_experimental_analyzer = 1, max_execution_time = 0, max_memory_usage = 10000000000, send_logs_level = 'fatal', allow_introspection_functions = 1, insert_keeper_fault_injection_probability = 0.;
+
+DROP TABLE t1;
+DROP TABLE t2;
