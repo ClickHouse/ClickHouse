@@ -1034,20 +1034,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             {
                 return column_to_sum == Nested::extractTableName(name_and_type.name);
             };
-            const auto column_it = std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists);
-
-            if (columns.end() == column_it)
-            {
+            if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
                 throw Exception(
                     ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "Column {} listed in columns to sum does not exist in table declaration",
+                    "Column {} listed in columns to sum does not exist in table declaration.",
                     column_to_sum);
-            }
-            else if (!isNumber(column_it->type))
-            {
-                throw Exception(
-                    ErrorCodes::BAD_TYPE_OF_FIELD, "Column {} listed in columns to sum does not have number type", column_to_sum);
-            }
         }
 
         /// Check that summing columns are not in partition key.
@@ -3177,32 +3168,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         else if (command.column_name == merging_params.sign_column)
         {
             checkSpecialColumn<DataTypeUInt8>("sign", command);
-        }
-        else if (std::ranges::any_of(
-                     merging_params.columns_to_sum, [&](const String & column_to_sum) { return command.column_name == column_to_sum; }))
-        {
-            if (command.type == AlterCommand::MODIFY_COLUMN && !isNumber(command.data_type))
-            {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Cannot alter summarizing column ({}) to type {}, because it must have numeric type",
-                    command.column_name,
-                    command.data_type->getName());
-            }
-            else if (command.type == AlterCommand::DROP_COLUMN)
-            {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP summarizing column ({})",
-                    backQuoteIfNeed(command.column_name));
-            }
-            else if (command.type == AlterCommand::RENAME_COLUMN)
-            {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER RENAME summarizing column ({})",
-                    backQuoteIfNeed(command.column_name));
-            }
         }
 
         if (command.type == AlterCommand::MODIFY_QUERY)
