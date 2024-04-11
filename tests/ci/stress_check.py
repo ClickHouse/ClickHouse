@@ -18,12 +18,14 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 
-def get_additional_envs() -> List[str]:
+def get_additional_envs(check_name) -> List[str]:
     result = []
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
+    if "azure" in check_name:
+        result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
 
     return result
 
@@ -143,7 +145,7 @@ def run_stress_test(docker_image_name: str) -> None:
         pr_info, stopwatch.start_time_str, check_name
     )
 
-    additional_envs = get_additional_envs()
+    additional_envs = get_additional_envs(check_name)
 
     run_command = get_run_command(
         packages_path,
