@@ -5632,7 +5632,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_column.type = constant_node->getResultType();
             argument_is_constant = true;
         }
-        else if(const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
+        else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
                 get_scalar_function_node && get_scalar_function_node->getFunctionName() == "__getScalar")
         {
             /// Allow constant folding through getScalar
