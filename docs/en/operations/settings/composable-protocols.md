@@ -41,7 +41,7 @@ where:
   * `interserver` - clickhouse interserver handler
 
 :::note
-`gRPC` protocol handler is not inmplemented for `Composable protocols`
+`gRPC` protocol handler is not implemented for `Composable protocols`
 :::
  
 ## Endpoint (i.e. listening port) is denoted by `<port>` and (optional) `<host>` tags
