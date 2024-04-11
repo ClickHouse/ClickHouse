@@ -1,0 +1,11 @@
+<test>
+    
+<create_query>create table test_date(date String) engine = Memory();</create_query>
+
+<fill_query>insert into test_date select 'NULL' from numbers(1000000);</fill_query>
+
+<query>select parseDateTimeInJodaSyntaxOrZero(date, 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk') from test_date settings max_threads=10 format Null;</query>
+
+<drop_query>DROP TABLE IF EXISTS test_date</drop_query>
+
+</test>
