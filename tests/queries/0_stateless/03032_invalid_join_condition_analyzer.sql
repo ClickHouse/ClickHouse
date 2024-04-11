@@ -8,8 +8,11 @@ insert into t2 Select number, number from numbers(10);
 
 SET allow_experimental_analyzer = 1;
 
+SELECT * FROM t1 WHERE 0 OR inf; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT * FROM t1 WHERE a OR inf; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT * FROM t1 WHERE a OR inf; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT * FROM t1 WHERE 0 OR nan; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT * FROM t1 WHERE a OR nan; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT * FROM t1 WHERE a OR 1 OR inf ORDER BY a;
 SELECT * FROM t1 WHERE a OR 1 OR nan ORDER BY a;
