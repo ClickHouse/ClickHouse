@@ -40,6 +40,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserToken s_semicolon(TokenType::Semicolon);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
@@ -146,9 +147,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data,
         /// and if values followed by semicolon, the data should be null.
-        if (pos->type != TokenType::Semicolon)
+        if (!s_semicolon.checkWithoutMoving(pos, expected))
             data = pos->begin;
-
         format_str = "Values";
     }
     else if (s_format.ignore(pos, expected))

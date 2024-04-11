@@ -124,7 +124,7 @@ void RestorerFromBackup::run(Mode mode)
         restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
     /// Do renaming in the create queries according to the renaming config.
-    renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
+    renaming_map = BackupUtils::makeRenamingMap(restore_query_elements);
 
     /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
     findRootPathsInBackup();
@@ -346,12 +346,12 @@ void RestorerFromBackup::findDatabasesAndTablesInBackup()
         {
             case ASTBackupQuery::ElementType::TABLE:
             {
-                findTableInBackup({element.database_name, element.table_name}, element.partitions);
+                findTableInBackup({element.database_name, element.table_name}, /* skip_if_inner_table= */ false, element.partitions);
                 break;
             }
             case ASTBackupQuery::ElementType::TEMPORARY_TABLE:
             {
-                findTableInBackup({DatabaseCatalog::TEMPORARY_DATABASE, element.table_name}, element.partitions);
+                findTableInBackup({DatabaseCatalog::TEMPORARY_DATABASE, element.table_name}, /* skip_if_inner_table= */ false, element.partitions);
                 break;
             }
             case ASTBackupQuery::ElementType::DATABASE:
@@ -370,14 +370,14 @@ void RestorerFromBackup::findDatabasesAndTablesInBackup()
     LOG_INFO(log, "Will restore {} databases and {} tables", getNumDatabases(), getNumTables());
 }
 
-void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
 {
     schedule(
-        [this, table_name_in_backup, partitions]() { findTableInBackupImpl(table_name_in_backup, partitions); },
+        [this, table_name_in_backup, skip_if_inner_table, partitions]() { findTableInBackupImpl(table_name_in_backup, skip_if_inner_table, partitions); },
         "Restore_FindTbl");
 }
 
-void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
 {
     bool is_temporary_table = (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -422,6 +422,10 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
             = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
     }
 
+    QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
+    if (skip_if_inner_table && BackupUtils::isInnerTable(table_name))
+        return;
+
     auto read_buffer = backup->readFile(*metadata_path);
     String create_query_str;
     readStringUntilEOF(create_query_str, *read_buffer);
@@ -431,8 +435,6 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
     String create_table_query_str = serializeAST(*create_table_query);
-
-    QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
     auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query);
@@ -568,7 +570,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
         if (except_table_names.contains({database_name_in_backup, table_name_in_backup}))
             continue;
 
-        findTableInBackup({database_name_in_backup, table_name_in_backup}, /* partitions= */ {});
+        findTableInBackup({database_name_in_backup, table_name_in_backup}, /* skip_if_inner_table= */ true, /* partitions= */ {});
     }
 }
 
@@ -767,7 +769,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
 
             ASTPtr existing_database_def = database->getCreateDatabaseQuery();
             ASTPtr database_def_from_backup = database_info.create_database_query;
-            if (!compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
+            if (!BackupUtils::compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
@@ -938,7 +940,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         {
             ASTPtr existing_table_def = database->getCreateTableQuery(resolved_id.table_name, context);
             ASTPtr table_def_from_backup = table_info.create_table_query;
-            if (!compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
+            if (!BackupUtils::compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
