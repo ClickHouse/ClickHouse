@@ -10,9 +10,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -61,7 +58,6 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
             }
         }
     }
-    LOG_ERROR(getLogger("JSONEachRowRowInputFormat"), "xxx throw on duplicated fields: {}", format_settings_.json.throw_on_duplicated_fields);
 }
 
 const String & JSONEachRowRowInputFormat::columnName(size_t i) const
