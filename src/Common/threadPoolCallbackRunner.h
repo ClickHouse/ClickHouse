@@ -73,10 +73,10 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, c
 /// NOTE It's still not completely safe.
 /// When creating a runner on stack, you MUST make sure that it's created (and destroyed) before local objects captured by task lambda.
 
-template <typename Result, typename Callback = std::function<Result()>>
+template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
 class ThreadPoolCallbackRunnerLocal
 {
-    ThreadPool & pool;
+    PoolT & pool;
     std::string thread_name;
 
     enum TaskState
@@ -106,7 +106,7 @@ class ThreadPoolCallbackRunnerLocal
     }
 
 public:
-    ThreadPoolCallbackRunnerLocal(ThreadPool & pool_, const std::string & thread_name_)
+    ThreadPoolCallbackRunnerLocal(PoolT & pool_, const std::string & thread_name_)
         : pool(pool_)
         , thread_name(thread_name_)
     {
