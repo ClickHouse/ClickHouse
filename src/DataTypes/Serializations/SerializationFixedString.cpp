@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
@@ -267,6 +268,11 @@ void SerializationFixedString::deserializeTextCSV(IColumn & column, ReadBuffer &
 bool SerializationFixedString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     return tryRead(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto<ColumnFixedString::Chars, false, false>(data, istr, csv); return true; });
+}
+
+void SerializationFixedString::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for FixedString");
 }
 
 void SerializationFixedString::serializeTextMarkdown(

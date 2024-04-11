@@ -96,6 +96,13 @@ bool SerializationDecimal<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer
 }
 
 template <typename T>
+void SerializationDecimal<T>::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
+}
+
+template <typename T>
 void SerializationDecimal<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.json.quote_decimals)

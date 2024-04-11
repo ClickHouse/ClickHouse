@@ -282,4 +282,9 @@ bool SerializationDateTime64::tryDeserializeTextCSV(IColumn & column, ReadBuffer
     return true;
 }
 
+void SerializationDateTime64::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeText(column, row_num, ostr, settings);
+}
+
 }
