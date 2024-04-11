@@ -719,6 +719,11 @@ void SerializationVariant::serializeTextCSV(const IColumn & column, size_t row_n
         variants[global_discr]->serializeTextCSV(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
 }
 
+void SerializationVariant::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for Variant");
+}
+
 bool SerializationVariant::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;

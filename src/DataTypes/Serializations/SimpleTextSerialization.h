@@ -81,6 +81,12 @@ protected:
         return tryDeserializeText(column, istr, settings, false);
     }
 
+    void serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const override
+    {
+        // Only implement the data types supportted in Hive.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for this type.");
+    }
+
     /// whole = true means that buffer contains only one value, so we should read until EOF.
     /// It's needed to check if there is garbage after parsed field.
     virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const = 0;

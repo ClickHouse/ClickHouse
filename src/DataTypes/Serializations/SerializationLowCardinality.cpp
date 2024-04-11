@@ -745,6 +745,11 @@ bool SerializationLowCardinality::tryDeserializeTextCSV(IColumn & column, ReadBu
     return tryDeserializeImpl(column, &ISerialization::tryDeserializeTextCSV, istr, settings);
 }
 
+void SerializationLowCardinality::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for LowCardinality");
+}
+
 void SerializationLowCardinality::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeText, ostr, settings);

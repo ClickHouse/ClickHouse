@@ -9,6 +9,7 @@
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <iostream>
 
 
 namespace DB
@@ -83,6 +84,8 @@ ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) 
 
 SerializationPtr DataTypeNullable::doGetDefaultSerialization() const
 {
+    auto ntype = nested_data_type.get();
+    std::cout << "DataTypeNullable " << nested_data_type->getName() << " t: " << typeid(*ntype).name() << std::endl;
     return std::make_shared<SerializationNullable>(nested_data_type->getDefaultSerialization());
 }
 

@@ -472,6 +472,11 @@ bool SerializationString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
     return read<bool>(column, [&](ColumnString::Chars & data) { readCSVStringInto<ColumnString::Chars, false, false>(data, istr, settings.csv); return true; });
 }
 
+void SerializationString::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+}
+
 void SerializationString::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {

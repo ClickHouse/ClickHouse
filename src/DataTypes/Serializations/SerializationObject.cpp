@@ -526,6 +526,12 @@ void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_
 }
 
 template <typename Parser>
+void SerializationObject<Parser>::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for Object");
+}
+
+template <typename Parser>
 void SerializationObject<Parser>::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {

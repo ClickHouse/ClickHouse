@@ -185,6 +185,11 @@ void SerializationInterval::serializeTextCSV(const IColumn & column, size_t row,
     dispatch(&ISerialization::serializeTextCSV, settings.interval.output_format, column, row, ostr, settings);
 }
 
+void SerializationInterval::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for Interval");
+}
+
 void SerializationInterval::serializeTextEscaped(
     const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {

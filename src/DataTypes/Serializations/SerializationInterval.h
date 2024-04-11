@@ -62,6 +62,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
     void serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextCSV(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextHive(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextEscaped(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextJSON(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextQuoted(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;

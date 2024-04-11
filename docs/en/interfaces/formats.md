@@ -92,6 +92,7 @@ The supported formats are:
 | [DWARF](#dwarf)                                                                           | ✔    | ✗     |
 | [Markdown](#markdown)                                                                     | ✗    | ✔     |
 | [Form](#form)                                                                             | ✔    | ✗     |
+| [HiveText](#hivetext)                                                                     | ✗    | ✔     |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -2872,3 +2873,14 @@ c.tti.m:  raf
 rt.start: navigation
 rt.bmr:   390,11,10
 ```
+
+## HiveText {#hivetext}
+
+You can use this format to generate output same as [Hive](https://cwiki.apache.org/confluence/display/Hive/UserGuide).
+
+When formatting, all fields are onput in a row without any quote. Fields are seperated by a delimiter charactor, which is '\001' by default. Rows are separated using the Unix line feed (LF). Values in complex types such as Array, Map and Tuple are seperated by delimiter charactor calculated by their loop level based on fields delimiter.
+
+``` bash
+$ clickhouse-client --query="INSERT INTO function file('test.hivetext') select '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555));"
+```
+

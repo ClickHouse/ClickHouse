@@ -60,6 +60,7 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
+| [HiveText](#hivetext)                                                                   | ✔     | ✔      |
 
 
 您可以使用ClickHouse设置一些格式化参数。更多详情设置请参考[设置](../operations/settings/settings.md)
@@ -1455,3 +1456,16 @@ f9725a22f9191e064120d718e26862a9  -
 限制:
 - 在解析错误的情况下 `JSONEachRow` 跳过该行的所有数据，直到遇到新行(或EOF)，所以行必须由换行符分隔以正确统计错误行的数量。
 - `Template` 和 `CustomSeparated` 在最后一列之后和行之间使用分隔符来查找下一行的开头，所以跳过错误只有在行分隔符和列分隔符其中至少有一个不为空时才有效。
+
+
+
+## HiveText {#hivetext}
+
+你可以使用这种格式来输出跟[Hive](https://cwiki.apache.org/confluence/display/Hive/UserGuide)文本表相同的结果。
+
+这种格式下，每一行数据的不同列之间通过一个分隔符来区分，这个分隔符默认是'\001'，每行数据在结果中用换行符'\n'来分割。复杂数据类型比如数组、字典、元组等，它们的元素之间分割是根据嵌套层级计算出来的。
+
+``` bash
+$ clickhouse-client --query="INSERT INTO function file('test.hivetext') select '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555));"
+```
+

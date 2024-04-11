@@ -648,6 +648,16 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
         nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
 
+void SerializationNullable::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    if (col.isNullAt(row_num))
+        writeString(settings.csv.null_representation, ostr);
+    else
+        nested->serializeTextHive(col.getNestedColumn(), row_num, ostr, settings);
+}
+
 void SerializationNullable::serializeNullCSV(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
 {
     writeString(settings.csv.null_representation, ostr);

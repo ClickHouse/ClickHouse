@@ -264,6 +264,11 @@ bool SerializationFixedString::tryDeserializeTextCSV(IColumn & column, ReadBuffe
     return tryRead(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto<ColumnFixedString::Chars, false, false>(data, istr, csv); return true; });
 }
 
+void SerializationFixedString::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for FixedString");
+}
+
 void SerializationFixedString::serializeTextMarkdown(
     const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
 {

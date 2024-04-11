@@ -549,6 +549,19 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
     return tryDeserializeText(column, rb, settings, true);
 }
 
+void SerializationTuple::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (i != 0)
+            writeChar(settings.hive_text.fields_delimiter + 1, ostr);
+
+        auto child_settings = settings;
+        child_settings.hive_text.fields_delimiter = settings.hive_text.fields_delimiter + 1;
+        elems[i]->serializeTextHive(extractElementColumn(column, i), row_num, ostr, child_settings);
+    }
+}
+
 void SerializationTuple::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,

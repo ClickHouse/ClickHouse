@@ -124,6 +124,11 @@ bool SerializationDate32::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
     return true;
 }
 
+void SerializationDate32::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeText(column, row_num, ostr, settings);
+}
+
 SerializationDate32::SerializationDate32(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
 {
 }

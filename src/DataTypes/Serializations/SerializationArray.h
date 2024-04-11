@@ -33,6 +33,8 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
     /** Streaming serialization of arrays is arranged in a special way:
       * - elements placed in a row are written/read without array sizes;
       * - the sizes are written/read in a separate stream,

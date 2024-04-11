@@ -356,6 +356,11 @@ void SerializationSparse::deserializeTextCSV(IColumn &, ReadBuffer &, const Form
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextCSV' is not implemented for SerializationSparse");
 }
 
+void SerializationSparse::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextHive' is not implemented for SerializationSparse");
+}
+
 void SerializationSparse::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);

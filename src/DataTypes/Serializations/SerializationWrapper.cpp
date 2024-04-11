@@ -131,6 +131,11 @@ bool SerializationWrapper::tryDeserializeTextCSV(IColumn & column, ReadBuffer & 
     return nested_serialization->tryDeserializeTextCSV(column, istr, settings);
 }
 
+void SerializationWrapper::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    nested_serialization->serializeTextHive(column, row_num, ostr, settings);
+}
+
 void SerializationWrapper::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     nested_serialization->serializeText(column, row_num, ostr, settings);

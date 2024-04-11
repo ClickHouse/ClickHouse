@@ -327,6 +327,11 @@ bool SerializationBool::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
     return deserializeImpl<bool>(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\n' || *buf.position() == '\r'; });
 }
 
+void SerializationBool::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeCustom(column, row_num, ostr, settings);
+}
+
 void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeCustom(column, row_num, ostr, settings);
