@@ -28,18 +28,20 @@ namespace ProfileEvents
     extern const Event DiskAzureListObjects;
     extern const Event AzureDeleteObjects;
     extern const Event DiskAzureDeleteObjects;
+    extern const Event AzureGetProperties;
+    extern const Event DiskAzureGetProperties;
+    extern const Event AzureCopyObject;
+    extern const Event DiskAzureCopyObject;
 }
 
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int UNSUPPORTED_METHOD;
 }
-
 
 namespace
 {
@@ -346,9 +348,13 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) const
 {
+    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
+    ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+
     auto client_ptr = client.get();
     auto blob_client = client_ptr->GetBlobClient(path);
     auto properties = blob_client.GetProperties().Value;
+
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
     if (!properties.Metadata.empty())
@@ -378,6 +384,9 @@ void AzureObjectStorage::copyObject( /// NOLINT
         for (const auto & [key, value] : *object_to_attributes)
             copy_options.Metadata[key] = value;
     }
+
+    ProfileEvents::increment(ProfileEvents::AzureCopyObject);
+    ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
     dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
 }

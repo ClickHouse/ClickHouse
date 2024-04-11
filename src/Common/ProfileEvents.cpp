@@ -439,12 +439,14 @@ The server successfully detected this situation and will download merged part fr
     M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
+    M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
     M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
     M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.") \
     \
     M(ReadBufferFromAzureMicroseconds, "Time spent on reading from Azure.") \
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.") \
