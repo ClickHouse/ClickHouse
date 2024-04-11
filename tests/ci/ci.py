@@ -2121,11 +2121,13 @@ def main() -> int:
                     pr_info,
                     dump_to_file=True,
                 )
-                update_mergeable_check(
-                    commit,
-                    pr_info,
-                    job_report.check_name or _get_ext_check_name(args.job_name),
-                )
+                if not pr_info.is_merge_queue():
+                    # in the merge queue mergeable status must be set only in FinishCheck (last job in wf)
+                    update_mergeable_check(
+                        commit,
+                        pr_info,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
+                    )
 
             print(f"Job report url: [{check_url}]")
             prepared_events = prepare_tests_results_for_clickhouse(
