@@ -159,9 +159,9 @@ public:
     static constexpr auto name = "splitByRegexp";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<SplitByRegexpOverloadResolver>(context); }
 
-    explicit SplitByRegexpOverloadResolver(ContextPtr context_) : context(context_), split_by_regexp(FunctionSplitByRegexp::create(context))
-    {
-    }
+    explicit SplitByRegexpOverloadResolver(ContextPtr context_)
+        : context(context_)
+        , split_by_regexp(FunctionSplitByRegexp::create(context)) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return SplitByRegexpImpl::getNumberOfArguments(); }
@@ -169,7 +169,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        /// If the first argument is a trivial char, fallback splitByRegexp to splitByChar for better performance
+        /// If the first argument is a trivial char, fallback from splitByRegexp to splitByChar for better performance
         if (patternIsTrivialChar(arguments))
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
         else

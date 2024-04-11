@@ -69,6 +69,7 @@ public:
         max_splits = extractMaxSplits(arguments, 2);
 
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(arguments[strings_argument_position].column.get());
+        /// There is another possibility that the input column is ColumnConst. We ignore it because there is no need to get reserve size under such condition.
         if (col_str)
         {
             const ColumnString::Chars & src_chars = col_str->getChars();
