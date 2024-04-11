@@ -7074,7 +7074,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
-std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPart(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
@@ -7084,23 +7084,28 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const WriteSettings & write_settings)
 {
     chassert(!isStaticStorage());
-    bool on_same_disk = false;
-    for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
+
+    /// Check that the storage policy contains the disk where the src_part is located.
+    bool does_storage_policy_allow_same_disk = false;
+    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
         if (disk->getName() == src_part->getDataPartStorage().getDiskName())
         {
-            on_same_disk = true;
+            does_storage_policy_allow_same_disk = true;
             break;
         }
     }
-
+    if (!does_storage_policy_allow_same_disk)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Could not clone and load part {} because disk does not belong to storage policy",
+            quoteString(src_part->getDataPartStorage().getFullPath()));
 
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
     auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
     /// Why it is needed if we only hardlink files?
-    /// Answer: In issue #59377, add copy when attach from different disk.
     auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
     auto src_part_storage = src_part->getDataPartStoragePtr();
 
@@ -7108,30 +7113,16 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
     String with_copy;
-    if (params.copy_instead_of_hardlink || !on_same_disk)
+    if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-
-    std::shared_ptr<IDataPartStorage> dst_part_storage{};
-    if (on_same_disk && !params.copy_instead_of_hardlink)
-    {
-        dst_part_storage = src_part_storage->freeze(
-            relative_data_path,
-            tmp_dst_part_name,
-            read_settings,
-            write_settings,
-            /* save_metadata_callback= */ {},
-            params);
-    }
-    else
-    {
-        auto reservation_on_dst = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
-        if (!reservation_on_dst)
-            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
-        dst_part_storage = src_part_storage->clonePart(
-            this->getRelativeDataPath(), tmp_dst_part_name, reservation_on_dst->getDisk(), read_settings, write_settings, {}, {});
-    }
-
+    auto dst_part_storage = src_part_storage->freeze(
+        relative_data_path,
+        tmp_dst_part_name,
+        read_settings,
+        write_settings,
+        /* save_metadata_callback= */ {},
+        params);
 
     if (params.metadata_version_to_write.has_value())
     {
@@ -7153,7 +7144,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         .withPartFormatFromDisk()
         .build();
 
-    if (on_same_disk && !params.copy_instead_of_hardlink && params.hardlinked_files)
+    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
     {
         params.hardlinked_files->source_part_name = src_part->name;
         params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
@@ -7196,7 +7187,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }
-
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
