@@ -1,10 +1,9 @@
 #pragma once
 
-
 #include <Poco/Net/StreamSocket.h>
 
-#include <Common/SSH/Wrappers.h>
 #include <Common/callOnce.h>
+#include <Common/SSHWrapper.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -53,7 +52,7 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const ssh::SSHKey & ssh_private_key_,
+        const SSHKey & ssh_private_key_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
@@ -170,7 +169,9 @@ private:
     String default_database;
     String user;
     String password;
-    ssh::SSHKey ssh_private_key;
+#if USE_SSH
+    SSHKey ssh_private_key;
+#endif
     String quota_key;
 
     /// For inter-server authorization
@@ -265,9 +266,10 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
-    String packStringForSshSign(String challenge);
 
+#if USE_SSH
     void performHandshakeForSSHAuth();
+#endif
 
     void sendAddendum();
     void receiveHello(const Poco::Timespan & handshake_timeout);
