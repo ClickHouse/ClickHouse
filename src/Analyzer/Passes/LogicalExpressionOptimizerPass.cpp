@@ -627,7 +627,7 @@ private:
         if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
             return;
 
-        if (function_node.getResultType()->isNullable() && !child_function->getResultType()->isNullable())
+        if (removeLowCardinality(constant->getResultType())->isNullable())
             need_rerun_resolve = true;
 
         if (maybe_invert)
