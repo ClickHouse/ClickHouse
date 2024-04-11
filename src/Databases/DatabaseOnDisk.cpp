@@ -352,8 +352,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     fs::remove(table_metadata_path_drop);
 }
 
-void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & table_name, bool /*sync*/) {
-
+void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
+{
     /// Check that table detached (doesn't exists still exists metadata)
     if (isTableExist(table_name, getContext()))
         throw Exception(
@@ -361,9 +361,9 @@ void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & 
 
     waitDatabaseStarted();
 
-    assert(fs::exists(getObjectMetadataPath(table_name)));        
+    assert(fs::exists(getObjectMetadataPath(table_name)));
     const String table_metadata_path = getObjectMetadataPath(table_name);
-        
+
     const String table_metadata_path_drop = table_metadata_path + drop_suffix;
     const String table_data_path_relative = GetTableDataPathFromDetachedMetadata(local_context, table_metadata_path);
 
@@ -387,7 +387,6 @@ void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & 
 
         if (fs::exists(table_data_dir))
             fs::remove_all(table_data_dir);
-        
     }
     catch (...)
     {
@@ -403,7 +402,8 @@ void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & 
     LOG_DEBUG(log, "finish drop table_name={}", table_name);
 }
 
-String DatabaseOnDisk::GetTableDataPathFromDetachedMetadata(ContextPtr local_context, const String& table_metadata_path) const {
+String DatabaseOnDisk::GetTableDataPathFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
+{
     ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
     auto & create_detached = ast_detached->as<ASTCreateQuery &>();
 

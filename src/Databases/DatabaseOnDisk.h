@@ -47,10 +47,7 @@ public:
         const String & table_name,
         bool sync) override;
 
-    void dropDetachedTable(
-        ContextPtr context,
-        const String & name,
-        bool sync) override;
+    void dropDetachedTable(ContextPtr context, const String & name, bool sync) override;
 
     void renameTable(
         ContextPtr context,
@@ -109,7 +106,7 @@ protected:
 
 private:
     // @TODO describe decision (uuid)
-    String GetTableDataPathFromDetachedMetadata(ContextPtr local_context, const String& table_metadata_path) const;
+    String GetTableDataPathFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const;
 };
 
 }

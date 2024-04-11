@@ -137,18 +137,20 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
-    if (context_->getSettingsRef().allow_drop_detached_table) {
-        if (query.kind == ASTDropQuery::Kind::Drop) {
+    if (context_->getSettingsRef().allow_drop_detached_table)
+    {
+        if (query.kind == ASTDropQuery::Kind::Drop)
+        {
             auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
 
             const auto table_name = table_id.getTableName();
 
             /// check that table is detached
-            if (!database->isTableExist(table_name, context_) &&
-                fs::exists(database->getObjectMetadataPath(table_name))) {
+            if (!database->isTableExist(table_name, context_) && fs::exists(database->getObjectMetadataPath(table_name)))
+            {
                 database->dropDetachedTable(context_, table_id.getTableName());
                 return {};
-            }        
+            }
         }
     }
 
