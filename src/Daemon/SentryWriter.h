@@ -25,10 +25,15 @@ public:
     /// @return nullptr if initializeInstance() was not called (i.e. for non-server) or SentryWriter object
     static SentryWriter * getInstance();
 
-    /// Not signal safe and can't be called from a signal handler
-    /// @param sig_or_error - signal if >= 0, otherwise exception code
-    void onFault(
-        int sig_or_error,
+    void onSignal(
+        int sig,
+        const std::string & error_message,
+        const FramePointers & frame_pointers,
+        size_t offset,
+        size_t size);
+
+    void onException(
+        int code,
         const std::string & error_message,
         const FramePointers & frame_pointers,
         size_t offset,
@@ -43,4 +48,20 @@ private:
     std::string server_data_path;
 
     explicit SentryWriter(Poco::Util::LayeredConfiguration & config);
+
+    enum Type
+    {
+        SIGNAL,
+        EXCEPTION,
+    };
+
+    /// Not signal safe and can't be called from a signal handler
+    /// @param sig_or_error - signal if >= 0, otherwise exception code
+    void sendError(
+        Type type,
+        int sig_or_error,
+        const std::string & error_message,
+        const FramePointers & frame_pointers,
+        size_t offset,
+        size_t size);
 };

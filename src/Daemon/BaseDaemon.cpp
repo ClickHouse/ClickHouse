@@ -499,7 +499,7 @@ private:
         if (sig != SanitizerTrap)
         {
             if (auto * sentry = SentryWriter::getInstance())
-                sentry->onFault(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
 
             /// Advice the user to send it manually.
             if (std::string_view(VERSION_OFFICIAL).contains("official build"))
@@ -1030,7 +1030,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
                     SentryWriter::FramePointers frame_pointers;
                     for (size_t i = 0; i < trace.size(); ++i)
                         frame_pointers[i] = trace[i];
-                    sentry->onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
                 }
             };
         }

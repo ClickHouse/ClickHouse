@@ -147,24 +147,39 @@ SentryWriter::~SentryWriter()
         sentry_shutdown();
 }
 
-void SentryWriter::onFault(int sig_or_error, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+void SentryWriter::onSignal(int sig, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+{
+    sendError(Type::SIGNAL, sig, error_message, frame_pointers, offset, size);
+}
+
+void SentryWriter::onException(int code, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+{
+    sendError(Type::EXCEPTION, code, error_message, frame_pointers, offset, size);
+}
+
+void SentryWriter::sendError(Type type, int sig_or_error, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
 {
     auto logger = getLogger("SentryWriter");
     if (initialized)
     {
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
-        if (sig_or_error > 0)
+        switch (type)
         {
-            int sig = sig_or_error;
-            sentry_set_tag("signal", strsignal(sig)); // NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
-            sentry_set_extra("signal_number", sentry_value_new_int32(sig));
-        }
-        else
-        {
-            /// Can be only LOGICAL_ERROR, but just in case.
-            int code = -sig_or_error;
-            sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());
-            sentry_set_extra("exception_code", sentry_value_new_int32(code));
+            case SIGNAL:
+            {
+                int sig = sig_or_error;
+                sentry_set_tag("signal", strsignal(sig)); // NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
+                sentry_set_extra("signal_number", sentry_value_new_int32(sig));
+                break;
+            }
+            case EXCEPTION:
+            {
+                int code = sig_or_error;
+                /// Can be only LOGICAL_ERROR, but just in case.
+                sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());
+                sentry_set_extra("exception_code", sentry_value_new_int32(code));
+                break;
+            }
         }
 
         #if defined(__ELF__) && !defined(OS_FREEBSD)
@@ -242,6 +257,8 @@ SentryWriter * SentryWriter::getInstance() { return nullptr; }
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration &) {}
 SentryWriter::~SentryWriter() = default;
-void SentryWriter::onFault(int, const std::string &, const FramePointers &, size_t, size_t) {}
+void SentryWriter::sendError(Type, int, const std::string &, const FramePointers &, size_t, size_t) {}
+void SentryWriter::onSignal(int, const std::string &, const FramePointers &, size_t, size_t) {}
+void SentryWriter::onException(int, const std::string &, const FramePointers &, size_t, size_t) {}
 
 #endif
