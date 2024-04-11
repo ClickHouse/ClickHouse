@@ -83,7 +83,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, StyleCheck]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
