@@ -74,17 +74,6 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
 
         auto block = squashing.add({});
         chunk.setColumns(block.getColumns(), block.rows());
-
-        /// ISimpleTransform keeps output chunk (result of transform() execution) for some time and push it in the output port within subsequent prepare() call.
-        /// Because of our custom prepare() implementation we have to take care of both places where data could be buffered: `output_data` and `squashing`.
-        if (output_data.chunk.hasRows())
-        {
-            auto res = std::move(output_data.chunk);
-            output_data.chunk.clear();
-            if (chunk.hasRows())
-                res.append(chunk);
-            chunk = std::move(res);
-        }
     }
 }
 
@@ -92,7 +81,21 @@ IProcessor::Status SimpleSquashingChunksTransform::prepare()
 {
     if (!finished && input.isFinished())
     {
+        if (output.isFinished())
+            return Status::Finished;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (has_output)
+        {
+            output.pushData(std::move(output_data));
+            has_output = false;
+            return Status::PortFull;
+        }
+
         finished = true;
+        /// On the next call to transform() we will return all data buffered in `squashing` (if any)
         return Status::Ready;
     }
     return ISimpleTransform::prepare();
