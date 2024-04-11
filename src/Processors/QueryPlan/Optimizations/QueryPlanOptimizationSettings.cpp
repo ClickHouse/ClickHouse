@@ -22,6 +22,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
 
     settings.filter_push_down = from.query_plan_enable_optimizations && from.query_plan_filter_push_down;
 
+    settings.optimize_prewhere = from.query_plan_enable_optimizations && from.query_plan_optimize_prewhere;
+
     settings.execute_functions_after_sorting = from.query_plan_enable_optimizations && from.query_plan_execute_functions_after_sorting;
 
     settings.reuse_storage_ordering_for_window_functions = from.query_plan_enable_optimizations && from.query_plan_reuse_storage_ordering_for_window_functions;

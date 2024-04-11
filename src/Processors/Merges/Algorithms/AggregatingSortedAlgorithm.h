@@ -1,9 +1,10 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Common/AlignedBuffer.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Common/AlignedBuffer.h>
 
 namespace DB
 {
@@ -47,7 +48,7 @@ public:
         bool created = false;
 
         SimpleAggregateDescription(
-            AggregateFunctionPtr function_, const size_t column_number_,
+            AggregateFunctionPtr function_, size_t column_number_,
             DataTypePtr nested_type_, DataTypePtr real_type_);
 
         void createState();

@@ -111,7 +111,6 @@
     M(PerfLocalMemoryReferences) \
     M(PerfLocalMemoryMisses) \
 \
-    M(CreatedHTTPConnections) \
     M(CannotWriteToWriteBufferDiscard) \
 \
     M(S3ReadMicroseconds) \
@@ -180,8 +179,6 @@
     M(ReadBufferFromS3RequestsErrors) \
     M(ReadBufferFromS3ResetSessions) \
     M(ReadBufferFromS3PreservedSessions) \
-\
-    M(ReadWriteBufferFromHTTPPreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \
@@ -284,7 +281,12 @@
     M(InterfaceMySQLSendBytes) \
     M(InterfaceMySQLReceiveBytes) \
     M(InterfacePostgreSQLSendBytes) \
-    M(InterfacePostgreSQLReceiveBytes)
+    M(InterfacePostgreSQLReceiveBytes) \
+\
+    M(KeeperLogsEntryReadFromLatestCache) \
+    M(KeeperLogsEntryReadFromCommitCache) \
+    M(KeeperLogsEntryReadFromFile) \
+    M(KeeperLogsPrefetchedEntries) \
 
 namespace ProfileEvents
 {

@@ -110,15 +110,13 @@ public:
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
         std::vector<AlterConversionsPtr> alter_conversions_,
-        Names real_column_names_,
-        Names virt_column_names_,
+        Names all_column_names_,
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
-        StorageSnapshotPtr storage_snapshot,
-        ContextPtr context_,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context_,
         size_t max_block_size_,
         size_t num_streams_,
-        bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
@@ -135,11 +133,9 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    const Names & getRealColumnNames() const { return real_column_names; }
-    const Names & getVirtualColumnNames() const { return virt_column_names; }
+    const Names & getAllColumnNames() const { return all_column_names; }
 
     StorageID getStorageID() const { return data.getStorageID(); }
-    const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
@@ -158,16 +154,13 @@ public:
     static AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
-        const PrewhereInfoPtr & prewhere_info,
-        const ActionDAGNodes & added_filter_nodes,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
-        const Names & real_column_names,
-        bool sample_factor_column_queried,
+        const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes);
 
@@ -175,8 +168,6 @@ public:
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions) const;
 
-    ContextPtr getContext() const { return context; }
-    const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
     const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
@@ -185,9 +176,8 @@ public:
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
     bool readsInOrder() const;
 
-    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
-    bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
@@ -205,7 +195,7 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
     static AnalysisResultPtr selectRangesToReadImpl(
@@ -217,8 +207,7 @@ private:
         size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
-        const Names & real_column_names,
-        bool sample_factor_column_queried,
+        const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes);
 
@@ -235,24 +224,18 @@ private:
     MergeTreeData::DataPartsVector prepared_parts;
     std::vector<AlterConversionsPtr> alter_conversions_for_parts;
 
-    Names real_column_names;
-    Names virt_column_names;
+    Names all_column_names;
 
     const MergeTreeData & data;
-    SelectQueryInfo query_info;
-    PrewhereInfoPtr prewhere_info;
     LazilyReadInfoPtr lazily_read_info;
     ExpressionActionsSettings actions_settings;
 
-    StorageSnapshotPtr storage_snapshot;
     StorageMetadataPtr metadata_for_reading;
 
-    ContextPtr context;
     const MergeTreeReadTask::BlockSizeParams block_size;
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
-    const bool sample_factor_column_queried;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
@@ -293,7 +276,9 @@ private:
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+
     AnalysisResultPtr analyzed_result_ptr;
+    VirtualFields shared_virtual_fields;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;

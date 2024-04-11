@@ -35,4 +35,10 @@ public:
         DeserializeBinaryBulkStatePtr & state) const override;
 };
 
+extern template class SerializationDecimalBase<Decimal32>;
+extern template class SerializationDecimalBase<Decimal64>;
+extern template class SerializationDecimalBase<Decimal128>;
+extern template class SerializationDecimalBase<Decimal256>;
+extern template class SerializationDecimalBase<DateTime64>;
+
 }

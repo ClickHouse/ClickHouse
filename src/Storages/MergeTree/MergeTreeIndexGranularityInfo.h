@@ -18,11 +18,13 @@ class MergeTreeData;
   */
 struct MarkType
 {
-    MarkType(std::string_view extension);
+    explicit MarkType(std::string_view extension);
     MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_);
 
     static bool isMarkFileExtension(std::string_view extension);
     std::string getFileExtension() const;
+
+    std::string describe() const;
 
     bool adaptive = false;
     bool compressed = false;
@@ -58,6 +60,8 @@ public:
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
     static std::optional<MarkType> getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage);
+
+    std::string describe() const;
 };
 
 constexpr inline auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }

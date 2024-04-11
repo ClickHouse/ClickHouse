@@ -18,12 +18,13 @@ ColumnsDescription StorageSystemFormats::getColumnsDescription()
     };
 }
 
-void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & formats = FormatFactory::instance().getAllFormats();
     for (const auto & pair : formats)
     {
-        const auto & [format_name, creators] = pair;
+        const auto & [name, creators] = pair;
+        String format_name = creators.name;
         UInt64 has_input_format(creators.input_creator != nullptr || creators.random_access_input_creator != nullptr);
         UInt64 has_output_format(creators.output_creator != nullptr);
         UInt64 supports_parallel_parsing(creators.file_segmentation_engine_creator != nullptr || creators.random_access_input_creator != nullptr);

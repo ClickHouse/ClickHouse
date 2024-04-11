@@ -73,6 +73,7 @@ namespace
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
             .disable_checksum = local_settings.s3_disable_checksum,
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+            .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
         return S3::ClientFactory::instance().create(
@@ -123,11 +124,12 @@ BackupReaderS3::BackupReaderS3(
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    bool is_internal_backup)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
+    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
 {
     auto & request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context_->getSettingsRef());
@@ -213,11 +215,12 @@ BackupWriterS3::BackupWriterS3(
     const String & storage_class_name,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    bool is_internal_backup)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
+    , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
 {
     auto & request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context_->getSettingsRef());

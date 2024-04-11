@@ -388,7 +388,7 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
     return result;
 }
 
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join)
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join, bool recursive)
 {
     QueryTreeNodes result;
 
@@ -406,12 +406,25 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
         {
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
-            case QueryTreeNodeType::QUERY:
-                [[fallthrough]];
-            case QueryTreeNodeType::UNION:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                if (recursive)
+                    nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                if (recursive)
+                {
+                    for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                        nodes_to_process.push_back(union_node);
+                }
                 result.push_back(std::move(node_to_process));
                 break;
             }
@@ -745,6 +758,28 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
     function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
 
     return function_node;
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr table_node, const ContextPtr & context)
+{
+    const auto & storage_snapshot = table_node->as<TableNode>()->getStorageSnapshot();
+    auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+    size_t columns_to_select_size = columns_to_select.size();
+    auto column_nodes_to_select = std::make_shared<ListNode>();
+    column_nodes_to_select->getNodes().reserve(columns_to_select_size);
+    NamesAndTypes projection_columns;
+    projection_columns.reserve(columns_to_select_size);
+    for (auto & column : columns_to_select)
+    {
+        column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, table_node));
+        projection_columns.emplace_back(column.name, column.type);
+    }
+    auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(context));
+    subquery_for_table->setIsSubquery(true);
+    subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
+    subquery_for_table->getJoinTree() = std::move(table_node);
+    subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
+    return subquery_for_table;
 }
 
 }

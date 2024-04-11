@@ -41,14 +41,12 @@ public:
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
-        const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const LazilyReadInfoPtr & lazily_read_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
-        const MergeTreeReaderSettings & reader_settings_,
-        const Names & virt_column_names_);
+        const MergeTreeReaderSettings & reader_settings_);
 
     String getName() const;
 
@@ -56,9 +54,7 @@ public:
         Block block,
         Block lazily_read_block,
         const LazilyReadInfoPtr & lazily_read_info,
-        const PrewhereInfoPtr & prewhere_info,
-        const DataTypePtr & partition_value_type,
-        const Names & virtual_columns);
+        const PrewhereInfoPtr & prewhere_info);
 
     Block getHeader() const { return result_header; }
 
@@ -76,30 +72,19 @@ public:
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
 private:
-    /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
-    struct BlockAndProgress
-    {
-        Block block;
-        size_t row_count = 0;
-        size_t num_read_rows = 0;
-        size_t num_read_bytes = 0;
-    };
-
-    /// Used for filling header with no rows as well as block with data
-    static void injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
     static void injectLazilyReadColumns(
         size_t rows,
         Block & block,
         Block & lazily_read_block,
         MergeTreeReadTask * task,
         const LazilyReadInfoPtr & lazily_read_info);
-    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 
     /// Sets up range readers corresponding to data readers
     void initializeRangeReaders();
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
+    const StorageSnapshotPtr storage_snapshot;
 
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
@@ -109,17 +94,11 @@ private:
 
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
-    const Names virt_column_names;
-    const DataTypePtr partition_value_type;
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;
     /// This step is added when the part has lightweight delete mask
     PrewhereExprStepPtr lightweight_delete_filter_step;
-    /// These columns will be filled by the merge tree range reader
-    Names non_const_virtual_column_names;
-    /// This header is used for chunks from readFromPart().
-    Block header_without_const_virtual_columns;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
     /// This header is used for lazily reading.

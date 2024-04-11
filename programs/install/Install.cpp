@@ -433,7 +433,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-client",
             "clickhouse-local",
             "clickhouse-benchmark",
-            "clickhouse-copier",
             "clickhouse-obfuscator",
             "clickhouse-git-import",
             "clickhouse-compressor",
@@ -663,7 +662,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "        <server>\n"
                     "            <certificateFile>" << (config_dir / "server.crt").string() << "</certificateFile>\n"
                     "            <privateKeyFile>" << (config_dir / "server.key").string() << "</privateKeyFile>\n"
-                    "            <dhParamsFile>" << (config_dir / "dhparam.pem").string() << "</dhParamsFile>\n"
                     "        </server>\n"
                     "    </openSSL>\n"
                     "</clickhouse>\n";

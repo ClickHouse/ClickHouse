@@ -1266,7 +1266,7 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
-        settings.enable_lazy_execution_for_first_argument = false;
+        settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
         settings.force_enable_lazy_execution = false;
         return true;
@@ -1411,6 +1411,11 @@ public:
 REGISTER_FUNCTION(If)
 {
     factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
+}
+
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
 }
 
 }

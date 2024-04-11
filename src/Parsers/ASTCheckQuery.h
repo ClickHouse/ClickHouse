@@ -49,10 +49,12 @@ protected:
         {
             if (database)
             {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(getDatabase()) << (settings.hilite ? hilite_none : "");
-                settings.ostr << ".";
+                database->formatImpl(settings, state, frame);
+                settings.ostr << '.';
             }
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(getTable()) << (settings.hilite ? hilite_none : "");
+
+            chassert(table);
+            table->formatImpl(settings, state, frame);
         }
 
         if (partition)

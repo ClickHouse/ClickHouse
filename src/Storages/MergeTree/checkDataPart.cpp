@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -58,7 +57,7 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_MREMAP;
 }
 
-bool isRetryableException(const std::exception_ptr exception_ptr)
+bool isRetryableException(std::exception_ptr exception_ptr)
 {
     try
     {
@@ -258,7 +257,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
+        if (isGinFile(file_name))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
@@ -286,11 +285,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             return {};
 
         auto projection_file = name + ".proj";
-        if (!throw_on_broken_projection && projection->is_broken)
-        {
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-        }
 
         IMergeTreeDataPart::Checksums projection_checksums;
         try
@@ -307,13 +301,19 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
                 throw;
 
+            is_broken_projection = true;
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+
+            const auto exception_message = getCurrentExceptionMessage(true);
+
             if (!projection->is_broken)
             {
-                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
-                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
+                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
+                            name, projection_file, exception_message);
+                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
             }
 
-            is_broken_projection = true;
             if (throw_on_broken_projection)
             {
                 if (!broken_projections_message.empty())
@@ -321,12 +321,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 broken_projections_message += fmt::format(
                     "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, getCurrentExceptionMessage(false));
-                continue;
+                    data_part->name, name, exception_message);
             }
 
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
+            continue;
         }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
@@ -357,14 +355,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
-IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
-{
-    IMergeTreeDataPart::Checksums data_checksums;
-    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
-    data_part->checksums.checkEqual(data_checksums, true);
-    return data_checksums;
-}
-
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
@@ -372,9 +362,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
     std::function<bool()> is_cancelled,
     bool throw_on_broken_projection)
 {
-    if (auto part_in_memory = asInMemoryPart(data_part))
-        return checkDataPartInMemory(part_in_memory);
-
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.

@@ -19,8 +19,9 @@
 namespace DB
 {
 
-class StorageSystemKafkaConsumers;
 class ReadFromStorageKafka;
+class StorageSystemKafkaConsumers;
+class ThreadStatus;
 
 struct StorageKafkaInterceptors;
 
@@ -41,6 +42,8 @@ public:
         const ColumnsDescription & columns_,
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
+
+    ~StorageKafka() override;
 
     std::string getName() const override { return "Kafka"; }
 
@@ -74,8 +77,6 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    NamesAndTypesList getVirtuals() const override;
-    Names getVirtualColumnNames() const;
     StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
     struct SafeConsumers
@@ -145,7 +146,6 @@ private:
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & kafka_config);
 
-    String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;
@@ -159,6 +159,8 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     void cleanConsumers();
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }
