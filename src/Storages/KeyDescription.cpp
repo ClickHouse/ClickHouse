@@ -122,7 +122,7 @@ KeyDescription KeyDescription::Builder::buildFromString(const String & str_, con
 
     ParserExpression parser;
     ASTPtr ast = parseQuery(parser, "(" + str_ + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    FunctionNameNormalizer().visit(ast.get());
+    FunctionNameNormalizer::visit(ast.get());
 
     return buildFromAST(ast, columns_, context_);
 }
