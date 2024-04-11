@@ -88,7 +88,7 @@ public:
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
     /// For log and exception messages.
-    const String & getDescription(bool with_extra = false) const override;
+    const String & getDescription(bool with_extra = false) const override; /// NOLINT
     const String & getHost() const;
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;

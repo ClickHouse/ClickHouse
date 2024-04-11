@@ -475,7 +475,7 @@ const String & Connection::getDefaultDatabase() const
     return default_database;
 }
 
-const String & Connection::getDescription(bool with_extra) const
+const String & Connection::getDescription(bool with_extra) const /// NOLINT
 {
     if (with_extra)
         return full_description;
