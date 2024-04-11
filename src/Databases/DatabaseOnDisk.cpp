@@ -359,6 +359,8 @@ void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & 
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
+    waitDatabaseStarted();
+
     assert(fs::exists(getObjectMetadataPath(table_name)));        
     const String table_metadata_path = getObjectMetadataPath(table_name);
         

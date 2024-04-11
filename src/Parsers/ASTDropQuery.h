@@ -23,9 +23,6 @@ public:
     bool if_exists{false};
     bool if_empty{false};
 
-    /// For `DROP DETACHED TABLE` query
-    bool if_drop_detached{true};
-
     /// Useful if we already have a DDL lock
     bool no_ddl_lock{false};
 
