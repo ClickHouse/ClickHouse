@@ -62,10 +62,6 @@ public:
         {
             if (!isFinite(x))
             {
-                /// When converting to bool it's ok (non-zero converts to true, NaN including).
-                if (std::is_same_v<T, bool>)
-                    return true;
-
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
             }
