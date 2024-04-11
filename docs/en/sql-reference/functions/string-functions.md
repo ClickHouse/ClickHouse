@@ -254,13 +254,69 @@ Result:
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
+*Syntax**
+
+``` sql
+lower(input)
+```
+
 Alias: `lcase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT lower('CLICKHOUSE');
+```
+
+```response
+┌─lower('CLICKHOUSE')─┐
+│ clickhouse          │
+└─────────────────────┘
+```
 
 ## upper
 
 Converts the ASCII Latin symbols in a string to uppercase.
 
+**Syntax**
+
+``` sql
+upper(input)
+```
+
 Alias: `ucase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT upper('clickhouse');
+```
+
+``` response
+┌─upper('clickhouse')─┐
+│ CLICKHOUSE          │
+└─────────────────────┘
+```
 
 ## lowerUTF8
 
@@ -277,6 +333,34 @@ Converts a string to uppercase, assuming that the string contains valid UTF-8 en
 Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+**Syntax**
+
+``` sql
+upperUTF8(input)
+```
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT upperUTF8('München') as Upperutf8;
+```
+
+``` response
+┌─Upperutf8─┐
+│ MÜNCHEN   │
+└───────────┘
+```
 
 ## isValidUTF8
 
