@@ -1749,7 +1749,7 @@ Result:
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for unit `day` (see [toRelativeDayNum](#torelativedaynum)), 1 month for unit `month` (see [toRelativeMonthNum](#torelativemonthnum)) and 1 year for unit `year` (see [toRelativeYearNum](#torelativeyearnum)).
 
-If unit `week` was specified, `date_diff` assumes by default that weeks start on Monday. You can change this behavior with setting [`first_day_of_week`](../../operations/settings/settings.md/#first-day-of-week)
+If unit `week` was specified, `date_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
 
 For an alternative to `date_diff`, see function `age`.
 
@@ -2842,7 +2842,7 @@ Result:
 
 ## fromUnixTimestamp
 
-This function converts a Unix timestamp to a calendar date and a time of a day. 
+This function converts a Unix timestamp to a calendar date and a time of a day.
 
 It can be called in two ways:
 
