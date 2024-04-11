@@ -164,6 +164,8 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         StringRef name_ref = readColumnName(*in);
         if (seen_columns_count >= total_columns && !format_settings.json.throw_on_duplicated_fields)
         {
+            // Keep parsing the remaining fields in case of the json is invalid.
+            // But not look up the name in the name_map since the cost cannot be ignored
             JSONUtils::skipColon(*in);
             skipUnknownField(name_ref);
             continue;
