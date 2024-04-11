@@ -6638,19 +6638,21 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
         for (const auto & part : precommitted_parts)
             part->version.creation_csn.store(Tx::RolledBackCSN);
 
+        auto non_detached_precommitted_parts = precommitted_parts;
+
         /// Remove detached parts from working set.
         ///
         /// It is possible to have detached parts here, only when rename (in
         /// commit()) of detached parts had been broken (i.e. during ATTACH),
         /// i.e. the part itself is broken.
         DataPartsVector detached_precommitted_parts;
-        for (auto it = precommitted_parts.begin(); it != precommitted_parts.end();)
+        for (auto it = non_detached_precommitted_parts.begin(); it != non_detached_precommitted_parts.end();)
         {
             const auto & part = *it;
             if (part->getDataPartStorage().getParentDirectory() == DETACHED_DIR_NAME)
             {
                 detached_precommitted_parts.push_back(part);
-                it = precommitted_parts.erase(it);
+                it = non_detached_precommitted_parts.erase(it);
             }
             else
                 ++it;
@@ -6658,7 +6660,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
 
         WriteBufferFromOwnString buf;
         buf << "Removing parts:";
-        for (const auto & part : precommitted_parts)
+        for (const auto & part : non_detached_precommitted_parts)
             buf << " " << part->getDataPartStorage().getPartDirectory();
         buf << ".";
         if (!detached_precommitted_parts.empty())
@@ -6679,7 +6681,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
             if (!data.all_data_dropped)
             {
                 Strings part_names;
-                for (const auto & part : precommitted_parts)
+                for (const auto & part : non_detached_precommitted_parts)
                     part_names.emplace_back(part->name);
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "There are some PreActive parts ({}) to rollback, "
                                 "but data parts set is empty and table {} was not dropped. It's a bug",
@@ -6693,7 +6695,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
                 &our_lock);
 
             data.removePartsFromWorkingSet(txn,
-                DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
+                DataPartsVector(non_detached_precommitted_parts.begin(), non_detached_precommitted_parts.end()),
                 /* clear_without_timeout = */ true, &our_lock);
         }
     }
