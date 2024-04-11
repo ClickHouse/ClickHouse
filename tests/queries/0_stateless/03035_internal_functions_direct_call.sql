@@ -9,6 +9,8 @@ SELECT __actionName('aaa', materialize('aaa')); -- { serverError BAD_ARGUMENTS,I
 SELECT __actionName(materialize('aaa'), 'aaa'); -- { serverError ILLEGAL_COLUMN }
 SELECT __actionName('aaa', 'aaa');
 
+SELECT concat(__actionName('aaa', toNullable('x')), '1') GROUP BY __actionName('aaa', 'x'); -- { serverError BAD_ARGUMENTS }
+
 SELECT __getScalar('aaa'); -- { serverError BAD_ARGUMENTS }
 SELECT __getScalar(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT __getScalar(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
