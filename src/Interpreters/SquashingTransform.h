@@ -113,4 +113,61 @@ private:
     Chunk convertToChunk(std::vector<Chunk> &chunks);
 };
 
+class NewSquashingBlockTransform
+{
+public:
+    NewSquashingBlockTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_);
+
+    Block add(Chunk && input_chunk);
+
+private:
+    size_t min_block_size_rows;
+    size_t min_block_size_bytes;
+
+    Block accumulated_block;
+
+    Block addImpl(Chunk && chunk);
+
+    void append(Block && input_block);
+
+    bool isEnoughSize(const Block & block);
+    bool isEnoughSize(size_t rows, size_t bytes) const;
+};
+
+struct BlocksToSquash : public ChunkInfo
+{
+    mutable std::vector<Block> blocks = {};
+};
+
+class BalanceBlockTransform
+{
+public:
+    BalanceBlockTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+
+    Chunk add(Block && input_block);
+    bool isDataLeft()
+    {
+        return !blocks_to_merge_vec.empty();
+    }
+
+private:
+    std::vector<Block> blocks_to_merge_vec = {};
+    size_t min_block_size_rows;
+    size_t min_block_size_bytes;
+
+    Block accumulated_block;
+    const Block header;
+
+    // template <typename ReferenceType>
+    Chunk addImpl(Block && input_block);
+
+    bool isEnoughSize(const std::vector<Block> & blocks);
+    bool isEnoughSize(size_t rows, size_t bytes) const;
+    void checkAndWaitMemoryAvailability(size_t bytes);
+
+    MemoryTracker * memory_tracker;
+
+    Chunk convertToChunk(std::vector<Block> &blocks);
+};
+
 }

@@ -31,7 +31,7 @@ private:
     size_t CalculateBlockSize(const Block & block);
     Chunk chunk;
     size_t max_memory_usage;
-    BalanceTransform balance;
+    BalanceBlockTransform balance;
     bool has_data = false;
     std::vector<char> was_output_processed;
 
