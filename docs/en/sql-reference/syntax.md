@@ -86,11 +86,11 @@ The following Numeric literals are supported:
 **Exponential notation** - `1e100`, `-1e-100`
 **Floating point numbers** – `123.456`, `inf`, `nan`
 
-Hex – `0xc0fe`
-SQL Standard compatible hex string – `x'c0fe'`
+**Hex** – `0xc0fe`
+**SQL Standard compatible hex string** – `x'c0fe'`
 
-Binary – `0b1101`
-SQL Standard compatible binary string - `b'1101'`
+**Binary** – `0b1101`
+**SQL Standard compatible binary string** - `b'1101'`
 
 Octal literals are not supported to avoid accidental errors in interpretation.
 
