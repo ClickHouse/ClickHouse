@@ -33,7 +33,6 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     /// STREAM
     if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
     {
-        res->stream = true;
         ParserStreamSettings stream_settings_p;
         stream_settings_p.parse(pos, res->stream_settings, expected);
     }

@@ -770,12 +770,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
             std::optional<TableExpressionModifiers> table_expression_modifiers;
 
-            if (table_expression.final || table_expression.stream || table_expression.sample_size)
+            if (table_expression.final || table_expression.stream_settings || table_expression.sample_size)
             {
                 bool has_final = table_expression.final;
-                bool has_stream = table_expression.stream;
+                std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+
+                if (table_expression.stream_settings)
+                {
+                    auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
+                    stream_settings = ast_stream_settings.settings;
+                }
 
                 if (table_expression.sample_size)
                 {
@@ -789,7 +795,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                     }
                 }
 
-                table_expression_modifiers = TableExpressionModifiers(has_final, has_stream, sample_size_ratio, sample_offset_ratio);
+                table_expression_modifiers = TableExpressionModifiers(has_final, stream_settings, sample_size_ratio, sample_offset_ratio);
             }
 
             if (table_expression.database_and_table_name)

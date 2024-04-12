@@ -721,19 +721,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             if (table_expression_query_info.table_expression_modifiers)
             {
                 const auto & table_expression_modifiers = table_expression_query_info.table_expression_modifiers;
-                bool has_stream = table_expression_modifiers->hasStream();
+                auto stream_settings = table_expression_modifiers->getStreamSettings();
                 auto sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
                 auto sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
 
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
-                    has_stream,
+                    stream_settings,
                     sample_size_ratio,
                     sample_offset_ratio);
             }
             else
             {
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
-                    false,
+                    {} /*stream_settings*/,
                     {} /*sample_size_ratio*/,
                     {} /*sample_offset_ratio*/);
             }

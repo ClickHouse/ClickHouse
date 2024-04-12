@@ -46,7 +46,7 @@ private:
         if (!is_final_supported)
             return;
 
-        TableExpressionModifiers table_expression_modifiers_with_final(true /*has_final*/, false, {}, {});
+        TableExpressionModifiers table_expression_modifiers_with_final(true /*has_final*/, {}, {}, {});
 
         if (table_node)
         {

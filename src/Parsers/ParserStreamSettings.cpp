@@ -73,12 +73,10 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword s_tail{Keyword::TAIL};
     ParserKeyword s_cursor{Keyword::CURSOR};
 
-    StreamReadingStage stage = StreamReadingStage::AllData;
-    std::optional<String> keeper_key;
-    std::optional<Map> collapsed_tree;
+    ASTStreamSettings::StreamSettings settings;
 
     if (s_tail.ignore(pos, expected))
-        stage = StreamReadingStage::TailOnly;
+        settings.stage = StreamReadingStage::TailOnly;
     else if (s_cursor.ignore(pos, expected))
     {
         ParserStringLiteral keeper_key_p;
@@ -88,16 +86,16 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         ASTPtr collapsed_tree_ast;
 
         if (keeper_key_p.parse(pos, keeper_key_ast, expected))
-            keeper_key = keeper_key_ast->as<ASTLiteral>()->value.safeGet<String>();
+            settings.keeper_key = keeper_key_ast->as<ASTLiteral>()->value.safeGet<String>();
 
         if (cursor_p.parse(pos, collapsed_tree_ast, expected))
-            collapsed_tree = collapsed_tree_ast->as<ASTLiteral>()->value.safeGet<Map>();
+            settings.collapsed_tree = collapsed_tree_ast->as<ASTLiteral>()->value.safeGet<Map>();
 
         if (keeper_key_ast == nullptr && collapsed_tree_ast == nullptr)
             return false;
     }
 
-    node = std::make_shared<ASTStreamSettings>(stage, std::move(keeper_key), std::move(collapsed_tree));
+    node = std::make_shared<ASTStreamSettings>(std::move(settings));
 
     return true;
 }

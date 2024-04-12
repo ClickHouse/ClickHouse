@@ -8,16 +8,19 @@
 namespace DB
 {
 
-
 /// TODO
 class ASTStreamSettings : public IAST
 {
 public:
-    StreamReadingStage stage;
-    std::optional<String> keeper_key;
-    std::optional<Map> collapsed_tree;
+    struct StreamSettings {
+        StreamReadingStage stage = StreamReadingStage::AllData;
+        std::optional<String> keeper_key;
+        std::optional<Map> collapsed_tree;
+    };
 
-    ASTStreamSettings(StreamReadingStage stage_, std::optional<String> keeper_key_, std::optional<Map> collapsed_tree_);
+    StreamSettings settings;
+
+    explicit ASTStreamSettings(StreamSettings settings_);
 
     String getID(char) const override { return "ASTStreamSettings"; }
 

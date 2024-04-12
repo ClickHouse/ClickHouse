@@ -1,5 +1,7 @@
 #include <Analyzer/TableExpressionModifiers.h>
 
+#include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -12,9 +14,25 @@ namespace DB
 
 void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 {
-    buffer << "stream: " << has_stream;
-
     buffer << "final: " << has_final;
+
+    if (stream_settings)
+    {
+        buffer << ", stream(";
+
+        if (stream_settings->stage == StreamReadingStage::TailOnly)
+            buffer << "stage: tail";
+        else
+            buffer << "stage: all";
+
+        if (stream_settings->keeper_key)
+            buffer << ", keeper: " << quoteString(stream_settings->keeper_key.value());
+
+        if (stream_settings->collapsed_tree)
+            buffer << ", collapsed_tree: " << applyVisitor(FieldVisitorToString(), Field(stream_settings->collapsed_tree.value()));
+
+        buffer << ")";
+    }
 
     if (sample_size_ratio)
         buffer << ", sample_size: " << ASTSampleRatio::toString(*sample_size_ratio);
@@ -25,10 +43,17 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 {
-    hash_state.update(has_stream);
     hash_state.update(has_final);
+    hash_state.update(stream_settings.has_value());
     hash_state.update(sample_size_ratio.has_value());
     hash_state.update(sample_offset_ratio.has_value());
+
+    if (stream_settings.has_value())
+    {
+        hash_state.update(stream_settings->stage);
+        hash_state.update(stream_settings->collapsed_tree);
+        hash_state.update(stream_settings->keeper_key);
+    }
 
     if (sample_size_ratio.has_value())
     {
@@ -47,8 +72,19 @@ String TableExpressionModifiers::formatForErrorMessage() const
 {
     WriteBufferFromOwnString buffer;
 
-    if (has_stream)
+    if (stream_settings)
+    {
         buffer << "STREAM";
+
+        if (stream_settings->stage == StreamReadingStage::TailOnly)
+            buffer << " TAIL";
+
+        if (stream_settings->keeper_key)
+            buffer << " " << quoteString(stream_settings->keeper_key.value());
+
+        if (stream_settings->collapsed_tree)
+            buffer << " " << applyVisitor(FieldVisitorToString(), Field(stream_settings->collapsed_tree.value()));
+    }
 
     if (has_final)
         buffer << "FINAL";

@@ -32,8 +32,8 @@ static String cursorToString(const Map & cursor)
     return wb.str();
 }
 
-ASTStreamSettings::ASTStreamSettings(StreamReadingStage stage_, std::optional<String> keeper_key_, std::optional<Map> collapsed_tree_)
-    : stage{std::move(stage_)}, keeper_key{keeper_key_}, collapsed_tree{std::move(collapsed_tree_)}
+ASTStreamSettings::ASTStreamSettings(StreamSettings settings_)
+    : settings{std::move(settings_)}
 {
 }
 
@@ -41,17 +41,17 @@ void ASTStreamSettings::formatImpl(const FormatSettings & format, FormatState &,
 {
     format.ostr << (format.hilite ? hilite_keyword : "") << "STREAM" << (format.hilite ? hilite_none : "");
 
-    if (stage == StreamReadingStage::TailOnly)
+    if (settings.stage == StreamReadingStage::TailOnly)
         format.ostr << (format.hilite ? hilite_keyword : "") << " TAIL" << (format.hilite ? hilite_none : "");
-    else if (collapsed_tree.has_value() || keeper_key.has_value())
+    else if (settings.collapsed_tree.has_value() || settings.keeper_key.has_value())
     {
         format.ostr << (format.hilite ? hilite_keyword : "") << " CURSOR" << (format.hilite ? hilite_none : "");
 
-        if (keeper_key.has_value())
-            format.ostr << " " << quoteString(keeper_key.value());
+        if (settings.keeper_key.has_value())
+            format.ostr << " " << quoteString(settings.keeper_key.value());
 
-        if (collapsed_tree.has_value())
-            format.ostr << " " << cursorToString(collapsed_tree.value());
+        if (settings.collapsed_tree.has_value())
+            format.ostr << " " << cursorToString(settings.collapsed_tree.value());
     }
 }
 
