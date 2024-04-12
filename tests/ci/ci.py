@@ -1436,7 +1436,7 @@ def _configure_jobs(
     )
 
     if pr_info.is_merge_queue():
-        # no need to run pending job in MQ, since it's pending - it's not affected by current checnge
+        # do not run in-progress jobs in MQ, since it's in-progress current change does not affect it (it's digest)
         for job_to_wait in jobs_to_wait:
             if job_to_wait in jobs_to_do:
                 print(f"Remove pending job [{job_to_wait}] from MQ workflow")
