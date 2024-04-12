@@ -1227,8 +1227,11 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         else
         {
             if (!source_column_names.empty())
-                for (const auto & name : columns_context.requiredColumns())
+            {
+                ss << ", source columns: ";
+                for (const auto & name : source_column_names)
                     ss << " '" << name << "'";
+            }
             else
                 ss << ", no source columns";
         }
