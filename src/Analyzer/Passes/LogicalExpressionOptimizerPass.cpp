@@ -25,8 +25,9 @@ class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWi
 public:
     using Base = InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>;
 
-    explicit JoinOnLogicalExpressionOptimizerVisitor(ContextPtr context)
+    explicit JoinOnLogicalExpressionOptimizerVisitor(const JoinNode * join_node_, ContextPtr context)
         : Base(std::move(context))
+        , join_node(join_node_)
     {}
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -55,10 +56,11 @@ public:
     }
 
 private:
+    const JoinNode * join_node;
     bool need_rerun_resolve = false;
 
     /// Returns true if type of some operand is changed and parent function needs to be re-resolved
-    static bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
+    bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
     {
         auto & function_node = node->as<FunctionNode &>();
         chassert(function_node.getFunctionName() == "or");
@@ -93,6 +95,21 @@ private:
             const auto & func_name = argument_function->getFunctionName();
             if (func_name == "equals" || func_name == "isNotDistinctFrom")
             {
+                const auto & argument_nodes = argument_function->getArguments().getNodes();
+                if (argument_nodes.size() != 2)
+                    continue;
+                /// We can rewrite to a <=> b only if we are joining on a and b,
+                /// because the function is not yet implemented for other cases.
+                auto first_src = getExpressionSource(argument_nodes[0]);
+                auto second_src = getExpressionSource(argument_nodes[1]);
+                if (!first_src || !second_src)
+                    continue;
+                const auto & lhs_join = *join_node->getLeftTableExpression();
+                const auto & rhs_join = *join_node->getRightTableExpression();
+                bool arguments_from_both_sides = (first_src->isEqual(lhs_join) && second_src->isEqual(rhs_join)) ||
+                                                 (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
+                if (!arguments_from_both_sides)
+                    continue;
                 equals_functions_indices.push_back(or_operands.size() - 1);
             }
             else if (func_name == "and")
@@ -231,7 +248,7 @@ public:
             /// Operator <=> is not supported outside of JOIN ON section
             if (join_node->hasJoinExpression())
             {
-                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(getContext());
+                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
             return;

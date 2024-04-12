@@ -418,7 +418,7 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -839,7 +839,7 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info,
