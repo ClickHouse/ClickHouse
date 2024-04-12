@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Functions/Regexps.h>
+#include <Functions/ReplaceStringImpl.h>
 #include <IO/WriteHelpers.h>
 #include <base/types.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Functions/Regexps.h>
 #include <Common/re2.h>
 
 namespace DB
@@ -25,6 +26,22 @@ struct ReplaceRegexpTraits
         All
     };
 };
+
+namespace
+{
+constexpr ReplaceStringTraits::Replace convertToReplaceStringTraits(ReplaceRegexpTraits::Replace replace)
+{
+    switch (replace)
+    {
+        case ReplaceRegexpTraits::Replace::First:
+            return ReplaceStringTraits::Replace::First;
+        case ReplaceRegexpTraits::Replace::All:
+            return ReplaceStringTraits::Replace::All;
+    }
+    UNREACHABLE();
+}
+
+}
 
 /** Replace all matches of regexp 'needle' to string 'replacement'.
   * 'replacement' can contain substitutions, for example: '\2-\3-\1'
@@ -180,6 +197,31 @@ struct ReplaceRegexpImpl
         ++res_offset;
     }
 
+    static bool couldFallBackToReplaceString(const String & needle, const String & replacement, const std::shared_ptr<OptimizedRegularExpression> & searcher)
+    {
+        if (searcher->getNumberOfSubpatterns())
+            return false;
+
+        /// Check if there are any backreferences in the replacement string.
+        for (size_t i = 0; i < replacement.size(); ++i)
+        {
+            if (replacement[i] == '\\' && i + 1 < replacement.size())
+            {
+                if (isNumericASCII(replacement[i + 1])) /// Substitution
+                    return false;
+                else /// Escaping
+                    ++i;
+            }
+        }
+
+        /// Check if the regexp is simple enough to be replaced with a simple string search.
+        std::string required_substring;
+        bool is_trivial;
+        bool required_substring_is_prefix;
+        searcher->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+        return is_trivial && required_substring_is_prefix && required_substring == needle;
+    }
+
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -204,6 +246,13 @@ struct ReplaceRegexpImpl
         catch (const Exception & e)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", e.message());
+        }
+
+        if (couldFallBackToReplaceString(needle, replacement, searcher))
+        {
+            ReplaceStringImpl<Name, convertToReplaceStringTraits(replace)>::vectorConstantConstant(
+                haystack_data, haystack_offsets, needle, replacement, res_data, res_offsets);
+            return;
         }
 
         int num_captures = std::min<int>(searcher->getNumberOfSubpatterns() + 1, max_captures);
