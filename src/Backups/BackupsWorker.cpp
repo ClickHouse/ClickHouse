@@ -27,6 +27,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace CurrentMetrics
 {
@@ -562,7 +564,7 @@ void BackupsWorker::doBackup(
 
     /// Checks access rights if this is not ON CLUSTER query.
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = getRequiredAccessToBackup(backup_query->elements);
+    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
         context->checkAccess(required_access);
 
@@ -940,6 +942,7 @@ void BackupsWorker::doRestore(
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
     backup_open_params.read_settings = getReadSettingsForRestore(context);
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
+    backup_open_params.is_internal_backup = restore_settings.internal;
     BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
     String current_database = context->getCurrentDatabase();
