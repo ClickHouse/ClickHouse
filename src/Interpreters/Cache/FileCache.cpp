@@ -890,14 +890,14 @@ bool FileCache::tryReserve(
         {
             cache_lock.lock();
             /// Invalidate queue entries if some succeeded to be removed.
-            eviction_candidates.finalize(query_context.get(), &cache_lock);
+            eviction_candidates.finalize(query_context.get(), cache_lock);
             throw;
         }
 
         cache_lock.lock();
 
         /// Invalidate and remove queue entries and execute finalize func.
-        eviction_candidates.finalize(query_context.get(), &cache_lock);
+        eviction_candidates.finalize(query_context.get(), cache_lock);
     }
     else if (!main_priority->canFit(size, required_elements_num, cache_lock, queue_iterator))
     {
@@ -1438,30 +1438,24 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
                     cache_lock.unlock();
 
-                    auto finalize_eviction = [&]()
-                    {
-                        if (eviction_candidates.requiresLockToFinalize())
+                    SCOPE_EXIT({
+                        try
                         {
-                            cache_lock.lock();
-                            eviction_candidates.finalize(nullptr, &cache_lock);
+                            if (eviction_candidates.needFinalize())
+                            {
+                                cache_lock.lock();
+                                eviction_candidates.finalize(nullptr, cache_lock);
+                            }
                         }
-                        else
-                            eviction_candidates.finalize(nullptr);
-                    };
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                            chassert(false);
+                        }
+                    });
 
-                    try
-                    {
-                        /// Do actual eviction from filesystem.
-                        eviction_candidates.evict();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                        finalize_eviction();
-                        throw;
-                    }
-
-                    finalize_eviction();
+                    /// Do actual eviction from filesystem.
+                    eviction_candidates.evict();
                 }
 
                 modified_size_limit = true;

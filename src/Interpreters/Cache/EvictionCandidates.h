@@ -25,9 +25,9 @@ public:
 
     void finalize(
         FileCacheQueryLimit::QueryContext * query_context,
-        const CachePriorityGuard::Lock * lock = nullptr);
+        const CachePriorityGuard::Lock & lock);
 
-    bool requiresLockToFinalize() const;
+    bool needFinalize() const;
 
     size_t size() const { return candidates_size; }
 
@@ -42,8 +42,6 @@ public:
         const CachePriorityGuard::Lock &);
 
 private:
-    void releaseSpaceHolders();
-
     struct KeyCandidates
     {
         KeyMetadataPtr key_metadata;

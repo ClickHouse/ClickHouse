@@ -283,8 +283,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     if (max_candidates_to_evict && res.size() >= max_candidates_to_evict)
         return probationary_limit_satisfied;
 
-    const auto desired_protected_size = getRatio(max_size, size_ratio);
-    const auto desired_protected_elements_num = getRatio(max_elements, size_ratio);
+    const auto desired_protected_size = getRatio(desired_size, size_ratio);
+    const auto desired_protected_elements_num = getRatio(desired_elements_count, size_ratio);
 
     FileCacheReserveStat protected_stat;
     const bool protected_limit_satisfied = protected_queue.collectCandidatesForEviction(
@@ -387,7 +387,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         }
 
         eviction_candidates.evict();
-        eviction_candidates.finalize(nullptr, &lock);
+        eviction_candidates.finalize(nullptr, lock);
     }
     catch (...)
     {

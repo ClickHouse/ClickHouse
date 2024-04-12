@@ -157,54 +157,63 @@ void EvictionCandidates::evict()
     }
 }
 
+bool EvictionCandidates::needFinalize() const
+{
+    /// finalize() does the following:
+    /// 1. Release space holders in case they were added.
+    ///    (Space holder are created if some space needs to be hold
+    ///    while were are doing eviction from filesystem without which is done without a lock)
+    ///    Note: this step is not needed in case dynamic cache resize,
+    ///          because space holders are not used.
+    /// 2. Delete queue entries from IFileCachePriority queue.
+    ///    These queue entries were invalidated during lock-free eviction phase,
+    ///    so on finalize() we just remove them (not to let the queue grow too much).
+    ///    Note: this step can in fact be removed as we do this cleanup
+    ///    (removal of invalidated queue entries)
+    ///    when we iterate the queue and see such entries along the way.
+    ///    Note: this step is omitted in case dynamic cache resize,
+    ///          because we remove queue entries in advance, before actual eviction.
+    /// 3. Execute on_finalize functions.
+    ///    These functions are set only for SLRU eviction policy,
+    ///    where we need to do additional work after eviction.
+    ///    Note: this step is not needed in case dynamic cache resize even for SLRU.
+
+    return !on_finalize.empty() || !queue_entries_to_invalidate.empty() || !hold_space.empty();
+}
+
 void EvictionCandidates::finalize(
     FileCacheQueryLimit::QueryContext * query_context,
-    const CachePriorityGuard::Lock * lock)
+    const CachePriorityGuard::Lock & lock)
 {
+    chassert(lock.owns_lock());
+
     /// Release the hold space. It was hold only for the duration of evict() phase,
     /// now we can release. It might also be needed for on_finalize func,
     /// so release the space it firtst.
-    releaseSpaceHolders();
+    hold_space.clear();
 
-    if (requiresLockToFinalize())
+    while (!queue_entries_to_invalidate.empty())
     {
-        if (!lock || !lock->owns_lock())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Cannot finalize eviction without a cache lock");
+        auto iterator = queue_entries_to_invalidate.back();
+        iterator->invalidate();
+        queue_entries_to_invalidate.pop_back();
 
-        while (!queue_entries_to_invalidate.empty())
+        /// Remove entry from per query priority queue.
+        if (query_context)
         {
-            auto iterator = queue_entries_to_invalidate.back();
-            iterator->invalidate();
-            queue_entries_to_invalidate.pop_back();
-
-            /// Remove entry from per query priority queue.
-            if (query_context)
-            {
-                const auto & entry = iterator->getEntry();
-                query_context->remove(entry->key, entry->offset, *lock);
-            }
-            /// Remove entry from main priority queue.
-            iterator->remove(*lock);
+            const auto & entry = iterator->getEntry();
+            query_context->remove(entry->key, entry->offset, lock);
         }
-
-        for (auto & func : on_finalize)
-            func(*lock);
-
-        /// Finalize functions might hold something (like HoldSpace object),
-        /// so we need to clear them now.
-        on_finalize.clear();
+        /// Remove entry from main priority queue.
+        iterator->remove(lock);
     }
-    else
-    {
-        chassert(on_finalize.empty() && queue_entries_to_invalidate.empty());
-    }
-}
 
-bool EvictionCandidates::requiresLockToFinalize() const
-{
-    /// Do we need to call finalize()?
-    return !on_finalize.empty() || !queue_entries_to_invalidate.empty();
+    for (auto & func : on_finalize)
+        func(lock);
+
+    /// Finalize functions might hold something (like HoldSpace object),
+    /// so we need to clear them now.
+    on_finalize.clear();
 }
 
 void EvictionCandidates::addSpaceHolder(
@@ -215,12 +224,6 @@ void EvictionCandidates::addSpaceHolder(
 {
     /// Currently we can have more than one space holder during dynamic cache resize.
     hold_space.emplace_back(std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock));
-}
-
-void EvictionCandidates::releaseSpaceHolders()
-{
-    for (const auto & holder : hold_space)
-        holder->release();
 }
 
 }
