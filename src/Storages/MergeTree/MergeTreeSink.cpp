@@ -13,6 +13,37 @@ namespace ProfileEvents
 namespace DB
 {
 
+struct CommittingBlockNumberTagger {
+    std::mutex & committing_block_numbers_mutex;
+    std::set<Int64> & committing_block_numbers;
+    std::optional<Int64> block_number;
+
+    CommittingBlockNumberTagger(std::mutex & committing_block_numbers_mutex_, std::set<Int64> & committing_block_numbers_, Int64 block_number_)
+        : committing_block_numbers_mutex{committing_block_numbers_mutex_}
+        , committing_block_numbers{committing_block_numbers_}
+        , block_number{block_number_}
+    {
+    }
+
+    CommittingBlockNumberTagger(CommittingBlockNumberTagger && other) noexcept
+        : committing_block_numbers_mutex{other.committing_block_numbers_mutex}
+        , committing_block_numbers{other.committing_block_numbers}
+        , block_number{other.block_number}
+    {
+        other.block_number.reset();
+    }
+
+    ~CommittingBlockNumberTagger()
+    {
+        if (block_number.has_value())
+        {
+            std::lock_guard guard(committing_block_numbers_mutex);
+            size_t removed_count = committing_block_numbers.erase(block_number.value());
+            chassert(removed_count == 1);
+        }
+    }
+};
+
 struct MergeTreeSink::DelayedChunk
 {
     struct Partition
@@ -21,7 +52,7 @@ struct MergeTreeSink::DelayedChunk
         UInt64 elapsed_ns;
         String block_dedup_token;
         ProfileEvents::Counters part_counters;
-        std::optional<int64_t> block_number;
+        std::optional<CommittingBlockNumberTagger> committing_block_number_tagger;
     };
 
     std::vector<Partition> partitions;
@@ -76,13 +107,27 @@ void MergeTreeSink::consume(Chunk chunk)
 
     for (auto & current_block : part_blocks)
     {
-        std::optional<int64_t> block_number;
+        std::optional<CommittingBlockNumberTagger> committing_block_number_tagger;
 
         if (storage.getSettings()->queue_mode)
         {
-            block_number = storage.increment.get();
             auto partition_id = MergeTreePartition(current_block.partition).getID(metadata_snapshot->getPartitionKey().sample_block);
-            materializeQueueSortingColumns(current_block.block, partition_id, block_number.value());
+
+            {
+                std::lock_guard guard(storage.committing_block_numbers_mutex);
+
+                Int64 block_number = storage.increment.get();
+                auto [_, inserted] = storage.committing_block_numbers[partition_id].insert(block_number);
+                chassert(inserted);
+
+                committing_block_number_tagger.emplace(
+                    storage.committing_block_numbers_mutex,
+                    storage.committing_block_numbers.at(partition_id),
+                    block_number
+                );
+            }
+
+            materializeQueueSortingColumns(current_block.block, partition_id, committing_block_number_tagger->block_number.value());
         }
 
         ProfileEvents::Counters part_counters;
@@ -152,7 +197,7 @@ void MergeTreeSink::consume(Chunk chunk)
             .elapsed_ns = elapsed_ns,
             .block_dedup_token = std::move(block_dedup_token),
             .part_counters = std::move(part_counters),
-            .block_number = std::move(block_number),
+            .committing_block_number_tagger = std::move(committing_block_number_tagger),
         });
     }
 
@@ -176,6 +221,10 @@ void MergeTreeSink::finishDelayedChunk()
 
         auto & part = partition.temp_part.part;
 
+        std::optional<Int64> block_number;
+        if (partition.committing_block_number_tagger.has_value())
+            block_number = partition.committing_block_number_tagger->block_number;
+
         bool added = false;
 
         /// It's important to create it outside of lock scope because
@@ -183,7 +232,7 @@ void MergeTreeSink::finishDelayedChunk()
         MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
             auto lock = storage.lockParts();
-            storage.fillNewPartName(part, lock, std::move(partition.block_number));
+            storage.fillNewPartName(part, lock, block_number);
 
             auto * deduplication_log = storage.getDeduplicationLog();
             if (deduplication_log)
@@ -200,6 +249,9 @@ void MergeTreeSink::finishDelayedChunk()
 
             added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
+
+            /// Explicitly committing block number after commit
+            partition.committing_block_number_tagger.reset();
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added

@@ -1001,6 +1001,32 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         if (!partsContainSameProjections(left, right, disable_reason))
             return false;
 
+        /// If storage in queue mode then block number allocation is performed not under parts lock.
+        /// So here we must gurantee that any other part will not appear between left, right. For this
+        /// we have committing_block_numbers set.
+        ///
+        /// If block number will be allocated after this check then it must have at least value of
+        /// max(left.max_block, right.max_block) + 1 and if it is already allocated but not commited yet
+        /// it will be seen in set.
+        if (getSettings()->queue_mode)
+        {
+            if (left->info.partition_id != right->info.partition_id)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} belong to different partitions", left->name, right->name);
+
+            Int64 min_block = std::min(left->info.min_block, right->info.min_block);
+            Int64 max_block = std::max(left->info.max_block, right->info.max_block);
+
+            std::lock_guard guard(committing_block_numbers_mutex);
+            const std::set<Int64> & block_numbers = committing_block_numbers[left->info.partition_id];
+
+            auto it = block_numbers.upper_bound(min_block);
+            if (it != block_numbers.end() && *it < max_block)
+            {
+                disable_reason = PreformattedMessage::create("There is committing part between (min_block, max_block) range with block number: {}", *it);
+                return false;
+            }
+        }
+
         auto max_possible_level = getMaxLevelInBetween(left, right);
         if (max_possible_level > std::max(left->info.level, right->info.level))
         {
