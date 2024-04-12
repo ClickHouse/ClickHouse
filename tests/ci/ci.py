@@ -1261,18 +1261,6 @@ def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) ->
             raise AssertionError(f"Unexpected type for 'res': {type(result)}")
 
 
-def _update_config_for_docs_only(jobs_data: dict) -> None:
-    DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
-    print(f"NOTE: Will keep only docs related jobs: [{DOCS_CHECK_JOBS}]")
-    jobs_to_do = jobs_data.get("jobs_to_do", [])
-    jobs_data["jobs_to_do"] = [job for job in jobs_to_do if job in DOCS_CHECK_JOBS]
-    jobs_data["jobs_to_wait"] = {
-        job: params
-        for job, params in jobs_data["jobs_to_wait"].items()
-        if job in DOCS_CHECK_JOBS
-    }
-
-
 def _configure_docker_jobs(docker_digest_or_latest: bool) -> Dict:
     print("::group::Docker images check")
     # generate docker jobs data
@@ -1332,8 +1320,20 @@ def _configure_jobs(
     jobs_to_skip: List[str] = []
     digests: Dict[str, str] = {}
 
+    # FIXME: find better place for these config variables
+    DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
+    MQ_JOBS = [JobNames.STYLE_CHECK, JobNames.FAST_TEST]
+    if pr_info.has_changes_in_documentation_only():
+        print(f"WARNING: Only docs are changed - will run only [{DOCS_CHECK_JOBS}]")
+    if pr_info.is_merge_queue():
+        print(f"WARNING: It's a MQ run - will run only [{MQ_JOBS}]")
+
     print("::group::Job Digests")
     for job in CI_CONFIG.job_generator(pr_info.head_ref if CI else "dummy_branch_name"):
+        if pr_info.is_merge_queue() and job not in MQ_JOBS:
+            continue
+        if pr_info.has_changes_in_documentation_only() and job not in DOCS_CHECK_JOBS:
+            continue
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest
         print(f"    job [{job.rjust(50)}] has digest [{digest}]")
@@ -1436,10 +1436,11 @@ def _configure_jobs(
     )
 
     if pr_info.is_merge_queue():
-        # FIXME: Quick support for MQ workflow which is only StyleCheck for now
-        jobs_to_do = [JobNames.STYLE_CHECK]
-        jobs_to_skip = []
-        print(f"NOTE: This is Merge Queue CI: set jobs to do: [{jobs_to_do}]")
+        # no need to run pending job in MQ, since it's pending - it's not affected by current checnge
+        for job_to_wait in jobs_to_wait:
+            if job_to_wait in jobs_to_do:
+                print(f"Remove pending job [{job_to_wait}] from MQ workflow")
+                jobs_to_do.remove(job_to_wait)
 
     return {
         "digests": digests,
@@ -1902,9 +1903,6 @@ def main() -> int:
             else {}
         )
 
-        if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
-            _update_config_for_docs_only(jobs_data)
-
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
@@ -1928,8 +1926,7 @@ def main() -> int:
                         jobs_to_skip.append(job)
                         del jobs_params[job]
 
-            # set planned jobs as pending in the CI cache if on the master
-            if pr_info.is_master():
+                # set planned jobs as pending in the CI cache if on the master
                 for job in jobs_data["jobs_to_do"]:
                     config = CI_CONFIG.get_job_config(job)
                     if config.run_always or config.run_by_label:

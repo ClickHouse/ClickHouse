@@ -54,10 +54,12 @@ def merge_sync_pr(gh, sync_pr):
 
 def set_sync_status(gh, pr_info, sync_pr):
     if not sync_pr or not sync_pr.mergeable:
+        print("Sync PR is not mergeable")
         post_commit_status(
             get_commit(gh, pr_info.sha), FAILURE, "", "Sync PR failure", "A Sync"
         )
     else:
+        print("Sync PR is mergeable")
         post_commit_status(get_commit(gh, pr_info.sha), SUCCESS, "", "", "A Sync")
 
 

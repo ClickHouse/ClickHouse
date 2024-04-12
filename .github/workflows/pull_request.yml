@@ -83,7 +83,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, StyleCheck]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -97,7 +97,7 @@ jobs:
   # for main CI chain
   #
   Builds_1:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, StyleCheck, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
     # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
