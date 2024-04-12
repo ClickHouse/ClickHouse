@@ -1833,6 +1833,7 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -2306,6 +2307,7 @@ retriable
 reverseUTF
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
