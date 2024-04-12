@@ -90,6 +90,29 @@ struct ColumnToPointsConverter
     }
 };
 
+
+/**
+ * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost linestring type.
+*/
+template <typename Point>
+struct ColumnToLineStringsConverter
+{
+    static std::vector<LineString<Point>> convert(ColumnPtr col)
+    {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        std::vector<LineString<Point>> answer;
+        answer.reserve(offsets.size());
+        auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+        for (size_t offset : offsets)
+        {
+            answer.emplace_back(tmp.begin() + prev_offset, tmp.begin() + offset);
+            prev_offset = offset;
+        }
+        return answer;
+    }
+};
+
 /**
  * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost ring type.
 */
@@ -382,6 +405,9 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
     /// There is no Point type, because for most of geometry functions it is useless.
     if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
+    /// There is some ambiguity, we don't take into consideration a name of a custom type.
+    // else if (factory.get("LineString")->equals(*type))
+    //     return f(ConverterType<ColumnToLineStringsConverter<Point>>());
     else if (factory.get("Ring")->equals(*type))
         return f(ConverterType<ColumnToRingsConverter<Point>>());
     else if (factory.get("Polygon")->equals(*type))
