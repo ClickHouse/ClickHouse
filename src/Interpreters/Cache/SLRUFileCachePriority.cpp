@@ -294,7 +294,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     stat += protected_stat;
 
     LOG_TEST(log, "Collected {} to evict from protected queue "
-             "with total size: {} (result: {})"
+             "with total size: {} (result: {}). "
              "Desired size: {}, desired elements count: {}, current state: {}",
              protected_stat.total_stat.releasable_count,
              protected_stat.total_stat.releasable_size, res.size(),

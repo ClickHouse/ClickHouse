@@ -35,7 +35,7 @@ public:
 
     auto end() const { return candidates.end(); }
 
-    void addSpaceHolder(
+    void setSpaceHolder(
         size_t size,
         size_t elements,
         IFileCachePriority & priority,
@@ -56,7 +56,7 @@ private:
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
     bool removed_queue_entries = false;
 
-    std::vector<IFileCachePriority::HoldSpacePtr> hold_space;
+    IFileCachePriority::HoldSpacePtr hold_space;
 
     LoggerPtr log;
 };
