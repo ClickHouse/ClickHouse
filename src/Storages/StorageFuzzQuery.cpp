@@ -105,7 +105,7 @@ Pipe StorageFuzzQuery::read(
     const char * begin = config.query.data();
     const char * end = begin + config.query.size();
 
-    ParserQuery parser(end, 0);
+    ParserQuery parser(end, false);
     auto query = parseQuery(parser, begin, end, "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (UInt64 i = 0; i < num_streams; ++i)
