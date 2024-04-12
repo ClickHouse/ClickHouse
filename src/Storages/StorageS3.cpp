@@ -957,7 +957,7 @@ private:
 
 namespace
 {
-    std::optional<String> checkFileExistsAndCreateNewKeyIfNeeded(const ContextPtr & context, const StorageS3::Configuration & configuration, const String & key, size_t sequence_number)
+    std::optional<String> checkAndGetNewFileOnInsertIfNeeded(const ContextPtr & context, const StorageS3::Configuration & configuration, const String & key, size_t sequence_number)
     {
         if (context->getSettingsRef().s3_truncate_on_insert || !S3::objectExists(*configuration.client, configuration.url.bucket, key, configuration.url.version_id, configuration.request_settings))
             return std::nullopt;
@@ -1018,7 +1018,7 @@ public:
         auto partition_key = replaceWildcards(key, partition_id);
         validateKey(partition_key);
 
-        if (auto new_key = checkFileExistsAndCreateNewKeyIfNeeded(getContext(), configuration, partition_key, /* sequence_number */1))
+        if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(getContext(), configuration, partition_key, /* sequence_number */1))
             partition_key = *new_key;
 
         return std::make_shared<StorageS3Sink>(
@@ -1309,7 +1309,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
 
-        if (auto new_key = checkFileExistsAndCreateNewKeyIfNeeded(local_context, configuration, query_configuration.keys.front(), query_configuration.keys.size()))
+        if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(local_context, configuration, query_configuration.keys.front(), query_configuration.keys.size()))
         {
             query_configuration.keys.push_back(*new_key);
             configuration.keys.push_back(*new_key);

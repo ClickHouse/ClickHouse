@@ -635,7 +635,7 @@ private:
 
 namespace
 {
-    std::optional<String> checkFileExistsAndCreateNewKeyIfNeeded(const ContextPtr & context, AzureObjectStorage * object_storage, const String & path, size_t sequence_number)
+    std::optional<String> checkAndGetNewFileOnInsertIfNeeded(const ContextPtr & context, AzureObjectStorage * object_storage, const String & path, size_t sequence_number)
     {
         if (context->getSettingsRef().azure_truncate_on_insert || !object_storage->exists(StoredObject(path)))
             return std::nullopt;
@@ -689,7 +689,7 @@ public:
     {
         auto partition_key = replaceWildcards(blob, partition_id);
         validateKey(partition_key);
-        if (auto new_path = checkFileExistsAndCreateNewKeyIfNeeded(getContext(), object_storage, partition_key, 1))
+        if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(getContext(), object_storage, partition_key, 1))
             partition_key = *new_path;
 
         return std::make_shared<StorageAzureBlobSink>(
@@ -894,7 +894,7 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
 
-        if (auto new_path = checkFileExistsAndCreateNewKeyIfNeeded(local_context, object_storage.get(), path, configuration.blobs_paths.size()))
+        if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(local_context, object_storage.get(), path, configuration.blobs_paths.size()))
         {
             configuration.blobs_paths.push_back(*new_path);
             path = *new_path;

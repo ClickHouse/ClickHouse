@@ -873,7 +873,7 @@ private:
 
 namespace
 {
-    std::optional<String> checkFileExistsAndCreateNewKeyIfNeeded(const ContextPtr & context, const String & uri, size_t sequence_number)
+    std::optional<String> checkAndGetNewFileOnInsertIfNeeded(const ContextPtr & context, const String & uri, size_t sequence_number)
     {
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
 
@@ -928,7 +928,7 @@ public:
     {
         auto path = PartitionedSink::replaceWildcards(uri, partition_id);
         PartitionedSink::validatePartitionKey(path, true);
-        if (auto new_path = checkFileExistsAndCreateNewKeyIfNeeded(context, path, 1))
+        if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(context, path, 1))
             path = *new_path;
         return std::make_shared<HDFSSink>(path, format, sample_block, context, compression_method);
     }
@@ -1114,7 +1114,7 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
         if (is_path_with_globs)
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
 
-        if (auto new_uri = checkFileExistsAndCreateNewKeyIfNeeded(context_, uris.front(), uris.size()))
+        if (auto new_uri = checkAndGetNewFileOnInsertIfNeeded(context_, uris.front(), uris.size()))
         {
             uris.push_back(*new_uri);
             current_uri = *new_uri;
