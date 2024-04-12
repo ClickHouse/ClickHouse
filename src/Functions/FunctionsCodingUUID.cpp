@@ -128,10 +128,14 @@ UUIDSerializer::Variant parseVariant(const DB::ColumnsWithTypeAndName & argument
     if (arguments.size() < 2)
         return UUIDSerializer::Variant::Default;
 
-    const auto representation = static_cast<magic_enum::underlying_type_t<UUIDSerializer::Variant>>(arguments[1].column->getInt(0));
-    const auto as_enum = magic_enum::enum_cast<UUIDSerializer::Variant>(representation);
+    Int64 value = static_cast<UInt64>(UUIDSerializer::Variant::Default);
+    if (!arguments[1].column->empty())
+        value = arguments[1].column->getInt(0);
+
+    const auto as_enum
+        = magic_enum::enum_cast<UUIDSerializer::Variant>(static_cast<int>(value));
     if (!as_enum)
-        throw DB::Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected UUID variant, got {}", representation);
+        throw DB::Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected UUID variant, got {}", value);
 
     return *as_enum;
 }
