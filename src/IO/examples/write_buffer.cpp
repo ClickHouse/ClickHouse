@@ -26,7 +26,7 @@ int main(int, char **)
             DB::writeIntText(a, out);
             DB::writeChar(' ', out);
 
-            DB::writeFloatText(b, out);
+            DB::writeFloatText(b, out, false);
             DB::writeChar(' ', out);
 
             DB::writeEscapedString(c, out);
