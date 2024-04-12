@@ -67,8 +67,6 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
-#if !defined(FUZZING_MODE)
-
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
@@ -105,13 +103,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"restart", mainEntryClickHouseRestart},
 };
 
-/// Add an item here to register a new short name
-std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
-{
-    {"chl", "local"},
-    {"chc", "client"},
-};
-
 int printHelp(int, char **)
 {
     std::cerr << "Use one of the following commands:" << std::endl;
@@ -119,7 +110,13 @@ int printHelp(int, char **)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
 }
-#endif
+
+/// Add an item here to register a new short name
+std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
+{
+    {"chl", "local"},
+    {"chc", "client"},
+};
 
 
 enum class InstructionFail
@@ -285,7 +282,7 @@ struct Checker
 ;
 
 
-#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -447,13 +444,8 @@ extern "C"
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-#ifndef FUZZING_MODE
 bool inside_main = false;
-#else
-bool inside_main = true;
-#endif
 
-#if !defined(FUZZING_MODE)
 int main(int argc_, char ** argv_)
 {
     inside_main = true;
@@ -495,7 +487,7 @@ int main(int argc_, char ** argv_)
     /// Interpret binary without argument or with arguments starts with dash
     /// ('-') as clickhouse-local for better usability:
     ///
-    ///     clickhouse # dumps help
+    ///     clickhouse help # dumps help
     ///     clickhouse -q 'select 1' # use local
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
@@ -511,4 +503,3 @@ int main(int argc_, char ** argv_)
 
     return exit_code;
 }
-#endif

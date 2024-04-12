@@ -19,8 +19,9 @@
 namespace DB
 {
 
-class StorageSystemKafkaConsumers;
 class ReadFromStorageKafka;
+class StorageSystemKafkaConsumers;
+class ThreadStatus;
 
 struct StorageKafkaInterceptors;
 
@@ -41,6 +42,8 @@ public:
         const ColumnsDescription & columns_,
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
+
+    ~StorageKafka() override;
 
     std::string getName() const override { return "Kafka"; }
 

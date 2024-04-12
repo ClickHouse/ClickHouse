@@ -1,6 +1,7 @@
 #include <IO/WriteBufferFromFile.h>
-#include <Common/HostResolvePool.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
+#include <Common/HostResolvePool.h>
 
 #include <thread>
 #include <gtest/gtest.h>

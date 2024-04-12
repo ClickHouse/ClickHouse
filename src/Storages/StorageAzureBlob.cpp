@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <azure/storage/common/storage_credential.hpp>
+#include <azure/identity/managed_identity_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -40,6 +41,10 @@
 
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 using namespace Azure::Storage::Blobs;
 
@@ -332,33 +337,38 @@ static bool containerExists(std::unique_ptr<BlobServiceClient> &blob_service_cli
     return false;
 }
 
-AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration, bool is_read_only)
+AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container)
 {
     AzureClientPtr result;
 
     if (configuration.is_connection_string)
     {
+        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
         std::unique_ptr<BlobServiceClient> blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(configuration.connection_url));
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
-        bool container_exists = containerExists(blob_service_client,configuration.container);
 
-        if (!container_exists)
+        if (attempt_to_create_container)
         {
-            if (is_read_only)
-                throw Exception(
-                    ErrorCodes::DATABASE_ACCESS_DENIED,
-                    "AzureBlobStorage container does not exist '{}'",
-                    configuration.container);
+            bool container_exists = containerExists(blob_service_client,configuration.container);
+            if (!container_exists)
+            {
+                if (is_read_only)
+                    throw Exception(
+                        ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "AzureBlobStorage container does not exist '{}'",
+                        configuration.container);
 
-            try
-            {
-                result->CreateIfNotExists();
-            } catch (const Azure::Storage::StorageException & e)
-            {
-                if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                    && e.ReasonPhrase == "The specified container already exists."))
+                try
                 {
-                    throw;
+                    result->CreateIfNotExists();
+                }
+                catch (const Azure::Storage::StorageException & e)
+                {
+                    if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                        && e.ReasonPhrase == "The specified container already exists."))
+                    {
+                        throw;
+                    }
                 }
             }
         }
@@ -373,16 +383,16 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
         }
 
         std::unique_ptr<BlobServiceClient> blob_service_client;
+        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential;
         if (storage_shared_key_credential)
         {
             blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
         }
         else
         {
-            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
+            managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
         }
-
-        bool container_exists = containerExists(blob_service_client,configuration.container);
 
         std::string final_url;
         size_t pos = configuration.connection_url.find('?');
@@ -396,12 +406,21 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             final_url
                 = configuration.connection_url + (configuration.connection_url.back() == '/' ? "" : "/") + configuration.container;
 
+        if (!attempt_to_create_container)
+        {
+            if (storage_shared_key_credential)
+                return std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
+            else
+                return std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+        }
+
+        bool container_exists = containerExists(blob_service_client,configuration.container);
         if (container_exists)
         {
             if (storage_shared_key_credential)
                 result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
             else
-                result = std::make_unique<BlobContainerClient>(final_url);
+                result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
         }
         else
         {
@@ -413,7 +432,8 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             try
             {
                 result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            } catch (const Azure::Storage::StorageException & e)
+            }
+            catch (const Azure::Storage::StorageException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
                       && e.ReasonPhrase == "The specified container already exists.")
@@ -421,7 +441,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                     if (storage_shared_key_credential)
                         result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
                     else
-                        result = std::make_unique<BlobContainerClient>(final_url);
+                        result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
                 }
                 else
                 {
