@@ -2771,7 +2771,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     auto obtain_part = [&] (PartDescriptionPtr & part_desc)
     {
-        /// Fetches with zero-copy-replication are cheap, but cloneAndLoadDataPart(OnSameDisk) will do full copy.
+        /// Fetches with zero-copy-replication are cheap, but cloneAndLoadDataPartOnSameDisk will do full copy.
         /// It's okay to check the setting for current table and disk for the source table, because src and dst part are on the same disk.
         bool prefer_fetch_from_other_replica = !part_desc->replica.empty() && storage_settings_ptr->allow_remote_fs_zero_copy_replication
             && part_desc->src_table_part && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport();
@@ -2790,7 +2790,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
+            auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
                 part_desc->src_table_part,
                 TMP_PREFIX + "clone_",
                 part_desc->new_part_info,
@@ -4867,7 +4867,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 .keep_metadata_version = true,
             };
 
-            auto [cloned_part, lock] = cloneAndLoadDataPart(
+            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(
                 part_to_clone,
                 "tmp_clone_",
                 part_info,
@@ -8057,14 +8057,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                 || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
-
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-
-            auto [dst_part, part_lock] = cloneAndLoadDataPart(
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
@@ -8072,10 +8070,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 clone_params,
                 query_context->getReadSettings(),
                 query_context->getWriteSettings());
-
-            dst_parts.emplace_back(std::move(dst_part));
-            dst_parts_locks.emplace_back(std::move(part_lock));
             src_parts.emplace_back(src_part);
+            dst_parts.emplace_back(dst_part);
+            dst_parts_locks.emplace_back(std::move(part_lock));
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);
@@ -8328,7 +8325,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
+            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
