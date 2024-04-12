@@ -120,6 +120,7 @@ private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
         bool result = false;
         auto outcome = client->ListObjectsV2(request);
@@ -292,6 +293,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
+
         outcome = client.get()->ListObjectsV2(request);
         throwIfError(outcome);
 
@@ -325,6 +327,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 {
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
     ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
+
     S3::DeleteObjectRequest request;
     request.SetBucket(uri.bucket);
     request.SetKey(object.remote_path);
