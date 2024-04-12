@@ -189,7 +189,6 @@ namespace ErrorCodes
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
-    extern const int PARTITION_ALREADY_EXISTS;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -5107,9 +5106,7 @@ void MergeTreeData::movePartitionToTable(const PartitionCommand & command, Conte
 
     /// The target table and the source table are the same.
     if (dest_storage->getStorageID() == this->getStorageID())
-    {
-        throw Exception(ErrorCodes::PARTITION_ALREADY_EXISTS, "Cannot move partition to oneself.");
-    }
+        return;
 
     auto * dest_storage_merge_tree = dynamic_cast<MergeTreeData *>(dest_storage.get());
     if (!dest_storage_merge_tree)
