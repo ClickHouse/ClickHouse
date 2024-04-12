@@ -1371,17 +1371,6 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
-[[ maybe_unused ]] String createChallenge()
-{
-#if USE_SSL
-    pcg64_fast rng(randomSeed());
-    UInt64 rand = rng();
-    return encodeSHA256(&rand, sizeof(rand));
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
-#endif
-}
-
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1397,16 +1386,6 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     res->setClientInterface(interface);
 
     return res;
-}
-
-String TCPHandler::prepareStringForSshValidation(String username, String challenge)
-{
-    String output;
-    output.append(std::to_string(client_tcp_protocol_version));
-    output.append(default_database);
-    output.append(username);
-    output.append(challenge);
-    return output;
 }
 
 void TCPHandler::receiveHello()
@@ -1466,11 +1445,9 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
-    {
-        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
-    }
+        user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 
     session = makeSession();
     const auto & client_info = session->getClientInfo();
@@ -1498,7 +1475,9 @@ void TCPHandler::receiveHello()
             }
         }
     }
+#endif
 
+#if USE_SSH
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
@@ -1512,7 +1491,14 @@ void TCPHandler::receiveHello()
         if (packet_type != Protocol::Client::SSHChallengeRequest)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
 
-        auto challenge = createChallenge();
+        auto create_challenge = []()
+        {
+            pcg64_fast rng(randomSeed());
+            UInt64 rand = rng();
+            return encodeSHA256(&rand, sizeof(rand));
+        };
+
+        String challenge = create_challenge();
         writeVarUInt(Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
         out->next();
@@ -1523,7 +1509,17 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
         readStringBinary(signature, *in);
 
-        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
+        auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
+        {
+            String output;
+            output.append(std::to_string(client_tcp_protocol_version));
+            output.append(default_database);
+            output.append(username);
+            output.append(challenge_);
+            return output;
+        };
+
+        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
         return;
     }

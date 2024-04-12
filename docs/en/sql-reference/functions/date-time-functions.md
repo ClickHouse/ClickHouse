@@ -1670,7 +1670,7 @@ Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../.
 
 ## age
 
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 nanosecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
 For an alternative to `age`, see function `date\_diff`.
@@ -1686,16 +1686,17 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1763,16 +1764,17 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1904,7 +1906,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
 
 **Arguments**
 
-- `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+- `unit` — The type of interval to add. Note: This is not a [String](../../sql-reference/data-types/string.md) and must therefore not be quoted.
     Possible values:
 
     - `second`
@@ -1959,7 +1961,7 @@ Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
-- `unit` — The type of interval to subtract. Note: The unit should be unquoted.
+- `unit` — The type of interval to subtract. Note: This is not a [String](../../sql-reference/data-types/string.md) and must therefore not be quoted.
 
     Possible values:
 

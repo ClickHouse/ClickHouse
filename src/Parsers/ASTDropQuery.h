@@ -40,6 +40,9 @@ public:
     // We detach the object permanently, so it will not be reattached back during server restart.
     bool permanently{false};
 
+    /// Example: Drop TABLE t1, t2, t3...
+    ASTPtr database_and_tables;
+
     /** Get the text that identifies this element. */
     String getID(char) const override;
     ASTPtr clone() const override;
@@ -48,6 +51,8 @@ public:
     {
         return removeOnCluster<ASTDropQuery>(clone(), params.default_database);
     }
+
+    ASTs getRewrittenASTsOfSingleTable();
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
