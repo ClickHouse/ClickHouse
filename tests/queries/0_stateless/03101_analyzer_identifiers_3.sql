@@ -1,16 +1,16 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/23194
 SET allow_experimental_analyzer = 1;
 
-DROP DATABASE IF EXISTS db1_03101;
-DROP DATABASE IF EXISTS db2_03101;
-CREATE DATABASE db1_03101;
-CREATE DATABASE db2_03101;
-USE db1_03101;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE:Identifier};
 
-CREATE TABLE db1_03101.tbl
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tbl
 (
     col String,
-    db1_03101 Nested
+    {CLICKHOUSE_DATABASE:Identifier} Nested
     (
         tbl Nested
         (
@@ -20,11 +20,11 @@ CREATE TABLE db1_03101.tbl
 )
 ENGINE = Memory;
 
-SELECT db1_03101.tbl.col FROM db1_03101.tbl;
+SELECT {CLICKHOUSE_DATABASE:Identifier}.tbl.col FROM {CLICKHOUSE_DATABASE:Identifier}.tbl;
 
 
-SELECT db1_03101.* FROM tbl;
-SELECT db1_03101 FROM tbl;
+SELECT {CLICKHOUSE_DATABASE:Identifier}.* FROM tbl;
+SELECT {CLICKHOUSE_DATABASE:Identifier} FROM tbl;
 
 
 SELECT * FROM tbl;
@@ -54,21 +54,21 @@ SELECT t.a, u.a FROM (SELECT 1 AS a) AS t, (SELECT 1 AS a) AS u;
 SELECT '---';
 
 ---- TODO: think about it
---CREATE TABLE db1_03101.t
+--CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.t
 --(
 --    a UInt16
 --)
 --ENGINE = Memory;
 --
---CREATE TABLE db2_03101.t
+--CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
 --(
 --    a UInt16
 --)
 --ENGINE = Memory;
 --
---SELECT * FROM (SELECT 1 AS a) AS db2_03101.t, (SELECT 1 AS a) AS db1_03101.t;
+--SELECT * FROM (SELECT 1 AS a) AS {CLICKHOUSE_DATABASE_1:Identifier}.t, (SELECT 1 AS a) AS {CLICKHOUSE_DATABASE:Identifier}.t;
 ---- equivalent to:
---SELECT db2_03101.t.a, db1_03101.t.a FROM (SELECT 1 AS a) AS db2_03101.t, (SELECT 1 AS a) AS db1_03101.t;
+--SELECT {CLICKHOUSE_DATABASE_1:Identifier}.t.a, {CLICKHOUSE_DATABASE:Identifier}.t.a FROM (SELECT 1 AS a) AS {CLICKHOUSE_DATABASE_1:Identifier}.t, (SELECT 1 AS a) AS {CLICKHOUSE_DATABASE:Identifier}.t;
 
 
 CREATE TABLE t

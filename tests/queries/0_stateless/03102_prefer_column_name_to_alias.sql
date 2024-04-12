@@ -25,6 +25,6 @@ with block_0 as (
 block_1 as (
   select sum(loan_number) as loan_number from block_0 group by security_id
 )
-select loan_number from block_1 where loan_number > 3 settings prefer_column_name_to_alias = 1;
+select loan_number from block_1 where loan_number > 3 order by loan_number settings prefer_column_name_to_alias = 1;
 
 DROP TABLE IF EXISTS loans;
