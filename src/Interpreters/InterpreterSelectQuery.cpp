@@ -3495,7 +3495,7 @@ String InterpreterSelectQuery::getIdentifier(ASTPtr & argument) const
 {
     if (const auto * id = argument->as<ASTIdentifier>())
         return id->name();
-    else if (argument->as<ASTLiteral>())
+    else if (argument->as<ASTLiteral>() || argument->children.size() < 1)
         return "";
     else
         return getIdentifier(argument->children.at(0));

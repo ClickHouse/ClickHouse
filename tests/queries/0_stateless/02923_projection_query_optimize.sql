@@ -1,10 +1,7 @@
 DROP TABLE IF EXISTS test_a;
 DROP TABLE IF EXISTS test_b;
 DROP TABLE IF EXISTS test_c;
-DROP DATABASE IF EXISTS projection_optimization_test;
 
-CREATE DATABASE projection_optimization_test;
-USE projection_optimization_test;
 SET optimize_project_query = 1;
 
 CREATE TABLE test_a(src String, dst String, other_cols String, PROJECTION p1(SELECT src, dst ORDER BY dst)) ENGINE = MergeTree ORDER BY src;
@@ -37,4 +34,3 @@ select src from test_c where dst = '-21' and (c1 = '20' or c2 = '41');
 DROP TABLE test_a;
 DROP TABLE test_b;
 DROP TABLE test_c;
-DROP DATABASE projection_optimization_test;
