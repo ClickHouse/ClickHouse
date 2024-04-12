@@ -425,12 +425,17 @@ def set_mergeable_check(
     commit: Commit,
     description: str = "",
     state: StatusType = SUCCESS,
+    hide_url: bool = False,
 ) -> None:
-    commit.create_status(
-        context=StatusNames.MERGEABLE,
-        description=format_description(description),
-        state=state,
-        target_url=GITHUB_RUN_URL,
+    report_url = GITHUB_RUN_URL
+    if hide_url:
+        report_url = ""
+    post_commit_status(
+        commit,
+        state,
+        report_url,
+        format_description(description),
+        StatusNames.MERGEABLE,
     )
 
 
@@ -453,7 +458,9 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
     trigger_mergeable_check(commit, statuses)
 
 
-def trigger_mergeable_check(commit: Commit, statuses: CommitStatuses) -> None:
+def trigger_mergeable_check(
+    commit: Commit, statuses: CommitStatuses, hide_url: bool = False
+) -> None:
     """calculate and update StatusNames.MERGEABLE"""
     required_checks = [
         status for status in statuses if status.context in REQUIRED_CHECKS
@@ -486,4 +493,4 @@ def trigger_mergeable_check(commit: Commit, statuses: CommitStatuses) -> None:
     description = format_description(description)
 
     if mergeable_status is None or mergeable_status.description != description:
-        set_mergeable_check(commit, description, state)
+        set_mergeable_check(commit, description, state, hide_url)
