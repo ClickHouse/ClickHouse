@@ -55,10 +55,10 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
     {
         auto arguments = function->arguments->children;
 
-        if (arguments.size() >= 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length'.", getName());
+        if (arguments.size() > 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' cannot have more than one params", getName());
 
-        if (arguments.size() == 1)
+        if (!arguments.empty())
         {
             UInt64 length = evaluateArgument(context, arguments[0]);
 

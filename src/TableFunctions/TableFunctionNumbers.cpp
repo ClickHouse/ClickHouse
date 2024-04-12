@@ -73,8 +73,8 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
 
         if (arguments.size() >= 4)
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length' or 'offset, length'.", getName());
-        if (arguments.size() > 0)
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' cannot have more than three params", getName());
+        if (!arguments.empty())
         {
             UInt64 offset = arguments.size() >= 2 ? evaluateArgument(context, arguments[0]) : 0;
             UInt64 length = arguments.size() >= 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
