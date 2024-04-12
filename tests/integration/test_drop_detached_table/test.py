@@ -32,7 +32,7 @@ def cleanup(nodes):
 def create_table(node, table_name):
     replica = node.name
     engine = f"ReplicatedMergeTree('/clickhouse/tables/1/{table_name}', '{replica}')"
-    
+
     node.query_with_retry(
         """
         CREATE TABLE {table_name} 
