@@ -12,7 +12,7 @@ class BalancingChunksTransform : public IProcessor
 {
 public:
     BalancingChunksTransform(
-        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t max_memory_usage_, size_t num_ports);
+        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports);
 
     String getName() const override { return "BalancingChunksTransform"; }
 
@@ -30,7 +30,6 @@ protected:
 private:
     size_t CalculateBlockSize(const Block & block);
     Chunk chunk;
-    size_t max_memory_usage;
     BalanceTransform balance;
     bool has_data = false;
     std::vector<char> was_output_processed;

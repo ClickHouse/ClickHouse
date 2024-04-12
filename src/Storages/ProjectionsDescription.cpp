@@ -20,6 +20,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/range.h>
+#include "Interpreters/SquashingTransform.h"
+#include "Processors/Transforms/BalancingTransform.h"
 
 
 namespace DB
@@ -310,6 +312,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     builder.resize(1);
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
+    builder.addTransform(std::make_shared<BalancingChunksTransform>(builder.getHeader(), block.rows(), 0, true));
     builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));

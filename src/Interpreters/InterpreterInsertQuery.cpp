@@ -609,7 +609,7 @@ BlockIO InterpreterInsertQuery::execute()
                     header,
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                    settings.max_memory_usage, presink_chains.size()));
+                    presink_chains.size()));
 
             pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
             {
@@ -680,7 +680,7 @@ BlockIO InterpreterInsertQuery::execute()
                     chain.getInputHeader(),
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                    settings.max_memory_usage, true);
+                    true);
 
             chain.addSource(std::move(balancing));
         }
