@@ -37,6 +37,7 @@ public:
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
     void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
+    void dropDetachedTable(ContextPtr context, const String & table_name) override;
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & name) override;

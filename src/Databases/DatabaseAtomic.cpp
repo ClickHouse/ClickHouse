@@ -160,6 +160,14 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, sync);
 }
 
+void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & table_name)
+{
+    DatabaseOnDisk::dropDetachedTable(local_context, table_name);
+
+    LOG_TRACE(log, "remove sym link from {} for {}", path_to_table_symlinks, table_name);
+    tryRemoveSymlink(table_name);
+}
+
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                  const String & to_table_name, bool exchange, bool dictionary)
     TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking

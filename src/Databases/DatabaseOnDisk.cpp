@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -352,7 +353,12 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     fs::remove(table_metadata_path_drop);
 }
 
-void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
+void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & table_name)
+{
+    dropDetachedTableImpl(local_context, table_name);
+}
+
+void DatabaseOnDisk::dropDetachedTableImpl(ContextPtr local_context, const String & table_name)
 {
     /// Check that table detached (doesn't exists still exists metadata)
     if (isTableExist(table_name, getContext()))
@@ -365,25 +371,31 @@ void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & 
     const String table_metadata_path = getObjectMetadataPath(table_name);
 
     const String table_metadata_path_drop = table_metadata_path + drop_suffix;
-    const String table_data_path_relative = GetTableDataPathFromDetachedMetadata(local_context, table_metadata_path);
+    const auto & [table_data_path_relative, uuid_table] = GetTableInfoFromDetachedMetadata(local_context, table_metadata_path);
 
     if (table_data_path_relative.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
+    waitDetachedTableNotInUse(uuid_table);
+
     bool renamed = false;
     try
     {
-        LOG_DEBUG(log, "remove permanently flag");
+        auto txn = local_context->getZooKeeperMetadataTransaction();
+        if (txn && !local_context->isInternalSubquery())
+            txn->commit(); /// Commit point (a sort of) for Replicated database
+
+        LOG_TRACE(log, "remove permanently flag");
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
 
-        LOG_DEBUG(log, "rename metadata for removing from {} to {}", table_metadata_path, table_metadata_path_drop);
+        LOG_TRACE(log, "rename metadata for removing from {} to {}", table_metadata_path, table_metadata_path_drop);
         fs::rename(table_metadata_path, table_metadata_path_drop);
 
         renamed = true;
 
         fs::path table_data_dir(local_context->getPath() + table_data_path_relative);
 
-        LOG_DEBUG(log, "remove data from {}", table_data_dir.string());
+        LOG_TRACE(log, "remove data from {}", table_data_dir.string());
 
         if (fs::exists(table_data_dir))
             fs::remove_all(table_data_dir);
@@ -396,18 +408,18 @@ void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & 
         throw;
     }
 
-    LOG_INFO(log, "remove renamed metadata {}", table_metadata_path_drop);
+    LOG_TRACE(log, "remove renamed metadata {}", table_metadata_path_drop);
     fs::remove(table_metadata_path_drop);
 
-    LOG_DEBUG(log, "finish drop table_name={}", table_name);
+    LOG_DEBUG(log, "finish drop detached table {}", table_name);
 }
 
-String DatabaseOnDisk::GetTableDataPathFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
+std::pair<String, UUID> DatabaseOnDisk::GetTableInfoFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
 {
     ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
     auto & create_detached = ast_detached->as<ASTCreateQuery &>();
 
-    return getTableDataPath(create_detached);
+    return std::make_pair(getTableDataPath(create_detached), create_detached.uuid);
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const

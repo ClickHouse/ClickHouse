@@ -52,8 +52,10 @@ def test_drop_replicated(start_cluster):
 
     replica1.query("INSERT INTO test_table SELECT number FROM system.numbers LIMIT 6;")
 
-    replica1.query("SYSTEM SYNC REPLICA test_table;")
+    replica1.query("SYSTEM SYNC REPLICA test_table;", timeout=20)
 
-    # @todo add detach
+    replica1.query("DETACH TABLE test_table PERMANENTLY;")
 
-    cleanup([replica1, replica2])
+    replica1.query("SET allow_drop_detached_table=1; DROP TABLE test_table;")
+
+    cleanup([replica2])
