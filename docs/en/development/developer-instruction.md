@@ -86,7 +86,7 @@ ClickHouse uses CMake and Ninja for building.
 - ccache - a compiler cache. It speeds up recompilation by caching previous compilations and detecting when the same compilation is being done again.
 
 :::tip
-As an alternative for ccache a distributed [sccache](https://github.com/mozilla/sccache) could be used. The system will chose it with higher priority.
+As an alternative for ccache a distributed [sccache](https://github.com/mozilla/sccache) could be used. To prefer it, `-DCOMPILER_CACHE=sccache` CMake flag should be used.
 :::
 
 To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build ccache`.
