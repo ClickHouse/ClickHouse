@@ -1018,7 +1018,7 @@ public:
         auto partition_key = replaceWildcards(key, partition_id);
         validateKey(partition_key);
 
-        if (auto new_key = checkFileExistsAndCreateNewKeyIfNeeded(getContext(), configuration, partition_key, 1))
+        if (auto new_key = checkFileExistsAndCreateNewKeyIfNeeded(getContext(), configuration, partition_key, /* sequence_number */1))
             partition_key = *new_key;
 
         return std::make_shared<StorageS3Sink>(
