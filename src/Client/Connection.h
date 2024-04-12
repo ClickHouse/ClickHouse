@@ -88,7 +88,7 @@ public:
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
     /// For log and exception messages.
-    const String & getDescription() const override;
+    const String & getDescription(bool with_extra = false) const override; /// NOLINT
     const String & getHost() const;
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
@@ -188,6 +188,7 @@ private:
 
     /// For messages in log and in exceptions.
     String description;
+    String full_description;
     void setDescription();
 
     /// Returns resolved address if it was resolved.
