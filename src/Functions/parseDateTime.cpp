@@ -146,15 +146,6 @@ namespace
     /// and need to return an error message through Status.
     /// The following macros can simplify the judgment of errors and reduce the amount of code.
 
-    /// For void functions, if an error occurs, an error message will be returned.
-    /// @param func_call The function to be executed
-#define SAFE_EXECUTE_VOID_FUNCTION(func_call) \
-    { \
-        auto status = func_call; \
-        if (status.isError()) \
-            return status; \
-    }
-
     /// For functions with return values, if an error occurs, an error message is returned, otherwise the result is saved to res
     /// @param T The type of the result
     /// @param result Variables that save the execution result
@@ -785,7 +776,8 @@ namespace
             static Status readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment))
+                    if (Status status = checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment); status.isError())
+                        return status;
 
                 res = (*cur - '0');
                 ++cur;
@@ -798,7 +790,8 @@ namespace
             static Status readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "readNumber4 requires size >= 3", fragment))
+                    if (Status status = checkSpace(cur, end, 3, "readNumber4 requires size >= 3", fragment); status.isError())
+                        return status;
 
                 res = (*cur - '0');
                 ++cur;
@@ -813,7 +806,8 @@ namespace
             static Status readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment))
+                    if (Status status = checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment); status.isError())
+                        return status;
 
                 res = (*cur - '0');
                 ++cur;
@@ -863,7 +857,8 @@ namespace
             static Status assertNumber(Pos cur, Pos end, const String & fragment)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 1, "assertNumber requires size >= 1", fragment))
+                    if (Status status = checkSpace(cur, end, 1, "assertNumber requires size >= 1", fragment); status.isError())
+                        return status;
 
                 if (*cur < '0' || *cur > '9') [[unlikely]]
                     THROW_EXCEPTION_IN_FUNCTION(
@@ -878,7 +873,8 @@ namespace
 
             static Status mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment))
+                if (Status status = checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment); status.isError())
+                    return status;
 
                 String text(cur, 3);
                 boost::to_lower(text);
@@ -890,14 +886,16 @@ namespace
                         fragment,
                         std::string_view(cur, end - cur),
                         text)
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(it->second.second))
+                if (Status status = date.setDayOfWeek(it->second.second); status.isError())
+                    return status;
                 cur += 3;
                 return cur;
             }
 
             static Status mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment))
+                if (Status status = checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment); status.isError())
+                    return status;
 
                 String text(cur, 3);
                 boost::to_lower(text);
@@ -909,14 +907,16 @@ namespace
                         fragment,
                         std::string_view(cur, end - cur),
                         text)
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(it->second.second))
+                if (Status status = date.setMonth(it->second.second); status.isError())
+                    return status;
                 cur += 3;
                 return cur;
             }
 
             static Status mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
+                if (Status status = checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment); status.isError())
+                    return status;
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
@@ -932,7 +932,8 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
+                if (Status status = checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment); status.isError())
+                    return status;
 
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
@@ -946,7 +947,8 @@ namespace
 
                 cur += expected_remaining_size;
 
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(it->second.second))
+                if (Status status = date.setMonth(it->second.second); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -954,7 +956,8 @@ namespace
             {
                 Int32 month;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
+                if (Status status = date.setMonth(month); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -962,7 +965,8 @@ namespace
             {
                 Int32 month;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
+                if (Status status = date.setMonth(month); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -970,7 +974,8 @@ namespace
             {
                 Int32 century;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setCentury(century))
+                if (Status status = date.setCentury(century); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -978,33 +983,39 @@ namespace
             {
                 Int32 day_of_month;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day_of_month))
+                if (Status status = date.setDayOfMonth(day_of_month); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
+                if (Status status = checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment); status.isError())
+                    return status;
                 Int32 month;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
+                if (Status status = date.setMonth(month); status.isError())
+                    return status;
 
                 Int32 day;
 
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day))
+                if (Status status = date.setDayOfMonth(day); status.isError())
+                    return status;
 
                 Int32 year;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
+                if (Status status = date.setYear(year); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
+                if (Status status = checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment); status.isError())
+                    return status;
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
@@ -1012,13 +1023,15 @@ namespace
                 day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
 
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day_of_month))
+                if (Status status = date.setDayOfMonth(day_of_month); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
+                if (Status status = checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment); status.isError())
+                    return status;
 
                 Int32 year;
                 Int32 month;
@@ -1029,9 +1042,12 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
 
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day))
+                if (Status status = date.setYear(year); status.isError())
+                    return status;
+                if (Status status = date.setMonth(month); status.isError())
+                    return status;
+                if (Status status = date.setDayOfMonth(day); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1039,7 +1055,8 @@ namespace
             {
                 Int32 year2;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear2(year2))
+                if (Status status = date.setYear2(year2); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1047,7 +1064,8 @@ namespace
             {
                 Int32 year;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
+                if (Status status = date.setYear(year); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1055,14 +1073,17 @@ namespace
             {
                 Int32 day_of_year;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfYear(day_of_year))
+                if (Status status = date.setDayOfYear(day_of_year); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(*cur - '0'))
+                if (Status status = checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment); status.isError())
+                    return status;
+                if (Status status = date.setDayOfWeek(*cur - '0'); status.isError())
+                    return status;
                 ++cur;
                 return cur;
             }
@@ -1071,26 +1092,30 @@ namespace
             {
                 Int32 week;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setWeek(week))
+                if (Status status = date.setWeek(week); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment))
+                if (Status status = checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment); status.isError())
+                    return status;
 
                 Int32 day_of_week = *cur - '0';
                 if (day_of_week == 0)
                     day_of_week = 7;
 
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(day_of_week))
+                if (Status status = date.setDayOfWeek(day_of_week); status.isError())
+                    return status;
                 ++cur;
                 return cur;
             }
 
             static Status mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
+                if (Status status = checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment); status.isError())
+                    return status;
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -1104,7 +1129,8 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
+                if (Status status = checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment); status.isError())
+                    return status;
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -1116,7 +1142,8 @@ namespace
                         text1 + text2)
                 cur += expected_remaining_size;
 
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(it->second.second))
+                if (Status status = date.setDayOfWeek(it->second.second); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1124,7 +1151,8 @@ namespace
             {
                 Int32 year2;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear2(year2))
+                if (Status status = date.setYear2(year2); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1132,13 +1160,15 @@ namespace
             {
                 Int32 year;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
+                if (Status status = date.setYear(year); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment))
+                if (Status status = checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment); status.isError())
+                    return status;
 
                 Int32 sign;
                 if (*cur == '-')
@@ -1169,34 +1199,40 @@ namespace
             {
                 Int32 minute;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
+                if (Status status = date.setMinute(minute); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment))
+                if (Status status = checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment); status.isError())
+                    return status;
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                SAFE_EXECUTE_VOID_FUNCTION(date.setAMPM(text))
+                if (Status status = date.setAMPM(text); status.isError())
+                    return status;
                 cur += 2;
                 return cur;
             }
 
             static Status mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment))
+                if (Status status = checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment); status.isError())
+                    return status;
 
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
+                if (Status status = date.setHour(hour, true, true); status.isError())
+                    return status;
 
                 Int32 minute;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
+                if (Status status = date.setMinute(minute); status.isError())
+                    return status;
 
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (mysqlAMPM(cur, end, fragment, date)))
                 return cur;
@@ -1204,16 +1240,19 @@ namespace
 
             static Status mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment))
+                if (Status status = checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment); status.isError())
+                    return status;
 
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
+                if (Status status = date.setHour(hour, false, false); status.isError())
+                    return status;
 
                 Int32 minute;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
+                if (Status status = date.setMinute(minute); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1221,13 +1260,15 @@ namespace
             {
                 Int32 second;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setSecond(second))
+                if (Status status = date.setSecond(second); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & /*date*/)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
+                if (Status status = checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment); status.isError())
+                    return status;
 
                 for (size_t i = 0; i < 6; ++i)
                     SAFE_EXECUTE_FUNCTION(Pos, cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
@@ -1237,7 +1278,8 @@ namespace
 
             static Status mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment))
+                if (Status status = checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment); status.isError())
+                    return status;
 
                 Int32 hour;
                 Int32 minute;
@@ -1248,9 +1290,12 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
 
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setSecond(second))
+                if (Status status = date.setHour(hour, false, false); status.isError())
+                    return status;
+                if (Status status = date.setMinute(minute); status.isError())
+                    return status;
+                if (Status status = date.setSecond(second); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1258,7 +1303,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
+                if (Status status = date.setHour(hour, true, true); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1266,7 +1312,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
+                if (Status status = date.setHour(hour, true, true); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1274,7 +1321,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
+                if (Status status = date.setHour(hour, false, false); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1282,7 +1330,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
+                if (Status status = date.setHour(hour, false, false); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1387,11 +1436,13 @@ namespace
 
             static Status jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment))
+                if (Status status = checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment); status.isError())
+                    return status;
 
                 String era(cur, 2);
                 boost::to_lower(era);
-                SAFE_EXECUTE_VOID_FUNCTION(date.setEra(era))
+                if (Status status = date.setEra(era); status.isError())
+                    return status;
                 cur += 2;
                 return cur;
             }
@@ -1400,7 +1451,8 @@ namespace
             {
                 Int32 century;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setCentury(century))
+                if (Status status = date.setCentury(century); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1408,7 +1460,8 @@ namespace
             {
                 Int32 year_of_era;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year_of_era, true))
+                if (Status status = date.setYear(year_of_era, true); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1416,7 +1469,8 @@ namespace
             {
                 Int32 week_year;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(week_year, false, true))
+                if (Status status = date.setYear(week_year, false, true); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1424,7 +1478,8 @@ namespace
             {
                 Int32 week;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setWeek(week))
+                if (Status status = date.setWeek(week); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1432,14 +1487,16 @@ namespace
             {
                 Int32 day_of_week;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(day_of_week))
+                if (Status status = date.setDayOfWeek(day_of_week); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status
             jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment))
+                if (Status status = checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment); status.isError())
+                    return status;
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
@@ -1453,7 +1510,8 @@ namespace
                         text1)
 
                 cur += 3;
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(it->second.second))
+                if (Status status = date.setDayOfWeek(it->second.second); status.isError())
+                    return status;
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1473,7 +1531,8 @@ namespace
             {
                 Int32 year;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
+                if (Status status = date.setYear(year); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1481,7 +1540,8 @@ namespace
             {
                 Int32 day_of_year;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfYear(day_of_year))
+                if (Status status = date.setDayOfYear(day_of_year); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1489,13 +1549,15 @@ namespace
             {
                 Int32 month;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
+                if (Status status = date.setMonth(month); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
+                if (Status status = checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment); status.isError())
+                    return status;
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
@@ -1508,7 +1570,8 @@ namespace
                         text1)
 
                 cur += 3;
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(it->second.second))
+                if (Status status = date.setMonth(it->second.second); status.isError())
+                    return status;
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1529,17 +1592,20 @@ namespace
                 Int32 day_of_month;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day_of_month))
+                if (Status status = date.setDayOfMonth(day_of_month); status.isError())
+                    return status;
                 return cur;
             }
 
             static Status jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment))
+                if (Status status = checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment); status.isError())
+                    return status;
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                SAFE_EXECUTE_VOID_FUNCTION(date.setAMPM(text))
+                if (Status status = date.setAMPM(text); status.isError())
+                    return status;
                 cur += 2;
                 return cur;
             }
@@ -1548,7 +1614,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, false))
+                if (Status status = date.setHour(hour, true, false); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1556,7 +1623,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
+                if (Status status = date.setHour(hour, true, true); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1564,7 +1632,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
+                if (Status status = date.setHour(hour, false, false); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1572,7 +1641,8 @@ namespace
             {
                 Int32 hour;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, true))
+                if (Status status = date.setHour(hour, false, true); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1580,7 +1650,8 @@ namespace
             {
                 Int32 minute;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
+                if (Status status = date.setMinute(minute); status.isError())
+                    return status;
                 return cur;
             }
 
@@ -1588,7 +1659,8 @@ namespace
             {
                 Int32 second;
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
-                SAFE_EXECUTE_VOID_FUNCTION(date.setSecond(second))
+                if (Status status = date.setSecond(second); status.isError())
+                    return status;
                 return cur;
             }
         };
