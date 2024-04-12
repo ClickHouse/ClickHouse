@@ -77,6 +77,8 @@ namespace
             if (!time_zone_const_col)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), name);
             String time_zone_val = time_zone_const_col->getDataAt(0).toString();
+            time_t date_time_val = LocalDateTime(0, DateLUT::instance(time_zone_val)).to_time_t();
+            time_t utc_time_val = LocalDateTime(0, DateLUT::instance("UTC")).to_time_t();
             if (WhichDataType(arg1.type).isDateTime())
             {
                 const auto * date_time_col = checkAndGetColumn<ColumnDateTime>(arg1.column.get());
@@ -86,9 +88,8 @@ namespace
                 typename ColVecTo::Container & result_data = result_column->getData();
                 for (size_t i = 0; i < col_size; ++i)
                 {
-                    UInt32 date_time_val = date_time_col->getElement(i);
-                    LocalDateTime date_time(date_time_val, Name::to ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
-                    time_t time_val = date_time.to_time_t(Name::from ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
+                    UInt32 val = date_time_col->getElement(i);
+                    time_t time_val = Name::to ? val + utc_time_val - date_time_val : val + date_time_val - utc_time_val;
                     result_data[i] = static_cast<UInt32>(time_val);
                 }
                 return result_column;
@@ -105,12 +106,11 @@ namespace
                 typename ColDecimalTo::Container & result_data = result_column->getData();
                 for (size_t i = 0; i < col_size; ++i)
                 {
-                    DateTime64 date_time_val = date_time_col->getElement(i);
-                    Int64 seconds = date_time_val.value / scale_multiplier;
-                    Int64 micros = date_time_val.value % scale_multiplier;
-                    LocalDateTime date_time(seconds, Name::to ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
-                    time_t time_val = date_time.to_time_t(Name::from ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
-                    DateTime64 date_time_64(time_val * scale_multiplier + micros);
+                    DateTime64 val = date_time_col->getElement(i);
+                    Int64 seconds = val.value / scale_multiplier;
+                    Int64 mills = val.value % scale_multiplier;
+                    time_t time_val = Name::from ? seconds + date_time_val - utc_time_val : seconds + utc_time_val - date_time_val;
+                    DateTime64 date_time_64(time_val * scale_multiplier + mills);
                     result_data[i] = date_time_64;
                 }
                 return result_column;
