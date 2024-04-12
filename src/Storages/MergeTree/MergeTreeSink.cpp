@@ -13,7 +13,8 @@ namespace ProfileEvents
 namespace DB
 {
 
-struct CommittingBlockNumberTagger {
+struct CommittingBlockNumberTagger
+{
     std::mutex & committing_block_numbers_mutex;
     std::set<Int64> & committing_block_numbers;
     std::optional<Int64> block_number;

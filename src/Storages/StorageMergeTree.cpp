@@ -1002,11 +1002,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             return false;
 
         /// If storage in queue mode then block number allocation is performed not under parts lock.
-        /// So here we must gurantee that any other part will not appear between left, right. For this
+        /// So here we must guarantee that any other part will not appear between left, right. For this
         /// we have committing_block_numbers set.
         ///
         /// If block number will be allocated after this check then it must have at least value of
-        /// max(left.max_block, right.max_block) + 1 and if it is already allocated but not commited yet
+        /// max(left.max_block, right.max_block) + 1 and if it is already allocated but not committed yet
         /// it will be seen in set.
         if (getSettings()->queue_mode)
         {
