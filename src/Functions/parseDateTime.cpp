@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include <tl/expected.hpp>
 
 namespace DB
 {
