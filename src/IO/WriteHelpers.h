@@ -150,7 +150,7 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
-inline size_t writeFloatTextFastPath(T x, char * buffer)
+inline size_t writeFloatTextFastPath(T x, char * buffer, bool forcePeriod)
 {
     Int64 result = 0;
 
@@ -160,14 +160,30 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         /// This workaround improves performance 6..10 times.
 
         if (DecomposedFloat64(x).isIntegerInRepresentableRange())
+        {
             result = itoa(Int64(x), buffer) - buffer;
+            if (forcePeriod)
+            {
+                ++buffer;
+                *buffer = '.';
+                ++result;
+            }
+        }
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
         if (DecomposedFloat32(x).isIntegerInRepresentableRange())
+        {
             result = itoa(Int32(x), buffer) - buffer;
+            if (forcePeriod)
+            {
+                ++buffer;
+                *buffer = '.';
+                ++result;
+            }
+        }
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
@@ -178,19 +194,19 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 }
 
 template <typename T>
-inline void writeFloatText(T x, WriteBuffer & buf)
+inline void writeFloatText(T x, WriteBuffer & buf, bool force_period)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
 
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
-        buf.position() += writeFloatTextFastPath(x, buf.position());
+        buf.position() += writeFloatTextFastPath(x, buf.position(), force_period);
         return;
     }
 
     Converter::BufferType buffer;
-    size_t result = writeFloatTextFastPath(x, buffer);
+    size_t result = writeFloatTextFastPath(x, buffer, force_period);
     buf.write(buffer, result);
 }
 
@@ -1052,7 +1068,7 @@ inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) 
 
 /// Methods for outputting the value in text form for a tab-separated format.
 
-inline void writeText(is_integer auto x, WriteBuffer & buf)
+inline void writeText(is_integer auto x, WriteBuffer & buf, [[maybe_unused]] bool forcePeriod = false)
 {
     if constexpr (std::is_same_v<decltype(x), bool>)
         writeBoolText(x, buf);
@@ -1062,7 +1078,7 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
         writeIntText(x, buf);
 }
 
-inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeText(is_floating_point auto x, WriteBuffer & buf, bool forcePeriod = false) { writeFloatText(x, buf, forcePeriod); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 

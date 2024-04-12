@@ -33,6 +33,7 @@ struct FormatSettings
     bool import_nested_json = false;
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
+    bool approximate_numbers_with_period = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
 
