@@ -177,7 +177,7 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
-            String & out_disable_reason,
+            PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
@@ -204,7 +204,7 @@ private:
         bool aggressive,
         const String & partition_id,
         bool final,
-        String & disable_reason,
+        PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
@@ -213,7 +213,7 @@ private:
 
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
-        const StorageMetadataPtr & metadata_snapshot, String & disable_reason,
+        const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
     /// For current mutations queue, returns maximum version of mutation for a part,

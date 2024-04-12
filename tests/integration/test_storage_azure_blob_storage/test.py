@@ -36,11 +36,11 @@ def cluster():
 
 
 def azure_query(
-    node, query, expect_error="false", try_num=10, settings={}, query_on_retry=None
+    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
 ):
     for i in range(try_num):
         try:
-            if expect_error == "true":
+            if expect_error:
                 return node.query_and_get_error(query, settings=settings)
             else:
                 return node.query(query, settings=settings)
@@ -793,7 +793,7 @@ def test_read_from_not_existing_container(cluster):
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
     )
     expected_err_msg = "container does not exist"
-    assert expected_err_msg in azure_query(node, query, expect_error="true")
+    assert expected_err_msg in azure_query(node, query, expect_error=True)
 
 
 def test_function_signatures(cluster):
@@ -966,7 +966,7 @@ def test_union_schema_inference_mode(cluster):
     error = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
-        expect_error="true",
+        expect_error=True,
     )
     assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in error
 

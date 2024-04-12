@@ -19,7 +19,7 @@
                 <type>cache</type>
                 <disk>s3_disk</disk>
                 <path>s3_cache/</path>
-                <max_size>64Mi</max_size>
+                <max_size>104857600</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <cache_policy>LRU</cache_policy>

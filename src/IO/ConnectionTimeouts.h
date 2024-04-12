@@ -35,6 +35,8 @@ struct ConnectionTimeouts
 
     Poco::Timespan tcp_keep_alive_timeout = Poco::Timespan(DEFAULT_TCP_KEEP_ALIVE_TIMEOUT, 0);
     Poco::Timespan http_keep_alive_timeout = Poco::Timespan(DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, 0);
+    size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
 
     /// Timeouts for HedgedConnections
     Poco::Timespan hedged_connection_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
@@ -69,6 +71,7 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
 
     ConnectionTimeouts & withConnectionTimeout(size_t seconds);
     ConnectionTimeouts & withConnectionTimeout(Poco::Timespan span);
+    ConnectionTimeouts & withHTTPKeepAliveMaxRequests(size_t requests);
 };
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -111,6 +114,12 @@ inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Time
 {
     connection_timeout = span;
     secure_connection_timeout = span;
+    return *this;
+}
+
+inline ConnectionTimeouts & ConnectionTimeouts::withHTTPKeepAliveMaxRequests(size_t requests)
+{
+    http_keep_alive_max_requests = requests;
     return *this;
 }
 
