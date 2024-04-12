@@ -42,6 +42,19 @@ Type: UInt32
 Default: 1
 
 
+## auth_use_forwarded_address
+
+Use originating address for authentication for clients connected through proxy.
+
+:::note
+This setting should be used with extra caution since forwarded address can be easily spoofed - server accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
+:::
+
+Type: Bool
+
+Default: 0
+
+
 ## background_buffer_flush_schedule_pool_size
 
 The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.

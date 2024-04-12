@@ -32,7 +32,7 @@ struct MergeTreeDataPartChecksum
         : file_size(file_size_), file_hash(file_hash_), is_compressed(true),
         uncompressed_size(uncompressed_size_), uncompressed_hash(uncompressed_hash_) {}
 
-    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const;
+    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name, const String & part_name) const;
     void checkSize(const IDataPartStorage & storage, const String & name) const;
 };
 
@@ -61,7 +61,7 @@ struct MergeTreeDataPartChecksums
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
     /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data.
     /// Otherwise, it compares only the checksums of the files.
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed, const String & part_name) const;
 
     static bool isBadChecksumsErrorCode(int code);
 
@@ -132,8 +132,8 @@ struct MinimalisticDataPartChecksums
     String getSerializedString() const;
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
-    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
+    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const;
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const;
     void checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
 };
 
