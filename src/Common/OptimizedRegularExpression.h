@@ -79,7 +79,7 @@ public:
 
     unsigned match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
     {
-        std::string_view text{subject, subject};
+        std::string_view text{subject, subject_size};
         return match(text, subject, subject_size, matches, limit);
     }
 
