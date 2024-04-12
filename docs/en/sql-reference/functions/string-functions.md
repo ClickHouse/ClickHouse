@@ -867,6 +867,34 @@ Result:
 
 Like `base58Decode` but returns an empty string in case of error.
 
+**Syntax**
+
+```sql
+tryBase58Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase58Decode('3dc8KtHrwM') as res;
+```
+
+```response
+┌─res─────┐
+│ Encoded │
+└─────────┘
+```
+
 ## base64Encode
 
 Encodes a String or FixedString as base64.
@@ -882,6 +910,30 @@ Alias: `FROM_BASE64`.
 ## tryBase64Decode
 
 Like `base64Decode` but returns an empty string in case of error.
+
+**Syntax**
+
+```sql
+tryBase64Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase64Decode('RW5jb2RlZA==') as res;
+```
+
+```response
+┌─res─────┐
+│ Encoded │
+└─────────┘
+```
 
 ## endsWith {#endswith}
 
