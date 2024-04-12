@@ -2348,6 +2348,7 @@ rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
