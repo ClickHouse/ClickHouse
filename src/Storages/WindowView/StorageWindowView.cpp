@@ -305,7 +305,7 @@ namespace
     public:
         explicit AddingAggregatedChunkInfoTransform(Block header) : ISimpleTransform(header, header, false) { }
 
-        void transform(Chunk & chunk) override { chunk.setChunkInfo(std::make_shared<AggregatedChunkInfo>()); }
+        void transform(Chunk & chunk) override { chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>()); }
 
         String getName() const override { return "AddingAggregatedChunkInfoTransform"; }
     };
@@ -690,7 +690,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
         StoragePtr target_table = getTargetTable();
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
-        InterpreterInsertQuery interpreter(insert, getContext());
+        InterpreterInsertQuery interpreter(insert, getContext(), false, false, false, false);
         auto block_io = interpreter.execute();
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));

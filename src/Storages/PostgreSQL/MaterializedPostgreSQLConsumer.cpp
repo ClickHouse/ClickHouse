@@ -697,7 +697,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     insert->table_id = storage->getStorageID();
                     insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
 
-                    InterpreterInsertQuery interpreter(insert, insert_context, true);
+                    InterpreterInsertQuery interpreter(insert, insert_context, true, false, false, false);
                     auto io = interpreter.execute();
                     auto input = std::make_shared<SourceFromSingleChunk>(
                         result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));

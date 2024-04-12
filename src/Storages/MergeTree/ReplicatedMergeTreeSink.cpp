@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Processors/Transforms/NumberBlocksTransform.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
@@ -253,12 +254,12 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
 }
 
 template<bool async_insert>
-void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
+void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
 {
     if (num_blocks_processed > 0)
         storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
 
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
     const auto & settings = context->getSettingsRef();
 
@@ -284,11 +285,38 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
     if constexpr (async_insert)
     {
-        const auto & chunk_info = chunk.getChunkInfo();
-        if (const auto * async_insert_info_ptr = typeid_cast<const AsyncInsertInfo *>(chunk_info.get()))
+        const auto async_insert_info_ptr = chunk.getChunkInfos().get<AsyncInsertInfo>();
+        if (async_insert_info_ptr)
             async_insert_info = std::make_shared<AsyncInsertInfo>(async_insert_info_ptr->offsets, async_insert_info_ptr->tokens);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No chunk info for async inserts");
+    }
+
+    String block_dedup_token;
+    if constexpr (!async_insert)
+    {
+        auto token_info = chunk.getChunkInfos().get<DedupTokenInfo>();
+        if (!token_info && !context->getSettingsRef().insert_deduplication_token.value.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "DedupTokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
+                storage.getStorageID().getNameForLogs());
+
+
+        if (token_info)
+        {
+            /// multiple blocks can be inserted within the same insert query
+            /// an ordinal number is added to dedup token to generate a distinctive block id for each block
+            block_dedup_token = token_info->getToken();
+
+            LOG_DEBUG(storage.log,
+                "dedup token from insert deduplication token in chunk: {}",
+                block_dedup_token);
+        }
+        else
+        {
+            LOG_DEBUG(storage.log,
+                "dedup token from hash is caclulated");
+        }
     }
 
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, async_insert_info);
@@ -342,29 +370,21 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         }
         else
         {
-
             if (deduplicate)
             {
-                String block_dedup_token;
-
                 /// We add the hash from the data and partition identifier to deduplication ID.
                 /// That is, do not insert the same data to the same partition twice.
-
-                const String & dedup_token = settings.insert_deduplication_token;
-                if (!dedup_token.empty())
-                {
-                    /// multiple blocks can be inserted within the same insert query
-                    /// an ordinal number is added to dedup token to generate a distinctive block id for each block
-                    block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
-                    ++chunk_dedup_seqnum;
-                }
-
                 block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
                 LOG_DEBUG(log, "Wrote block with ID '{}', {} rows{}", block_id, current_block.block.rows(), quorumLogMessage(replicas_num));
             }
             else
             {
                 LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
+            }
+
+            if (auto children_dedup_token = getDeduplicationTokenForChildren(chunk))
+            {
+                children_dedup_token->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
             }
         }
 

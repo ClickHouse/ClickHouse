@@ -134,7 +134,7 @@ DistributedSink::DistributedSink(
 }
 
 
-void DistributedSink::consume(Chunk chunk)
+void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
@@ -142,7 +142,7 @@ void DistributedSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto ordinary_block = getHeader().cloneWithColumns(chunk.getColumns());
 
     if (insert_sync)
         writeSync(ordinary_block);
@@ -417,7 +417,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
-                InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
+                InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized, false, false, false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -703,7 +703,7 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
-        InterpreterInsertQuery interp(query_ast, context, allow_materialized);
+        InterpreterInsertQuery interp(query_ast, context, allow_materialized, false, false, false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);

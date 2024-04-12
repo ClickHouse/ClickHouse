@@ -44,7 +44,7 @@ public:
         const String & backup_file_name_, bool persistent_);
 
     String getName() const override { return "SetOrJoinSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
@@ -82,9 +82,9 @@ SetOrJoinSink::SetOrJoinSink(
 {
 }
 
-void SetOrJoinSink::consume(Chunk chunk)
+void SetOrJoinSink::consume(Chunk & chunk)
 {
-    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
+    Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
     table.insertBlock(block, getContext());
     if (persistent)

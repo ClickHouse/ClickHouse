@@ -51,7 +51,7 @@ public:
     ~ReplicatedMergeTreeSinkImpl() override;
 
     void onStart() override;
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
@@ -139,6 +139,7 @@ private:
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
+    void fillDeduplicationTokenForChildren(Chunk &) const override { /* For MergeTree we get the tokens from part checksums */ }
     void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 };
 

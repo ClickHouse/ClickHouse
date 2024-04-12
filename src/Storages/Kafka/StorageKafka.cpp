@@ -1098,7 +1098,7 @@ bool StorageKafka::streamToViews()
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true, false);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream

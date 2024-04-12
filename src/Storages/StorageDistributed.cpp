@@ -1048,7 +1048,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         const auto & shard_info = shards_info[shard_index];
         if (shard_info.isLocal())
         {
-            InterpreterInsertQuery interpreter(new_query, query_context);
+            InterpreterInsertQuery interpreter(new_query, query_context, false, false, false, false);
             pipeline.addCompletedPipeline(interpreter.execute().pipeline);
         }
         else
