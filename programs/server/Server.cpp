@@ -613,7 +613,9 @@ static void sanityChecks(Server & server)
     }
 }
 
-static void initializeAzureSDKLogger(const ServerSettings & server_settings, int server_logs_level)
+static void initializeAzureSDKLogger(
+    [[ maybe_unused ]] const ServerSettings & server_settings,
+    [[ maybe_unused ]] int server_logs_level)
 {
 #if USE_AZURE_BLOB_STORAGE
     if (!server_settings.enable_azure_sdk_logging)
