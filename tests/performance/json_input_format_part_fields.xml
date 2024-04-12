@@ -9,7 +9,7 @@
         f6 Nullable(UInt64),
         f7 Nullable(String),
         f8 Nullable(String)
-    ) ENGINE = File(JSONEachRow) settings input_format_json_throw_on_duplicated_fields=0 </create_query>
+    ) ENGINE = File(JSONEachRow)</create_query>
     <fill_query>
     insert into t 
     select 
