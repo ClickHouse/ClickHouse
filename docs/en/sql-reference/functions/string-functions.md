@@ -104,7 +104,7 @@ Alias:
 
 ## left
 
-Returns the substring of a string `s` which starts at the specified byte index `offset` from the left.
+Returns a substring of string `s` with a specified `offset` starting from the left.
 
 **Syntax**
 
@@ -151,7 +151,7 @@ He
 
 ## leftUTF8
 
-Returns the substring of a UTF-8 encoded string `s` which starts at the specified byte index `offset` from the left.
+Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
 
 **Syntax**
 
@@ -272,7 +272,7 @@ Result:
 
 ## right
 
-Returns the substring of a string `s` which starts at the specified byte index `offset` from the right.
+Returns a substring of string `s` with a specified `offset` starting from the right.
 
 **Syntax**
 
@@ -319,7 +319,7 @@ lo
 
 ## rightUTF8
 
-Returns the substring of a UTF-8 encoded string `s` which starts at the specified byte index `offset` from the right.
+Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
 
 **Syntax**
 
