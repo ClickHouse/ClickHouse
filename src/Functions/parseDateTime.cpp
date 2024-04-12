@@ -105,40 +105,65 @@ namespace
 
         std::variant<Int32, Int64, Pos> res;
 
+        /// Helper to disambiguate the first Status argument: Pos, Int64, Int32 (for success) vs. int (for errors)
+        struct IsValueTag {};
+
         Status() = default;
-        Status(Pos pos_) : res(pos_) { }
-        Status(Int64 pos_) : res(pos_) { }
-        Status(Int32 pos_) : res(pos_) { }
+        Status(IsValueTag /*tag*/, Pos pos_) : res(pos_) { }
+        Status(IsValueTag /*tag*/, Int64 pos_) : res(pos_) { }
+        Status(IsValueTag /*tag*/, Int32 pos_) : res(pos_) { }
+
+        explicit Status(int error_code_)
+            : error_code(error_code_)
+        {
+        }
 
         template <typename... Args>
-        Status(int code_, FormatStringHelper<Args...> fmt, Args &&... args)
-            : error_code(code_), error_message(fmt.format(std::forward<Args>(args)...))
+        Status(int error_code_, FormatStringHelper<Args...> fmt, Args &&... args)
+            : error_code(error_code_), error_message(fmt.format(std::forward<Args>(args)...))
         {
         }
 
     public:
         bool isError() const { return error_code > 0; }
 
-        /// The created status indicates that the called function executed successfully and returned nothing
+        /// Represents a successful call of some function which returned nothing.
         static Status createSuccess()
         {
             return Status();
         }
 
-        /// The function fails to be executed, and the corresponding error code and error message are required, and the parameters are the same as DB::Exception
+        /// Represents a successful call of some function which returned a value.
+        static Status createSuccessWithValue(Pos pos)
+        {
+            return Status(IsValueTag(), pos);
+        }
+
+        /// Represents a successful call of some function which returned a value.
+        static Status createSuccessWithValue(Int64 pos)
+        {
+            return Status(IsValueTag(), pos);
+        }
+
+        /// Represents a successful call of some function which returned a value.
+        static Status createSuccessWithValue(Int32 pos)
+        {
+            return Status(IsValueTag(), pos);
+        }
+
+        /// Represents a failed call of some function. Stores only the error code but not the error text.
+        /// Useful in paths where we only like to know if the function call failed (e.g. '*OrNull'/'*OrZero' SQL functions)
+        static Status createError(int error_code)
+        {
+            return Status(error_code);
+        }
+
+        /// Represents a failed call of some function. Stores the error code and error text.
+        /// Useful in paths where an exception with the exact error text should be thrown back to the user.
         template <typename... Args>
         static Status createError(int error_code, FormatStringHelper<Args...> fmt, Args &&... args)
         {
             return Status(error_code, std::move(fmt), std::forward<Args>(args)...);
-        }
-
-        /// The function fails to execute, and the corresponding error code is required, in order to parseDateTime[InJodaSyntax]Or(Null|zero) function,
-        /// which does not require an error message
-        static Status createError(int error_code_)
-        {
-            Status status;
-            status.error_code = error_code_;
-            return status;
         }
     };
 
@@ -158,17 +183,12 @@ namespace
         (result) = std::get<T>(status.res); \
     }
 
-    /// when need_exception is true, generate exception message, otherwise return error code, ignore message.
-#define THROW_EXCEPTION_IN_FUNCTION(error_code, ...) \
+#define RETURN_ERROR_BASED_ON_ERROR_HANDLING(error_code, ...) \
     { \
         if constexpr (error_handling == ErrorHandling::Exception) \
-        { \
             return Status::createError(error_code, __VA_ARGS__); \
-        } \
         else \
-        { \
             return Status::createError(error_code); \
-        } \
     }
 
     template <ErrorHandling error_handling>
@@ -237,16 +257,16 @@ namespace
         Status setEra(const String & text)
         {
             if (text == "bc")
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime")
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime")
             else if (text != "ad")
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text)
             return Status::createSuccess();
         }
 
         Status setCentury(Int32 century)
         {
             if (century < 19 || century > 21)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century)
 
             year = 100 * century;
             has_year = true;
@@ -256,7 +276,7 @@ namespace
         Status setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
         {
             if (year_ < minYear || year_ > maxYear)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear)
 
             year = year_;
             has_year = true;
@@ -276,7 +296,7 @@ namespace
             else if (year_ >= 0 && year_ < 70)
                 year_ += 2000;
             else
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_)
 
             setYear(year_, false, false);
             return Status::createSuccess();
@@ -285,7 +305,7 @@ namespace
         Status setMonth(Int32 month_)
         {
             if (month_ < 1 || month_ > 12)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_)
 
             month = month_;
             week_date_format = false;
@@ -301,7 +321,7 @@ namespace
         Status setWeek(Int32 week_)
         {
             if (week_ < 1 || week_ > 53)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
             week_date_format = true;
@@ -317,7 +337,7 @@ namespace
         Status setDayOfYear(Int32 day_of_year_)
         {
             if (day_of_year_ < 1 || day_of_year_ > 366)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_)
 
             day_of_year = day_of_year_;
             day_of_year_format = true;
@@ -333,7 +353,7 @@ namespace
         Status setDayOfMonth(Int32 day_of_month)
         {
             if (day_of_month < 1 || day_of_month > 31)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month)
 
             day = day_of_month;
             week_date_format = false;
@@ -349,7 +369,7 @@ namespace
         Status setDayOfWeek(Int32 day_of_week_)
         {
             if (day_of_week_ < 1 || day_of_week_ > 7)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
             week_date_format = true;
@@ -370,7 +390,7 @@ namespace
             else if (text == "pm")
                 is_am = false;
             else
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text)
             return Status::createSuccess();
         }
 
@@ -403,7 +423,7 @@ namespace
             }
 
             if (hour_ < min_hour || hour_ > max_hour)
-                THROW_EXCEPTION_IN_FUNCTION(
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                     ErrorCodes::CANNOT_PARSE_DATETIME,
                     "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and hour_starts_at_1={}",
                     hour,
@@ -421,7 +441,7 @@ namespace
         Status setMinute(Int32 minute_)
         {
             if (minute_ < 0 || minute_ > 59)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_)
 
             minute = minute_;
             return Status::createSuccess();
@@ -430,7 +450,7 @@ namespace
         Status setSecond(Int32 second_)
         {
             if (second_ < 0 || second_ > 59)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_)
 
             second = second_;
             return Status::createSuccess();
@@ -490,33 +510,33 @@ namespace
         {
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (week_year_ < minYear || week_year_ > maxYear)
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
             Int32 days_since_epoch_of_jan_fourth;
             SAFE_EXECUTE_FUNCTION(Int32, days_since_epoch_of_jan_fourth, daysSinceEpochFromDate(week_year_, 1, 4))
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
-            return days_since_epoch_of_jan_fourth - (first_day_of_week_year - 1) + 7 * (week_of_year_ - 1) + day_of_week_ - 1;
+            return Status::createSuccessWithValue(days_since_epoch_of_jan_fourth - (first_day_of_week_year - 1) + 7 * (week_of_year_ - 1) + day_of_week_ - 1);
         }
 
         static Status daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_)
 
             Int32 res;
             SAFE_EXECUTE_FUNCTION(Int32, res, daysSinceEpochFromDate(year_, 1, 1))
             res += day_of_year_ - 1;
-            return res;
+            return Status::createSuccessWithValue(res);
         }
 
         static Status daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_)
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_)
 
             Int32 res = cumulativeYearDays[year_ - 1970];
             res += isLeapYear(year_) ? cumulativeLeapDays[month_ - 1] : cumulativeDays[month_ - 1];
             res += day_ - 1;
-            return res;
+            return Status::createSuccessWithValue(res);
         }
 
         Status buildDateTime(const DateLUTImpl & time_zone)
@@ -543,9 +563,9 @@ namespace
             if (seconds_since_epoch >= time_zone_offset)
                 seconds_since_epoch -= time_zone_offset;
             else
-                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
+                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
 
-            return seconds_since_epoch;
+            return Status::createSuccessWithValue(seconds_since_epoch);
         }
     };
 
@@ -759,7 +779,7 @@ namespace
                         return status;
 
                     if (std::string_view(cur, literal.size()) != literal)
-                        THROW_EXCEPTION_IN_FUNCTION(
+                        RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
                             "Unable to parse fragment {} from {} because literal {} is expected but {} provided",
                             fragment,
@@ -768,7 +788,7 @@ namespace
                             std::string_view(cur, literal.size()))
 
                     cur += literal.size();
-                    return cur;
+                    return Status::createSuccessWithValue(cur);
                 }
             }
 
@@ -783,7 +803,7 @@ namespace
                 ++cur;
                 res = res * 10 + (*cur - '0');
                 ++cur;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             template <typename T, NeedCheckSpace need_check_space>
@@ -799,7 +819,7 @@ namespace
                 ++cur;
                 res = res * 10 + (*cur - '0');
                 ++cur;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             template <typename T, NeedCheckSpace need_check_space>
@@ -817,13 +837,13 @@ namespace
                 ++cur;
                 res = res * 10 + (*cur - '0');
                 ++cur;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & fragment)
             {
                 if (cur > end || cur + len > end) [[unlikely]]
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::NOT_ENOUGH_SPACE,
                         "Unable to parse fragment {} from {} because {}",
                         fragment,
@@ -842,7 +862,7 @@ namespace
                 }
 
                 if (*cur != expected) [[unlikely]]
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
@@ -850,7 +870,7 @@ namespace
                         String(expected, 1),
                         String(*cur, 1))
                 ++cur;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             template <NeedCheckSpace need_check_space>
@@ -861,14 +881,14 @@ namespace
                         return status;
 
                 if (*cur < '0' || *cur > '9') [[unlikely]]
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because number is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
                         String(*cur, 1))
                 ++cur;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -880,7 +900,7 @@ namespace
                 boost::to_lower(text);
                 auto it = dayOfWeekMap.find(text);
                 if (it == dayOfWeekMap.end())
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week short text {} ",
                         fragment,
@@ -889,7 +909,7 @@ namespace
                 if (Status status = date.setDayOfWeek(it->second.second); status.isError())
                     return status;
                 cur += 3;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -901,7 +921,7 @@ namespace
                 boost::to_lower(text);
                 auto it = monthMap.find(text);
                 if (it == monthMap.end())
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year short text {}",
                         fragment,
@@ -910,7 +930,7 @@ namespace
                 if (Status status = date.setMonth(it->second.second); status.isError())
                     return status;
                 cur += 3;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -922,7 +942,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -938,7 +958,7 @@ namespace
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -949,7 +969,7 @@ namespace
 
                 if (Status status = date.setMonth(it->second.second); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -958,7 +978,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
                 if (Status status = date.setMonth(month); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -967,7 +987,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month)))
                 if (Status status = date.setMonth(month); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlCentury(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -976,7 +996,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
                 if (Status status = date.setCentury(century); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -985,7 +1005,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
                 if (Status status = date.setDayOfMonth(day_of_month); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1009,7 +1029,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
                 if (Status status = date.setYear(year); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1025,7 +1045,7 @@ namespace
 
                 if (Status status = date.setDayOfMonth(day_of_month); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1048,7 +1068,7 @@ namespace
                     return status;
                 if (Status status = date.setDayOfMonth(day); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1057,7 +1077,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
                 if (Status status = date.setYear2(year2); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1066,7 +1086,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
                 if (Status status = date.setYear(year); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlDayOfYear(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1075,7 +1095,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
                 if (Status status = date.setDayOfYear(day_of_year); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1085,7 +1105,7 @@ namespace
                 if (Status status = date.setDayOfWeek(*cur - '0'); status.isError())
                     return status;
                 ++cur;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlISO8601Week(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1094,7 +1114,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
                 if (Status status = date.setWeek(week); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1109,7 +1129,7 @@ namespace
                 if (Status status = date.setDayOfWeek(day_of_week); status.isError())
                     return status;
                 ++cur;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1120,7 +1140,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1134,7 +1154,7 @@ namespace
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse second part of fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1144,7 +1164,7 @@ namespace
 
                 if (Status status = date.setDayOfWeek(it->second.second); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlYear2(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1153,7 +1173,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
                 if (Status status = date.setYear2(year2); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlYear4(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1162,7 +1182,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
                 if (Status status = date.setYear(year); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1176,7 +1196,7 @@ namespace
                 else if (*cur == '+')
                     sign = 1;
                 else
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown sign time zone offset: {}",
                         fragment,
@@ -1192,7 +1212,7 @@ namespace
 
                 date.has_time_zone_offset = true;
                 date.time_zone_offset = sign * (hour * 3600 + minute * 60);
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlMinute(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1201,7 +1221,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
                 if (Status status = date.setMinute(minute); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1214,7 +1234,7 @@ namespace
                 if (Status status = date.setAMPM(text); status.isError())
                     return status;
                 cur += 2;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1235,7 +1255,7 @@ namespace
                     return status;
 
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (mysqlAMPM(cur, end, fragment, date)))
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1253,7 +1273,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 if (Status status = date.setMinute(minute); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlSecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1262,7 +1282,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
                 if (Status status = date.setSecond(second); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & /*date*/)
@@ -1273,7 +1293,7 @@ namespace
                 for (size_t i = 0; i < 6; ++i)
                     SAFE_EXECUTE_FUNCTION(Pos, cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
 
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1296,7 +1316,7 @@ namespace
                     return status;
                 if (Status status = date.setSecond(second); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlHour12(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1305,7 +1325,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
                 if (Status status = date.setHour(hour, true, true); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1314,7 +1334,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
                 if (Status status = date.setHour(hour, true, true); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1323,7 +1343,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
                 if (Status status = date.setHour(hour, false, false); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1332,7 +1352,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
                 if (Status status = date.setHour(hour, false, false); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status readNumberWithVariableLength(
@@ -1364,7 +1384,7 @@ namespace
 
                 /// Avoid integer overflow in (*)
                 if (max_digits_to_read >= std::numeric_limits<decltype(number)>::digits10) [[unlikely]]
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because max_digits_to_read is too big",
                         fragment,
@@ -1415,7 +1435,7 @@ namespace
 
                 /// Need to have read at least one digit.
                 if (cur == start) [[unlikely]]
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because read number failed",
                         fragment,
@@ -1423,7 +1443,7 @@ namespace
 
                 /// Check if number exceeds the range of Int32
                 if (number < std::numeric_limits<Int32>::min() || number > std::numeric_limits<Int32>::max()) [[unlikely]]
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because number is out of range of Int32",
                         fragment,
@@ -1431,7 +1451,7 @@ namespace
 
                 result = static_cast<Int32>(number);
 
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1444,7 +1464,7 @@ namespace
                 if (Status status = date.setEra(era); status.isError())
                     return status;
                 cur += 2;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1453,7 +1473,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
                 if (Status status = date.setCentury(century); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1462,7 +1482,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
                 if (Status status = date.setYear(year_of_era, true); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1471,7 +1491,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
                 if (Status status = date.setYear(week_year, false, true); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1480,7 +1500,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
                 if (Status status = date.setWeek(week); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1489,7 +1509,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
                 if (Status status = date.setDayOfWeek(day_of_week); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status
@@ -1502,7 +1522,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1521,10 +1541,10 @@ namespace
                     if (text2 == it->second.first)
                     {
                         cur += expected_remaining_size;
-                        return cur;
+                        return Status::createSuccessWithValue(cur);
                     }
                 }
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1533,7 +1553,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
                 if (Status status = date.setYear(year); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1542,7 +1562,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
                 if (Status status = date.setDayOfYear(day_of_year); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1551,7 +1571,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
                 if (Status status = date.setMonth(month); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1562,7 +1582,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
-                    THROW_EXCEPTION_IN_FUNCTION(
+                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -1581,10 +1601,10 @@ namespace
                     if (text2 == it->second.first)
                     {
                         cur += expected_remaining_size;
-                        return cur;
+                        return Status::createSuccessWithValue(cur);
                     }
                 }
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1594,7 +1614,7 @@ namespace
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month)))
                 if (Status status = date.setDayOfMonth(day_of_month); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1607,7 +1627,7 @@ namespace
                 if (Status status = date.setAMPM(text); status.isError())
                     return status;
                 cur += 2;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1616,7 +1636,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (Status status = date.setHour(hour, true, false); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1625,7 +1645,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (Status status = date.setHour(hour, true, true); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1634,7 +1654,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (Status status = date.setHour(hour, false, false); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1643,7 +1663,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (Status status = date.setHour(hour, false, true); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1652,7 +1672,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
                 if (Status status = date.setMinute(minute); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
 
             static Status jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
@@ -1661,7 +1681,7 @@ namespace
                 SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
                 if (Status status = date.setSecond(second); status.isError())
                     return status;
-                return cur;
+                return Status::createSuccessWithValue(cur);
             }
         };
 
