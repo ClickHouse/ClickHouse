@@ -41,9 +41,9 @@ public:
         , max_block_size(max_block_size_)
         , context(std::move(context_))
     {
-        for (const auto & [_, disk] : disks_)
+        for (const auto & disk : disks_)
         {
-            if (disk->isRemote())
+            if (disk.second->isRemote())
                 disks.push_back(disk);
         }
 
@@ -89,7 +89,7 @@ private:
     }
 
     const UInt64 max_block_size;
-    std::vector<DiskPtr> disks;
+    std::vector<std::pair<std::string, DiskPtr>> disks;
     ContextPtr context;
 
     /// Directory entry with optional predicate to skip some files
@@ -245,13 +245,14 @@ bool SystemRemoteDataPathsSource::nextFile()
 
         try
         {
+            const auto & disk = disks[current_disk].second;
             /// Stop if current path is a file
-            if (disks[current_disk]->isFile(getCurrentPath()))
+            if (disk->isFile(getCurrentPath()))
                 return true;
 
             /// If current path is a directory list its contents and step into it
             std::vector<std::string> children;
-            disks[current_disk]->listFiles(getCurrentPath(), children);
+            disk->listFiles(getCurrentPath(), children);
 
             /// Use current predicate for all children
             const auto & skip_predicate = getCurrentSkipPredicate();
@@ -313,7 +314,7 @@ Chunk SystemRemoteDataPathsSource::generate()
                 break;
         }
 
-        const auto & disk = disks[current_disk];
+        const auto & [disk_name, disk] = disks[current_disk];
         auto local_path = getCurrentPath();
 
         const auto & skip_predicate = getCurrentSkipPredicate();
@@ -346,7 +347,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         for (const auto & object : storage_objects)
         {
             ++row_count;
-            col_disk_name->insert(disk->getName());
+            col_disk_name->insert(disk_name);
             col_base_path->insert(disk->getPath());
             if (cache)
                 col_cache_base_path->insert(cache->getBasePath());
