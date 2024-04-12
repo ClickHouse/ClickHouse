@@ -243,7 +243,7 @@ namespace
         }
 
         /// Input text is expected to be lowered by caller
-        Status setEra(const String & text) // NOLINT
+        Status setEra(const String & text)
         {
             if (text == "bc")
                 THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime")
