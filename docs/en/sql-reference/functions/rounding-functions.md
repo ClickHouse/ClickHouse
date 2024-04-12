@@ -48,7 +48,7 @@ Alias: `truncate`.
 Query:
 
 ```sql
-SELECT trunc(123.45, 1) as res;
+SELECT trunc(123.499, 1) as res;
 ```
 
 ```response
