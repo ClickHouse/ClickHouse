@@ -157,16 +157,25 @@ jobs:
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() && github.event_name != 'merge_group' }}
-    needs: [Tests_1, Tests_2]
+    if: ${{ !failure() && !cancelled() }}
+    needs: [Tests_1, Tests_2, Builds_1_Report, Builds_2_Report]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+      - name: Check sync status
+        if: ${{ github.event_name == 'merge_group' }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 sync_pr.py --status
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
+      - name: Auto merge if approved
+        if: ${{ github.event_name != 'merge_group' }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 merge_pr.py --check-approved
 
 
