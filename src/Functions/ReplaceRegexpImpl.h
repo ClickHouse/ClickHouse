@@ -129,23 +129,21 @@ struct ReplaceRegexpImpl
 
             if (searcher->match(haystack, haystack_data + match_pos, haystack_length - match_pos, matches, num_captures))
             {
+                const auto & match = matches[0]; /// Complete match (\0)
+                // std::cout << "match_pos:" << match_pos << ", match offset:" << match.offset << ", copy_pos:" << copy_pos << ", bytes_to_copy:" << bytes_to_copy << std::endl;
                 // std::cout << "match_pos:" << match_pos << ", length:" << haystack_length - match_pos << ", match size:" << matches.size() << std::endl;
                 // for (size_t i = 0; i < matches.size(); ++i)
                 // {
                 //     std::cout << i << ":" << std::string(haystack_data + match_pos + matches[i].offset, matches[i].length) << std::endl;
                 // }
 
-                const auto & match = matches[0]; /// Complete match (\0)
-                size_t bytes_to_copy = match_pos + match.offset - copy_pos;
-                // std::cout << "match_pos:" << match_pos << ", match offset:" << match.offset << ", copy_pos:" << copy_pos << ", bytes_to_copy:" << bytes_to_copy << std::endl;
-
                 /// Copy prefix before current match without modification
+                size_t bytes_to_copy = match_pos + match.offset - copy_pos;
                 res_data.resize(res_data.size() + bytes_to_copy);
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack_data + copy_pos, bytes_to_copy);
                 std::string_view prefix{haystack_data + copy_pos, bytes_to_copy};
                 res_offset += bytes_to_copy;
                 copy_pos += bytes_to_copy;
-                match_pos = copy_pos;
 
                 /// Substitute inside current match using instructions
                 for (const auto & instr : instructions)
