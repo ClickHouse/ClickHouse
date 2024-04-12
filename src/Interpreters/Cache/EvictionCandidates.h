@@ -25,7 +25,7 @@ public:
 
     void finalize(
         FileCacheQueryLimit::QueryContext * query_context,
-        const CachePriorityGuard::Lock & lock);
+        const CachePriorityGuard::Lock &);
 
     bool needFinalize() const;
 

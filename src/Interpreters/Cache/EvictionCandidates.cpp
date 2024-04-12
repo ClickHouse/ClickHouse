@@ -76,12 +76,22 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
 
     for (const auto & [key, key_candidates] : candidates)
     {
+        auto locked_key = key_candidates.key_metadata->lock();
         for (const auto & candidate : key_candidates.candidates)
         {
             auto queue_iterator = candidate->getQueueIterator();
             queue_iterator->invalidate();
 
             candidate->file_segment->resetQueueIterator();
+            /// We need to set removed flag in file segment metadata,
+            /// because in dynamic cache resize we first remove queue entries,
+            /// then evict which also removes file segment metadata,
+            /// but we need to make sure that this file segment is not requested from cache in the meantime.
+            /// In ordinary eviction we use `evicting` flag for this purpose,
+            /// but here we cannot, because `evicting` is a property of a queue entry,
+            /// but at this point for dynamic cache resize we have already deleted all queue entries.
+            candidate->setRemovedFlag(*locked_key, lock);
+
             queue_iterator->remove(lock);
         }
     }
@@ -191,7 +201,7 @@ void EvictionCandidates::finalize(
     /// now we can release. It might also be needed for on_finalize func,
     /// so release the space it firtst.
     if (hold_space)
-        hold_space.reset();
+        hold_space->release();
 
     while (!queue_entries_to_invalidate.empty())
     {

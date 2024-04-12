@@ -223,7 +223,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
             return false;
 
         FileSegmentPtr file_segment;
-        if (!file_segment_metadata.isEvicting(locked_key))
+        if (!file_segment_metadata.isEvictingOrRemoved(locked_key))
         {
             file_segment = file_segment_metadata.file_segment;
         }
