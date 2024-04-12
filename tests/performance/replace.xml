@@ -1,0 +1,19 @@
+<test>
+    <!-- trivial replaceRegexpAll -->>
+    <query>with 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' as s select replaceRegexpAll(materialize(s), ' ', '\n') as w from numbers(1000000)</query>
+
+    <!-- trivial replaceRegexOne -->>
+    <query>with 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' as s select replaceRegexpOne(materialize(s), ' ', '\n') as w from numbers(1000000)</query>
+
+    <!-- non-trivial replaceRegexpAll -->>
+    <query>with 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' as s select replaceRegexpAll(materialize(s), '\s+', '\\0\n') as w from numbers(100000)</query>
+
+    <!-- non-trivial replaceRegexOne -->>
+    <query>with 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' as s select replaceRegexpOne(materialize(s), '\s+', '\\0\n') as w from numbers(100000)</query>
+
+    <!-- replaceAll -->>
+    <query>with 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' as s select replaceAll(materialize(s), ' ', '\n') as w from numbers(1000000)</query>
+
+    <!-- replaceOne -->>
+    <query>with 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' as s select replaceOne(materialize(s), ' ', '\n') as w from numbers(1000000)</query>
+</test>
