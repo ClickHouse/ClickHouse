@@ -47,8 +47,6 @@ public:
         const String & table_name,
         bool sync) override;
 
-    void dropDetachedTable(ContextPtr context, const String & name) override;
-
     void renameTable(
         ContextPtr context,
         const String & table_name,
@@ -104,8 +102,7 @@ protected:
     const String metadata_path;
     const String data_path;
 
-    void dropDetachedTableImpl(ContextPtr context, const String & name);
-    std::pair<String, UUID> GetTableInfoFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const;
+    UUID GetTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const;
 };
 
 }

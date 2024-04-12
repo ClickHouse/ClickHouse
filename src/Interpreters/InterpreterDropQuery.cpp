@@ -148,7 +148,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// check that table is detached
             if (!database->isTableExist(table_name, context_) && fs::exists(database->getObjectMetadataPath(table_name)))
             {
-                database->dropDetachedTable(context_, table_id.getTableName());
+                database->dropDetachedTable(context_, table_id.getTableName(), query.sync);
                 return {};
             }
         }

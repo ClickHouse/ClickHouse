@@ -269,7 +269,8 @@ public:
     /// Delete the detached table from the database, drop table and delete the metadata.
     virtual void dropDetachedTable( /// NOLINT
         ContextPtr /*context*/,
-        const String & /*name*/)
+        const String & /*name*/,
+        bool /*sync*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE (detached) query for Database{}", getEngineName());
     }

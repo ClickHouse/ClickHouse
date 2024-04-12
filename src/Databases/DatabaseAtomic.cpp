@@ -160,12 +160,41 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, sync);
 }
 
-void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & table_name)
+void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & table_name, const bool sync)
 {
-    DatabaseOnDisk::dropDetachedTable(local_context, table_name);
+    waitDatabaseStarted();
 
-    LOG_TRACE(log, "remove sym link from {} for {}", path_to_table_symlinks, table_name);
+    assert(fs::exists(getObjectMetadataPath(table_name)));
+
+    const String table_metadata_path = getObjectMetadataPath(table_name);
+    const UUID uuid_table = GetTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
+
+    waitDetachedTableNotInUse(uuid_table);
+
+    const StorageID storage_id{getDatabaseName(), table_name, uuid_table};
+    const String table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
+
+    {
+        std::lock_guard lock(mutex);
+
+        auto txn = local_context->getZooKeeperMetadataTransaction();
+        if (txn && !local_context->isInternalSubquery())
+            txn->commit();
+
+        fs::rename(table_metadata_path, table_metadata_path_drop);
+        LOG_TRACE(log, "Rename {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
+
+        DatabaseCatalog::instance().removeUUIDMappingFinally(uuid_table);
+        table_name_to_path.erase(table_name);
+    }
+
     tryRemoveSymlink(table_name);
+    LOG_TRACE(log, "Remove symlink for {}", table_name);
+
+    removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
+
+    LOG_TRACE(log, "Table {} ready for remove.", table_name);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, table_metadata_path_drop, sync);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,

@@ -353,73 +353,12 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     fs::remove(table_metadata_path_drop);
 }
 
-void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & table_name)
-{
-    dropDetachedTableImpl(local_context, table_name);
-}
-
-void DatabaseOnDisk::dropDetachedTableImpl(ContextPtr local_context, const String & table_name)
-{
-    /// Check that table detached (doesn't exists still exists metadata)
-    if (isTableExist(table_name, getContext()))
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
-
-    waitDatabaseStarted();
-
-    assert(fs::exists(getObjectMetadataPath(table_name)));
-    const String table_metadata_path = getObjectMetadataPath(table_name);
-
-    const String table_metadata_path_drop = table_metadata_path + drop_suffix;
-    const auto & [table_data_path_relative, uuid_table] = GetTableInfoFromDetachedMetadata(local_context, table_metadata_path);
-
-    if (table_data_path_relative.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
-
-    waitDetachedTableNotInUse(uuid_table);
-
-    bool renamed = false;
-    try
-    {
-        auto txn = local_context->getZooKeeperMetadataTransaction();
-        if (txn && !local_context->isInternalSubquery())
-            txn->commit(); /// Commit point (a sort of) for Replicated database
-
-        LOG_TRACE(log, "remove permanently flag");
-        removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
-
-        LOG_TRACE(log, "rename metadata for removing from {} to {}", table_metadata_path, table_metadata_path_drop);
-        fs::rename(table_metadata_path, table_metadata_path_drop);
-
-        renamed = true;
-
-        fs::path table_data_dir(local_context->getPath() + table_data_path_relative);
-
-        LOG_TRACE(log, "remove data from {}", table_data_dir.string());
-
-        if (fs::exists(table_data_dir))
-            fs::remove_all(table_data_dir);
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
-        if (renamed)
-            fs::rename(table_metadata_path_drop, table_metadata_path);
-        throw;
-    }
-
-    LOG_TRACE(log, "remove renamed metadata {}", table_metadata_path_drop);
-    fs::remove(table_metadata_path_drop);
-
-    LOG_DEBUG(log, "finish drop detached table {}", table_name);
-}
-
-std::pair<String, UUID> DatabaseOnDisk::GetTableInfoFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
+UUID DatabaseOnDisk::GetTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
 {
     ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
     auto & create_detached = ast_detached->as<ASTCreateQuery &>();
 
-    return std::make_pair(getTableDataPath(create_detached), create_detached.uuid);
+    return create_detached.uuid;
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const

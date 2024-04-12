@@ -1,6 +1,5 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -23,12 +22,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-def cleanup(nodes):
-    for node in nodes:
-        node.query("DROP TABLE IF EXISTS source SYNC")
-        node.query("DROP TABLE IF EXISTS destination SYNC")
-
-
 def create_table(node, table_name):
     replica = node.name
     engine = f"ReplicatedMergeTree('/clickhouse/tables/1/{table_name}', '{replica}')"
@@ -49,13 +42,13 @@ def create_table(node, table_name):
 
 def test_drop_replicated(start_cluster):
     create_table(replica1, "test_table")
+    create_table(replica2, "test_table")
 
     replica1.query("INSERT INTO test_table SELECT number FROM system.numbers LIMIT 6;")
-
     replica1.query("SYSTEM SYNC REPLICA test_table;", timeout=20)
 
     replica1.query("DETACH TABLE test_table PERMANENTLY;")
+    replica1.query("SET allow_drop_detached_table=1; DROP TABLE test_table SYNC;")
 
-    replica1.query("SET allow_drop_detached_table=1; DROP TABLE test_table;")
-
-    cleanup([replica2])
+    replica2.query("DETACH TABLE test_table PERMANENTLY;")
+    replica2.query("SET allow_drop_detached_table=1; DROP TABLE test_table SYNC;")
