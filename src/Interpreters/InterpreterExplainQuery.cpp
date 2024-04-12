@@ -524,7 +524,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
-                InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext());
+                InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext(), false, false, false, false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
             }

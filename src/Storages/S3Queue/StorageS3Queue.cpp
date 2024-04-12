@@ -498,7 +498,7 @@ bool StorageS3Queue::streamToViews()
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true, false);
     auto block_io = interpreter.execute();
     auto file_iterator = createFileIterator(s3queue_context, nullptr);
 

@@ -437,7 +437,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
     auto insert_context = materialized_storage->getNestedTableContext();
 
-    InterpreterInsertQuery interpreter(insert, insert_context);
+    InterpreterInsertQuery interpreter(insert, insert_context, false, false, false, false);
     auto block_io = interpreter.execute();
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();

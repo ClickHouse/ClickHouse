@@ -337,7 +337,7 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
@@ -388,9 +388,9 @@ private:
 };
 
 
-void LogSink::consume(Chunk chunk)
+void LogSink::consume(Chunk & chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.getColumns());
     metadata_snapshot->check(block, true);
 
     for (auto & stream : streams | boost::adaptors::map_values)

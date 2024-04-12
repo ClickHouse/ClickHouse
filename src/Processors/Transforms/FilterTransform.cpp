@@ -38,10 +38,9 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
 
 static std::shared_ptr<const ChunkSelectFinalIndices> getSelectByFinalIndices(Chunk & chunk)
 {
-    if (auto select_final_indices_info = std::dynamic_pointer_cast<const ChunkSelectFinalIndices>(chunk.getChunkInfo()))
+    if (auto select_final_indices_info = chunk.getChunkInfos().extract<ChunkSelectFinalIndices>())
     {
         const auto & index_column = select_final_indices_info->select_final_indices;
-        chunk.setChunkInfo(nullptr);
         if (index_column && index_column->size() != chunk.getNumRows())
             return select_final_indices_info;
     }

@@ -35,7 +35,7 @@ Chunk convertToChunk(const Block & block)
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfo(std::move(info));
+    chunk.getChunkInfos().add(std::move(info));
 
     return chunk;
 }
@@ -44,15 +44,11 @@ namespace
 {
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
-        const auto & info = chunk.getChunkInfo();
-        if (!info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk.");
-
-        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
-        return agg_info;
+        return agg_info.get();
     }
 
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
@@ -210,11 +206,7 @@ private:
 
     void process(Chunk && chunk)
     {
-        if (!chunk.hasChunkInfo())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with chunk info in {}", getName());
-
-        const auto & info = chunk.getChunkInfo();
-        const auto * chunks_to_merge = typeid_cast<const ChunksToMerge *>(info.get());
+        auto chunks_to_merge = chunk.getChunkInfos().get<ChunksToMerge>();
         if (!chunks_to_merge)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with ChunksToMerge info in {}", getName());
 

@@ -176,7 +176,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
         info->is_overflows = block.info.is_overflows;
-        chunk.setChunkInfo(std::move(info));
+        chunk.getChunkInfos().add(std::move(info));
     }
 
     return chunk;

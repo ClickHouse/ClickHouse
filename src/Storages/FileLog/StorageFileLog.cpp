@@ -740,7 +740,7 @@ bool StorageFileLog::streamToViews()
 
     auto new_context = Context::createCopy(getContext());
 
-    InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, new_context, false, true, true, false);
     auto block_io = interpreter.execute();
 
     /// Each stream responsible for closing it's files and store meta

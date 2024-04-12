@@ -1,5 +1,5 @@
 
-Test case 0: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 0: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -14,7 +14,7 @@ count	47
 0
 OK
 
-Test case 1: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 1: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -29,7 +29,7 @@ count	45
 0
 OK
 
-Test case 2: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 2: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -44,7 +44,7 @@ count	94
 0
 OK
 
-Test case 3: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 3: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -59,7 +59,7 @@ count	90
 0
 OK
 
-Test case 4: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 4: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -74,7 +74,7 @@ count	47
 0
 OK
 
-Test case 5: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 5: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -89,7 +89,7 @@ count	45
 0
 OK
 
-Test case 6: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 6: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -104,7 +104,7 @@ count	94
 0
 OK
 
-Test case 7: engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 7: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -119,35 +119,35 @@ count	90
 0
 OK
 
-Test case 8: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 8: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	10
 EXPECTED_TO_FAIL
 
-Test case 9: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 9: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	9
 EXPECTED_TO_FAIL
 
-Test case 10: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 10: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	47
 EXPECTED_TO_FAIL
 
-Test case 11: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 11: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	45
 EXPECTED_TO_FAIL
 
-Test case 12: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 12: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -155,7 +155,7 @@ count	10
 0
 EXPECTED_TO_FAIL
 
-Test case 13: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 13: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -163,7 +163,7 @@ count	9
 0
 EXPECTED_TO_FAIL
 
-Test case 14: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 14: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -178,7 +178,7 @@ count	94
 0
 OK
 
-Test case 15: engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 15: insert_method=InsertSelect engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -193,7 +193,7 @@ count	90
 0
 OK
 
-Test case 16: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 16: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -201,7 +201,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 17: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 17: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -216,7 +216,7 @@ count	9
 0
 OK
 
-Test case 18: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 18: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -231,7 +231,7 @@ count	94
 0
 OK
 
-Test case 19: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 19: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -246,7 +246,7 @@ count	90
 0
 OK
 
-Test case 20: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 20: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -254,7 +254,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 21: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 21: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -269,7 +269,7 @@ count	9
 0
 OK
 
-Test case 22: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 22: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -284,7 +284,7 @@ count	94
 0
 OK
 
-Test case 23: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 23: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -299,7 +299,7 @@ count	90
 0
 OK
 
-Test case 24: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 24: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -307,7 +307,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 25: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 25: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -322,7 +322,7 @@ count	9
 0
 OK
 
-Test case 26: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 26: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -337,7 +337,7 @@ count	94
 0
 OK
 
-Test case 27: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 27: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -352,7 +352,7 @@ count	90
 0
 OK
 
-Test case 28: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 28: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -360,7 +360,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 29: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 29: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -375,7 +375,7 @@ count	9
 0
 OK
 
-Test case 30: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 30: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -390,7 +390,7 @@ count	94
 0
 OK
 
-Test case 31: engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 31: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -405,7 +405,7 @@ count	90
 0
 OK
 
-Test case 32: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 32: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -420,7 +420,7 @@ count	47
 0
 OK
 
-Test case 33: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 33: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -435,7 +435,7 @@ count	45
 0
 OK
 
-Test case 34: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 34: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -450,7 +450,7 @@ count	94
 0
 OK
 
-Test case 35: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 35: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -465,7 +465,7 @@ count	90
 0
 OK
 
-Test case 36: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 36: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -480,7 +480,7 @@ count	47
 0
 OK
 
-Test case 37: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 37: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -495,7 +495,7 @@ count	45
 0
 OK
 
-Test case 38: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 38: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -510,7 +510,7 @@ count	94
 0
 OK
 
-Test case 39: engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 39: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -525,35 +525,35 @@ count	90
 0
 OK
 
-Test case 40: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 40: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	10
 EXPECTED_TO_FAIL
 
-Test case 41: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 41: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	9
 EXPECTED_TO_FAIL
 
-Test case 42: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 42: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	47
 EXPECTED_TO_FAIL
 
-Test case 43: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 43: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
 count	45
 EXPECTED_TO_FAIL
 
-Test case 44: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 44: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -561,7 +561,7 @@ count	10
 0
 EXPECTED_TO_FAIL
 
-Test case 45: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 45: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -569,7 +569,7 @@ count	9
 0
 EXPECTED_TO_FAIL
 
-Test case 46: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 46: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -584,7 +584,7 @@ count	94
 0
 OK
 
-Test case 47: engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 47: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -599,7 +599,7 @@ count	90
 0
 OK
 
-Test case 48: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 48: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -607,7 +607,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 49: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 49: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -622,7 +622,7 @@ count	9
 0
 OK
 
-Test case 50: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 50: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -637,7 +637,7 @@ count	94
 0
 OK
 
-Test case 51: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 51: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -652,7 +652,7 @@ count	90
 0
 OK
 
-Test case 52: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 52: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -660,7 +660,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 53: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 53: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -675,7 +675,7 @@ count	9
 0
 OK
 
-Test case 54: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 54: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -690,7 +690,7 @@ count	94
 0
 OK
 
-Test case 55: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 55: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -705,7 +705,7 @@ count	90
 0
 OK
 
-Test case 56: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+Test case 56: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -713,7 +713,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 57: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+Test case 57: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -728,7 +728,7 @@ count	9
 0
 OK
 
-Test case 58: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+Test case 58: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -743,7 +743,7 @@ count	94
 0
 OK
 
-Test case 59: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+Test case 59: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	1
 table_when_b_even_and_joined
@@ -758,7 +758,7 @@ count	90
 0
 OK
 
-Test case 60: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+Test case 60: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -766,7 +766,7 @@ count	14
 0
 EXPECTED_TO_FAIL
 
-Test case 61: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+Test case 61: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -781,7 +781,7 @@ count	9
 0
 OK
 
-Test case 62: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+Test case 62: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
 table_a_b
 count	5
 table_when_b_even_and_joined
@@ -796,7 +796,911 @@ count	94
 0
 OK
 
-Test case 63: engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+Test case 63: insert_method=InsertSelect engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 64: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+OK
+
+Test case 65: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+OK
+
+Test case 66: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 67: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 68: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	47
+0
+0
+OK
+
+Test case 69: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	45
+0
+0
+OK
+
+Test case 70: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 71: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 72: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+FIXED
+
+Test case 73: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+FIXED
+
+Test case 74: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+FIXED
+
+Test case 75: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	90
+0
+0
+FIXED
+
+Test case 76: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	47
+0
+0
+FIXED
+
+Test case 77: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	45
+0
+0
+FIXED
+
+Test case 78: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 79: insert_method=InsertValues engine=MergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 80: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 81: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 82: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 83: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 84: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 85: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 86: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 87: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 88: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 89: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 90: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 91: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 92: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 93: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 94: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 95: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 96: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+OK
+
+Test case 97: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+OK
+
+Test case 98: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 99: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 100: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	47
+0
+0
+OK
+
+Test case 101: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	45
+0
+0
+OK
+
+Test case 102: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 103: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 104: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+FIXED
+
+Test case 105: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+FIXED
+
+Test case 106: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+FIXED
+
+Test case 107: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	90
+0
+0
+FIXED
+
+Test case 108: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	47
+0
+0
+FIXED
+
+Test case 109: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	45
+0
+0
+FIXED
+
+Test case 110: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 111: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=True single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 112: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 113: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 114: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 115: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 116: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 117: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 118: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 119: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 120: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 121: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 122: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 123: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	45
+0
+0
+table_a_b
+count	1
+table_when_b_even_and_joined
+count	90
+0
+0
+OK
+
+Test case 124: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	14
+0
+EXPECTED_TO_FAIL
+
+Test case 125: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	9
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	9
+0
+0
+OK
+
+Test case 126: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=True
+table_a_b
+count	5
+table_when_b_even_and_joined
+count	47
+0
+0
+table_a_b
+count	10
+table_when_b_even_and_joined
+count	94
+0
+0
+OK
+
+Test case 127: insert_method=InsertValues engine=ReplicatedMergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=False insert_unique_blocks=False
 table_a_b
 count	5
 table_when_b_even_and_joined

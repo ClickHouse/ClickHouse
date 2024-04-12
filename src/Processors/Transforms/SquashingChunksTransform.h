@@ -3,6 +3,7 @@
 #include <Interpreters/SquashingTransform.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include "Processors/Chunk.h"
 
 namespace DB
 {
@@ -25,6 +26,7 @@ protected:
 private:
     SquashingTransform squashing;
     Chunk cur_chunk;
+    Chunk::ChunkInfoCollection cur_chunkinfos;
     Chunk finish_chunk;
 };
 

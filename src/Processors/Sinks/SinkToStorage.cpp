@@ -15,8 +15,10 @@ void SinkToStorage::onConsume(Chunk chunk)
       */
     Nested::validateArraySizes(getHeader().cloneWithColumns(chunk.getColumns()));
 
-    consume(chunk.clone());
-    if (!lastBlockIsDuplicate())
+    setDeduplicationTokenForChildren(chunk);
+    fillDeduplicationTokenForChildren(chunk);
+    consume(chunk);
+    if (!lastBlockIsDuplicate()) // TODO: remove that
         cur_chunk = std::move(chunk);
 }
 

@@ -1,8 +1,11 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
+#include <Processors/Transforms/NumberBlocksTransform.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
+#include "Common/Exception.h"
 #include <Common/ProfileEventsScope.h>
+#include "Interpreters/StorageID.h"
 
 namespace ProfileEvents
 {
@@ -56,7 +59,7 @@ void MergeTreeSink::onFinish()
     finishDelayedChunk();
 }
 
-void MergeTreeSink::consume(Chunk chunk)
+void MergeTreeSink::consume(Chunk & chunk)
 {
     LOG_INFO(storage.log, "consume() called num_blocks_processed {}, chunks: rows {} columns {} bytes {}",
              num_blocks_processed,
@@ -65,7 +68,7 @@ void MergeTreeSink::consume(Chunk chunk)
     if (num_blocks_processed > 0)
         storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
 
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.getColumns());
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
@@ -79,6 +82,30 @@ void MergeTreeSink::consume(Chunk chunk)
     const Settings & settings = context->getSettingsRef();
     size_t streams = 0;
     bool support_parallel_write = false;
+
+    String block_dedup_token;
+    if (storage.getDeduplicationLog())
+    {
+        auto token_info = chunk.getChunkInfos().get<DedupTokenInfo>();
+        if (!token_info && !context->getSettingsRef().insert_deduplication_token.value.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "DedupTokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
+                storage.getStorageID().getNameForLogs());
+
+        if (token_info)
+        {
+            block_dedup_token = token_info->getToken();
+
+            LOG_DEBUG(storage.log,
+                "dedup token from insert deduplication token in chunk: {}",
+                block_dedup_token);
+        }
+        else
+        {
+            LOG_DEBUG(storage.log,
+                "dedup token from hash is caclulated");
+        }
+    }
 
     for (auto & current_block : part_blocks)
     {
@@ -99,6 +126,11 @@ void MergeTreeSink::consume(Chunk chunk)
         current_block.block.clear();
         current_block.partition.clear();
 
+        if (auto children_dedup_token = getDeduplicationTokenForChildren(chunk))
+        {
+            children_dedup_token->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
+        }
+
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
         if (!temp_part.part)
@@ -106,19 +138,6 @@ void MergeTreeSink::consume(Chunk chunk)
 
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
-
-        String block_dedup_token;
-        if (storage.getDeduplicationLog())
-        {
-            const String & dedup_token = settings.insert_deduplication_token;
-            if (!dedup_token.empty())
-            {
-                /// multiple blocks can be inserted within the same insert query
-                /// an ordinal number is added to dedup token to generate a distinctive block id for each block
-                block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
-                ++chunk_dedup_seqnum;
-            }
-        }
 
         size_t max_insert_delayed_streams_for_parallel_write;
 
@@ -151,6 +170,7 @@ void MergeTreeSink::consume(Chunk chunk)
             partitions = DelayedPartitions{};
         }
 
+        /// TODO block_dedup_token
         partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition
         {
             .temp_part = std::move(temp_part),

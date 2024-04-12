@@ -1100,12 +1100,12 @@ public:
 
     String getName() const override { return "StorageS3Sink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         std::lock_guard lock(cancel_mutex);
         if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onCancel() override

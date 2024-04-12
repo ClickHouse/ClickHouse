@@ -2318,21 +2318,24 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
+String IMergeTreeDataPart::getPartBlockIDHash() const
+{
+    SipHash hash;
+    checksums.computeTotalChecksumDataOnly(hash);
+    const auto hash_value = hash.get128();
+    return toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+}
+
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
-    SipHash hash;
     if (token.empty())
-    {
-        checksums.computeTotalChecksumDataOnly(hash);
-    }
-    else
-    {
-        hash.update(token.data(), token.size());
-    }
+        return info.partition_id + "_" + getPartBlockIDHash();
 
+    SipHash hash;
+    hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }

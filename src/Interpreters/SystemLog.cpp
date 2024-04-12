@@ -522,7 +522,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// We always want to deliver the data to the original table regardless of the MVs
         insert_context->setSetting("materialized_views_ignore_errors", true);
 
-        InterpreterInsertQuery interpreter(query_ptr, insert_context);
+        InterpreterInsertQuery interpreter(query_ptr, insert_context, false, false, false, false);
         BlockIO io = interpreter.execute();
 
         PushingPipelineExecutor executor(io.pipeline);
