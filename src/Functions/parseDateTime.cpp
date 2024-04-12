@@ -84,6 +84,93 @@ namespace
            39447, 39812, 40177, 40543, 40908, 41273, 41638, 42004, 42369, 42734, 43099, 43465, 43830, 44195, 44560, 44926, 45291, 45656,
            46021, 46387, 46752, 47117, 47482, 47847, 48212, 48577, 48942, 49308, 49673};
 
+    /// Indicates the return value of the function, including the result, error code, and error message,
+    /// and the error code is 0 to indicate success.
+    struct FunctionExecutionStatus
+    {
+        std::variant<Int32, Int64, Pos> res;
+        int code = 0; // zero means success
+        String message;
+
+        FunctionExecutionStatus() = default;
+        FunctionExecutionStatus(Pos pos_) : res(pos_) { }
+        FunctionExecutionStatus(Int64 pos_) : res(pos_) { }
+        FunctionExecutionStatus(Int32 pos_) : res(pos_) { }
+        template <typename... Args>
+        FunctionExecutionStatus(int code_, FormatStringHelper<Args...> fmt, Args &&... args)
+            : code(code_), message(fmt.format(std::forward<Args>(args)...))
+        {
+        }
+
+    public:
+        /**
+         * The function is executed successfully and no value is returned
+         */
+        static FunctionExecutionStatus success()
+        {
+            auto status = FunctionExecutionStatus();
+            status.code = 0;
+            return status;
+        }
+        /**
+         * The function fails to be executed, and the corresponding error code and error message are required, and the parameters are the same as DB::Exception
+         */
+        template <typename... Args>
+        static FunctionExecutionStatus error(int code, FormatStringHelper<Args...> fmt, Args &&... args) { return FunctionExecutionStatus(code, std::move(fmt), std::forward<Args>(args)...); }
+        /**
+         * The function fails to execute, and the corresponding error code is required, in order to parseDateTime[InJodaSyntax]Or(Null|zero) function,
+         * which does not require an error message
+         * @param code Error codes
+         */
+        static FunctionExecutionStatus error(int code)
+        {
+            auto status = FunctionExecutionStatus();
+            status.code = code;
+            return status;
+        }
+
+        bool hasError() const { return code > 0; }
+    };
+
+    /// Some utility macros used to simplify the call of Instruction or DateTime internal functions cannot directly throw exceptions in the member functions,
+    /// and need to return an error message through FunctionExecutionStatus.
+    /// The following macros can simplify the judgment of errors and reduce the amount of code.
+
+    /// For void functions, if an error occurs, an error message will be returned.
+    /// @param func_call The function to be executed
+#define SAFE_EXECUTE_VOID_FUNCTION(func_call) \
+    { \
+        auto status = func_call; \
+        if (status.hasError()) \
+            return status; \
+    }
+
+    /// For functions with return values, if an error occurs, an error message is returned, otherwise the result is saved to res
+    /// @param T The type of the result
+    /// @param result Variables that save the execution result
+    /// @param func_call The function to be executed
+#define SAFE_EXECUTE_FUNCTION(T, result, func_call) \
+    { \
+        auto status = func_call; \
+        if (status.hasError()) \
+            return status; \
+        (result) = std::get<T>(status.res); \
+    }
+
+    /// when need_exception is true, generate exception message, otherwise return error code, ignore message.
+#define THROW_EXCEPTION_IN_FUNCTION(error_code, ...) \
+    { \
+        if constexpr (need_exception) \
+        { \
+            return FunctionExecutionStatus::error(error_code, __VA_ARGS__); \
+        } \
+        else \
+        { \
+            return FunctionExecutionStatus::error(error_code); \
+        } \
+    }
+
+    template <bool need_exception>
     struct DateTime
     {
         /// If both week_date_format and week_date_format is false, date is composed of year, month and day
@@ -146,27 +233,29 @@ namespace
         }
 
         /// Input text is expected to be lowered by caller
-        void setEra(const String & text) // NOLINT
+        FunctionExecutionStatus setEra(const String & text) // NOLINT
         {
             if (text == "bc")
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime")
             else if (text != "ad")
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text)
+            return FunctionExecutionStatus::success();
         }
 
-        void setCentury(Int32 century)
+        FunctionExecutionStatus setCentury(Int32 century)
         {
             if (century < 19 || century > 21)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century)
 
             year = 100 * century;
             has_year = true;
+            return FunctionExecutionStatus::success();
         }
 
-        void setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
+        FunctionExecutionStatus setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
         {
             if (year_ < minYear || year_ > maxYear)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear)
 
             year = year_;
             has_year = true;
@@ -176,24 +265,26 @@ namespace
                 week_date_format = true;
                 day_of_year_format = false;
             }
+            return FunctionExecutionStatus::success();
         }
 
-        void setYear2(Int32 year_)
+        FunctionExecutionStatus setYear2(Int32 year_)
         {
             if (year_ >= 70 && year_ < 100)
                 year_ += 1900;
             else if (year_ >= 0 && year_ < 70)
                 year_ += 2000;
             else
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_)
 
             setYear(year_, false, false);
+            return FunctionExecutionStatus::success();
         }
 
-        void setMonth(Int32 month_)
+        FunctionExecutionStatus setMonth(Int32 month_)
         {
             if (month_ < 1 || month_ > 12)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_)
 
             month = month_;
             week_date_format = false;
@@ -203,12 +294,13 @@ namespace
                 has_year = true;
                 year = 2000;
             }
+            return FunctionExecutionStatus::success();
         }
 
-        void setWeek(Int32 week_)
+        FunctionExecutionStatus setWeek(Int32 week_)
         {
             if (week_ < 1 || week_ > 53)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
             week_date_format = true;
@@ -218,12 +310,13 @@ namespace
                 has_year = true;
                 year = 2000;
             }
+            return FunctionExecutionStatus::success();
         }
 
-        void setDayOfYear(Int32 day_of_year_)
+        FunctionExecutionStatus setDayOfYear(Int32 day_of_year_)
         {
             if (day_of_year_ < 1 || day_of_year_ > 366)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_)
 
             day_of_year = day_of_year_;
             day_of_year_format = true;
@@ -233,12 +326,13 @@ namespace
                 has_year = true;
                 year = 2000;
             }
+            return FunctionExecutionStatus::success();
         }
 
-        void setDayOfMonth(Int32 day_of_month)
+        FunctionExecutionStatus setDayOfMonth(Int32 day_of_month)
         {
             if (day_of_month < 1 || day_of_month > 31)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month)
 
             day = day_of_month;
             week_date_format = false;
@@ -248,12 +342,13 @@ namespace
                 has_year = true;
                 year = 2000;
             }
+            return FunctionExecutionStatus::success();
         }
 
-        void setDayOfWeek(Int32 day_of_week_)
+        FunctionExecutionStatus setDayOfWeek(Int32 day_of_week_)
         {
             if (day_of_week_ < 1 || day_of_week_ > 7)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
             week_date_format = true;
@@ -263,20 +358,22 @@ namespace
                 has_year = true;
                 year = 2000;
             }
+            return FunctionExecutionStatus::success();
         }
 
         /// Input text is expected to be lowered by caller
-        void setAMPM(const String & text)
+        FunctionExecutionStatus setAMPM(const String & text)
         {
             if (text == "am")
                 is_am = true;
             else if (text == "pm")
                 is_am = false;
             else
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text)
+            return FunctionExecutionStatus::success();
         }
 
-        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool hour_starts_at_1_ = false)
+        FunctionExecutionStatus setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool hour_starts_at_1_ = false)
         {
             Int32 max_hour;
             Int32 min_hour;
@@ -305,34 +402,37 @@ namespace
             }
 
             if (hour_ < min_hour || hour_ > max_hour)
-                throw Exception(
+                THROW_EXCEPTION_IN_FUNCTION(
                     ErrorCodes::CANNOT_PARSE_DATETIME,
                     "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and hour_starts_at_1={}",
                     hour,
                     max_hour,
                     min_hour,
                     is_hour_of_half_day_,
-                    hour_starts_at_1_);
+                    hour_starts_at_1_)
 
             hour = new_hour;
             is_hour_of_half_day = is_hour_of_half_day_;
             hour_starts_at_1 = hour_starts_at_1_;
+            return FunctionExecutionStatus::success();
         }
 
-        void setMinute(Int32 minute_)
+        FunctionExecutionStatus setMinute(Int32 minute_)
         {
             if (minute_ < 0 || minute_ > 59)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_)
 
             minute = minute_;
+            return FunctionExecutionStatus::success();
         }
 
-        void setSecond(Int32 second_)
+        FunctionExecutionStatus setSecond(Int32 second_)
         {
             if (second_ < 0 || second_ > 59)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_)
 
             second = second_;
+            return FunctionExecutionStatus::success();
         }
 
         /// For debug
@@ -385,31 +485,32 @@ namespace
             }
         }
 
-        static Int32 daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
+        static FunctionExecutionStatus daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
         {
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (week_year_ < minYear || week_year_ > maxYear)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_);
-
-            Int32 days_since_epoch_of_jan_fourth = daysSinceEpochFromDate(week_year_, 1, 4);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
+            Int32 days_since_epoch_of_jan_fourth;
+            SAFE_EXECUTE_FUNCTION(Int32, days_since_epoch_of_jan_fourth, daysSinceEpochFromDate(week_year_, 1, 4))
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
             return days_since_epoch_of_jan_fourth - (first_day_of_week_year - 1) + 7 * (week_of_year_ - 1) + day_of_week_ - 1;
         }
 
-        static Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
+        static FunctionExecutionStatus daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_)
 
-            Int32 res = daysSinceEpochFromDate(year_, 1, 1);
+            Int32 res;
+            SAFE_EXECUTE_FUNCTION(Int32, res, daysSinceEpochFromDate(year_, 1, 1))
             res += day_of_year_ - 1;
             return res;
         }
 
-        static Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
+        static FunctionExecutionStatus daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_);
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_)
 
             Int32 res = cumulativeYearDays[year_ - 1970];
             res += isLeapYear(year_) ? cumulativeLeapDays[month_ - 1] : cumulativeDays[month_ - 1];
@@ -417,7 +518,7 @@ namespace
             return res;
         }
 
-        Int64 buildDateTime(const DateLUTImpl & time_zone)
+        FunctionExecutionStatus buildDateTime(const DateLUTImpl & time_zone)
         {
             if (is_hour_of_half_day && !is_am)
                 hour += 12;
@@ -425,11 +526,11 @@ namespace
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch;
             if (week_date_format)
-                days_since_epoch = daysSinceEpochFromWeekDate(year, week, day_of_week);
+                SAFE_EXECUTE_FUNCTION(Int32, days_since_epoch, daysSinceEpochFromWeekDate(year, week, day_of_week))
             else if (day_of_year_format)
-                days_since_epoch = daysSinceEpochFromDayOfYear(year, day_of_year);
+                SAFE_EXECUTE_FUNCTION(Int32, days_since_epoch, daysSinceEpochFromDayOfYear(year, day_of_year))
             else
-                days_since_epoch = daysSinceEpochFromDate(year, month, day);
+                SAFE_EXECUTE_FUNCTION(Int32, days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
             Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
 
@@ -441,7 +542,7 @@ namespace
             if (seconds_since_epoch >= time_zone_offset)
                 seconds_since_epoch -= time_zone_offset;
             else
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative");
+                THROW_EXCEPTION_IN_FUNCTION(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
 
             return seconds_since_epoch;
         }
@@ -460,39 +561,13 @@ namespace
         Null
     };
 
-#define SAFE_EXECUTE_VOID_INSTURCION(func_call) \
-    { \
-        auto status = func_call; \
-        if (status.hasError()) \
-            return status; \
-    }
-
-#define SAFE_EXECUTE_INSTURCION(res, func_call) \
-    { \
-        auto status = func_call; \
-        if (status.hasError()) \
-            return status; \
-        res = status.pos; \
-    }\
-
-/// when need_exception is true, generate exception message, otherwise return error code.
-#define THROW_EXCEPTION_IN_INSTURCION(error_code, ...) \
-    { \
-        if constexpr (need_exception) \
-        { \
-            return InstructionStatus::error(error_code, __VA_ARGS__); \
-        } \
-        else \
-        { \
-            return InstructionStatus::error(error_code); \
-        } \
-    }
-
     /// _FUNC_(str[, format, timezone])
     template <typename Name, ParseSyntax parse_syntax, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl : public IFunction
     {
+        /// Whether the function needs exception message, parseDateTime[InJodaSyntax]Or(Null|Zero) function does not need exception message
         static constexpr bool need_exception = error_handling == ErrorHandling::Exception;
+
     public:
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
@@ -559,7 +634,9 @@ namespace
             auto & res_data = col_res->getData();
 
             /// Make datetime fit in a cache line.
-            alignas(64) DateTime datetime;
+            alignas(64) DateTime<need_exception> datetime;
+            /// Don't throw an exception and catch it in the loop below, this will cause serious concurrency performance issues,
+            /// you should pass the error message by returning FunctionExecutionStatus.
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
@@ -570,7 +647,8 @@ namespace
 
                 for (const auto & instruction : instructions)
                 {
-                    InstructionStatus status = instruction.perform(cur, end, datetime);
+
+                    FunctionExecutionStatus status = instruction.perform(cur, end, datetime);
                     if (status.hasError())
                     {
                         if constexpr (error_handling == ErrorHandling::Zero)
@@ -592,25 +670,35 @@ namespace
                             throw Exception(status.code, "{}", status.message);
                         }
                     }
-                    cur = status.pos;
+                    cur = std::get<Pos>(status.res);
                 }
 
                 if (error)
                     continue;
 
-                try
+                FunctionExecutionStatus status;
+                /// Ensure all input was consumed
+                if (cur < end)
                 {
-                    /// Ensure all input was consumed
-                    if (cur < end)
-                        throw Exception(
+                    if constexpr (need_exception)
+                        status = FunctionExecutionStatus::error(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
                             "Invalid format input {} is malformed at {}",
                             str_ref.toView(),
                             std::string_view(cur, end - cur));
-                    Int64 time = datetime.buildDateTime(time_zone);
-                    res_data[i] = static_cast<UInt32>(time);
+                    else
+                        status = FunctionExecutionStatus::error(ErrorCodes::CANNOT_PARSE_DATETIME);
                 }
-                catch (...)
+                /// If the parsing is successful, the datetime is built
+                if (!status.hasError())
+                {
+                    status = datetime.buildDateTime(time_zone);
+                    if (!status.hasError())
+                    {
+                        res_data[i] = static_cast<UInt32>(std::get<Int64>(status.res));
+                    }
+                }
+                if (status.hasError())
                 {
                     if constexpr (error_handling == ErrorHandling::Zero)
                         res_data[i] = 0;
@@ -622,7 +710,7 @@ namespace
                     else
                     {
                         static_assert(error_handling == ErrorHandling::Exception);
-                        throw;
+                        throw Exception(status.code, "{}", status.message);
                     }
                 }
             }
@@ -635,30 +723,6 @@ namespace
 
 
     private:
-        struct InstructionStatus
-        {
-            Pos pos = nullptr;
-            int code = 0; // zero means success
-            String message;
-
-            InstructionStatus(Pos pos_) : pos(pos_) { }
-            explicit InstructionStatus(int code_) : code(code_) { }
-            template <typename... Args>
-            InstructionStatus(int code_, FormatStringHelper<Args...> fmt, Args &&... args)
-                : code(code_), message(fmt.format(std::forward<Args>(args)...))
-            {
-            }
-
-            static InstructionStatus success(Pos pos) { return InstructionStatus(pos); }
-            static InstructionStatus success() { return InstructionStatus(0); }
-            template <typename... Args>
-            static InstructionStatus error(int code, FormatStringHelper<Args...> fmt, Args &&... args) { return InstructionStatus(code, std::move(fmt), std::forward<Args>(args)...); }
-            static InstructionStatus error(int code) { return InstructionStatus(code); }
-
-            bool hasError() const { return code > 0; }
-        };
-
-
         template <bool need_exception>
         class Instruction
         {
@@ -671,8 +735,8 @@ namespace
 
             using Func = std::conditional_t<
                 parse_syntax == ParseSyntax::MySQL,
-                InstructionStatus (*)(Pos, Pos, const String &, DateTime &),
-                std::function<InstructionStatus(Pos, Pos, const String &, DateTime &)>>;
+                FunctionExecutionStatus (*)(Pos, Pos, const String &, DateTime<need_exception> &),
+                std::function<FunctionExecutionStatus(Pos, Pos, const String &, DateTime<need_exception> &)>>;
             const Func func{};
             const String func_name;
             const String literal; /// Only used when current instruction parses literal
@@ -696,7 +760,7 @@ namespace
                     return "literal:" + literal + ",fragment:" + fragment;
             }
 
-            InstructionStatus perform(Pos cur, Pos end, DateTime & date) const
+            FunctionExecutionStatus perform(Pos cur, Pos end, DateTime<need_exception> & date) const
             {
                 if (func)
                     return func(cur, end, fragment, date);
@@ -706,7 +770,7 @@ namespace
                     auto status = checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment);
                     if (status.hasError()) return status;
                     if (std::string_view(cur, literal.size()) != literal)
-                        THROW_EXCEPTION_IN_INSTURCION(
+                        THROW_EXCEPTION_IN_FUNCTION(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
                             "Unable to parse fragment {} from {} because literal {} is expected but {} provided",
                             fragment,
@@ -720,10 +784,10 @@ namespace
             }
 
             template <typename T, NeedCheckSpace need_check_space>
-            static InstructionStatus readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static FunctionExecutionStatus readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment))
+                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment))
 
                 res = (*cur - '0');
                 ++cur;
@@ -733,10 +797,10 @@ namespace
             }
 
             template <typename T, NeedCheckSpace need_check_space>
-            static InstructionStatus readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static FunctionExecutionStatus readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 3, "readNumber4 requires size >= 3", fragment))
+                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "readNumber4 requires size >= 3", fragment))
 
                 res = (*cur - '0');
                 ++cur;
@@ -748,10 +812,10 @@ namespace
             }
 
             template <typename T, NeedCheckSpace need_check_space>
-            static InstructionStatus readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static FunctionExecutionStatus readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment))
+                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment))
 
                 res = (*cur - '0');
                 ++cur;
@@ -764,20 +828,20 @@ namespace
                 return cur;
             }
 
-            static InstructionStatus checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & fragment)
+            static FunctionExecutionStatus checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & fragment)
             {
                 if (cur > end || cur + len > end) [[unlikely]]
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::NOT_ENOUGH_SPACE,
                         "Unable to parse fragment {} from {} because {}",
                         fragment,
                         std::string_view(cur, end - cur),
                         msg)
-                return InstructionStatus::success();
+                return FunctionExecutionStatus::success();
             }
 
             template <NeedCheckSpace need_check_space>
-            static InstructionStatus assertChar(Pos cur, Pos end, char expected, const String & fragment)
+            static FunctionExecutionStatus assertChar(Pos cur, Pos end, char expected, const String & fragment)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                 {
@@ -786,7 +850,7 @@ namespace
                 }
 
                 if (*cur != expected) [[unlikely]]
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
@@ -798,13 +862,13 @@ namespace
             }
 
             template <NeedCheckSpace need_check_space>
-            static InstructionStatus assertNumber(Pos cur, Pos end, const String & fragment)
+            static FunctionExecutionStatus assertNumber(Pos cur, Pos end, const String & fragment)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 1, "assertNumber requires size >= 1", fragment))
+                    SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 1, "assertNumber requires size >= 1", fragment))
 
                 if (*cur < '0' || *cur > '9') [[unlikely]]
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because number is expected but {} provided",
                         fragment,
@@ -814,54 +878,53 @@ namespace
                 return cur;
             }
 
-            static InstructionStatus mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                auto status = checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment);
-                if (status.hasError()) return status;
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment))
 
                 String text(cur, 3);
                 boost::to_lower(text);
                 auto it = dayOfWeekMap.find(text);
                 if (it == dayOfWeekMap.end())
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week short text {} ",
                         fragment,
                         std::string_view(cur, end - cur),
                         text)
-                date.setDayOfWeek(it->second.second);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(it->second.second))
                 cur += 3;
                 return cur;
             }
 
-            static InstructionStatus mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment))
 
                 String text(cur, 3);
                 boost::to_lower(text);
                 auto it = monthMap.find(text);
                 if (it == monthMap.end())
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year short text {}",
                         fragment,
                         std::string_view(cur, end - cur),
                         text)
-                date.setMonth(it->second.second);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(it->second.second))
                 cur += 3;
                 return cur;
             }
 
-            static InstructionStatus mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -871,12 +934,12 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
 
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -885,65 +948,65 @@ namespace
 
                 cur += expected_remaining_size;
 
-                date.setMonth(it->second.second);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(it->second.second))
                 return cur;
             }
 
-            static InstructionStatus mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 month;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
-                date.setMonth(month);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
                 return cur;
             }
 
-            static InstructionStatus mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 month;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month)))
-                date.setMonth(month);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
                 return cur;
             }
 
-            static InstructionStatus mysqlCentury(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlCentury(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 century;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
-                date.setCentury(century);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setCentury(century))
                 return cur;
             }
 
-            static InstructionStatus mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 day_of_month;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
-                date.setDayOfMonth(day_of_month);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day_of_month))
                 return cur;
             }
 
-            static InstructionStatus mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
                 Int32 month;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                date.setMonth(month);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
 
                 Int32 day;
 
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                date.setDayOfMonth(day);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day))
 
                 Int32 year;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
-                date.setYear(year);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
                 return cur;
             }
 
-            static InstructionStatus mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
@@ -951,90 +1014,90 @@ namespace
                 day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
 
-                date.setDayOfMonth(day_of_month);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day_of_month))
                 return cur;
             }
 
-            static InstructionStatus mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
 
                 Int32 year;
                 Int32 month;
                 Int32 day;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber4<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber4<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
 
-                date.setYear(year);
-                date.setMonth(month);
-                date.setDayOfMonth(day);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day))
                 return cur;
             }
 
-            static InstructionStatus mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 year2;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                date.setYear2(year2);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear2(year2))
                 return cur;
             }
 
-            static InstructionStatus mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 year;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                date.setYear(year);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
                 return cur;
             }
 
-            static InstructionStatus mysqlDayOfYear(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlDayOfYear(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 day_of_year;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
-                date.setDayOfYear(day_of_year);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfYear(day_of_year))
                 return cur;
             }
 
-            static InstructionStatus mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment))
-                date.setDayOfWeek(*cur - '0');
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(*cur - '0'))
                 ++cur;
                 return cur;
             }
 
-            static InstructionStatus mysqlISO8601Week(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlISO8601Week(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 week;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
-                date.setWeek(week);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setWeek(week))
                 return cur;
             }
 
-            static InstructionStatus mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment))
 
                 Int32 day_of_week = *cur - '0';
                 if (day_of_week == 0)
                     day_of_week = 7;
 
-                date.setDayOfWeek(day_of_week);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(day_of_week))
                 ++cur;
                 return cur;
             }
 
-            static InstructionStatus mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1043,11 +1106,11 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse second part of fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1055,29 +1118,29 @@ namespace
                         text1 + text2)
                 cur += expected_remaining_size;
 
-                date.setDayOfWeek(it->second.second);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(it->second.second))
                 return cur;
             }
 
-            static InstructionStatus mysqlYear2(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlYear2(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 year2;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                date.setYear2(year2);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear2(year2))
                 return cur;
             }
 
-            static InstructionStatus mysqlYear4(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlYear4(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 year;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                date.setYear(year);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
                 return cur;
             }
 
-            static InstructionStatus mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment))
 
                 Int32 sign;
                 if (*cur == '-')
@@ -1085,7 +1148,7 @@ namespace
                 else if (*cur == '+')
                     sign = 1;
                 else
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown sign time zone offset: {}",
                         fragment,
@@ -1094,138 +1157,138 @@ namespace
                 ++cur;
 
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
 
                 Int32 minute;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
 
                 date.has_time_zone_offset = true;
                 date.time_zone_offset = sign * (hour * 3600 + minute * 60);
                 return cur;
             }
 
-            static InstructionStatus mysqlMinute(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlMinute(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 minute;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
-                date.setMinute(minute);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
                 return cur;
             }
 
-            static InstructionStatus mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment))
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                date.setAMPM(text);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setAMPM(text))
                 cur += 2;
                 return cur;
             }
 
-            static InstructionStatus mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment))
 
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                date.setHour(hour, true, true);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
 
                 Int32 minute;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
-                date.setMinute(minute);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
 
-                SAFE_EXECUTE_INSTURCION(cur, (mysqlAMPM(cur, end, fragment, date)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (mysqlAMPM(cur, end, fragment, date)))
                 return cur;
             }
 
-            static InstructionStatus mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment))
 
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                date.setHour(hour, false, false);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
 
                 Int32 minute;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                date.setMinute(minute);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
                 return cur;
             }
 
-            static InstructionStatus mysqlSecond(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlSecond(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 second;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
-                date.setSecond(second);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setSecond(second))
                 return cur;
             }
 
-            static InstructionStatus mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
+            static FunctionExecutionStatus mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & /*date*/)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
 
                 for (size_t i = 0; i < 6; ++i)
-                    SAFE_EXECUTE_INSTURCION(cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
+                    SAFE_EXECUTE_FUNCTION(Pos, cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
 
                 return cur;
             }
 
-            static InstructionStatus mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment))
 
                 Int32 hour;
                 Int32 minute;
                 Int32 second;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                SAFE_EXECUTE_INSTURCION(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
 
-                date.setHour(hour, false, false);
-                date.setMinute(minute);
-                date.setSecond(second);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setSecond(second))
                 return cur;
             }
 
-            static InstructionStatus mysqlHour12(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlHour12(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                date.setHour(hour, true, true);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
                 return cur;
             }
 
-            static InstructionStatus mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                date.setHour(hour, true, true);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
                 return cur;
             }
 
-            static InstructionStatus mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                date.setHour(hour, false, false);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
                 return cur;
             }
 
-            static InstructionStatus mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                date.setHour(hour, false, false);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
                 return cur;
             }
 
-            static InstructionStatus readNumberWithVariableLength(
+            static FunctionExecutionStatus readNumberWithVariableLength(
                 Pos cur,
                 Pos end,
                 bool allow_negative,
@@ -1254,7 +1317,7 @@ namespace
 
                 /// Avoid integer overflow in (*)
                 if (max_digits_to_read >= std::numeric_limits<decltype(number)>::digits10) [[unlikely]]
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because max_digits_to_read is too big",
                         fragment,
@@ -1305,7 +1368,7 @@ namespace
 
                 /// Need to have read at least one digit.
                 if (cur == start) [[unlikely]]
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because read number failed",
                         fragment,
@@ -1313,7 +1376,7 @@ namespace
 
                 /// Check if number exceeds the range of Int32
                 if (number < std::numeric_limits<Int32>::min() || number > std::numeric_limits<Int32>::max()) [[unlikely]]
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because number is out of range of Int32",
                         fragment,
@@ -1324,67 +1387,67 @@ namespace
                 return cur;
             }
 
-            static InstructionStatus jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment))
 
                 String era(cur, 2);
                 boost::to_lower(era);
-                date.setEra(era);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setEra(era))
                 cur += 2;
                 return cur;
             }
 
-            static InstructionStatus jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 century;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
-                date.setCentury(century);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setCentury(century))
                 return cur;
             }
 
-            static InstructionStatus jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 year_of_era;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year_of_era)))
-                date.setYear(year_of_era, true);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year_of_era, true))
                 return cur;
             }
 
-            static InstructionStatus jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 week_year;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
-                date.setYear(week_year, false, true);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(week_year, false, true))
                 return cur;
             }
 
-            static InstructionStatus jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 week;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
-                date.setWeek(week);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setWeek(week))
                 return cur;
             }
 
-            static InstructionStatus jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 day_of_week;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
-                date.setDayOfWeek(day_of_week);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(day_of_week))
                 return cur;
             }
 
-            static InstructionStatus
-            jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus
+            jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment))
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1392,7 +1455,7 @@ namespace
                         text1)
 
                 cur += 3;
-                date.setDayOfWeek(it->second.second);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfWeek(it->second.second))
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1408,38 +1471,38 @@ namespace
                 return cur;
             }
 
-            static InstructionStatus jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 year;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
-                date.setYear(year);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setYear(year))
                 return cur;
             }
 
-            static InstructionStatus jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 day_of_year;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
-                date.setDayOfYear(day_of_year);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfYear(day_of_year))
                 return cur;
             }
 
-            static InstructionStatus jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 month;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
-                date.setMonth(month);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(month))
                 return cur;
             }
 
-            static InstructionStatus jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
-                    THROW_EXCEPTION_IN_INSTURCION(
+                    THROW_EXCEPTION_IN_FUNCTION(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -1447,7 +1510,7 @@ namespace
                         text1)
 
                 cur += 3;
-                date.setMonth(it->second.second);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMonth(it->second.second))
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1463,71 +1526,71 @@ namespace
                 return cur;
             }
 
-            static InstructionStatus jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 day_of_month;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month)))
-                date.setDayOfMonth(day_of_month);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setDayOfMonth(day_of_month))
                 return cur;
             }
 
-            static InstructionStatus jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
-                SAFE_EXECUTE_VOID_INSTURCION(checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment))
+                SAFE_EXECUTE_VOID_FUNCTION(checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment))
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                date.setAMPM(text);
+                SAFE_EXECUTE_VOID_FUNCTION(date.setAMPM(text))
                 cur += 2;
                 return cur;
             }
 
-            static InstructionStatus jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                date.setHour(hour, true, false);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, false))
                 return cur;
             }
 
-            static InstructionStatus jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                date.setHour(hour, true, true);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, true, true))
                 return cur;
             }
 
-            static InstructionStatus jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                date.setHour(hour, false, false);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, false))
                 return cur;
             }
 
-            static InstructionStatus jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 hour;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                date.setHour(hour, false, true);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setHour(hour, false, true))
                 return cur;
             }
 
-            static InstructionStatus jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 minute;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
-                date.setMinute(minute);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setMinute(minute))
                 return cur;
             }
 
-            static InstructionStatus jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static FunctionExecutionStatus jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<need_exception> & date)
             {
                 Int32 second;
-                SAFE_EXECUTE_INSTURCION(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
-                date.setSecond(second);
+                SAFE_EXECUTE_FUNCTION(Pos, cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
+                SAFE_EXECUTE_VOID_FUNCTION(date.setSecond(second))
                 return cur;
             }
         };
