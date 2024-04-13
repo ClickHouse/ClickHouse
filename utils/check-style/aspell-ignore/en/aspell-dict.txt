@@ -1844,6 +1844,7 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -2317,6 +2318,7 @@ retriable
 reverseUTF
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
@@ -2348,6 +2350,7 @@ rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
