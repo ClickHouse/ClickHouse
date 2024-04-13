@@ -7919,6 +7919,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasWindow())
         visitor.visit(query_node_typed.getWindowNode());
 
+    if (query_node_typed.hasQualify())
+        visitor.visit(query_node_typed.getQualify());
+
     if (query_node_typed.hasOrderBy())
         visitor.visit(query_node_typed.getOrderByNode());
 
@@ -8066,6 +8069,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasWindow())
         resolveWindowNodeList(query_node_typed.getWindowNode(), scope);
+
+    if (query_node_typed.hasQualify())
+        resolveExpressionNode(query_node_typed.getQualify(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasOrderBy())
     {
