@@ -56,11 +56,7 @@ public:
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
-
-    void attachResources(QueryPlanResourceHolder holder_)
-    {
-        holder.merge(std::move(holder_));
-    }
+    void addResources(QueryPlanResourceHolder holder_) { holder.add(std::move(holder_)); }
 
     QueryPlanResourceHolder detachResources() { return std::move(holder); }
 

@@ -288,7 +288,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         auto & pipeline = *pipeline_ptr;
         pipeline.checkInitialized();
-        resources = std::move(pipeline.resources);
+        resources.add(std::move(pipeline.resources));
         pipeline.pipe.collected_processors = collected_processors;
 
         pipes.emplace_back(std::move(pipeline.pipe));
@@ -661,7 +661,7 @@ PipelineExecutorPtr QueryPipelineBuilder::execute()
 
 Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources)
 {
-    resources = std::move(pipeline.resources);
+    resources.add(std::move(pipeline.resources));
     return std::move(pipeline.pipe);
 }
 

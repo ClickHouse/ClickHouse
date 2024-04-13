@@ -631,9 +631,9 @@ BlockIO InterpreterInsertQuery::execute()
         size_t num_select_threads = pipeline.getNumThreads();
 
         for (auto & chain : presink_chains)
-            resources = chain.detachResources();
+            resources.add(chain.detachResources());
         for (auto & chain : sink_chains)
-            resources = chain.detachResources();
+            resources.add(chain.detachResources());
 
         pipeline.addChains(std::move(presink_chains));
         pipeline.resize(sink_chains.size());

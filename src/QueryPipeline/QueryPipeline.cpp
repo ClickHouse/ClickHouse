@@ -435,7 +435,7 @@ void QueryPipeline::complete(Chain chain)
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with chain");
 
-    resources = chain.detachResources();
+    resources.add(chain.detachResources());
 
     drop(totals, *processors);
     drop(extremes, *processors);
@@ -655,7 +655,7 @@ void QueryPipeline::addCompletedPipeline(QueryPipeline other)
     if (!other.completed())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
 
-    resources = std::move(other.resources);
+    resources.add(std::move(other.resources));
     processors->insert(processors->end(), other.processors->begin(), other.processors->end());
 }
 

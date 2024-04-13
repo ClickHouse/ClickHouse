@@ -10,7 +10,7 @@ QueryPlanResourceHolder::QueryPlanResourceHolder(QueryPlanResourceHolder &&) noe
 QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs) = default;
 QueryPlanResourceHolder::~QueryPlanResourceHolder() = default;
 
-void QueryPlanResourceHolder::merge(QueryPlanResourceHolder && rhs) noexcept
+void QueryPlanResourceHolder::add(QueryPlanResourceHolder && rhs) noexcept
 {
     table_locks.insert(table_locks.end(), rhs.table_locks.begin(), rhs.table_locks.end());
     rhs.table_locks.clear();

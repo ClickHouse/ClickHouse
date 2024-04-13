@@ -531,12 +531,12 @@ Chain buildPushingToViewsChain(
         size_t max_parallel_streams = 0;
 
         std::list<ProcessorPtr> processors;
-        QueryPlanResourceHolder result_resource_holder;
+        QueryPlanResourceHolder resource_holder;
 
         for (auto & chain : chains)
         {
             max_parallel_streams += std::max<size_t>(chain.getNumThreads(), 1);
-            result_resource_holder.merge(chain.detachResources());
+            resource_holder.add(chain.detachResources());
             connect(*out, chain.getInputPort());
             connect(chain.getOutputPort(), *in);
             ++in;
@@ -547,7 +547,7 @@ Chain buildPushingToViewsChain(
         processors.emplace_front(std::move(copying_data));
         processors.emplace_back(std::move(finalizing_views));
         result_chain.setProcessors(std::move(processors));
-        result_chain.attachResources(std::move(result_resource_holder));
+        result_chain.addResources(std::move(resource_holder));
         result_chain.setNumThreads(std::min(views_data->max_threads, max_parallel_streams));
         result_chain.setConcurrencyControl(settings.use_concurrency_control);
     }

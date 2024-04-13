@@ -91,7 +91,7 @@ public:
     void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
 
-    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
+    void addResources(QueryPlanResourceHolder resources_) { resources.add(std::move(resources_)); }
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
