@@ -1528,7 +1528,7 @@ Result:
 
 ## countMatchesCaseInsensitive
 
-Like [`countMatches`](#countmatches) but matching ignores the case.
+Returns the number of regular expression matches for a pattern in a haystack like [`countMatches`](#countmatches) but matching ignores the case.
 
 **Syntax**
 
