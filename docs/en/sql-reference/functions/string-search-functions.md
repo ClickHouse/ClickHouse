@@ -1421,7 +1421,40 @@ Result:
 
 ## countMatchesCaseInsensitive
 
-Like `countMatches(haystack, pattern)` but matching ignores the case.
+Like [`countMatches`](#countmatches) but matching ignores the case.
+
+**Syntax**
+
+``` sql
+countMatchesCaseInsensitive(haystack, pattern)
+```
+
+**Arguments**
+
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The number of matches.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countMatchesCaseInsensitive('AAAA', 'aa');
+```
+
+Result:
+
+``` text
+┌─countMatchesCaseInsensitive('AAAA', 'aa')────┐
+│                                            2 │
+└──────────────────────────────────────────────┘
+```
 
 ## regexpExtract
 
