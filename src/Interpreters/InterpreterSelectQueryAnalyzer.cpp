@@ -1,5 +1,6 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+
+#include <boost/container/flat_set.hpp>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -26,6 +27,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 namespace DB
 {
@@ -120,6 +123,31 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     return query_tree;
 }
 
+SelectQueryOptions buildSelectQueryOptionsWithQuotaAndLimits(const QueryTreeNodePtr & query_tree, const SelectQueryOptions & select_query_options)
+{
+    auto updated_select_query_options = select_query_options;
+    const auto * query_node = query_tree->as<const QueryNode>();
+    if (!query_node)
+        return updated_select_query_options;
+
+    const auto * table_node = query_node->as<const TableNode>();
+    if (!table_node)
+        return updated_select_query_options;
+
+    static const boost::container::flat_set<std::string_view> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+
+    const auto & storage_id = table_node->getStorageID();
+    if (!storage_id.hasDatabase() ||
+        storage_id.database_name != DatabaseCatalog::SYSTEM_DATABASE ||
+        !tables_ignoring_quota.contains(storage_id.table_name))
+        return updated_select_query_options;
+
+    updated_select_query_options.ignore_quota = true;
+    updated_select_query_options.ignore_limits = true;
+
+    return updated_select_query_options;
+}
+
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -128,8 +156,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const SelectQueryOptions & select_query_options_)
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , select_query_options(buildSelectQueryOptionsWithQuotaAndLimits(query_tree, select_query_options_))
     , planner(query_tree, select_query_options)
 {
 }
@@ -141,8 +169,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const SelectQueryOptions & select_query_options_)
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
+    , select_query_options(buildSelectQueryOptionsWithQuotaAndLimits(query_tree, select_query_options_))
     , planner(query_tree, select_query_options)
 {
 }
@@ -153,8 +181,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const SelectQueryOptions & select_query_options_)
     : query(query_tree_->toAST())
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
     , query_tree(query_tree_)
+    , select_query_options(buildSelectQueryOptionsWithQuotaAndLimits(query_tree, select_query_options_))
     , planner(query_tree_, select_query_options)
 {
 }
@@ -198,6 +226,11 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
         result.pipeline.setQuota(context->getQuota());
 
     return result;
+}
+
+void InterpreterSelectQueryAnalyzer::buildQueryPlanIfNeeded()
+{
+    planner.buildQueryPlanIfNeeded();
 }
 
 QueryPlan & InterpreterSelectQueryAnalyzer::getQueryPlan()

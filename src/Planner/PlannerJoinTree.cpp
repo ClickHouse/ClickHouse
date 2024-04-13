@@ -128,20 +128,6 @@ NameSet checkAccessRights(const TableNode & table_node, const Names & column_nam
     return {};
 }
 
-bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
-{
-    const auto & storage_id = table_node.getStorageID();
-    if (!storage_id.hasDatabase())
-        return false;
-    if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
-    {
-        static const boost::container::flat_set<std::string_view> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (tables_ignoring_quota.contains(storage_id.table_name))
-            return true;
-    }
-    return false;
-}
-
 NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
 {
     /** We need to read at least one column to find the number of rows.
@@ -1010,9 +996,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     }
     else
     {
-        SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
         Planner planner(select_query_info.query_tree,
-            analyze_query_options,
+            SelectQueryOptions(from_stage).analyze(),
             select_query_info.planner_context);
         planner.buildQueryPlanIfNeeded();
 
@@ -1624,7 +1609,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,
-    SelectQueryOptions & select_query_options,
+    const SelectQueryOptions & select_query_options,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
@@ -1634,16 +1619,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     std::vector<ColumnIdentifierSet> table_expressions_outer_scope_columns(table_expressions_stack_size);
     ColumnIdentifierSet current_outer_scope_columns = outer_scope_columns;
-
-    if (is_single_table_expression)
-    {
-        auto * table_node = table_expressions_stack[0]->as<TableNode>();
-        if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
-        {
-            select_query_options.ignore_quota = true;
-            select_query_options.ignore_limits = true;
-        }
-    }
 
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)

@@ -1,24 +1,32 @@
-#include <Planner/findQueryForParallelReplicas.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Storages/buildQueryTreeForShard.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Planner/PlannerJoinTree.h>
-#include <Planner/Utils.h>
+#include <Planner/ParallelReplicas.h>
+
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
+
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/buildQueryTreeForShard.h>
+
+
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+
+#include <Planner/PlannerJoinTree.h>
+#include <Planner/Utils.h>
+
 
 namespace DB
 {
@@ -28,6 +36,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
 }
+
+namespace
+{
 
 /// Returns a list of (sub)queries (candidates) which may support parallel replicas.
 /// The rule is :
@@ -235,7 +246,9 @@ const QueryNode * findQueryForParallelReplicas(
     return res;
 }
 
-const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+}
+
+const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
@@ -298,7 +311,10 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     return res;
 }
 
-static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
+namespace
+{
+
+const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
 {
     std::stack<const IQueryTreeNode *> right_join_nodes;
     while (query_tree_node || !right_join_nodes.empty())
@@ -371,7 +387,9 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
     return nullptr;
 }
 
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+}
+
+const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
