@@ -156,7 +156,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const SelectQueryOptions & select_query_options_)
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options_, context, nullptr /*storage*/))
     , select_query_options(buildSelectQueryOptionsWithQuotaAndLimits(query_tree, select_query_options_))
     , planner(query_tree, select_query_options)
 {
@@ -169,7 +169,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const SelectQueryOptions & select_query_options_)
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options_, context, storage_))
     , select_query_options(buildSelectQueryOptionsWithQuotaAndLimits(query_tree, select_query_options_))
     , planner(query_tree, select_query_options)
 {
