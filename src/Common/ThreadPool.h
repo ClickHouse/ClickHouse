@@ -24,6 +24,8 @@
 #include <Common/StackTrace.h>
 #include <base/scope_guard.h>
 
+#include <Common/thread_pool.hpp>
+
 class JobWithPriority;
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -166,7 +168,7 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   * - address sanitizer and thread sanitizer will not fail due to global limit on number of created threads.
   * - program will work faster in gdb;
   */
-class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
+class GlobalThreadPool : public tp::ThreadPool /* FreeThreadPool */, private boost::noncopyable
 {
     static std::unique_ptr<GlobalThreadPool> the_instance;
 
@@ -244,10 +246,11 @@ public:
             }
 
             std::apply(function, arguments);
-        },
-        {}, // default priority
-        0, // default wait_microseconds
-        propagate_opentelemetry_context
+        }
+        // ,
+        // {}, // default priority
+        // 0, // default wait_microseconds
+        // propagate_opentelemetry_context
         );
     }
 
