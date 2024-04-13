@@ -1322,9 +1322,9 @@ Result:
 
 ## countSubstrings
 
-Returns how often substring `needle` occurs in string `haystack`.
+Returns how often a substring `needle` occurs in string `haystack`.
 
-Functions `countSubstringsCaseInsensitive` and `countSubstringsCaseInsensitiveUTF8` provide a case-insensitive and case-insensitive + UTF-8 variants of this function.
+Functions [`countSubstringsCaseInsensitive`](#countsubstringscaseinsensitive) and [`countSubstringsCaseInsensitiveUTF8`](#countsubstringscaseinsensitiveutf8) provide case-insensitive and case-insensitive + UTF-8 variants of this function respectively.
 
 **Syntax**
 
@@ -1370,6 +1370,105 @@ Result:
 ┌─countSubstrings('abc___abc', 'abc', 4)─┐
 │                                      1 │
 └────────────────────────────────────────┘
+```
+## countSubstringsCaseInsensitive
+
+Returns how often a substring `needle` occurs in string `haystack`. Ignores case.
+
+**Syntax**
+
+``` sql
+countSubstringsCaseInsensitive(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+- The number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+``` sql
+SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
+```
+
+Example with `start_pos` argument:
+
+```sql
+SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitiveUTF8
+
+Returns how often a substring `needle` occurs in string `haystack`. Ignores case and assumes that `haystack` is a UTF8 string.
+
+**Syntax**
+
+``` sql
+countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+- The number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Example with `start_pos` argument:
+
+```sql
+SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13);
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## countMatches
