@@ -1371,6 +1371,8 @@ countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
+countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF8
 covarPop
 covarSamp
 covariates
