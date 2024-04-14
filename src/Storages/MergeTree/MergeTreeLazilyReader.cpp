@@ -71,7 +71,6 @@ void MergeTreeLazilyReader::transformLazyColumns(
     {
         size_t row_offset = row_num_column->getUInt(row_idx);
         size_t part_index = part_num_column->getUInt(row_idx);
-        LOG_ERROR((getLogger("yxzyxz")), "row_offset={}, part_index={}", row_offset, part_index);
         MergeTreeData::DataPartPtr data_part = (*lazily_read_info->data_parts_info)[part_index].data_part;
         AlterConversionsPtr alter_conversions = (*lazily_read_info->data_parts_info)[part_index].alter_conversions;
         MarkRange mark_range = data_part->index_granularity.getMarkRangeForRowOffset(row_offset);
