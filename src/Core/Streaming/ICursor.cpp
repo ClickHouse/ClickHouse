@@ -3,8 +3,8 @@
 namespace DB
 {
 
-ICursor::ICursor(CursorTree tree_) : tree{std::move(tree_)}
-{
-}
+// ICursor::ICursor(CursorTree tree_) : tree{std::move(tree_)}
+// {
+// }
 
 }

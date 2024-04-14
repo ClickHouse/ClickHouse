@@ -7,7 +7,7 @@ namespace DB
 
 struct CursorData
 {
-    CursorTree tree;
+    // CursorTree tree;
     std::optional<String> keeper_key;
 };
 

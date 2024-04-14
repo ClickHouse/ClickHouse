@@ -1,10 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <vector>
+#include <variant>
 
 #include <Core/Field.h>
 #include <base/types.h>
+
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -15,45 +17,31 @@ using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 /// TODO
 class CursorTreeNode
 {
-    using Leaf = UInt64;
-    using Fork = std::map<String, CursorTreeNodePtr>;
-    using Data = std::variant<Fork, Leaf>;
+    using Data = std::map<String, std::variant<Int64, CursorTreeNodePtr>>;
 
 public:
-    explicit CursorTreeNode(Data data_ = Fork{});
+    const CursorTreeNodePtr & getSubtree(const String & key) const;
+    CursorTreeNodePtr & setSubtree(const String & key, CursorTreeNodePtr tree);
+    CursorTreeNodePtr & next(const String & key);
 
-    bool isFork() const;
-    const Fork & fork() const;
-    Fork & fork();
+    const Int64 & getValue(const String & key) const;
+    Int64 & setValue(const String & key, Int64 value);
 
-    bool isLeaf() const;
-    const Leaf & leaf() const;
-    Leaf & leaf();
+    Data::iterator begin();
+    Data::iterator end();
+
+    Data::const_iterator begin() const;
+    Data::const_iterator end() const;
 
 private:
     Data data;
 };
 
-/// TODO
-class CursorTree
-{
-    std::pair<CursorTreeNode *, UInt8> getNearestParent(const std::vector<String> & path) const;
-    CursorTreeNode * retrieveParent(const std::vector<String> & path);
+Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
+String cursorTreeToString(const CursorTreeNodePtr & ptr);
 
-public:
-    explicit CursorTree(Map collapsed_tree_);
-    explicit CursorTree(std::shared_ptr<CursorTreeNode> root_);
-
-    Map collapse() const;
-
-    UInt64 getValue(const std::vector<String> & path) const;
-    CursorTree getSubtree(const std::vector<String> & path) const;
-
-    void updateTree(const std::vector<String> & path, UInt64 value);
-    void updateTree(const std::vector<String> & path, CursorTree subtree);
-
-private:
-    std::shared_ptr<CursorTreeNode> root;
-};
+CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
+CursorTreeNodePtr buildCursorTree(const String & serialized_tree);
+CursorTreeNodePtr buildCursorTree(const ContextPtr & context, const std::optional<String> & keeper_key, const std::optional<Map> & collapsed_tree);
 
 }

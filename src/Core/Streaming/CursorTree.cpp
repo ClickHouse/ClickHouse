@@ -1,179 +1,161 @@
-#include <cstddef>
-#include <memory>
-#include <variant>
 #include <vector>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+
 #include <Core/Streaming/CursorTree.h>
+
 
 namespace DB
 {
 
-static void collapseImpl(Map & collapsed_tree, std::vector<String> & path, CursorTreeNode * node)
+static void collapseTreeImpl(std::map<String, Int64> & collapsed_tree, std::vector<String> & path, CursorTreeNode * node)
 {
-    if (node->isFork())
+    for (const auto & [k, v] : *node)
     {
-        for (const auto & branch : node->fork())
-        {
-            path.push_back(branch.first);
-            collapseImpl(collapsed_tree, path, branch.second.get());
-            path.pop_back();
-        }
-    }
-    else
-        collapsed_tree.push_back(Tuple{boost::algorithm::join(path, "."), node->leaf()});
-}
+        path.push_back(k);
 
-CursorTreeNode::CursorTreeNode(Data data_) : data{std::move(data_)}
-{
-}
+        if (std::holds_alternative<Int64>(v))
+            collapsed_tree[boost::algorithm::join(path, ".")] = std::get<Int64>(v);
+        else
+            collapseTreeImpl(collapsed_tree, path, std::get<CursorTreeNodePtr>(v).get());
 
-bool CursorTreeNode::isFork() const
-{
-    return std::holds_alternative<Fork>(data);
-}
-
-const CursorTreeNode::Fork & CursorTreeNode::fork() const
-{
-    chassert(isFork());
-    return std::get<Fork>(data);
-}
-
-CursorTreeNode::Fork & CursorTreeNode::fork()
-{
-    chassert(isFork());
-    return std::get<Fork>(data);
-}
-
-bool CursorTreeNode::isLeaf() const
-{
-    return std::holds_alternative<Leaf>(data);
-}
-
-const CursorTreeNode::Leaf & CursorTreeNode::leaf() const
-{
-    chassert(isLeaf());
-    return std::get<Leaf>(data);
-}
-
-CursorTreeNode::Leaf & CursorTreeNode::leaf()
-{
-    chassert(isLeaf());
-    return std::get<Leaf>(data);
-}
-
-////////////////////////////////////////////////////////////////////////////
-
-CursorTree::CursorTree(CursorTreeNodePtr root_) : root{std::move(root_)}
-{
-    chassert(root->isFork());
-}
-
-/// example of collapsed_tree
-///
-/// {
-///     "shard_1.part_1.block_number": 10,
-///     "shard_1.part_1.block_offset": 42,
-/// }
-CursorTree::CursorTree(Map collapsed_tree) : root{std::make_shared<CursorTreeNode>()}
-{
-    for (const auto & leaf : collapsed_tree)
-    {
-        const auto & tuple = leaf.safeGet<const Tuple &>();
-        const auto & dotted_path = tuple.at(0).safeGet<String>();
-        const auto & value = tuple.at(1).get<UInt64>();
-
-        std::vector<String> path;
-        boost::split(path, dotted_path, boost::is_any_of("."));
-        updateTree(path, value);
+        path.pop_back();
     }
 }
 
-Map CursorTree::collapse() const
+static std::map<String, Int64> collapseTree(CursorTreeNode * node)
 {
-    Map collapsed_tree;
+    std::map<String, Int64> collapsed_tree;
     std::vector<String> path;
 
-    collapseImpl(collapsed_tree, path, root.get());
+    collapseTreeImpl(collapsed_tree, path, node);
 
     return collapsed_tree;
 }
 
-UInt64 CursorTree::getValue(const std::vector<String> & path) const
+const CursorTreeNodePtr & CursorTreeNode::getSubtree(const String & key) const
 {
-    auto [parent, depth] = getNearestParent(path);
-    chassert(depth + 1 == path.size());
-
-    return parent->fork().at(path.back())->leaf();
+    auto it = data.find(key);
+    chassert(it != data.end());
+    return std::get<CursorTreeNodePtr>(it->second);
 }
 
-CursorTree CursorTree::getSubtree(const std::vector<String> & path) const
+CursorTreeNodePtr & CursorTreeNode::setSubtree(const String & key, CursorTreeNodePtr tree)
 {
-    auto [parent, depth] = getNearestParent(path);
-    chassert(depth + 1 == path.size());
-
-    return CursorTree(parent->fork().at(path.back()));
+    auto & cell = data[key] = std::move(tree);
+    return std::get<CursorTreeNodePtr>(cell);
 }
 
-void CursorTree::updateTree(const std::vector<String> & path, UInt64 value)
+CursorTreeNodePtr & CursorTreeNode::next(const String & key)
 {
-    CursorTreeNode * parent = retrieveParent(path);
+    auto it = data.find(key);
 
-    auto & cursor_fork = parent->fork();
-    auto it = cursor_fork.find(path.back());
+    if (it == data.end())
+        return setSubtree(key, std::make_shared<CursorTreeNode>());
 
-    if (it == cursor_fork.end())
-        cursor_fork.emplace(path.back(), std::make_shared<CursorTreeNode>(value));
-    else
-        it->second->leaf() = value;
+    return std::get<CursorTreeNodePtr>(it->second);
 }
 
-void CursorTree::updateTree(const std::vector<String> & path, CursorTree subtree)
+const Int64 & CursorTreeNode::getValue(const String & key) const
 {
-    CursorTreeNode * parent = retrieveParent(path);
-
-    auto & cursor_fork = parent->fork();
-    auto it = cursor_fork.find(path.back());
-
-    if (it == cursor_fork.end())
-        cursor_fork.emplace(path.back(), std::move(subtree.root));
-    else
-        it->second = std::move(subtree.root);
+    auto it = data.find(key);
+    chassert(it != data.end());
+    return std::get<Int64>(it->second);
 }
 
-std::pair<CursorTreeNode *, UInt8> CursorTree::getNearestParent(const std::vector<String> & path) const
+Int64 & CursorTreeNode::setValue(const String & key, Int64 value)
 {
-    CursorTreeNode * cur_node = root.get();
-    UInt8 cur_depth = 0;
+    auto & cell = data[key] = std::move(value);
+    return std::get<Int64>(cell);
+}
 
-    while (cur_depth + 1 < path.size())
+CursorTreeNode::Data::iterator CursorTreeNode::begin()
+{
+    return data.begin();
+}
+
+CursorTreeNode::Data::iterator CursorTreeNode::end()
+{
+    return data.end();
+}
+
+CursorTreeNode::Data::const_iterator CursorTreeNode::begin() const
+{
+    return data.begin();
+}
+
+CursorTreeNode::Data::const_iterator CursorTreeNode::end() const
+{
+    return data.end();
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+
+Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
+{
+    std::map<String, Int64> collapsed_tree = collapseTree(ptr.get());
+    Map result;
+
+    for (const auto & [k, v] : collapsed_tree)
+        result.push_back(Tuple{k, v});
+
+    return result;
+}
+
+String cursorTreeToString(const CursorTreeNodePtr & ptr)
+{
+    std::map<String, Int64> collapsed_tree = collapseTree(ptr.get());
+    Poco::JSON::Object json;
+
+    for (const auto & [k, v] : collapsed_tree)
+        json.set(k, v);
+
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    json.stringify(oss);
+
+    return oss.str();
+}
+
+CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
+{
+    CursorTreeNodePtr root = std::make_shared<CursorTreeNode>();
+
+    for (const auto & leaf : collapsed_tree)
     {
-        const auto & fork = cur_node->fork();
+        const auto & tuple = leaf.safeGet<const Tuple &>();
+        const auto & dotted_path = tuple.at(0).safeGet<String>();
+        const auto & value = tuple.at(1).get<Int64>();
 
-        if (!fork.contains(path[cur_depth]))
-            break;
+        std::vector<String> path;
+        boost::split(path, dotted_path, boost::is_any_of("."));
 
-        cur_node = fork.at(path[cur_depth]).get();
-        cur_depth += 1;
+        CursorTreeNode * node = root.get();
+        for (size_t i = 0; i + 1 < path.size(); ++i)
+            node = node->next(path[i]).get();
+
+        node->setValue(path.back(), value);
     }
 
-    return {cur_node, cur_depth};
+    return root;
 }
 
-CursorTreeNode * CursorTree::retrieveParent(const std::vector<String> & path)
+CursorTreeNodePtr buildCursorTree(const String & serialized_tree)
 {
-    auto [parent, depth] = getNearestParent(path);
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(serialized_tree).extract<Poco::JSON::Object::Ptr>();
 
-    for (size_t i = depth; i + 1 < path.size(); ++i)
-    {
-        auto [it, _] = parent->fork().emplace(path[i], std::make_shared<CursorTreeNode>());
-        parent = it->second.get();
-    }
+    Map inter_repr;
 
-    return parent;
+    for (const auto & [k, v] : *json)
+        inter_repr.push_back(Tuple{k, v.convert<Int64>()});
+
+    return buildCursorTree(inter_repr);
 }
 
 }

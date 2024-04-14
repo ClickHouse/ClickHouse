@@ -9,11 +9,11 @@ namespace DB
 class ICursor
 {
 public:
-    explicit ICursor(CursorTree tree_);
+    // explicit ICursor(CursorTree tree_);
     virtual ~ICursor() = default;
 
 protected:
-    CursorTree tree;
+    // CursorTree tree;
 };
 
 }

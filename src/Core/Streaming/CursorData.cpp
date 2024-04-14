@@ -18,77 +18,78 @@ extern const int LOGICAL_ERROR;
 
 namespace
 {
-
-const String kCursor = "cursor";
-const String kKeeperKey = "keeper_key";
-
-Map packCursorData(const CursorData & data)
-{
-    Map result{
-        Tuple{kCursor, data.tree.collapse()},
-    };
-
-    if (data.keeper_key.has_value())
-        result.push_back(Tuple{kKeeperKey, data.keeper_key.value()});
-
-    return result;
 }
 
-CursorData unpackCursorData(const Map & packed_data)
-{
-    chassert(packed_data.size() <= 2);
+// const String kCursor = "cursor";
+// const String kKeeperKey = "keeper_key";
 
-    std::optional<String> keeper_key;
-    std::optional<CursorTree> tree;
+// Map packCursorData(const CursorData & data)
+// {
+//     Map result{
+//         Tuple{kCursor, data.tree.collapse()},
+//     };
 
-    for (const auto & raw_tuple : packed_data)
-    {
-        const auto & tuple = raw_tuple.safeGet<const Tuple &>();
-        const auto & key = tuple.at(0).safeGet<String>();
+//     if (data.keeper_key.has_value())
+//         result.push_back(Tuple{kKeeperKey, data.keeper_key.value()});
 
-        if (key == kKeeperKey)
-            keeper_key = tuple.at(1).safeGet<String>();
-        else if (key == kCursor)
-            tree = CursorTree(tuple.at(1).safeGet<Map>());
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packed cursor format");
-    }
+//     return result;
+// }
 
-    chassert(tree.has_value());
+// CursorData unpackCursorData(const Map & packed_data)
+// {
+//     chassert(packed_data.size() <= 2);
 
-    return CursorData{
-        .tree = std::move(tree.value()),
-        .keeper_key = std::move(keeper_key),
-    };
-}
+//     std::optional<String> keeper_key;
+//     std::optional<CursorTree> tree;
 
-}
+//     for (const auto & raw_tuple : packed_data)
+//     {
+//         const auto & tuple = raw_tuple.safeGet<const Tuple &>();
+//         const auto & key = tuple.at(0).safeGet<String>();
 
-void readBinary(CursorDataMap & data_map, ReadBuffer & buf)
-{
-    Map raw;
-    readBinary(raw, buf);
+//         if (key == kKeeperKey)
+//             keeper_key = tuple.at(1).safeGet<String>();
+//         else if (key == kCursor)
+//             tree = CursorTree(tuple.at(1).safeGet<Map>());
+//         else
+//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packed cursor format");
+//     }
 
-    for (const auto & raw_tuple : raw)
-    {
-        const auto & tuple = raw_tuple.safeGet<const Tuple &>();
-        const auto & table_name = tuple.at(0).safeGet<String>();
-        const auto & data = tuple.at(1).safeGet<Map>();
+//     chassert(tree.has_value());
 
-        auto result = data_map.try_emplace(table_name, unpackCursorData(data));
+//     return CursorData{
+//         .tree = std::move(tree.value()),
+//         .keeper_key = std::move(keeper_key),
+//     };
+// }
 
-        chassert(result.second);
-    }
-}
+// }
 
-void writeBinary(const CursorDataMap & data_map, WriteBuffer & buf)
-{
-    Map raw;
+// void readBinary(CursorDataMap & data_map, ReadBuffer & buf)
+// {
+//     Map raw;
+//     readBinary(raw, buf);
 
-    for (const auto & [table_name, data] : data_map)
-        raw.push_back(Tuple{table_name, packCursorData(data)});
+//     for (const auto & raw_tuple : raw)
+//     {
+//         const auto & tuple = raw_tuple.safeGet<const Tuple &>();
+//         const auto & table_name = tuple.at(0).safeGet<String>();
+//         const auto & data = tuple.at(1).safeGet<Map>();
 
-    writeBinary(raw, buf);
-}
+//         auto result = data_map.try_emplace(table_name, unpackCursorData(data));
+
+//         chassert(result.second);
+//     }
+// }
+
+// void writeBinary(const CursorDataMap & data_map, WriteBuffer & buf)
+// {
+//     Map raw;
+
+//     for (const auto & [table_name, data] : data_map)
+//         raw.push_back(Tuple{table_name, packCursorData(data)});
+
+//     writeBinary(raw, buf);
+// }
 
 }
