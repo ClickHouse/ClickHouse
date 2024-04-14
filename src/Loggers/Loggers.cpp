@@ -53,6 +53,8 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     return path.replace_filename(ss.str());
 }
 
+/// NOLINTBEGIN(readability-static-accessed-through-instance)
+
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
     auto current_logger = config.getString("logger", "");
@@ -392,6 +394,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
     }
 }
+
+/// NOLINTEND(readability-static-accessed-through-instance)
 
 void Loggers::closeLogs(Poco::Logger & logger)
 {

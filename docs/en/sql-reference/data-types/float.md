@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/float
-sidebar_position: 41
+sidebar_position: 4
 sidebar_label: Float32, Float64
 ---
 

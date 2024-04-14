@@ -1117,7 +1117,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.getTable(), getContext());
-        FunctionNameNormalizer().visit(query.get());
+        FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
         if (!create.is_dictionary && create_query.is_dictionary)
@@ -1187,7 +1187,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor().visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -1766,7 +1766,7 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
     bool is_create_database = create.database && !create.table;
