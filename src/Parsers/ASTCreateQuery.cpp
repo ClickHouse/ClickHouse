@@ -255,7 +255,7 @@ ASTPtr ASTCreateQuery::clone() const
     if (as_table_function)
         res->set(res->as_table_function, as_table_function->clone());
     if (comment)
-        res->comment = comment->clone();
+        res->set(res->comment, comment->clone());
 
     cloneOutputOptions(*res);
     cloneTableOptions(*res);

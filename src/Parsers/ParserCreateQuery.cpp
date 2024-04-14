@@ -859,7 +859,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->as_table_function, as_table_function);
 
     if (comment)
-        query->comment = comment;
+        query->set(query->comment, comment);
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -1010,7 +1010,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->set(query->select, select);
 
     if (comment)
-        query->comment = comment;
+        query->set(query->comment, comment);
+
     if (sql_security)
         query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
 
@@ -1411,8 +1412,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     query->set(query->storage, storage);
     if (comment)
-        query->comment = comment;
-
+        query->set(query->comment, comment);
     if (table_overrides && !table_overrides->children.empty())
         query->set(query->table_overrides, table_overrides);
 
@@ -1615,7 +1615,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (refresh_strategy)
         query->set(query->refresh_strategy, refresh_strategy);
     if (comment)
-        query->comment = comment;
+        query->set(query->comment, comment);
     if (sql_security)
         query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
 
@@ -1792,7 +1792,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->cluster = cluster_str;
 
     if (comment)
-        query->comment = comment;
+        query->set(query->comment, comment);
 
     return true;
 }

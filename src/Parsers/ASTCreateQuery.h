@@ -112,7 +112,7 @@ public:
     String as_table;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
-    ASTPtr comment;
+    IAST * comment = nullptr;
     ASTPtr sql_security = nullptr;
 
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
