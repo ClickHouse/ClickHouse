@@ -115,10 +115,20 @@ static void collectLazilyReadColumnNames(
     AliasToNamePtr & alias_index)
 {
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(steps.back());
-    const Names & real_column_names = read_from_merge_tree->getRealColumnNames();
-    NameSet lazily_read_column_name_set(real_column_names.begin(), real_column_names.end());
+    const Names & all_column_names = read_from_merge_tree->getAllColumnNames();
+    auto storage_snapshot = read_from_merge_tree->getStorageSnapshot();
+    const auto & storage_columns = storage_snapshot->getMetadataForQuery()->getColumns();
+    NameSet lazily_read_column_name_set;
 
-    for (const auto & column_name : real_column_names)
+    for (const auto & column_name : all_column_names)
+    {
+        if (storage_columns.has(column_name))
+        {
+            lazily_read_column_name_set.insert(column_name);
+        }
+    }
+
+    for (const auto & column_name : lazily_read_column_name_set)
         alias_index->emplace(column_name, column_name);
 
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())

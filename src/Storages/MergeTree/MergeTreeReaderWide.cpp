@@ -363,9 +363,10 @@ void MergeTreeReaderWide::readData(
 
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
+    bool data_skipped = false;
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool seek_to_mark = !was_prefetched && !continue_reading && !read_whole_part;
+        bool seek_to_mark = !was_prefetched && !continue_reading && !read_whole_part && !data_skipped;
 
         return getStream(
             /* seek_to_start = */false, substream_path,
@@ -380,6 +381,7 @@ void MergeTreeReaderWide::readData(
     {
         if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, deserialize_state))
         {
+            data_skipped = true;
             serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
         }
         else

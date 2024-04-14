@@ -71,6 +71,7 @@ void MergeTreeLazilyReader::transformLazyColumns(
     {
         size_t row_offset = row_num_column->getUInt(row_idx);
         size_t part_index = part_num_column->getUInt(row_idx);
+        LOG_ERROR((getLogger("yxzyxz")), "row_offset={}, part_index={}", row_offset, part_index);
         MergeTreeData::DataPartPtr data_part = (*lazily_read_info->data_parts_info)[part_index].data_part;
         AlterConversionsPtr alter_conversions = (*lazily_read_info->data_parts_info)[part_index].alter_conversions;
         MarkRange mark_range = data_part->index_granularity.getMarkRangeForRowOffset(row_offset);
@@ -85,13 +86,11 @@ void MergeTreeLazilyReader::transformLazyColumns(
 
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
-            .withSystemColumns();
-        if (storage.supportsSubcolumns())
-            options.withSubcolumns();
+            .withSubcolumns(storage.supportsSubcolumns());
         NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, tmp_requested_column_names);
 
         MergeTreeReaderPtr reader = data_part->getReader(
-            columns_for_reader, storage_snapshot, mark_ranges,
+            columns_for_reader, storage_snapshot, mark_ranges, {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
             storage.getContext()->getMarkCache().get(), alter_conversions,
             reader_settings, {}, {});
@@ -105,7 +104,7 @@ void MergeTreeLazilyReader::transformLazyColumns(
             1, current_offset, columns_to_read);
 
         bool should_evaluate_missing_defaults = false;
-        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1, data_part->info.min_block);
+        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1);
 
         if (should_evaluate_missing_defaults)
             reader->evaluateMissingDefaults({}, columns_to_read);

@@ -94,6 +94,11 @@ void ColumnLazy::insert(const Field &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insert is not supported for {}", getName());
 }
 
+bool ColumnLazy::tryInsert(const Field &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryInsert is not supported for {}", getName());
+}
+
 void ColumnLazy::insertFrom(const IColumn & src_, size_t n)
 {
     if (!column_lazy_helper)
@@ -119,11 +124,6 @@ void ColumnLazy::insertDefault()
 void ColumnLazy::popBack(size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for {}", getName());
-}
-
-StringRef ColumnLazy::serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
 }
 
 const char * ColumnLazy::deserializeAndInsertFromArena(const char *)

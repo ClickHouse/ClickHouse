@@ -84,7 +84,7 @@ catch (...)
     }
     catch (Exception & e)
     {
-        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, offset));
     }
 
     throw;
