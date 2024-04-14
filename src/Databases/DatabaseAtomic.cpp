@@ -513,7 +513,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
 
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::path data = fs::canonical(table->getDataPaths()[0]);
+        fs::path data = fs::weakly_canonical(table->getDataPaths()[0]);
 
         /// If it already points where needed.
         std::error_code ec;
