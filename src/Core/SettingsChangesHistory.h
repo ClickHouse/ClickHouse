@@ -90,6 +90,8 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"lightweight_deletes_sync", 2, 2, "The same as 'mutation_sync', but controls only execution of lightweight deletes"},
               {"query_cache_system_table_handling", "save", "throw", "The query cache no longer caches results of queries against system tables"},
               {"input_format_hive_text_allow_variable_number_of_columns", false, true, "Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values."},
+              {"query_plan_optimize_lazy_materialization", true, true, "Use query plan for lazy materialization optimisation"},
+              {"query_plan_max_limit_for_lazy_materialization", 10, 10, "The maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"}
     }},
     {"24.3", {{"s3_connect_timeout_ms", 1000, 1000, "Introduce new dedicated setting for s3 connection timeout"},
               {"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
