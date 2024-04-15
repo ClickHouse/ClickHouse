@@ -5624,16 +5624,34 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name,
                 scope.scope_node->formatASTForErrorMessage());
 
+        bool argument_is_constant = false;
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
             argument_column.column = constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
             argument_column.type = constant_node->getResultType();
+            argument_is_constant = true;
         }
-        else
+        else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
+                get_scalar_function_node && get_scalar_function_node->getFunctionName() == "__getScalar")
         {
-            all_arguments_constants = false;
+            /// Allow constant folding through getScalar
+            const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
+            if (get_scalar_const_arg && scope.context->hasQueryContext())
+            {
+                auto query_context = scope.context->getQueryContext();
+                auto scalar_string = toString(get_scalar_const_arg->getValue());
+                if (query_context->hasScalar(scalar_string))
+                {
+                    auto scalar = query_context->getScalar(scalar_string);
+                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
+                    argument_column.type = get_scalar_function_node->getResultType();
+                    argument_is_constant = true;
+                }
+            }
         }
+
+        all_arguments_constants &= argument_is_constant;
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));

@@ -22,9 +22,6 @@
 [submodule "contrib/capnproto"]
 	path = contrib/capnproto
 	url = https://github.com/ClickHouse/capnproto
-[submodule "contrib/double-conversion"]
-	path = contrib/double-conversion
-	url = https://github.com/google/double-conversion
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2
@@ -369,6 +366,9 @@
 [submodule "contrib/idna"]
 	path = contrib/idna
 	url = https://github.com/ada-url/idna.git
+[submodule "contrib/double-conversion"]
+	path = contrib/double-conversion
+	url = https://github.com/ClickHouse/double-conversion.git
 [submodule "contrib/expected"]
 	path = contrib/expected
 	url = https://github.com/TartanLlama/expected

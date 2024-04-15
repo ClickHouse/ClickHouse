@@ -2064,7 +2064,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::QUERIES_END;
 
     // Remove leading empty newlines and other whitespace, because they
-    // are annoying to filter in query log. This is mostly relevant for
+    // are annoying to filter in the query log. This is mostly relevant for
     // the tests.
     while (this_query_begin < all_queries_end && isWhitespaceASCII(*this_query_begin))
         ++this_query_begin;
@@ -2098,7 +2098,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             is_interactive,
             ignore_error);
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         current_exception.reset(e.clone());
         return MultiQueryProcessingStage::PARSING_EXCEPTION;
@@ -2123,9 +2123,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // INSERT queries may have the inserted data in the query text
     // that follow the query itself, e.g. "insert into t format CSV 1;2".
     // They need special handling. First of all, here we find where the
-    // inserted data ends. In multy-query mode, it is delimited by a
+    // inserted data ends. In multi-query mode, it is delimited by a
     // newline.
-    // The VALUES format needs even more handling -- we also allow the
+    // The VALUES format needs even more handling - we also allow the
     // data to be delimited by semicolon. This case is handled later by
     // the format parser itself.
     // We can't do multiline INSERTs with inline data, because most
@@ -2477,9 +2477,9 @@ void ClientBase::runInteractive()
     {
         /// Load suggestion data from the server.
         if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
-            suggest->load<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
+            suggest->load<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"), wait_for_suggestions_to_load);
         else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)
-            suggest->load<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
+            suggest->load<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
     if (home_path.empty())
@@ -2975,6 +2975,7 @@ void ClientBase::init(int argc, char ** argv)
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+        ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
 
         ("echo", "in batch mode, print query before execution")
@@ -3104,6 +3105,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("disable_suggestion"))
         config().setBool("disable_suggestion", true);
+    if (options.count("wait_for_suggestions_to_load"))
+        config().setBool("wait_for_suggestions_to_load", true);
     if (options.count("suggestion_limit"))
         config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     if (options.count("highlight"))

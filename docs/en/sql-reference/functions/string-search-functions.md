@@ -970,7 +970,7 @@ If the haystack or the LIKE expression are not valid UTF-8, the behavior is unde
 
 No automatic Unicode normalization is performed, you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
 
-To match against literal `%`, `_` and `/` (which are LIKE metacharacters), prepend them with a backslash: `\%`, `\_` and `\\`.
+To match against literal `%`, `_` and `\` (which are LIKE metacharacters), prepend them with a backslash: `\%`, `\_` and `\\`.
 The backslash loses its special meaning (i.e. is interpreted literally) if it prepends a character different than `%`, `_` or `\`.
 Note that ClickHouse requires backslashes in strings [to be quoted as well](../syntax.md#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
 

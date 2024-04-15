@@ -209,6 +209,7 @@ protected:
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
+    bool wait_for_suggestions_to_load = false;
 
     std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
