@@ -2,7 +2,9 @@
 
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
+#include <Access/AccessControl.h>
 #include <Access/ExternalAuthenticators.h>
+#include <Access/Role.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -104,6 +106,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int UNKNOWN_TYPE_OF_QUERY;
+    extern const int UNKNOWN_ROLE;
     extern const int NO_ELEMENTS_IN_CONFIG;
 
     extern const int QUERY_IS_TOO_LARGE;
@@ -140,7 +143,7 @@ bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
                     LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
                 else
                     response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                                    config.getString("http_options_response." + config_key + ".value", ""));
+                                 config.getString("http_options_response." + config_key + ".value", ""));
 
             }
         }
@@ -235,7 +238,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_FORMAT ||
              exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY ||
+             exception_code == ErrorCodes::UNKNOWN_ROLE)
     {
         return HTTPResponse::HTTP_NOT_FOUND;
     }
@@ -704,7 +708,7 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
+    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
         "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
 
     Names reserved_param_suffixes;
@@ -726,6 +730,14 @@ void HTTPHandler::processQuery(
 
         return false;
     };
+
+    if (params.has("role"))
+    {
+        auto role_name = params.get("role");
+        auto role_id = context->getAccessControl().getID<Role>(role_name);
+        auto roles_to_set = std::vector{role_id};
+        context->setCurrentRoles(roles_to_set);
+    }
 
     /// Settings can be overridden in the query.
     /// Some parameters (database, default_format, everything used in the code above) do not
