@@ -206,8 +206,7 @@ bool SystemRemoteDataPathsSource::nextDisk()
         if (current_disk >= static_cast<ssize_t>(disks.size()))
             break;
 
-        paths_stack.emplace_back();
-        auto & current = paths_stack.back();
+        auto & current = paths_stack.emplace_back();
 
         /// Add dirs that we want to traverse. It's ok if some of them don't exist because traversal logic hadles
         /// cases when children of a directory get deleted while traversal is running.
