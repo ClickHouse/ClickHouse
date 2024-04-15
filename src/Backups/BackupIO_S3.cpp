@@ -1,5 +1,4 @@
 #include <Backups/BackupIO_S3.h>
-#include <krb5/authdata_plugin.h>
 
 #if USE_AWS_S3
 #include <Common/quoteString.h>
