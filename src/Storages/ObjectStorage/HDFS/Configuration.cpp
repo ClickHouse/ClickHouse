@@ -63,15 +63,15 @@ std::string StorageHDFSConfiguration::getPathWithoutGlob() const
 
 void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    std::string url_str;
-    url_str = checkAndGetLiteralArgument<String>(args[0], "url");
-
     const size_t max_args_num = with_structure ? 4 : 3;
     if (!args.size() || args.size() > max_args_num)
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Expected not more than {} arguments", max_args_num);
     }
+
+    std::string url_str;
+    url_str = checkAndGetLiteralArgument<String>(args[0], "url");
 
     if (args.size() > 1)
     {
