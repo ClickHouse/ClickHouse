@@ -496,11 +496,11 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch;
             if (week_date_format)
-                ASSIGN_VALUE_OR_RETURN_ERROR(days_since_epoch ,daysSinceEpochFromWeekDate(year, week, day_of_week))
+                ASSIGN_VALUE_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromWeekDate(year, week, day_of_week))
             else if (day_of_year_format)
-                ASSIGN_VALUE_OR_RETURN_ERROR(days_since_epoch ,daysSinceEpochFromDayOfYear(year, day_of_year))
+                ASSIGN_VALUE_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDayOfYear(year, day_of_year))
             else
-                ASSIGN_VALUE_OR_RETURN_ERROR(days_since_epoch ,daysSinceEpochFromDate(year, month, day))
+                ASSIGN_VALUE_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
             Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
 
@@ -926,7 +926,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 month;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
                 if (auto result = date.setMonth(month); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1121,7 +1121,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlYear2(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 year2;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
                 if (auto result = date.setYear2(year2); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1156,10 +1156,10 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
                 ++cur;
 
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
 
                 Int32 minute;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
 
                 date.has_time_zone_offset = true;
                 date.time_zone_offset = sign * (hour * 3600 + minute * 60);
@@ -1169,7 +1169,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlMinute(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 minute;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
                 if (auto result = date.setMinute(minute); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1194,18 +1194,18 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
                     return tl::unexpected(result.error());
 
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
                 if (auto result = date.setHour(hour, true, true); !result.has_value())
                     return tl::unexpected(result.error());
 
                 Int32 minute;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
                 if (auto result = date.setMinute(minute); !result.has_value())
                     return tl::unexpected(result.error());
 
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,mysqlAMPM(cur, end, fragment, date))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, mysqlAMPM(cur, end, fragment, date))
                 return cur;
             }
 
@@ -1216,12 +1216,12 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
 
                 Int32 hour;
                 ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur , (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
                 if (auto result = date.setHour(hour, false, false); !result.has_value())
                     return tl::unexpected(result.error());
 
                 Int32 minute;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 if (auto result = date.setMinute(minute); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1230,7 +1230,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlSecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 second;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
                 if (auto result = date.setSecond(second); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1242,7 +1242,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
                     return tl::unexpected(result.error());
 
                 for (size_t i = 0; i < 6; ++i)
-                    ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
+                    ASSIGN_VALUE_OR_RETURN_ERROR(cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
 
                 return cur;
             }
@@ -1255,11 +1255,11 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
                 Int32 hour;
                 Int32 minute;
                 Int32 second;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
                 if (auto result = date.setHour(hour, false, false); !result.has_value())
                     return tl::unexpected(result.error());
                 if (auto result = date.setMinute(minute); !result.has_value())
@@ -1272,7 +1272,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlHour12(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
                 if (auto result = date.setHour(hour, true, true); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1281,7 +1281,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
                 if (auto result = date.setHour(hour, true, true); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1290,7 +1290,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
                 if (auto result = date.setHour(hour, false, false); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1299,7 +1299,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
                 if (auto result = date.setHour(hour, false, false); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1420,7 +1420,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 century;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
                 if (auto result = date.setCentury(century); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1429,7 +1429,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 year_of_era;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
                 if (auto result = date.setYear(year_of_era, true); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1438,7 +1438,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 week_year;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
                 if (auto result = date.setYear(week_year, false, true); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1447,7 +1447,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 week;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
                 if (auto result = date.setWeek(week); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1456,7 +1456,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 day_of_week;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
                 if (auto result = date.setDayOfWeek(day_of_week); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1499,7 +1499,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 year;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
                 if (auto result = date.setYear(year); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1508,7 +1508,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 day_of_year;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
                 if (auto result = date.setDayOfYear(day_of_year); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1517,7 +1517,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 month;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
                 if (auto result = date.setMonth(month); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1558,7 +1558,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 day_of_month;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month)))
                 if (auto res = date.setDayOfMonth(day_of_month); !res.has_value())
                     return tl::unexpected(res.error());
@@ -1581,7 +1581,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (auto result = date.setHour(hour, true, false); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1590,7 +1590,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (auto result = date.setHour(hour, true, true); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1599,7 +1599,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (auto result = date.setHour(hour, false, false); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1608,7 +1608,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 hour;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
                 if (auto result = date.setHour(hour, false, true); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1617,7 +1617,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 minute;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
                 if (auto result = date.setMinute(minute); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
@@ -1626,7 +1626,7 @@ using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
             static PosOrError jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
                 Int32 second;
-                ASSIGN_VALUE_OR_RETURN_ERROR(cur ,(readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
+                ASSIGN_VALUE_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
                 if (auto result = date.setSecond(second); !result.has_value())
                     return tl::unexpected(result.error());
                 return cur;
