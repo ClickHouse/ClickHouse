@@ -19,7 +19,7 @@ using namespace std::literals;
 }
 
 
-TEST_P(ParserRegexTest, parseQuery)
+TEST_P(ParserRegexTest, parseKQLQuery)
 {
     const auto & parser = std::get<0>(GetParam());
     const auto & [input_text, expected_ast] = std::get<1>(GetParam());
@@ -28,7 +28,7 @@ TEST_P(ParserRegexTest, parseQuery)
     ASSERT_TRUE(expected_ast);
 
     DB::ASTPtr ast;
-    ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
+    ASSERT_NO_THROW(ast = parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
     DB::WriteBufferFromOwnString buf;
     formatAST(*ast->clone(), buf, false, false);
     EXPECT_THAT(buf.str(), ::testing::MatchesRegex(expected_ast));

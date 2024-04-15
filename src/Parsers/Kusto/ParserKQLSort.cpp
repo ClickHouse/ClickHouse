@@ -9,7 +9,7 @@
 namespace DB
 {
 
-bool ParserKQLSort::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLSort::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]] KQLExpected & expected)
 {
     bool has_dir = false;
     std::vector<bool> has_directions;
@@ -17,15 +17,15 @@ bool ParserKQLSort::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr order_expression_list;
 
     auto expr = getExprFromToken(pos);
-
-    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
+    Expected sql_expected;
+    Tokens tokens(expr.data(), expr.data() + expr.size());
     IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
 
     auto pos_backup = new_pos;
-    if (!order_list.parse(pos_backup, order_expression_list, expected))
+    if (!order_list.parse(pos_backup, order_expression_list, sql_expected))
         return false;
 
-    while (isValidKQLPos(new_pos) && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
+    while (new_pos.isValid() && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
     {
         String tmp(new_pos->begin, new_pos->end);
         if (tmp == "desc" || tmp == "asc")

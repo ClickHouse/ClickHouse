@@ -1,25 +1,12 @@
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/ParserSetQuery.h>
 
 #include <format>
 
 namespace DB
 {
-bool Ipv4Compare::convertImpl(String & out, IParser::Pos & pos)
+bool Ipv4Compare::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -43,7 +30,7 @@ bool Ipv4Compare::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
+bool Ipv4IsInRange::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -62,7 +49,7 @@ bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Ipv4IsMatch::convertImpl(String & out, IParser::Pos & pos)
+bool Ipv4IsMatch::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -75,7 +62,7 @@ bool Ipv4IsMatch::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
+bool Ipv4IsPrivate::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     static const std::array<String, 3> s_private_subnets{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"};
 
@@ -111,7 +98,7 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Ipv4NetmaskSuffix::convertImpl(String & out, IParser::Pos & pos)
+bool Ipv4NetmaskSuffix::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -126,7 +113,7 @@ bool Ipv4NetmaskSuffix::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseIpv4::convertImpl(String & out, IParser::Pos & pos)
+bool ParseIpv4::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -142,7 +129,7 @@ bool ParseIpv4::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
+bool ParseIpv4Mask::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -159,7 +146,7 @@ bool ParseIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Ipv6Compare::convertImpl(String & out, IParser::Pos & pos)
+bool Ipv6Compare::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -187,7 +174,7 @@ bool Ipv6Compare::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Ipv6IsMatch::convertImpl(String & out, IParser::Pos & pos)
+bool Ipv6IsMatch::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -200,7 +187,7 @@ bool Ipv6IsMatch::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseIpv6::convertImpl(String & out, IParser::Pos & pos)
+bool ParseIpv6::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -217,7 +204,7 @@ bool ParseIpv6::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseIpv6Mask::convertImpl(String & out, IParser::Pos & pos)
+bool ParseIpv6Mask::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -235,7 +222,7 @@ bool ParseIpv6Mask::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
+bool FormatIpv4::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -254,7 +241,7 @@ bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool FormatIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
+bool FormatIpv4Mask::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())

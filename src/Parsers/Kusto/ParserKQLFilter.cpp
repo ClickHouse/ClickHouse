@@ -8,14 +8,15 @@
 namespace DB
 {
 
-bool ParserKQLFilter::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLFilter::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]] KQLExpected & expected)
 {
     String expr = getExprFromToken(pos);
     ASTPtr where_expression;
 
-    Tokens token_filter(expr.c_str(), expr.c_str() + expr.size());
+    Tokens token_filter(expr.data(), expr.data() + expr.size());
     IParser::Pos pos_filter(token_filter, pos.max_depth, pos.max_backtracks);
-    if (!ParserExpressionWithOptionalAlias(false).parse(pos_filter, where_expression, expected))
+    Expected sql_expected;
+    if (!ParserExpressionWithOptionalAlias(false).parse(pos_filter, where_expression, sql_expected))
         return false;
 
     node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));

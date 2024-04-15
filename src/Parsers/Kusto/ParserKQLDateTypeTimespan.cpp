@@ -11,13 +11,13 @@
 namespace DB
 {
 
-bool ParserKQLDateTypeTimespan ::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expected & expected)
+bool ParserKQLDateTypeTimespan ::parseImpl(KQLPos & pos, [[maybe_unused]] ASTPtr & node, KQLExpected & expected)
 {
     String token;
     const char * current_word = pos->begin;
     expected.add(pos, current_word);
 
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
         token = String(pos->begin + 1, pos->end - 1);
     else
         token = String(pos->begin, pos->end);

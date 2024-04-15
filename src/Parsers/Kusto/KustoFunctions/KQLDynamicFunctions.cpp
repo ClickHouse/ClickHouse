@@ -1,13 +1,5 @@
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 
 #include <format>
 
@@ -19,12 +11,12 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-bool ArrayConcat::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayConcat::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "arrayConcat");
 }
 
-bool ArrayIif::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayIif::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -44,7 +36,7 @@ bool ArrayIif::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArrayIndexOf::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayIndexOf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -57,12 +49,12 @@ bool ArrayIndexOf::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArrayLength::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayLength::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "length");
 }
 
-bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayReverse::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -74,7 +66,7 @@ bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArrayRotateLeft::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayRotateLeft::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -91,7 +83,7 @@ bool ArrayRotateLeft::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArrayRotateRight::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayRotateRight::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -104,7 +96,7 @@ bool ArrayRotateRight::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArrayShiftLeft::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayShiftLeft::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -125,7 +117,7 @@ bool ArrayShiftLeft::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArrayShiftRight::convertImpl(String & out, IParser::Pos & pos)
+bool ArrayShiftRight::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -145,7 +137,7 @@ bool ArrayShiftRight::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArraySlice::convertImpl(String & out, IParser::Pos & pos)
+bool ArraySlice::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -166,17 +158,17 @@ bool ArraySlice::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArraySortAsc::convertImpl(String & out, IParser::Pos & pos)
+bool ArraySortAsc::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "kql_array_sort_asc");
 }
 
-bool ArraySortDesc::convertImpl(String & out, IParser::Pos & pos)
+bool ArraySortDesc::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "kql_array_sort_desc");
 }
 
-bool ArraySplit::convertImpl(String & out, IParser::Pos & pos)
+bool ArraySplit::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -197,33 +189,33 @@ bool ArraySplit::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ArraySum::convertImpl(String & out, IParser::Pos & pos)
+bool ArraySum::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "arraySum");
 }
 
-bool BagKeys::convertImpl(String & out, IParser::Pos & pos)
+bool BagKeys::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool BagMerge::convertImpl(String & out, IParser::Pos & pos)
+bool BagMerge::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool BagRemoveKeys::convertImpl(String & out, IParser::Pos & pos)
+bool BagRemoveKeys::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool JaccardIndex::convertImpl(String & out, IParser::Pos & pos)
+bool JaccardIndex::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -239,26 +231,26 @@ bool JaccardIndex::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Pack::convertImpl(String & out, IParser::Pos & pos)
+bool Pack::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool PackAll::convertImpl(String & out, IParser::Pos & pos)
+bool PackAll::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool PackArray::convertImpl(String & out, IParser::Pos & pos)
+bool PackArray::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "array", {1, Interval::max_bound});
 }
 
-bool Repeat::convertImpl(String & out, IParser::Pos & pos)
+bool Repeat::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -278,7 +270,7 @@ bool Repeat::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
+bool SetDifference::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -300,17 +292,17 @@ bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool SetHasElement::convertImpl(String & out, IParser::Pos & pos)
+bool SetHasElement::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "has");
 }
 
-bool SetIntersect::convertImpl(String & out, IParser::Pos & pos)
+bool SetIntersect::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "arrayIntersect");
 }
 
-bool SetUnion::convertImpl(String & out, IParser::Pos & pos)
+bool SetUnion::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     if (!directMapping(out, pos, "arrayConcat"))
         return false;
@@ -320,14 +312,14 @@ bool SetUnion::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool TreePath::convertImpl(String & out, IParser::Pos & pos)
+bool TreePath::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool Zip::convertImpl(String & out, IParser::Pos & pos)
+bool Zip::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())

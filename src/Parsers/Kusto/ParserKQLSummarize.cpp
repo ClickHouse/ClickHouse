@@ -1,35 +1,19 @@
-#include <memory>
-#include <queue>
-#include <vector>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTInterpolateElement.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/Utilities.h>
-#include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/ParserWithElement.h>
 #include <format>
 
 namespace DB
 {
 
-bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLSummarize::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]] KQLExpected & expected)
 {
     ASTPtr select_expression_list;
     ASTPtr group_expression_list;
+    Expected sql_expected;
 
     String expr_aggregation;
     String expr_groupby;
@@ -82,7 +66,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
          "variance",
          "varianceif"});
 
-    auto apply_aliais = [&](Pos & begin_pos, Pos & end_pos, bool is_groupby)
+    auto apply_aliais = [&](KQLPos & begin_pos, KQLPos & end_pos, bool is_groupby)
     {
         auto expr = String(begin_pos->begin, end_pos->end);
         auto equal_pos = begin_pos;
@@ -105,10 +89,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     ++agg_colum_pos;
                     ++agg_colum_pos;
                     ++agg_colum_pos;
-                    if (agg_colum_pos->type == TokenType::Comma || agg_colum_pos->type == TokenType::ClosingRoundBracket)
+                    if (agg_colum_pos->type == KQLTokenType::Comma || agg_colum_pos->type == KQLTokenType::ClosingRoundBracket)
                     {
                         --agg_colum_pos;
-                        if (agg_colum_pos->type != TokenType::ClosingRoundBracket)
+                        if (agg_colum_pos->type != KQLTokenType::ClosingRoundBracket)
                             alias = alias + String(agg_colum_pos->begin, agg_colum_pos->end);
                     }
                 }
@@ -121,8 +105,8 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (String(equal_pos->begin, equal_pos->end) != "=")
             {
                 String groupby_fun = String(begin_pos->begin, begin_pos->end);
-                if (!equal_pos.isValid() || equal_pos->type == TokenType::Comma || equal_pos->type == TokenType::Semicolon
-                    || equal_pos->type == TokenType::PipeMark)
+                if (!equal_pos.isValid() || equal_pos->type == KQLTokenType::Comma || equal_pos->type == KQLTokenType::Semicolon
+                    || equal_pos->type == KQLTokenType::PipeMark)
                 {
                     expr = groupby_fun;
                 }
@@ -136,7 +120,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         ++bin_colum_pos;
                         alias = String(bin_colum_pos->begin, bin_colum_pos->end);
                         ++bin_colum_pos;
-                        if (bin_colum_pos->type != TokenType::Comma)
+                        if (bin_colum_pos->type != KQLTokenType::Comma)
                             alias.clear();
                     }
                     if (alias.empty())
@@ -152,15 +136,15 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     };
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == KQLTokenType::OpeningRoundBracket)
             ++bracket_count;
 
-        if (pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
             --bracket_count;
 
-        if ((bracket_count == 0 and pos->type == TokenType::Comma) || String(pos->begin, pos->end) == "by")
+        if ((bracket_count == 0 and pos->type == KQLTokenType::Comma) || String(pos->begin, pos->end) == "by")
         {
             auto end_pos = pos;
             --end_pos;
@@ -194,10 +178,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     String converted_columns = getExprFromToken(expr_columns, pos.max_depth, pos.max_backtracks);
 
-    Tokens token_converted_columns(converted_columns.c_str(), converted_columns.c_str() + converted_columns.size());
+    Tokens token_converted_columns(converted_columns.data(), converted_columns.data() + converted_columns.size());
     IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth, pos.max_backtracks);
 
-    if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, select_expression_list, expected))
+    if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, select_expression_list, sql_expected))
         return false;
 
     node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
@@ -206,10 +190,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         String converted_groupby = getExprFromToken(expr_groupby, pos.max_depth, pos.max_backtracks);
 
-        Tokens token_converted_groupby(converted_groupby.c_str(), converted_groupby.c_str() + converted_groupby.size());
+        Tokens token_converted_groupby(converted_groupby.data(), converted_groupby.data() + converted_groupby.size());
         IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth, pos.max_backtracks);
 
-        if (!ParserNotEmptyExpressionList(false).parse(postoken_converted_groupby, group_expression_list, expected))
+        if (!ParserNotEmptyExpressionList(false).parse(postoken_converted_groupby, group_expression_list, sql_expected))
             return false;
         node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     }

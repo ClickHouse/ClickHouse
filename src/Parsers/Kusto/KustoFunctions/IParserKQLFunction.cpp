@@ -1,4 +1,5 @@
 #include "KQLFunctionFactory.h"
+#include <Parsers/Kusto/IKQLParser.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
@@ -10,7 +11,10 @@
 #include <numeric>
 #include <stack>
 
-namespace DB::ErrorCodes
+namespace DB
+{
+
+namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -18,36 +22,34 @@ extern const int SYNTAX_ERROR;
 extern const int UNKNOWN_FUNCTION;
 }
 
-namespace
+constexpr KQLTokenType determineClosingPair(const KQLTokenType token_type)
 {
-constexpr DB::TokenType determineClosingPair(const DB::TokenType token_type)
-{
-    if (token_type == DB::TokenType::OpeningCurlyBrace)
-        return DB::TokenType::ClosingCurlyBrace;
-    else if (token_type == DB::TokenType::OpeningRoundBracket)
-        return DB::TokenType::ClosingRoundBracket;
-    else if (token_type == DB::TokenType::OpeningSquareBracket)
-        return DB::TokenType::ClosingSquareBracket;
+    if (token_type == KQLTokenType::OpeningCurlyBrace)
+        return KQLTokenType::ClosingCurlyBrace;
+    else if (token_type == KQLTokenType::OpeningRoundBracket)
+        return KQLTokenType::ClosingRoundBracket;
+    else if (token_type == KQLTokenType::OpeningSquareBracket)
+        return KQLTokenType::ClosingSquareBracket;
 
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unhandled token: {}", magic_enum::enum_name(token_type));
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unhandled token: {}", magic_enum::enum_name(token_type));
 }
 
-constexpr bool isClosingBracket(const DB::TokenType token_type)
+constexpr bool isClosingBracket(const KQLTokenType token_type)
 {
-    return token_type == DB::TokenType::ClosingCurlyBrace || token_type == DB::TokenType::ClosingRoundBracket
-        || token_type == DB::TokenType::ClosingSquareBracket;
+    return token_type == KQLTokenType::ClosingCurlyBrace || token_type == KQLTokenType::ClosingRoundBracket
+        || token_type == KQLTokenType::ClosingSquareBracket;
 }
 
-constexpr bool isOpeningBracket(const DB::TokenType token_type)
+constexpr bool isOpeningBracket(const KQLTokenType token_type)
 {
-    return token_type == DB::TokenType::OpeningCurlyBrace || token_type == DB::TokenType::OpeningRoundBracket
-        || token_type == DB::TokenType::OpeningSquareBracket;
+    return token_type == KQLTokenType::OpeningCurlyBrace || token_type == KQLTokenType::OpeningRoundBracket
+        || token_type == KQLTokenType::OpeningSquareBracket;
 }
-}
+//}
 
-namespace DB
-{
-bool IParserKQLFunction::convert(String & out, IParser::Pos & pos)
+//namespace DB
+//{
+bool IParserKQLFunction::convert(String & out, IKQLParser::KQLPos & pos)
 {
     return wrapConvertImpl(
         pos,
@@ -62,7 +64,7 @@ bool IParserKQLFunction::convert(String & out, IParser::Pos & pos)
 }
 
 bool IParserKQLFunction::directMapping(
-    String & out, IParser::Pos & pos, const std::string_view ch_fn, const Interval & argument_count_interval)
+    String & out, IKQLParser::KQLPos & pos, const std::string_view ch_fn, const Interval & argument_count_interval)
 {
     const auto fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -73,7 +75,7 @@ bool IParserKQLFunction::directMapping(
 
     int argument_count = 0;
     const auto begin = pos;
-    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
         if (pos != begin)
             out.append(", ");
@@ -84,7 +86,7 @@ bool IParserKQLFunction::directMapping(
             out.append(*argument);
         }
 
-        if (pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
         {
             if (!argument_count_interval.IsWithinBounds(argument_count))
                 throw Exception(
@@ -114,7 +116,7 @@ String IParserKQLFunction::generateUniqueIdentifier()
     return std::to_string(random_generator());
 }
 
-String IParserKQLFunction::getArgument(const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state)
+String IParserKQLFunction::getArgument(const String & function_name, IKQLParser::KQLPos & pos, const ArgumentState argument_state)
 {
     if (auto optional_argument = getOptionalArgument(function_name, pos, argument_state))
         return std::move(*optional_argument);
@@ -123,7 +125,7 @@ String IParserKQLFunction::getArgument(const String & function_name, DB::IParser
 }
 
 std::vector<std::string> IParserKQLFunction::getArguments(
-    const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state, const Interval & argument_count_interval)
+    const String & function_name, IKQLParser::KQLPos & pos, const ArgumentState argument_state, const Interval & argument_count_interval)
 {
     std::vector<std::string> arguments;
     while (auto argument = getOptionalArgument(function_name, pos, argument_state))
@@ -142,56 +144,56 @@ std::vector<std::string> IParserKQLFunction::getArguments(
     return arguments;
 }
 
-String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
+String IParserKQLFunction::getConvertedArgument(const String & fn_name, IKQLParser::KQLPos & pos)
 {
     int32_t round_bracket_count = 0, square_bracket_count = 0;
-    if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
+    if (pos->type == KQLTokenType::ClosingRoundBracket || pos->type == KQLTokenType::ClosingSquareBracket)
         return {};
 
-    if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
+    if (!isValidKQLPos(pos) || pos->type == KQLTokenType::PipeMark || pos->type == KQLTokenType::Semicolon)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Need more argument(s) in function: {}", fn_name);
 
     std::vector<String> tokens;
-    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == KQLTokenType::OpeningRoundBracket)
             ++round_bracket_count;
-        if (pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
             --round_bracket_count;
 
-        if (pos->type == TokenType::OpeningSquareBracket)
+        if (pos->type == KQLTokenType::OpeningSquareBracket)
             ++square_bracket_count;
-        if (pos->type == TokenType::ClosingSquareBracket)
+        if (pos->type == KQLTokenType::ClosingSquareBracket)
             --square_bracket_count;
 
         if (!KQLOperators::convert(tokens, pos))
         {
-            if (pos->type == TokenType::BareWord)
+            if (pos->type == KQLTokenType::BareWord)
             {
                 tokens.push_back(IParserKQLFunction::getExpression(pos));
             }
             else if (
-                pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket
-                || pos->type == TokenType::ClosingSquareBracket)
+                pos->type == KQLTokenType::Comma || pos->type == KQLTokenType::ClosingRoundBracket
+                || pos->type == KQLTokenType::ClosingSquareBracket)
             {
-                if (pos->type == TokenType::Comma)
+                if (pos->type == KQLTokenType::Comma)
                     break;
-                if (pos->type == TokenType::ClosingRoundBracket && round_bracket_count == -1)
+                if (pos->type == KQLTokenType::ClosingRoundBracket && round_bracket_count == -1)
                     break;
-                if (pos->type == TokenType::ClosingSquareBracket && square_bracket_count == 0)
+                if (pos->type == KQLTokenType::ClosingSquareBracket && square_bracket_count == 0)
                     break;
                 tokens.push_back(String(pos->begin, pos->end));
             }
             else
             {
                 String token;
-                if (pos->type == TokenType::QuotedIdentifier)
+                if (pos->type == KQLTokenType::QuotedIdentifier)
                     token = "'" + escapeSingleQuotes(String(pos->begin + 1, pos->end - 1)) + "'";
-                else if (pos->type == TokenType::OpeningSquareBracket)
+                else if (pos->type == KQLTokenType::OpeningSquareBracket)
                 {
                     ++pos;
                     String array_index;
-                    while (isValidKQLPos(pos) && pos->type != TokenType::ClosingSquareBracket)
+                    while (isValidKQLPos(pos) && pos->type != KQLTokenType::ClosingSquareBracket)
                     {
                         array_index += getExpression(pos);
                         ++pos;
@@ -206,13 +208,13 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
         }
 
         ++pos;
-        if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
+        if (pos->type == KQLTokenType::Comma || pos->type == KQLTokenType::ClosingRoundBracket || pos->type == KQLTokenType::ClosingSquareBracket)
         {
-            if (pos->type == TokenType::Comma)
+            if (pos->type == KQLTokenType::Comma)
                 break;
-            if (pos->type == TokenType::ClosingRoundBracket && round_bracket_count == -1)
+            if (pos->type == KQLTokenType::ClosingRoundBracket && round_bracket_count == -1)
                 break;
-            if (pos->type == TokenType::ClosingSquareBracket && square_bracket_count == 0)
+            if (pos->type == KQLTokenType::ClosingSquareBracket && square_bracket_count == 0)
                 break;
         }
     }
@@ -225,13 +227,13 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
 }
 
 std::optional<String>
-IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state)
+IParserKQLFunction::getOptionalArgument(const String & function_name, IKQLParser::KQLPos & pos, const ArgumentState argument_state)
 {
-    if (const auto type = pos->type; type != DB::TokenType::Comma && type != DB::TokenType::OpeningRoundBracket)
+    if (const auto type = pos->type; type != KQLTokenType::Comma && type != KQLTokenType::OpeningRoundBracket)
         return {};
 
     ++pos;
-    if (const auto type = pos->type; type == DB::TokenType::ClosingRoundBracket || type == DB::TokenType::ClosingSquareBracket)
+    if (const auto type = pos->type; type == KQLTokenType::ClosingRoundBracket || type == KQLTokenType::ClosingSquareBracket)
         return {};
 
     if (argument_state == ArgumentState::Parsed)
@@ -245,8 +247,8 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
             magic_enum::enum_name(argument_state));
 
     const auto * begin = pos->begin;
-    std::stack<DB::TokenType> scopes;
-    while (isValidKQLPos(pos) && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
+    std::stack<KQLTokenType> scopes;
+    while (isValidKQLPos(pos) && (!scopes.empty() || (pos->type != KQLTokenType::Comma && pos->type != KQLTokenType::ClosingRoundBracket)))
     {
         const auto token_type = pos->type;
         if (isOpeningBracket(token_type))
@@ -255,7 +257,7 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
         {
             if (scopes.empty() || determineClosingPair(scopes.top()) != token_type)
                 throw Exception(
-                    DB::ErrorCodes::SYNTAX_ERROR, "Unmatched token: {} when parsing {}", magic_enum::enum_name(token_type), function_name);
+                    ErrorCodes::SYNTAX_ERROR, "Unmatched token: {} when parsing {}", magic_enum::enum_name(token_type), function_name);
 
             scopes.pop();
         }
@@ -266,11 +268,11 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
     return std::string(begin, pos->begin);
 }
 
-String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
+String IParserKQLFunction::getKQLFunctionName(IKQLParser::KQLPos & pos)
 {
     String fn_name(pos->begin, pos->end);
     ++pos;
-    if (pos->type != TokenType::OpeningRoundBracket)
+    if (pos->type != KQLTokenType::OpeningRoundBracket)
     {
         --pos;
         return "";
@@ -301,31 +303,31 @@ String IParserKQLFunction::kqlCallToExpression(
         });
 
     const auto kql_call = std::format("{}({})", function_name, params_str);
-    DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
-    DB::IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
-    return DB::IParserKQLFunction::getExpression(tokens_pos);
+    KQLTokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length());
+    IKQLParser::KQLPos tokens_pos(call_tokens, max_depth, max_backtracks);
+    return IParserKQLFunction::getExpression(tokens_pos);
 }
 
-void IParserKQLFunction::validateEndOfFunction(const String & fn_name, IParser::Pos & pos)
+void IParserKQLFunction::validateEndOfFunction(const String & fn_name, IKQLParser::KQLPos & pos)
 {
-    if (pos->type != TokenType::ClosingRoundBracket)
+    if (pos->type != KQLTokenType::ClosingRoundBracket)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many arguments in function: {}", fn_name);
 }
 
-String IParserKQLFunction::getExpression(IParser::Pos & pos)
+String IParserKQLFunction::getExpression(IKQLParser::KQLPos & pos)
 {
     String arg(pos->begin, pos->end);
     auto parseConstTimespan = [&]()
     {
         ParserKQLDateTypeTimespan time_span;
         ASTPtr node;
-        Expected expected;
+        KQLExpected expected;
 
         if (time_span.parse(pos, node, expected))
             arg = boost::lexical_cast<std::string>(time_span.toSeconds());
     };
 
-    if (pos->type == TokenType::BareWord)
+    if (pos->type == KQLTokenType::BareWord)
     {
         const auto fun = KQLFunctionFactory::get(arg);
         if (String new_arg; fun && fun->convert(new_arg, pos))
@@ -338,7 +340,7 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
             if (!fun)
             {
                 ++pos;
-                if (pos->type == TokenType::OpeningRoundBracket)
+                if (pos->type == KQLTokenType::OpeningRoundBracket)
                 {
                     if (Poco::toLower(arg) != "and" && Poco::toLower(arg) != "or")
                         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "{} is not a supported kusto function", arg);
@@ -349,15 +351,13 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
             parseConstTimespan();
         }
     }
-    else if (pos->type == TokenType::ErrorWrongNumber)
-        parseConstTimespan();
-    else if (pos->type == TokenType::QuotedIdentifier)
+    else if (pos->type == KQLTokenType::QuotedIdentifier)
         arg = "'" + escapeSingleQuotes(String(pos->begin + 1, pos->end - 1)) + "'";
-    else if (pos->type == TokenType::OpeningSquareBracket)
+    else if (pos->type == KQLTokenType::OpeningSquareBracket)
     {
         ++pos;
         String array_index;
-        while (isValidKQLPos(pos) && pos->type != TokenType::ClosingSquareBracket)
+        while (isValidKQLPos(pos) && pos->type != KQLTokenType::ClosingSquareBracket)
         {
             array_index += getExpression(pos);
             ++pos;

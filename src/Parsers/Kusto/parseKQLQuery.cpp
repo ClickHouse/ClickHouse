@@ -4,8 +4,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/Lexer.h>
-#include <Parsers/TokenIterator.h>
+#include <Parsers/Kusto/KQLLexer.h>
+#include <Parsers/Kusto/KQLTokenIterator.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
@@ -46,7 +46,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 }
 
 
-WriteBuffer & operator<< (WriteBuffer & out, const Expected & expected)
+WriteBuffer & operator<< (WriteBuffer & out, const KQLExpected & expected)
 {
     if (expected.variants.empty())
         return out;
@@ -73,7 +73,7 @@ void writeQueryWithHighlightedErrorPositions(
     WriteBuffer & out,
     const char * begin,
     const char * end,
-    const Token * positions_to_hilite,   /// must go in ascending order
+    const KQLToken * positions_to_hilite,   /// must go in ascending order
     size_t num_positions_to_hilite)
 {
     const char * pos = begin;
@@ -111,7 +111,7 @@ void writeQueryAroundTheError(
     const char * begin,
     const char * end,
     bool hilite,
-    const Token * positions_to_hilite,
+    const KQLToken * positions_to_hilite,
     size_t num_positions_to_hilite)
 {
     if (hilite)
@@ -132,7 +132,7 @@ void writeCommonErrorMessage(
     WriteBuffer & out,
     const char * begin,
     const char * end,
-    Token last_token,
+    KQLToken last_token,
     const std::string & query_description)
 {
     out << "Syntax error";
@@ -140,9 +140,9 @@ void writeCommonErrorMessage(
     if (!query_description.empty())
         out << " (" << query_description << ")";
 
-    out << ": failed at position " << (last_token.begin - begin + 1);
+    out << ": KQL failed at position " << (last_token.begin - begin + 1);
 
-    if (last_token.type == TokenType::EndOfStream || last_token.type == TokenType::Semicolon)
+    if (last_token.type == KQLTokenType::EndOfStream || last_token.type == KQLTokenType::Semicolon)
     {
         out << " (end of query)";
     }
@@ -167,8 +167,8 @@ void writeCommonErrorMessage(
 std::string getSyntaxErrorMessage(
     const char * begin,
     const char * end,
-    Token last_token,
-    const Expected & expected,
+    KQLToken last_token,
+    const KQLExpected & expected,
     bool hilite,
     const std::string & query_description)
 {
@@ -186,7 +186,7 @@ std::string getSyntaxErrorMessage(
 std::string getLexicalErrorMessage(
     const char * begin,
     const char * end,
-    Token last_token,
+    KQLToken last_token,
     bool hilite,
     const std::string & query_description)
 {
@@ -207,7 +207,7 @@ std::string getLexicalErrorMessage(
 std::string getUnmatchedParenthesesErrorMessage(
     const char * begin,
     const char * end,
-    const UnmatchedParentheses & unmatched_parens,
+    const KQLUnmatchedParentheses & unmatched_parens,
     bool hilite,
     const std::string & query_description)
 {
@@ -216,104 +216,17 @@ std::string getUnmatchedParenthesesErrorMessage(
     writeQueryAroundTheError(out, begin, end, hilite, unmatched_parens.data(), unmatched_parens.size());
 
     out << "Unmatched parentheses: ";
-    for (const Token & paren : unmatched_parens)
+    for (const KQLToken & paren : unmatched_parens)
         out << *paren.begin;
 
     return out.str();
-}
-
-UnmatchedParentheses checkKQLUnmatchedParentheses(TokenIterator begin)
-{
-    std::unordered_set<String> valid_kql_negative_suffix(
-        {
-         "between",
-         "contains",
-         "contains_cs",
-         "endswith",
-         "endswith_cs",
-         "~",
-         "=",
-         "has",
-         "has_cs",
-         "hasprefix",
-         "hasprefix_cs",
-         "hassuffix",
-         "hassuffix_cs",
-         "in",
-         "startswith",
-         "startswith_cs"});
-    /// We have just two kind of parentheses: () and [].
-    UnmatchedParentheses stack;
-
-    /// We have to iterate through all tokens until the end to avoid false positive "Unmatched parentheses" error
-    /// when parser failed in the middle of the query.
-    for (TokenIterator it = begin; !it->isEnd(); ++it)
-    {
-        if (!it.isValid()) // allow kql negative operators
-        {
-            if (it->type == TokenType::ErrorSingleExclamationMark)
-            {
-                ++it;
-                if (!valid_kql_negative_suffix.contains(String(it.get().begin, it.get().end)))
-                    break;
-                --it;
-            }
-            else if (it->type == TokenType::ErrorWrongNumber)
-            {
-                if (!ParserKQLDateTypeTimespan().parseConstKQLTimespan(String(it.get().begin, it.get().end)))
-                    break;
-            }
-            else
-            {
-                if (String(it.get().begin, it.get().end) == "~")
-                {
-                    --it;
-                    if (const auto prev = String(it.get().begin, it.get().end); prev != "!" && prev != "=" && prev != "in")
-                        break;
-                    ++it;
-                }
-                else
-                    break;
-            }
-        }
-
-        if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
-        {
-            stack.push_back(*it);
-        }
-        else if (it->type == TokenType::ClosingRoundBracket || it->type == TokenType::ClosingSquareBracket)
-        {
-            if (stack.empty())
-            {
-                /// Excessive closing bracket.
-                stack.push_back(*it);
-                return stack;
-            }
-            else if (
-                (stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
-                || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
-            {
-                /// Valid match.
-                stack.pop_back();
-            }
-            else
-            {
-                /// Closing bracket type doesn't match opening bracket type.
-                stack.push_back(*it);
-                return stack;
-            }
-        }
-    }
-
-    /// If stack is not empty, we have unclosed brackets.
-    return stack;
 }
 
 }
 
 
 ASTPtr tryParseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const char * & _out_query_end, /* also query begin as input parameter */
     const char * all_queries_end,
     std::string & out_error_message,
@@ -326,12 +239,12 @@ ASTPtr tryParseKQLQuery(
     bool skip_insignificant)
 {
     const char * query_begin = _out_query_end;
-    Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
+    KQLTokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
-    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+    IKQLParser::KQLPos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
 
     if (token_iterator->isEnd()
-        || token_iterator->type == TokenType::Semicolon)
+        || token_iterator->type == KQLTokenType::Semicolon)
     {
         out_error_message = "Empty query";
         // Token iterator skips over comments, so we'll get this error for queries
@@ -346,7 +259,7 @@ ASTPtr tryParseKQLQuery(
         return nullptr;
     }
 
-    Expected expected;
+    KQLExpected expected;
     ASTPtr res;
     const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
@@ -387,7 +300,7 @@ ASTPtr tryParseKQLQuery(
 
 
    /// Unmatched parentheses
-    UnmatchedParentheses unmatched_parens = checkKQLUnmatchedParentheses(TokenIterator(tokens));
+    KQLUnmatchedParentheses unmatched_parens = checkKQLUnmatchedParentheses(KQLTokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
         out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
@@ -405,7 +318,7 @@ ASTPtr tryParseKQLQuery(
 
     /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
     if (!token_iterator->isEnd()
-        && token_iterator->type != TokenType::Semicolon)
+        && token_iterator->type != KQLTokenType::Semicolon)
     {
         expected.add(last_token.begin, "end of query");
         out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
@@ -414,7 +327,7 @@ ASTPtr tryParseKQLQuery(
     }
 
     // Skip the semicolon that might be left after parsing the VALUES format.
-    while (token_iterator->type == TokenType::Semicolon)
+    while (token_iterator->type == KQLTokenType::Semicolon)
     {
         ++token_iterator;
     }
@@ -436,7 +349,7 @@ ASTPtr tryParseKQLQuery(
 
 
 ASTPtr parseKQLQueryAndMovePosition(
-    IParser & parser,
+    IKQLParser & parser,
     const char * & pos,
     const char * end,
     const std::string & query_description,
@@ -455,7 +368,7 @@ ASTPtr parseKQLQueryAndMovePosition(
 }
 
 ASTPtr parseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const char * begin,
     const char * end,
     const std::string & query_description,
@@ -467,7 +380,7 @@ ASTPtr parseKQLQuery(
 }
 
 ASTPtr parseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const std::string & query,
     const std::string & query_description,
     size_t max_query_size,
@@ -478,7 +391,7 @@ ASTPtr parseKQLQuery(
 }
 
 ASTPtr parseKQLQuery(
-    IParser & parser,
+    IKQLParser & parser,
     const std::string & query,
     size_t max_query_size,
     size_t max_parser_depth,

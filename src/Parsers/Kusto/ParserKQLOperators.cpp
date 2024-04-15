@@ -9,12 +9,17 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
-#include "KustoFunctions/IParserKQLFunction.h"
 
-namespace
+
+namespace DB
 {
 
-enum class KQLOperatorValue : uint16_t
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
+enum class KQLOperatorValue
 {
     none,
     between,
@@ -56,7 +61,8 @@ enum class KQLOperatorValue : uint16_t
     not_startswith_cs,
 };
 
-const std::unordered_map<String, KQLOperatorValue> KQLOperator = {
+const std::unordered_map<String, KQLOperatorValue> KQLOperator =
+{
     {"between", KQLOperatorValue::between},
     {"!between", KQLOperatorValue::not_between},
     {"contains", KQLOperatorValue::contains},
@@ -96,50 +102,40 @@ const std::unordered_map<String, KQLOperatorValue> KQLOperator = {
     {"!startswith_cs", KQLOperatorValue::not_startswith_cs},
 };
 
-void rebuildSubqueryForInOperator(DB::ASTPtr & node, bool useLowerCase)
+void rebuildSubqueryForInOperator(ASTPtr & node, bool useLowerCase)
 {
     //A sub-query for in operator in kql can have multiple columns, but only takes the first column.
     //A sub-query for in operator in ClickHouse can not have multiple columns
     //So only take the first column if there are multiple columns.
     //select * not working for subquery. (a tabular statement without project)
 
-    const auto selectColumns = node->children[0]->children[0]->as<DB::ASTSelectQuery>()->select();
+    const auto selectColumns = node->children[0]->children[0]->as<ASTSelectQuery>()->select();
     while (selectColumns->children.size() > 1)
         selectColumns->children.pop_back();
 
     if (useLowerCase)
     {
-        auto args = std::make_shared<DB::ASTExpressionList>();
+        auto args = std::make_shared<ASTExpressionList>();
         args->children.push_back(selectColumns->children[0]);
-        auto func_lower = std::make_shared<DB::ASTFunction>();
+        auto func_lower = std::make_shared<ASTFunction>();
         func_lower->name = "lower";
         func_lower->children.push_back(selectColumns->children[0]);
         func_lower->arguments = args;
-        if (selectColumns->children[0]->as<DB::ASTIdentifier>())
-            func_lower->alias = std::move(selectColumns->children[0]->as<DB::ASTIdentifier>()->alias);
-        else if (selectColumns->children[0]->as<DB::ASTFunction>())
-            func_lower->alias = std::move(selectColumns->children[0]->as<DB::ASTFunction>()->alias);
+        if (selectColumns->children[0]->as<ASTIdentifier>())
+            func_lower->alias = std::move(selectColumns->children[0]->as<ASTIdentifier>()->alias);
+        else if (selectColumns->children[0]->as<ASTFunction>())
+            func_lower->alias = std::move(selectColumns->children[0]->as<ASTFunction>()->alias);
 
-        auto funcs = std::make_shared<DB::ASTExpressionList>();
+        auto funcs = std::make_shared<ASTExpressionList>();
         funcs->children.push_back(func_lower);
         selectColumns->children[0] = std::move(funcs);
     }
 }
-
-}
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-}
-
-String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op)
+String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, String kql_op, String ch_op)
 {
     String new_expr;
-    Expected expected;
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    KQLExpected expected;
+    ParserKQLToken s_lparen(KQLTokenType::OpeningRoundBracket);
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
@@ -149,16 +145,16 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
 
     String logic_op = (kql_op == "has_all") ? " and " : " or ";
 
-    while (isValidKQLPos(token_pos) && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(token_pos) && token_pos->type != KQLTokenType::PipeMark && token_pos->type != KQLTokenType::Semicolon)
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
-        if (token_pos->type == TokenType::Comma)
+        if (token_pos->type == KQLTokenType::Comma)
             new_expr = new_expr + logic_op;
         else
             new_expr = new_expr + ch_op + "(" + haystack + "," + tmp_arg + ")";
 
         ++token_pos;
-        if (token_pos->type == TokenType::ClosingRoundBracket)
+        if (token_pos->type == KQLTokenType::ClosingRoundBracket)
             break;
     }
 
@@ -166,7 +162,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
     return new_expr;
 }
 
-String genEqOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos, const String & ch_op)
+String genEqOpExprCis(std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, const String & ch_op)
 {
     String tmp_arg(token_pos->begin, token_pos->end);
 
@@ -178,30 +174,30 @@ String genEqOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos
     new_expr += ch_op + " ";
     ++token_pos;
 
-    if (token_pos->type == DB::TokenType::StringLiteral || token_pos->type == DB::TokenType::QuotedIdentifier)
-        new_expr += "lower('" + DB::IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
+    if (token_pos->type == KQLTokenType::StringLiteral || token_pos->type == KQLTokenType::QuotedIdentifier)
+        new_expr += "lower('" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
     else
-        new_expr += "lower(" + DB::IParserKQLFunction::getExpression(token_pos) + ")";
+        new_expr += "lower(" + IParserKQLFunction::getExpression(token_pos) + ")";
 
     tokens.pop_back();
     return new_expr;
 }
 
-String genInOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
+String genInOpExprCis(std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, const String & kql_op, const String & ch_op)
 {
-    DB::ParserKQLTableFunction kqlfun_p;
-    DB::ParserToken s_lparen(DB::TokenType::OpeningRoundBracket);
+    ParserKQLTableFunction kqlfun_p;
+    ParserKQLToken s_lparen(KQLTokenType::OpeningRoundBracket);
 
-    DB::ASTPtr select;
-    DB::Expected expected;
+    ASTPtr select;
+    KQLExpected expected;
     String new_expr;
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
-        throw DB::Exception(DB::ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     if (tokens.empty())
-        throw DB::Exception(DB::ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     new_expr = "lower(" + tokens.back() + ") ";
     tokens.pop_back();
@@ -218,39 +214,39 @@ String genInOpExprCis(std::vector<String> & tokens, DB::IParser::Pos & token_pos
     --token_pos;
 
     new_expr += ch_op;
-    while (isValidKQLPos(token_pos) && token_pos->type != DB::TokenType::PipeMark && token_pos->type != DB::TokenType::Semicolon)
+    while (isValidKQLPos(token_pos) && token_pos->type != KQLTokenType::PipeMark && token_pos->type != KQLTokenType::Semicolon)
     {
         auto tmp_arg = String(token_pos->begin, token_pos->end);
-        if (token_pos->type != DB::TokenType::Comma && token_pos->type != DB::TokenType::ClosingRoundBracket
-            && token_pos->type != DB::TokenType::OpeningRoundBracket && token_pos->type != DB::TokenType::OpeningSquareBracket
-            && token_pos->type != DB::TokenType::ClosingSquareBracket && tmp_arg != "~" && tmp_arg != "dynamic")
+        if (token_pos->type != KQLTokenType::Comma && token_pos->type != KQLTokenType::ClosingRoundBracket
+            && token_pos->type != KQLTokenType::OpeningRoundBracket && token_pos->type != KQLTokenType::OpeningSquareBracket
+            && token_pos->type != KQLTokenType::ClosingSquareBracket && tmp_arg != "~" && tmp_arg != "dynamic")
         {
-            if (token_pos->type == DB::TokenType::StringLiteral || token_pos->type == DB::TokenType::QuotedIdentifier)
-                new_expr += "lower('" + DB::IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
+            if (token_pos->type == KQLTokenType::StringLiteral || token_pos->type == KQLTokenType::QuotedIdentifier)
+                new_expr += "lower('" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "')";
             else
                 new_expr += "lower(" + tmp_arg + ")";
         }
         else if (tmp_arg != "~" && tmp_arg != "dynamic" && tmp_arg != "[" && tmp_arg != "]")
             new_expr += tmp_arg;
 
-        if (token_pos->type == DB::TokenType::ClosingRoundBracket)
+        if (token_pos->type == KQLTokenType::ClosingRoundBracket)
             break;
         ++token_pos;
     }
     return new_expr;
 }
 
-std::string genInOpExpr(DB::IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
+std::string genInOpExpr(IKQLParser::KQLPos & token_pos, const std::string & kql_op, const std::string & ch_op)
 {
-    DB::ParserKQLTableFunction kqlfun_p;
-    DB::ParserToken s_lparen(DB::TokenType::OpeningRoundBracket);
+    ParserKQLTableFunction kqlfun_p;
+    ParserKQLToken s_lparen(KQLTokenType::OpeningRoundBracket);
 
-    DB::ASTPtr select;
-    DB::Expected expected;
+    ASTPtr select;
+    KQLExpected expected;
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
-        throw DB::Exception(DB::ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     auto pos = token_pos;
     if (kqlfun_p.parse(pos, select, expected))
@@ -267,7 +263,7 @@ std::string genInOpExpr(DB::IParser::Pos & token_pos, const std::string & kql_op
 }
 
 String KQLOperators::genHaystackOpExpr(
-    std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos)
+    std::vector<String> & tokens, IKQLParser::KQLPos & token_pos, String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos)
 {
     String new_expr, left_wildcards, right_wildcards, left_space, right_space;
 
@@ -311,10 +307,10 @@ String KQLOperators::genHaystackOpExpr(
 
     ++token_pos;
 
-    if (!tokens.empty() && ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
+    if (!tokens.empty() && ((token_pos)->type == KQLTokenType::StringLiteral || token_pos->type == KQLTokenType::QuotedIdentifier))
         new_expr = ch_op + "(" + tokens.back() + ", '" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
             + right_space + right_wildcards + "')";
-    else if (!tokens.empty() && ((token_pos)->type == TokenType::BareWord))
+    else if (!tokens.empty() && ((token_pos)->type == KQLTokenType::BareWord))
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
         new_expr = ch_op + "(" + tokens.back() + ", concat('" + left_wildcards + left_space + "', " + tmp_arg + ", '" + right_space
@@ -326,31 +322,38 @@ String KQLOperators::genHaystackOpExpr(
     return new_expr;
 }
 
-bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
+bool KQLOperators::convert(std::vector<String> & tokens, IKQLParser::KQLPos & pos)
 {
     auto begin = pos;
 
-    if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    if (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
         KQLOperatorValue op_value = KQLOperatorValue::none;
 
         auto token = String(pos->begin, pos->end);
-
+        auto prev_pos = pos;
         String op = token;
-        if (token == "!")
+        if (pos->type == KQLTokenType::ExclamationMark)
         {
             ++pos;
-            if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
+            if (!isValidKQLPos(pos) || pos->type == KQLTokenType::PipeMark || pos->type == KQLTokenType::Semicolon)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid negative operator");
-            op = "!" + String(pos->begin, pos->end);
+
+            op = String(prev_pos->begin, pos->end);
+            if (KQLOperator.find(op) == KQLOperator.end())
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid negative operator");
         }
         else if (token == "matches")
         {
             ++pos;
-            if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+            if (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
             {
                 if (String(pos->begin, pos->end) == "regex")
-                    op += " regex";
+                {
+                    op = String(prev_pos->begin, pos->end);
+                    if (KQLOperator.find(op) == KQLOperator.end())
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid matches regex operator");
+                }
                 else
                     --pos;
             }
@@ -361,10 +364,14 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         }
 
         ++pos;
-        if (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        if (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
         {
-            if (String(pos->begin, pos->end) == "~")
-                op += "~";
+            if (pos->type == KQLTokenType::Tilde)
+            {
+                op = String(prev_pos->begin, pos->end);
+                if (KQLOperator.find(op) == KQLOperator.end())
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid ~ operator");
+            }
             else
                 --pos;
         }

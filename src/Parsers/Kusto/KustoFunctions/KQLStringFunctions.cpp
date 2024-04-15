@@ -1,5 +1,4 @@
 #include <Parsers/CommonParsers.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
@@ -22,12 +21,12 @@ extern const int UNKNOWN_TYPE;
 namespace DB
 {
 
-bool Base64EncodeToString::convertImpl(String & out, IParser::Pos & pos)
+bool Base64EncodeToString::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "base64Encode");
 }
 
-bool Base64EncodeFromGuid::convertImpl(String & out, IParser::Pos & pos)
+bool Base64EncodeFromGuid::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -42,12 +41,12 @@ bool Base64EncodeFromGuid::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Base64DecodeToString::convertImpl(String & out, IParser::Pos & pos)
+bool Base64DecodeToString::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "base64Decode");
 }
 
-bool Base64DecodeToArray::convertImpl(String & out, IParser::Pos & pos)
+bool Base64DecodeToArray::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -61,7 +60,7 @@ bool Base64DecodeToArray::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Base64DecodeToGuid::convertImpl(String & out, IParser::Pos & pos)
+bool Base64DecodeToGuid::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -73,7 +72,7 @@ bool Base64DecodeToGuid::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool CountOf::convertImpl(String & out, IParser::Pos & pos)
+bool CountOf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -86,7 +85,7 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
     const String search = getConvertedArgument(fn_name, pos);
 
     String kind = "'normal'";
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         kind = getConvertedArgument(fn_name, pos);
@@ -100,12 +99,12 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Extract::convertImpl(String & out, IParser::Pos & pos)
+bool Extract::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
-    ParserKeyword s_kql(Keyword::TYPEOF);
-    ParserToken open_bracket(TokenType::OpeningRoundBracket);
-    ParserToken close_bracket(TokenType::ClosingRoundBracket);
-    Expected expected;
+    ParserKQLKeyword s_kql(Keyword::TYPEOF);
+    ParserKQLToken open_bracket(KQLTokenType::OpeningRoundBracket);
+    ParserKQLToken close_bracket(KQLTokenType::ClosingRoundBracket);
+    KQLExpected expected;
 
     std::unordered_map<String, String> type_cast
         = {{"bool", "Boolean"},
@@ -135,7 +134,7 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
 
     String type_literal;
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
 
@@ -214,7 +213,7 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
+bool ExtractAll::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -227,7 +226,7 @@ bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
     const String second_arg = getConvertedArgument(fn_name, pos);
 
     String third_arg;
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         third_arg = getConvertedArgument(fn_name, pos);
@@ -240,13 +239,13 @@ bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
+bool ExtractJSON::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String datatype = "String";
-    ParserKeyword s_kql(Keyword::TYPEOF);
-    ParserToken open_bracket(TokenType::OpeningRoundBracket);
-    ParserToken close_bracket(TokenType::ClosingRoundBracket);
-    Expected expected;
+    ParserKQLKeyword s_kql(Keyword::TYPEOF);
+    ParserKQLToken open_bracket(KQLTokenType::OpeningRoundBracket);
+    ParserKQLToken close_bracket(KQLTokenType::ClosingRoundBracket);
+    KQLExpected expected;
 
     std::unordered_map<String, String> type_cast
         = {{"bool", "Boolean"},
@@ -270,7 +269,7 @@ bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
     const String json_datapath = getConvertedArgument(fn_name, pos);
     ++pos;
     const String json_datasource = getConvertedArgument(fn_name, pos);
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         if (s_kql.ignore(pos, expected))
@@ -307,7 +306,7 @@ bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool HasAnyIndex::convertImpl(String & out, IParser::Pos & pos)
+bool HasAnyIndex::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -326,7 +325,7 @@ bool HasAnyIndex::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
+bool IndexOf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     int start_index = 0, length = -1, occurrence = 1;
 
@@ -340,17 +339,17 @@ bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String lookup = getConvertedArgument(fn_name, pos);
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         start_index = stoi(getConvertedArgument(fn_name, pos));
 
-        if (pos->type == TokenType::Comma)
+        if (pos->type == KQLTokenType::Comma)
         {
             ++pos;
             length = stoi(getConvertedArgument(fn_name, pos));
 
-            if (pos->type == TokenType::Comma)
+            if (pos->type == KQLTokenType::Comma)
             {
                 ++pos;
                 occurrence = stoi(getConvertedArgument(fn_name, pos));
@@ -358,7 +357,7 @@ bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
         }
     }
 
-    if (pos->type == TokenType::ClosingRoundBracket)
+    if (pos->type == KQLTokenType::ClosingRoundBracket)
     {
         if (occurrence < 0 || length < -1)
             out = "";
@@ -374,22 +373,22 @@ bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
     return false;
 }
 
-bool IsEmpty::convertImpl(String & out, IParser::Pos & pos)
+bool IsEmpty::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "empty");
 }
 
-bool IsNotEmpty::convertImpl(String & out, IParser::Pos & pos)
+bool IsNotEmpty::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "notEmpty");
 }
 
-bool IsNotNull::convertImpl(String & out, IParser::Pos & pos)
+bool IsNotNull::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "isNotNull");
 }
 
-bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
+bool ParseCommandLine::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -410,12 +409,12 @@ bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool IsNull::convertImpl(String & out, IParser::Pos & pos)
+bool IsNull::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "isNull");
 }
 
-bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
+bool ParseCSV::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -431,7 +430,7 @@ bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseJSON::convertImpl(String & out, IParser::Pos & pos)
+bool ParseJSON::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -453,7 +452,7 @@ bool ParseJSON::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseURL::convertImpl(String & out, IParser::Pos & pos)
+bool ParseURL::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -489,7 +488,7 @@ bool ParseURL::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseURLQuery::convertImpl(String & out, IParser::Pos & pos)
+bool ParseURLQuery::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -504,7 +503,7 @@ bool ParseURLQuery::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ParseVersion::convertImpl(String & out, IParser::Pos & pos)
+bool ParseVersion::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -520,12 +519,12 @@ bool ParseVersion::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ReplaceRegex::convertImpl(String & out, IParser::Pos & pos)
+bool ReplaceRegex::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "replaceRegexpAll");
 }
 
-bool Reverse::convertImpl(String & out, IParser::Pos & pos)
+bool Reverse::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -540,7 +539,7 @@ bool Reverse::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Split::convertImpl(String & out, IParser::Pos & pos)
+bool Split::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -554,7 +553,7 @@ bool Split::convertImpl(String & out, IParser::Pos & pos)
     auto split_res = std::format("empty({0}) ? splitByString(' ' , {1}) : splitByString({0} , {1})", delimiter, source);
     int requested_index = -1;
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         auto arg = getConvertedArgument(fn_name, pos);
@@ -573,12 +572,12 @@ bool Split::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StrCat::convertImpl(String & out, IParser::Pos & pos)
+bool StrCat::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "concat");
 }
 
-bool StrCatDelim::convertImpl(String & out, IParser::Pos & pos)
+bool StrCatDelim::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -590,7 +589,7 @@ bool StrCatDelim::convertImpl(String & out, IParser::Pos & pos)
     int arg_count = 0;
     String args;
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::Semicolon && pos->type != TokenType::ClosingRoundBracket)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::Semicolon && pos->type != KQLTokenType::ClosingRoundBracket)
     {
         ++pos;
         String arg = getConvertedArgument(fn_name, pos);
@@ -609,7 +608,7 @@ bool StrCatDelim::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StrCmp::convertImpl(String & out, IParser::Pos & pos)
+bool StrCmp::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -624,12 +623,12 @@ bool StrCmp::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StrLen::convertImpl(String & out, IParser::Pos & pos)
+bool StrLen::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "lengthUTF8");
 }
 
-bool StrRep::convertImpl(String & out, IParser::Pos & pos)
+bool StrRep::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -642,7 +641,7 @@ bool StrRep::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String multiplier = getConvertedArgument(fn_name, pos);
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         const String delimiter = getConvertedArgument(fn_name, pos);
@@ -655,7 +654,7 @@ bool StrRep::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool SubString::convertImpl(String & out, IParser::Pos & pos)
+bool SubString::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -668,7 +667,7 @@ bool SubString::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String starting_index = getConvertedArgument(fn_name, pos);
 
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         auto length = getConvertedArgument(fn_name, pos);
@@ -686,17 +685,17 @@ bool SubString::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ToLower::convertImpl(String & out, IParser::Pos & pos)
+bool ToLower::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "lower");
 }
 
-bool ToUpper::convertImpl(String & out, IParser::Pos & pos)
+bool ToUpper::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "upper");
 }
 
-bool Translate::convertImpl(String & out, IParser::Pos & pos)
+bool Translate::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -721,7 +720,7 @@ bool Translate::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Trim::convertImpl(String & out, IParser::Pos & pos)
+bool Trim::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -734,7 +733,7 @@ bool Trim::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool TrimEnd::convertImpl(String & out, IParser::Pos & pos)
+bool TrimEnd::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -747,7 +746,7 @@ bool TrimEnd::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool TrimStart::convertImpl(String & out, IParser::Pos & pos)
+bool TrimStart::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -760,12 +759,12 @@ bool TrimStart::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool URLDecode::convertImpl(String & out, IParser::Pos & pos)
+bool URLDecode::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "decodeURLComponent");
 }
 
-bool URLEncode::convertImpl(String & out, IParser::Pos & pos)
+bool URLEncode::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "encodeURLComponent");
 }

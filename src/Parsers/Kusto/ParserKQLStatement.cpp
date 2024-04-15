@@ -11,17 +11,30 @@
 namespace DB
 {
 
-bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLStatement::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
     ParserKQLWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
-    ParserSetQuery set_p;
 
-    bool res = query_with_output_p.parse(pos, node, expected) || set_p.parse(pos, node, expected);
+    bool res = query_with_output_p.parse(pos, node, expected);
+    if (!res)
+    {
+        String query;
+        ParserSetQuery set_p;
+        Expected sql_expected;
+        while (pos.isValid() && pos->type != KQLTokenType::Semicolon)
+        {
+            query += " " + String(pos->begin, pos->end);
+            ++pos;
+        }
+        Tokens sql_tokens(query.data(), query.data() + query.size());
+        IParser::Pos sql_pos(sql_tokens, pos.max_depth, pos.max_backtracks);
+        res = set_p.parse(sql_pos, node, sql_expected);
+    }
 
     return res;
 }
 
-bool ParserKQLWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLWithOutput::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
     ParserKQLWithUnionQuery kql_p;
 
@@ -35,7 +48,7 @@ bool ParserKQLWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     return true;
 }
 
-bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLWithUnionQuery::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
     // will support union next phase
     ASTPtr kql_query;
@@ -60,51 +73,40 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLTableFunction::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
-    ParserKQLWithUnionQuery kql_p;
-    ASTPtr select;
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserKQLToken lparen(KQLTokenType::OpeningRoundBracket);
 
-    auto begin = pos;
-    auto paren_count = 0;
+    if (!lparen.ignore(pos, expected))
+        return false;
+
+    size_t paren_count = 0;
     String kql_statement;
 
-    if (s_lparen.ignore(pos, expected))
+    ++paren_count;
+    auto pos_start = pos;
+    while (isValidKQLPos(pos))
     {
-        if (pos->type == TokenType::HereDoc)
-        {
-            kql_statement = String(pos->begin + 2, pos->end - 2);
-        }
-        else
-        {
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
+            --paren_count;
+        if (pos->type == KQLTokenType::OpeningRoundBracket)
             ++paren_count;
-            auto pos_start = pos;
-            while (isValidKQLPos(pos))
-            {
-                if (pos->type == TokenType::ClosingRoundBracket)
-                    --paren_count;
-                if (pos->type == TokenType::OpeningRoundBracket)
-                    ++paren_count;
 
-                if (paren_count == 0)
-                    break;
-                ++pos;
-            }
-            kql_statement = String(pos_start->begin, (--pos)->end);
-        }
+        if (paren_count == 0)
+            break;
         ++pos;
-        Tokens token_kql(kql_statement.c_str(), kql_statement.c_str() + kql_statement.size());
-        IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
-
-        if (kql_p.parse(pos_kql, select, expected))
-        {
-            node = select;
-            ++pos;
-            return true;
-        }
     }
-    pos = begin;
-    return false;
+    --pos;
+    kql_statement = String(pos_start->begin, pos->end);
+    ++pos;
+
+    KQLTokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
+    IKQLParser::KQLPos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
+
+    if (!ParserKQLWithUnionQuery().parse(pos_kql, node, expected))
+        return false;
+    ++pos;
+    return true;
 }
+
 }

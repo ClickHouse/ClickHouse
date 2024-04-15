@@ -1,11 +1,6 @@
 #include <format>
-#include <unordered_map>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLMVExpand.h>
-#include <Parsers/Kusto/ParserKQLMakeSeries.h>
-#include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -32,30 +27,30 @@ std::unordered_map<String, String> ParserKQLMVExpand::type_cast
        {"double", "Float64"},
        {"string", "String"}};
 
-bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_exprs, Pos & pos, Expected & expected)
+bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_exprs, IKQLParser::KQLPos & pos, KQLExpected & expected)
 {
-    ParserToken equals(TokenType::Equals);
-    ParserToken open_bracket(TokenType::OpeningRoundBracket);
-    ParserToken close_bracket(TokenType::ClosingRoundBracket);
-    ParserToken comma(TokenType::Comma);
+    ParserKQLToken equals(KQLTokenType::Equals);
+    ParserKQLToken open_bracket(KQLTokenType::OpeningRoundBracket);
+    ParserKQLToken close_bracket(KQLTokenType::ClosingRoundBracket);
+    ParserKQLToken comma(KQLTokenType::Comma);
 
-    ParserKeyword s_to(Keyword::TO);
-    ParserKeyword s_type(Keyword::TYPEOF);
+    ParserKQLKeyword s_to(Keyword::TO);
+    ParserKQLKeyword s_type(Keyword::TYPEOF);
     uint16_t bracket_count = 0;
-    Pos expr_begin_pos = pos;
-    Pos expr_end_pos = pos;
+    auto expr_begin_pos = pos;
+    auto expr_end_pos = pos;
 
     String alias;
     String column_array_expr;
     String to_type;
     --expr_end_pos;
 
-    while (isValidKQLPos(pos) && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != KQLTokenType::PipeMark && pos->type != KQLTokenType::Semicolon)
     {
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == KQLTokenType::OpeningRoundBracket)
             ++bracket_count;
 
-        if (pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
             --bracket_count;
 
         if (String(pos->begin, pos->end) == "=")
@@ -103,8 +98,8 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
             --pos;
         }
 
-        if ((pos->type == TokenType::Comma && bracket_count == 0) || String(pos->begin, pos->end) == "limit"
-            || pos->type == TokenType::Semicolon)
+        if ((pos->type == KQLTokenType::Comma && bracket_count == 0) || String(pos->begin, pos->end) == "limit"
+            || pos->type == KQLTokenType::Semicolon)
         {
             if (column_array_expr.empty())
             {
@@ -120,7 +115,7 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
             column_array_expr.clear();
             to_type.clear();
 
-            if (pos->type == TokenType::Semicolon)
+            if (pos->type == KQLTokenType::Semicolon)
                 break;
         }
 
@@ -128,7 +123,7 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
             break;
         if (isValidKQLPos(pos))
             ++pos;
-        if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
+        if (!isValidKQLPos(pos) || pos->type == KQLTokenType::PipeMark || pos->type == KQLTokenType::Semicolon)
         {
             if (expr_end_pos < expr_begin_pos)
             {
@@ -142,15 +137,15 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
     return true;
 }
 
-bool ParserKQLMVExpand::parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, Expected & expected)
+bool ParserKQLMVExpand::parserMVExpand(KQLMVExpand & kql_mv_expand, KQLPos & pos, KQLExpected & expected)
 {
-    ParserKeyword s_bagexpansion(Keyword::BAGEXPANSION);
-    ParserKeyword s_kind(Keyword::KIND);
-    ParserKeyword s_with_itemindex(Keyword::WITH_ITEMINDEX);
-    ParserKeyword s_limit(Keyword::LIMIT);
+    ParserKQLKeyword s_bagexpansion(Keyword::BAGEXPANSION);
+    ParserKQLKeyword s_kind(Keyword::KIND);
+    ParserKQLKeyword s_with_itemindex(Keyword::WITH_ITEMINDEX);
+    ParserKQLKeyword s_limit(Keyword::LIMIT);
 
-    ParserToken equals(TokenType::Equals);
-    ParserToken comma(TokenType::Comma);
+    ParserKQLToken equals(KQLTokenType::Equals);
+    ParserKQLToken comma(KQLTokenType::Comma);
 
     auto & column_array_exprs = kql_mv_expand.column_array_exprs;
     auto & bagexpansion = kql_mv_expand.bagexpansion;
@@ -285,7 +280,7 @@ bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_no
     return true;
 }
 
-bool ParserKQLMVExpand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLMVExpand::parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected)
 {
     ASTPtr setting;
     ASTPtr select_expression_list;
@@ -298,10 +293,10 @@ bool ParserKQLMVExpand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     const String setting_str = "enable_unaligned_array_join = 1";
-    Tokens token_settings(setting_str.c_str(), setting_str.c_str() + setting_str.size());
+    Tokens token_settings(setting_str.data(), setting_str.data() + setting_str.size());
     IParser::Pos pos_settings(token_settings, pos.max_depth, pos.max_backtracks);
-
-    if (!ParserSetQuery(true).parse(pos_settings, setting, expected))
+    Expected sql_expected;
+    if (!ParserSetQuery(true).parse(pos_settings, setting, sql_expected))
         return false;
     node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(setting));
 

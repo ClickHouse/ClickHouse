@@ -1,34 +1,34 @@
 #pragma once
 
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/IKQLParserBase.h>
 
 namespace DB
 {
-class ParserKQLBase : public IParserBase
+class ParserKQLBase : public IKQLParserBase
 {
 public:
-    static String getExprFromToken(Pos & pos);
+    static String getExprFromToken(KQLPos & pos);
     static String getExprFromToken(const String & text, uint32_t max_depth, uint32_t max_backtracks);
-    static String getExprFromPipe(Pos & pos);
+    static String getExprFromPipe(KQLPos & pos);
     static bool setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bool dest_is_subquery, bool src_is_subquery);
     static bool parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks);
     bool parseByString(String expr, ASTPtr & node, uint32_t max_depth, uint32_t max_backtracks);
 };
 
-class ParserKQLQuery : public IParserBase
+class ParserKQLQuery : public IKQLParserBase
 {
 protected:
-    static std::unique_ptr<IParserBase> getOperator(String & op_name);
+    static std::unique_ptr<IKQLParserBase> getOperator(String & op_name);
     const char * getName() const override { return "KQL query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected) override;
 };
 
 class ParserKQLSubquery : public ParserKQLBase
 {
 protected:
     const char * getName() const override { return "KQL subquery"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected) override;
 };
 
 class ParserSimpleCHSubquery : public ParserKQLBase
@@ -38,22 +38,22 @@ public:
 
 protected:
     const char * getName() const override { return "Simple ClickHouse subquery"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(KQLPos & pos, ASTPtr & node, KQLExpected & expected) override;
     ASTPtr parent_select_node;
 };
 
 class BracketCount
 {
 public:
-    void count(IParser::Pos & pos)
+    void count(IKQLParser::KQLPos & pos)
     {
-        if (pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == KQLTokenType::OpeningRoundBracket)
             ++round_bracket_count;
-        if (pos->type == TokenType::ClosingRoundBracket)
+        if (pos->type == KQLTokenType::ClosingRoundBracket)
             --round_bracket_count;
-        if (pos->type == TokenType::OpeningSquareBracket)
+        if (pos->type == KQLTokenType::OpeningSquareBracket)
             ++square_bracket_count;
-        if (pos->type == TokenType::ClosingSquareBracket)
+        if (pos->type == KQLTokenType::ClosingSquareBracket)
             --square_bracket_count;
     }
     bool isZero() const { return round_bracket_count == 0 && square_bracket_count == 0; }

@@ -10,7 +10,7 @@
 
 namespace DB
 {
-bool ToBool::convertImpl(String & out, IParser::Pos & pos)
+bool ToBool::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -25,7 +25,7 @@ bool ToBool::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ToDateTime::convertImpl(String & out, IParser::Pos & pos)
+bool ToDateTime::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -37,7 +37,7 @@ bool ToDateTime::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ToDouble::convertImpl(String & out, IParser::Pos & pos)
+bool ToDouble::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -48,7 +48,7 @@ bool ToDouble::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ToInt::convertImpl(String & out, IParser::Pos & pos)
+bool ToInt::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -59,7 +59,7 @@ bool ToInt::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ToLong::convertImpl(String & out, IParser::Pos & pos)
+bool ToLong::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -70,7 +70,7 @@ bool ToLong::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ToString::convertImpl(String & out, IParser::Pos & pos)
+bool ToString::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -80,21 +80,21 @@ bool ToString::convertImpl(String & out, IParser::Pos & pos)
     out = std::format("ifNull(toString({0}), '')", param);
     return true;
 }
-bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
+bool ToTimeSpan::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
         return false;
     ++pos;
     String arg;
-    if (pos->type == TokenType::QuotedIdentifier)
+    if (pos->type == KQLTokenType::QuotedIdentifier)
         arg = String(pos->begin + 1, pos->end - 1);
-    else if (pos->type == TokenType::StringLiteral)
+    else if (pos->type == KQLTokenType::StringLiteral)
         arg = String(pos->begin, pos->end);
     else
         arg = getConvertedArgument(function_name, pos);
 
-    if (pos->type == TokenType::StringLiteral || pos->type == TokenType::QuotedIdentifier)
+    if (pos->type == KQLTokenType::StringLiteral || pos->type == KQLTokenType::QuotedIdentifier)
     {
         ++pos;
         try
@@ -113,7 +113,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
+bool ToDecimal::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -124,7 +124,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     int scale = 0;
     int precision;
 
-    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+    if (pos->type == KQLTokenType::QuotedIdentifier || pos->type == KQLTokenType::StringLiteral)
     {
         res = String(pos->begin + 1, pos->end - 1);
         ++pos;

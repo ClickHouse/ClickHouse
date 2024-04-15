@@ -2163,16 +2163,29 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
-        /// kql(table|project ...)
+        /// kql('table|project ...')
         /// 0. Parse the kql query
         /// 1. Parse closing token
         if (state == 0)
         {
             ASTPtr query;
-            --pos;
-            if (!ParserKQLTableFunction().parse(pos, query, expected))
+            String kql_statement;
+            ASTPtr string_literal;
+            ParserStringLiteral parser_string_literal;
+            if (parser_string_literal.parse(pos, string_literal, expected))
+            {
+                kql_statement = "(" + typeid_cast<const ASTLiteral &>(*string_literal).value.safeGet<String>() + ")";
+            }
+            else
+            {
+                throw Exception (ErrorCodes::SYNTAX_ERROR, "KQL table function need to be wrapped in heredoc ($$)");
+            }
+            KQLTokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
+            IKQLParser::KQLPos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
+            KQLExpected kql_expected;
+
+            if (!ParserKQLTableFunction().parse(pos_kql, query, kql_expected))
                 return false;
-            --pos;
             pushResult(query);
 
             if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))

@@ -1,26 +1,15 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/IKQLParser.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/ParserSetQuery.h>
 
 #include <format>
 
 namespace DB
 {
 
-bool BinaryAnd::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryAnd::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -32,7 +21,7 @@ bool BinaryAnd::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool BinaryNot::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryNot::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -43,7 +32,7 @@ bool BinaryNot::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool BinaryOr::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryOr::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -55,7 +44,7 @@ bool BinaryOr::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool BinaryShiftLeft::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryShiftLeft::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -67,7 +56,7 @@ bool BinaryShiftLeft::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool BinaryShiftRight::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryShiftRight::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -79,7 +68,7 @@ bool BinaryShiftRight::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool BinaryXor::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryXor::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
@@ -91,7 +80,7 @@ bool BinaryXor::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool BitsetCountOnes::convertImpl(String & out, IParser::Pos & pos)
+bool BitsetCountOnes::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "bitCount");
 }

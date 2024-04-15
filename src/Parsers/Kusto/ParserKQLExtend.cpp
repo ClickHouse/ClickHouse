@@ -1,19 +1,11 @@
 #include <format>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLExtend.h>
-#include <Parsers/Kusto/ParserKQLMakeSeries.h>
-#include <Parsers/Kusto/ParserKQLOperators.h>
-#include <Parsers/Kusto/ParserKQLProject.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-
 namespace DB
 {
-bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLExtend ::parseImpl(KQLPos & pos, ASTPtr & node, [[maybe_unused]] KQLExpected & expected)
 {
     ASTPtr select_query;
     int32_t new_column_index = 1;
@@ -22,8 +14,8 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     String except_str;
     String new_extend_str;
-    Tokens ntokens(extend_expr.c_str(), extend_expr.c_str() + extend_expr.size());
-    IParser::Pos npos(ntokens, pos.max_depth, pos.max_backtracks);
+    KQLTokens ntokens(extend_expr.data(), extend_expr.data() + extend_expr.size());
+    IKQLParser::KQLPos npos(ntokens, pos.max_depth, pos.max_backtracks);
 
     String alias;
 
@@ -45,15 +37,15 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     int32_t round_bracket_count = 0;
     int32_t square_bracket_count = 0;
-    while (isValidKQLPos(npos))
+    while (npos.isValid())
     {
-        if (npos->type == TokenType::OpeningRoundBracket)
+        if (npos->type == KQLTokenType::OpeningRoundBracket)
             ++round_bracket_count;
-        if (npos->type == TokenType::OpeningSquareBracket)
+        if (npos->type == KQLTokenType::OpeningSquareBracket)
             ++square_bracket_count;
-        if (npos->type == TokenType::ClosingRoundBracket)
+        if (npos->type == KQLTokenType::ClosingRoundBracket)
             --round_bracket_count;
-        if (npos->type == TokenType::ClosingSquareBracket)
+        if (npos->type == KQLTokenType::ClosingSquareBracket)
             --square_bracket_count;
 
         auto expr = String(npos->begin, npos->end);
@@ -63,7 +55,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             alias = String(npos->begin, npos->end);
         }
 
-        if (npos->type == TokenType::Comma && square_bracket_count == 0 && round_bracket_count == 0)
+        if (npos->type == KQLTokenType::Comma && square_bracket_count == 0 && round_bracket_count == 0)
         {
             apply_alias();
             new_extend_str += ", ";
@@ -76,10 +68,10 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     apply_alias();
 
     String expr = std::format("SELECT * {}, {} from prev", except_str, new_extend_str);
-    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
+    Tokens tokens(expr.data(), expr.data() + expr.size());
     IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
-
-    if (!ParserSelectQuery().parse(new_pos, select_query, expected))
+    Expected sql_expected;
+    if (!ParserSelectQuery().parse(new_pos, select_query, sql_expected))
         return false;
     if (!setSubQuerySource(select_query, node, false, false))
         return false;

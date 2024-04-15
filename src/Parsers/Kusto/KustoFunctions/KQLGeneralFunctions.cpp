@@ -1,27 +1,14 @@
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/ParserSetQuery.h>
 #include <boost/lexical_cast.hpp>
 #include <format>
 
 namespace DB
 {
 
-bool Bin::convertImpl(String & out, IParser::Pos & pos)
+bool Bin::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     double bin_size;
     const String fn_name = getKQLFunctionName(pos);
@@ -60,7 +47,7 @@ bool Bin::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool BinAt::convertImpl(String & out, IParser::Pos & pos)
+bool BinAt::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     double bin_size;
     const String fn_name = getKQLFunctionName(pos);

@@ -1,77 +1,70 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/IKQLParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
 
-bool ArgMax::convertImpl(String & out, IParser::Pos & pos)
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+bool ArgMax::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "argMax");
 }
 
-bool ArgMin::convertImpl(String & out, IParser::Pos & pos)
+bool ArgMin::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "argMin");
 }
 
-bool Avg::convertImpl(String & out, IParser::Pos & pos)
+bool Avg::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "avg");
 }
 
-bool AvgIf::convertImpl(String & out, IParser::Pos & pos)
+bool AvgIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "avgIf");
 }
 
-bool BinaryAllAnd::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryAllAnd::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "groupBitAnd");
 }
 
-bool BinaryAllOr::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryAllOr::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "groupBitOr");
 }
 
-bool BinaryAllXor::convertImpl(String & out, IParser::Pos & pos)
+bool BinaryAllXor::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "groupBitXor");
 }
 
-bool BuildSchema::convertImpl(String & out, IParser::Pos & pos)
+bool BuildSchema::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool Count::convertImpl(String & out, IParser::Pos & pos)
+bool Count::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "count");
 }
 
-bool CountIf::convertImpl(String & out, IParser::Pos & pos)
+bool CountIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "countIf");
 }
 
-bool DCount::convertImpl(String & out, IParser::Pos & pos)
+bool DCount::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -84,7 +77,7 @@ bool DCount::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool DCountIf::convertImpl(String & out, IParser::Pos & pos)
+bool DCountIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -98,21 +91,19 @@ bool DCountIf::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool MakeBag::convertImpl(String & out, IParser::Pos & pos)
+bool MakeBag::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
+}
+
+bool MakeBagIf::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
     String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool MakeBagIf::convertImpl(String & out, IParser::Pos & pos)
-{
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
-}
-
-bool MakeList::convertImpl(String & out, IParser::Pos & pos)
+bool MakeList::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -120,7 +111,7 @@ bool MakeList::convertImpl(String & out, IParser::Pos & pos)
         return false;
     ++pos;
     const auto expr = getConvertedArgument(fn_name, pos);
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         const auto max_size = getConvertedArgument(fn_name, pos);
@@ -131,7 +122,7 @@ bool MakeList::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool MakeListIf::convertImpl(String & out, IParser::Pos & pos)
+bool MakeListIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -141,7 +132,7 @@ bool MakeListIf::convertImpl(String & out, IParser::Pos & pos)
     const auto expr = getConvertedArgument(fn_name, pos);
     ++pos;
     const auto predicate = getConvertedArgument(fn_name, pos);
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         const auto max_size = getConvertedArgument(fn_name, pos);
@@ -152,7 +143,7 @@ bool MakeListIf::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool MakeListWithNulls::convertImpl(String & out, IParser::Pos & pos)
+bool MakeListWithNulls::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -165,7 +156,7 @@ bool MakeListWithNulls::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool MakeSet::convertImpl(String & out, IParser::Pos & pos)
+bool MakeSet::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -173,7 +164,7 @@ bool MakeSet::convertImpl(String & out, IParser::Pos & pos)
         return false;
     ++pos;
     const auto expr = getConvertedArgument(fn_name, pos);
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         const auto max_size = getConvertedArgument(fn_name, pos);
@@ -184,7 +175,7 @@ bool MakeSet::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool MakeSetIf::convertImpl(String & out, IParser::Pos & pos)
+bool MakeSetIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -194,7 +185,7 @@ bool MakeSetIf::convertImpl(String & out, IParser::Pos & pos)
     const auto expr = getConvertedArgument(fn_name, pos);
     ++pos;
     const auto predicate = getConvertedArgument(fn_name, pos);
-    if (pos->type == TokenType::Comma)
+    if (pos->type == KQLTokenType::Comma)
     {
         ++pos;
         const auto max_size = getConvertedArgument(fn_name, pos);
@@ -205,27 +196,27 @@ bool MakeSetIf::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Max::convertImpl(String & out, IParser::Pos & pos)
+bool Max::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "max");
 }
 
-bool MaxIf::convertImpl(String & out, IParser::Pos & pos)
+bool MaxIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "maxIf");
 }
 
-bool Min::convertImpl(String & out, IParser::Pos & pos)
+bool Min::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "min");
 }
 
-bool MinIf::convertImpl(String & out, IParser::Pos & pos)
+bool MinIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "minIf");
 }
 
-bool Percentile::convertImpl(String & out, IParser::Pos & pos)
+bool Percentile::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -244,7 +235,7 @@ bool Percentile::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Percentilew::convertImpl(String & out, IParser::Pos & pos)
+bool Percentilew::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -267,7 +258,7 @@ bool Percentilew::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Percentiles::convertImpl(String & out, IParser::Pos & pos)
+bool Percentiles::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -279,14 +270,14 @@ bool Percentiles::convertImpl(String & out, IParser::Pos & pos)
     trim(column_name);
     String expr = "quantiles(";
     String value;
-    while (pos->type != TokenType::ClosingRoundBracket)
+    while (pos->type != KQLTokenType::ClosingRoundBracket)
     {
-        if (pos->type != TokenType::Comma)
+        if (pos->type != KQLTokenType::Comma)
         {
             value = String(pos->begin, pos->end);
             expr = expr + value + "/100";
             ++pos;
-            if (pos->type != TokenType::ClosingRoundBracket)
+            if (pos->type != KQLTokenType::ClosingRoundBracket)
                 expr += ", ";
         }
         else
@@ -296,7 +287,7 @@ bool Percentiles::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool PercentilesArray::convertImpl(String & out, IParser::Pos & pos)
+bool PercentilesArray::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -308,16 +299,16 @@ bool PercentilesArray::convertImpl(String & out, IParser::Pos & pos)
     trim(column_name);
     String expr = "quantiles(";
     String value;
-    while (pos->type != TokenType::ClosingRoundBracket)
+    while (pos->type != KQLTokenType::ClosingRoundBracket)
     {
-        if (pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic" && pos->type != TokenType::OpeningRoundBracket
-            && pos->type != TokenType::OpeningSquareBracket && pos->type != TokenType::ClosingSquareBracket)
+        if (pos->type != KQLTokenType::Comma && String(pos->begin, pos->end) != "dynamic" && pos->type != KQLTokenType::OpeningRoundBracket
+            && pos->type != KQLTokenType::OpeningSquareBracket && pos->type != KQLTokenType::ClosingSquareBracket)
         {
             value = String(pos->begin, pos->end);
             expr = expr + value + "/100";
 
-            if (pos->type != TokenType::Comma && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
-                && pos->type != TokenType::ClosingSquareBracket)
+            if (pos->type != KQLTokenType::Comma && pos->type != KQLTokenType::OpeningRoundBracket && pos->type != KQLTokenType::OpeningSquareBracket
+                && pos->type != KQLTokenType::ClosingSquareBracket)
                 expr += ", ";
             ++pos;
         }
@@ -327,7 +318,7 @@ bool PercentilesArray::convertImpl(String & out, IParser::Pos & pos)
         }
     }
     ++pos;
-    if (pos->type != TokenType::ClosingRoundBracket)
+    if (pos->type != KQLTokenType::ClosingRoundBracket)
         --pos;
 
     expr.pop_back();
@@ -337,7 +328,7 @@ bool PercentilesArray::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Percentilesw::convertImpl(String & out, IParser::Pos & pos)
+bool Percentilesw::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -355,14 +346,14 @@ bool Percentilesw::convertImpl(String & out, IParser::Pos & pos)
     String expr = "quantilesExactWeighted(";
     String value;
 
-    while (pos->type != TokenType::ClosingRoundBracket)
+    while (pos->type != KQLTokenType::ClosingRoundBracket)
     {
-        if (pos->type != TokenType::Comma)
+        if (pos->type != KQLTokenType::Comma)
         {
             value = String(pos->begin, pos->end);
             expr = expr + value + "/100";
             ++pos;
-            if (pos->type != TokenType::ClosingRoundBracket)
+            if (pos->type != KQLTokenType::ClosingRoundBracket)
                 expr += ", ";
         }
         else
@@ -373,7 +364,7 @@ bool Percentilesw::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool PercentileswArray::convertImpl(String & out, IParser::Pos & pos)
+bool PercentileswArray::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -390,16 +381,16 @@ bool PercentileswArray::convertImpl(String & out, IParser::Pos & pos)
 
     String expr = "quantilesExactWeighted(";
     String value;
-    while (pos->type != TokenType::ClosingRoundBracket)
+    while (pos->type != KQLTokenType::ClosingRoundBracket)
     {
-        if (pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic" && pos->type != TokenType::OpeningRoundBracket
-            && pos->type != TokenType::OpeningSquareBracket && pos->type != TokenType::ClosingSquareBracket)
+        if (pos->type != KQLTokenType::Comma && String(pos->begin, pos->end) != "dynamic" && pos->type != KQLTokenType::OpeningRoundBracket
+            && pos->type != KQLTokenType::OpeningSquareBracket && pos->type != KQLTokenType::ClosingSquareBracket)
         {
             value = String(pos->begin, pos->end);
             expr = expr + value + "/100";
 
-            if (pos->type != TokenType::Comma && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
-                && pos->type != TokenType::ClosingSquareBracket)
+            if (pos->type != KQLTokenType::Comma && pos->type != KQLTokenType::OpeningRoundBracket && pos->type != KQLTokenType::OpeningSquareBracket
+                && pos->type != KQLTokenType::ClosingSquareBracket)
                 expr += ", ";
             ++pos;
         }
@@ -409,7 +400,7 @@ bool PercentileswArray::convertImpl(String & out, IParser::Pos & pos)
         }
     }
     ++pos;
-    if (pos->type != TokenType::ClosingRoundBracket)
+    if (pos->type != KQLTokenType::ClosingRoundBracket)
         --pos;
 
     expr.pop_back();
@@ -419,7 +410,7 @@ bool PercentileswArray::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Stdev::convertImpl(String & out, IParser::Pos & pos)
+bool Stdev::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -431,7 +422,7 @@ bool Stdev::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool StdevIf::convertImpl(String & out, IParser::Pos & pos)
+bool StdevIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     String fn_name = getKQLFunctionName(pos);
 
@@ -439,7 +430,7 @@ bool StdevIf::convertImpl(String & out, IParser::Pos & pos)
         return false;
     ++pos;
     const auto expr = getConvertedArgument(fn_name, pos);
-    if (pos->type != TokenType::Comma)
+    if (pos->type != KQLTokenType::Comma)
         return false;
 
     ++pos;
@@ -448,41 +439,33 @@ bool StdevIf::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
-bool Sum::convertImpl(String & out, IParser::Pos & pos)
+bool Sum::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "sum");
 }
 
-bool SumIf::convertImpl(String & out, IParser::Pos & pos)
+bool SumIf::convertImpl(String & out, IKQLParser::KQLPos & pos)
 {
     return directMapping(out, pos, "sumIf");
 }
 
-bool TakeAny::convertImpl(String & out, IParser::Pos & pos)
+bool TakeAny::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool TakeAnyIf::convertImpl(String & out, IParser::Pos & pos)
+bool TakeAnyIf::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool Variance::convertImpl(String & out, IParser::Pos & pos)
+bool Variance::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 
-bool VarianceIf::convertImpl(String & out, IParser::Pos & pos)
+bool VarianceIf::convertImpl([[maybe_unused]] String & out, [[maybe_unused]] IKQLParser::KQLPos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not yet implemented", getName());
 }
 }
