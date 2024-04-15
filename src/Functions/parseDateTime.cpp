@@ -594,9 +594,6 @@ namespace
 
             /// Make datetime fit in a cache line.
             alignas(64) DateTime<error_handling> datetime;
-            /// Catching and ignoring exceptions after throwing them in the loop below is prohibited can cause serious concurrency performance issues.
-            /// Use tl::expected to handle the error situation.
-            /// Usage reference https://en.cppreference.com/w/cpp/utility/expected
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
@@ -607,7 +604,11 @@ namespace
 
                 for (const auto & instruction : instructions)
                 {
-                    if (auto result = instruction.perform(cur, end, datetime); !result.has_value())
+                    if (auto result = instruction.perform(cur, end, datetime); result.has_value())
+                    {
+                        cur = *result;
+                    }
+                    else
                     {
                         if constexpr (error_handling == ErrorHandling::Zero)
                         {
@@ -625,11 +626,10 @@ namespace
                         else
                         {
                             static_assert(error_handling == ErrorHandling::Exception);
-                            throw Exception(result.error().error_code, "{}", result.error().error_message);
+                            const ErrorCodeAndMessage & err = result.error();
+                            throw Exception(err.error_code, "{}", err.error_message);
                         }
                     }
-                    else
-                        cur = *result;
                 }
 
                 if (error)
