@@ -22,6 +22,7 @@ public:
         const Block & header,
         size_t num_inputs,
         SortDescription description_,
+        const String & default_aggregate_function,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_);
 
