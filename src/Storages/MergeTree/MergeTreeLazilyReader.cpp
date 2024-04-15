@@ -111,7 +111,12 @@ void MergeTreeLazilyReader::transformLazyColumns(
         reader->performRequiredConversions(columns_to_read);
 
         for (size_t i = 0; i < columns_size; ++i)
-            lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
+        {
+            if (columns_to_read[i]->size() == current_offset + 1)
+                lazily_read_columns[i]->insert((*columns_to_read[i])[current_offset]);
+            else
+                lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
+        }
     }
 
     for (size_t i = origin_size; i < lazily_read_columns.size(); ++i)
