@@ -4,19 +4,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TEST_USER="role_query_param_user"
+TEST_USER="03096_role_query_param_user"
 TEST_PASSWORD="foobar"
 TEST_USER_AUTH="$TEST_USER:$TEST_PASSWORD"
 
-TEST_ROLE="role_query_param_role"
-TEST_ROLE_ENABLED_BY_DEFAULT="role_query_param_role_enabled_by_default"
-TEST_ROLE_NOT_GRANTED="role_query_param_role_not_granted"
-TEST_ROLE_SPECIAL_CHARS="\`role_query_param_@!\\$\`" # = CREATE ROLE `role_query_param_@!\$`
-TEST_ROLE_SPECIAL_CHARS_URLENCODED="role_query_param_%40!%5C%24"
+TEST_ROLE="03096_role_query_param_role"
+TEST_ROLE_ENABLED_BY_DEFAULT="03096_role_query_param_role_enabled_by_default"
+TEST_ROLE_NOT_GRANTED="03096_role_query_param_role_not_granted"
+TEST_ROLE_SPECIAL_CHARS="\`03096_role_query_param_@!\\$\`" # = CREATE ROLE `03096_role_query_param_@!\$`
+TEST_ROLE_SPECIAL_CHARS_URLENCODED="03096_role_query_param_%40!%5C%24"
 
-TEST_DB="role_query_param_db"
-TEST_TABLE="role_query_param_table"
-TEST_TABLE_ENABLED_BY_DEFAULT="role_query_param_table_enabled_by_default"
+TEST_DB="03096_role_query_param_db"
+TEST_TABLE="03096_role_query_param_table"
+TEST_TABLE_ENABLED_BY_DEFAULT="03096_role_query_param_table_enabled_by_default"
 
 TEST_TABLE_QUERY="SELECT * FROM $TEST_DB.$TEST_TABLE"
 TEST_TABLE_ENABLED_BY_DEFAULT_QUERY="SELECT * FROM $TEST_DB.$TEST_TABLE_ENABLED_BY_DEFAULT"
