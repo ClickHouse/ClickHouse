@@ -7,10 +7,16 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 replica1 = cluster.add_instance(
-    "replica1", with_zookeeper=True, main_configs=["configs/remote_servers.xml"], macros={"replica": "replica1"}
+    "replica1",
+    with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    macros={"replica": "replica1"},
 )
 replica2 = cluster.add_instance(
-    "replica2", with_zookeeper=True, main_configs=["configs/remote_servers.xml"], macros={"replica": "replica2"}
+    "replica2",
+    with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    macros={"replica": "replica2"},
 )
 
 node_s3 = cluster.add_instance(
@@ -79,7 +85,9 @@ def test_drop_replicated_table(start_cluster):
     )
     replica1.query("SYSTEM SYNC REPLICA test_replicated_table;", timeout=20)
 
-    replica1.query("DETACH TABLE test_replicated_table ON CLUSTER test_cluster PERMANENTLY;")
+    replica1.query(
+        "DETACH TABLE test_replicated_table ON CLUSTER test_cluster PERMANENTLY;"
+    )
     replica1.query(
         "SET allow_drop_detached_table=1; DROP TABLE test_replicated_table ON CLUSTER test_cluster SYNC;"
     )
@@ -96,7 +104,6 @@ def test_drop_s3_table(start_cluster):
     node_s3.query(
         "INSERT INTO test_s3_table SELECT number FROM system.numbers LIMIT 6;"
     )
-
     
     node_s3.query("DETACH TABLE test_s3_table PERMANENTLY;")
     node_s3.query("SET allow_drop_detached_table=1; DROP TABLE test_s3_table SYNC;")
