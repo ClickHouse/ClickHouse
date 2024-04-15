@@ -27,9 +27,7 @@ struct ReplaceRegexpTraits
     };
 };
 
-namespace
-{
-constexpr ReplaceStringTraits::Replace convertToReplaceStringTraits(ReplaceRegexpTraits::Replace replace)
+static constexpr ReplaceStringTraits::Replace convertToReplaceStringTraits(ReplaceRegexpTraits::Replace replace)
 {
     switch (replace)
     {
@@ -39,8 +37,6 @@ constexpr ReplaceStringTraits::Replace convertToReplaceStringTraits(ReplaceRegex
             return ReplaceStringTraits::Replace::All;
     }
     UNREACHABLE();
-}
-
 }
 
 /** Replace all matches of regexp 'needle' to string 'replacement'.
