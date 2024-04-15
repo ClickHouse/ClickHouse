@@ -1,51 +1,54 @@
 #include <Formats/ProtobufSerializer.h>
 
 #if USE_PROTOBUF
-#   include <Columns/ColumnAggregateFunction.h>
-#   include <Columns/ColumnArray.h>
-#   include <Columns/ColumnDecimal.h>
-#   include <Columns/ColumnLowCardinality.h>
-#   include <Columns/ColumnMap.h>
-#   include <Columns/ColumnNullable.h>
-#   include <Columns/ColumnFixedString.h>
-#   include <Columns/ColumnString.h>
-#   include <Columns/ColumnTuple.h>
-#   include <Columns/ColumnVector.h>
-#   include <Common/PODArray.h>
-#   include <Common/quoteString.h>
-#   include <Core/DecimalComparison.h>
-#   include <DataTypes/DataTypeAggregateFunction.h>
-#   include <DataTypes/DataTypeArray.h>
-#   include <DataTypes/DataTypesDecimal.h>
-#   include <DataTypes/DataTypeDateTime64.h>
-#   include <DataTypes/DataTypeEnum.h>
-#   include <DataTypes/DataTypeFixedString.h>
-#   include <DataTypes/DataTypeLowCardinality.h>
-#   include <DataTypes/DataTypeMap.h>
-#   include <DataTypes/DataTypeNullable.h>
-#   include <DataTypes/DataTypeTuple.h>
-#   include <DataTypes/DataTypeString.h>
-#   include <DataTypes/Serializations/SerializationDecimal.h>
-#   include <DataTypes/Serializations/SerializationFixedString.h>
-#   include <Formats/ProtobufReader.h>
-#   include <Formats/ProtobufWriter.h>
-#   include <Formats/RowInputMissingColumnsFiller.h>
-#   include <IO/Operators.h>
-#   include <IO/ReadBufferFromString.h>
-#   include <IO/ReadHelpers.h>
-#   include <IO/WriteBufferFromString.h>
-#   include <IO/WriteHelpers.h>
-#   include <base/range.h>
-#   include <base/sort.h>
-#   include <google/protobuf/descriptor.h>
-#   include <google/protobuf/descriptor.pb.h>
-#   include <boost/algorithm/string.hpp>
-#   include <boost/container/flat_map.hpp>
-#   include <boost/container/flat_set.hpp>
-#   include <boost/numeric/conversion/cast.hpp>
-#   include <boost/range/algorithm.hpp>
-#   include <boost/range/algorithm_ext/erase.hpp>
-#   include <Common/logger_useful.h>
+#    include <AggregateFunctions/IAggregateFunction.h>
+#    include <Columns/ColumnAggregateFunction.h>
+#    include <Columns/ColumnArray.h>
+#    include <Columns/ColumnDecimal.h>
+#    include <Columns/ColumnFixedString.h>
+#    include <Columns/ColumnLowCardinality.h>
+#    include <Columns/ColumnMap.h>
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnVector.h>
+#    include <Core/DecimalComparison.h>
+#    include <DataTypes/DataTypeAggregateFunction.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypeDateTime64.h>
+#    include <DataTypes/DataTypeEnum.h>
+#    include <DataTypes/DataTypeFixedString.h>
+#    include <DataTypes/DataTypeLowCardinality.h>
+#    include <DataTypes/DataTypeMap.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/Serializations/SerializationDecimal.h>
+#    include <DataTypes/Serializations/SerializationFixedString.h>
+#    include <Formats/ProtobufReader.h>
+#    include <Formats/ProtobufWriter.h>
+#    include <Formats/RowInputMissingColumnsFiller.h>
+#    include <IO/Operators.h>
+#    include <IO/ReadBufferFromString.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteBufferFromString.h>
+#    include <IO/WriteHelpers.h>
+#    include <base/range.h>
+#    include <base/sort.h>
+#    include <Common/PODArray.h>
+#    include <Common/logger_useful.h>
+#    include <Common/quoteString.h>
+
+#    include <boost/algorithm/string.hpp>
+#    include <boost/container/flat_map.hpp>
+#    include <boost/container/flat_set.hpp>
+#    include <boost/numeric/conversion/cast.hpp>
+#    include <boost/range/algorithm.hpp>
+#    include <boost/range/algorithm_ext/erase.hpp>
+#    include <google/protobuf/descriptor.h>
+#    include <google/protobuf/descriptor.pb.h>
+
 
 namespace DB
 {
@@ -3717,8 +3720,23 @@ namespace
         return std::make_shared<DataTypeEnum<Type>>(std::move(values));
     }
 
-    std::optional<NameAndTypePair> getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat = true)
+    std::optional<NameAndTypePair> getNameAndDataTypeFromField(
+        const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat);
+
+    std::optional<NameAndTypePair> getNameAndDataTypeFromFieldRecursive(
+        const google::protobuf::FieldDescriptor * field_descriptor,
+        bool skip_unsupported_fields,
+        bool allow_repeat,
+        std::unordered_set<const google::protobuf::FieldDescriptor *> & pending_resolution)
     {
+        if (pending_resolution.contains(field_descriptor))
+        {
+            if (skip_unsupported_fields)
+                return std::nullopt;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support type recursion ({})", field_descriptor->full_name());
+        }
+        pending_resolution.emplace(field_descriptor);
+
         if (allow_repeat && field_descriptor->is_map())
         {
             auto name_and_type = getNameAndDataTypeFromField(field_descriptor, skip_unsupported_fields, false);
@@ -3800,7 +3818,8 @@ namespace
                 else if (message_descriptor->field_count() == 1)
                 {
                     const auto * nested_field_descriptor = message_descriptor->field(0);
-                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor, skip_unsupported_fields);
+                    auto nested_name_and_type
+                        = getNameAndDataTypeFromFieldRecursive(nested_field_descriptor, skip_unsupported_fields, true, pending_resolution);
                     if (!nested_name_and_type)
                         return std::nullopt;
                     return NameAndTypePair{field_descriptor->name() + "_" + nested_name_and_type->name, nested_name_and_type->type};
@@ -3811,7 +3830,8 @@ namespace
                     Strings nested_names;
                     for (int i = 0; i != message_descriptor->field_count(); ++i)
                     {
-                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields);
+                        auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
+                            message_descriptor->field(i), skip_unsupported_fields, true, pending_resolution);
                         if (!nested_name_and_type)
                             continue;
                         nested_types.push_back(nested_name_and_type->type);
@@ -3826,6 +3846,14 @@ namespace
         }
 
         UNREACHABLE();
+    }
+
+    std::optional<NameAndTypePair> getNameAndDataTypeFromField(
+        const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat = true)
+    {
+        /// Keep track of the fields that are pending resolution to avoid recursive types, which are unsupported
+        std::unordered_set<const google::protobuf::FieldDescriptor *> pending_resolution{};
+        return getNameAndDataTypeFromFieldRecursive(field_descriptor, skip_unsupported_fields, allow_repeat, pending_resolution);
     }
 }
 

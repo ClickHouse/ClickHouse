@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/tuple
-sidebar_position: 54
+sidebar_position: 34
 sidebar_label: Tuple(T1, T2, ...)
 ---
 
-# Tuple(T1, T2, …)
+# Tuple(T1, T2, ...)
 
 A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types). Tuple must contain at least one element.
 

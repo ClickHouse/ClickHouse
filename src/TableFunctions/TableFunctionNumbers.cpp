@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -77,6 +78,9 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
         UInt64 offset = arguments.size() >= 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() >= 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
         UInt64 step = arguments.size() == 3 ? evaluateArgument(context, arguments[2]) : 1;
+
+        if (!step)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} requires step to be a positive number", getName());
 
         auto res = std::make_shared<StorageSystemNumbers>(
             StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
