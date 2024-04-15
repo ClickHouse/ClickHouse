@@ -18,6 +18,7 @@ node_s3 = cluster.add_instance(
     with_minio=True,
 )
 
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
