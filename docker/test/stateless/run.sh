@@ -213,6 +213,14 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--s3-storage')
     fi
 
+    if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE"  -eq 1 ]]; then
+        # to disable the same tests
+        ADDITIONAL_OPTIONS+=('--s3-storage')
+        # azurite is slow, but with these two settings it can be super slow
+        ADDITIONAL_OPTIONS+=('--no-random-settings')
+        ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
+    fi
+
     if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--shared-catalog')
     fi
