@@ -2,10 +2,11 @@
 
 #include <optional>
 
+#include <Core/Streaming/CursorTree.h>
+
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTStreamSettings.h>
 
-#include <Core/Streaming/CursorData.h>
 
 namespace DB
 {
@@ -18,7 +19,13 @@ class TableExpressionModifiers
 {
 public:
     using Rational = ASTSampleRatio::Rational;
-    using StreamSettings = ASTStreamSettings::StreamSettings;
+
+    struct StreamSettings
+    {
+        StreamReadingStage stage;
+        CursorTreeNodePtr tree;
+        std::optional<String> keeper_key;
+    };
 
     TableExpressionModifiers(bool has_final_,
         std::optional<StreamSettings> stream_settings_,

@@ -780,7 +780,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 if (table_expression.stream_settings)
                 {
                     auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
-                    stream_settings = ast_stream_settings.settings;
+                    stream_settings = TableExpressionModifiers::StreamSettings
+                    {
+                        .stage = ast_stream_settings.settings.stage,
+                        .tree = buildCursorTree(context, ast_stream_settings.settings.keeper_key, ast_stream_settings.settings.collapsed_tree),
+                        .keeper_key = ast_stream_settings.settings.keeper_key,
+                    };
                 }
 
                 if (table_expression.sample_size)

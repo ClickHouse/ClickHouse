@@ -169,4 +169,14 @@ CursorTreeNodePtr buildCursorTree(const Poco::JSON::Object::Ptr & json)
     return buildCursorTree(inter_repr);
 }
 
+CursorTreeNodePtr buildCursorTree(const ContextPtr & context, const std::optional<String> & keeper_key, const std::optional<Map> & collapsed_tree)
+{
+    if (!keeper_key.has_value())
+        return buildCursorTree(collapsed_tree.value_or(Map{}));
+
+    const auto & zk = context->getZooKeeper();
+
+    UNIMPLEMENTED();
+}
+
 }

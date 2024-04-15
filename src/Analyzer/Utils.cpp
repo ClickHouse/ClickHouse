@@ -271,7 +271,15 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
 
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
-            result_table_expression->stream_settings = std::make_shared<ASTStreamSettings>(*stream_settings);
+        {
+            ASTStreamSettings::StreamSettings ast_stream_settings
+            {
+                .stage = stream_settings->stage,
+                .keeper_key = stream_settings->keeper_key,
+                .collapsed_tree = cursorTreeToMap(stream_settings->tree),
+            };
+            result_table_expression->stream_settings = std::make_shared<ASTStreamSettings>(std::move(ast_stream_settings));
+        }
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())

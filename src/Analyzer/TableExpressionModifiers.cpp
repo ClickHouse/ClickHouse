@@ -28,8 +28,8 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
         if (stream_settings->keeper_key)
             buffer << ", keeper: " << quoteString(stream_settings->keeper_key.value());
 
-        if (stream_settings->collapsed_tree)
-            buffer << ", collapsed_tree: " << applyVisitor(FieldVisitorToString(), Field(stream_settings->collapsed_tree.value()));
+        if (stream_settings->tree)
+            buffer << ", collapsed_tree: " << cursorTreeToString(stream_settings->tree);
 
         buffer << ")";
     }
@@ -51,7 +51,7 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
     if (stream_settings.has_value())
     {
         hash_state.update(stream_settings->stage);
-        hash_state.update(stream_settings->collapsed_tree);
+        hash_state.update(stream_settings->tree);
         hash_state.update(stream_settings->keeper_key);
     }
 
@@ -82,8 +82,8 @@ String TableExpressionModifiers::formatForErrorMessage() const
         if (stream_settings->keeper_key)
             buffer << " " << quoteString(stream_settings->keeper_key.value());
 
-        if (stream_settings->collapsed_tree)
-            buffer << " " << applyVisitor(FieldVisitorToString(), Field(stream_settings->collapsed_tree.value()));
+        if (stream_settings->tree)
+            buffer << " " << cursorTreeToString(stream_settings->tree);
     }
 
     if (has_final)
