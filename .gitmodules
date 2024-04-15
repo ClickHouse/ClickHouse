@@ -323,6 +323,9 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/expected"]
+	path = contrib/expected
+	url = https://github.com/TartanLlama/expected
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
@@ -369,6 +372,3 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
-[submodule "contrib/expected"]
-	path = contrib/expected
-	url = https://github.com/TartanLlama/expected
