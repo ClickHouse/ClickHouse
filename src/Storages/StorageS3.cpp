@@ -955,6 +955,36 @@ private:
     std::mutex cancel_mutex;
 };
 
+namespace
+{
+    std::optional<String> checkAndGetNewFileOnInsertIfNeeded(const ContextPtr & context, const StorageS3::Configuration & configuration, const String & key, size_t sequence_number)
+    {
+        if (context->getSettingsRef().s3_truncate_on_insert || !S3::objectExists(*configuration.client, configuration.url.bucket, key, configuration.url.version_id, configuration.request_settings))
+            return std::nullopt;
+
+        if (context->getSettingsRef().s3_create_new_file_on_insert)
+        {
+            auto pos = key.find_first_of('.');
+            String new_key;
+            do
+            {
+                new_key = key.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : key.substr(pos));
+                ++sequence_number;
+            }
+            while (S3::objectExists(*configuration.client, configuration.url.bucket, new_key, configuration.url.version_id, configuration.request_settings));
+
+            return new_key;
+        }
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Object in bucket {} with key {} already exists. "
+            "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
+            "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
+            configuration.url.bucket, key);
+    }
+}
+
 
 class PartitionedStorageS3Sink : public PartitionedSink, WithContext
 {
@@ -987,6 +1017,9 @@ public:
 
         auto partition_key = replaceWildcards(key, partition_id);
         validateKey(partition_key);
+
+        if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(getContext(), configuration, partition_key, /* sequence_number */1))
+            partition_key = *new_key;
 
         return std::make_shared<StorageS3Sink>(
             format,
@@ -1248,6 +1281,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
+    auto key = query_configuration.keys.front();
 
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(query_configuration.keys.back(), query_configuration.compression_method);
@@ -1267,7 +1301,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             chosen_compression_method,
             query_configuration,
             query_configuration.url.bucket,
-            query_configuration.keys.back());
+            key);
     }
     else
     {
@@ -1275,35 +1309,11 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
 
-        bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
-
-        if (!truncate_in_insert && S3::objectExists(*query_configuration.client, query_configuration.url.bucket, query_configuration.keys.back(), query_configuration.url.version_id, query_configuration.request_settings))
+        if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(local_context, configuration, query_configuration.keys.front(), query_configuration.keys.size()))
         {
-            if (local_context->getSettingsRef().s3_create_new_file_on_insert)
-            {
-                size_t index = query_configuration.keys.size();
-                const auto & first_key = query_configuration.keys[0];
-                auto pos = first_key.find_first_of('.');
-                String new_key;
-                do
-                {
-                    new_key = first_key.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : first_key.substr(pos));
-                    ++index;
-                }
-                while (S3::objectExists(*query_configuration.client, query_configuration.url.bucket, new_key, query_configuration.url.version_id, query_configuration.request_settings));
-
-                query_configuration.keys.push_back(new_key);
-                configuration.keys.push_back(new_key);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Object in bucket {} with key {} already exists. "
-                    "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-                    "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-                    query_configuration.url.bucket, query_configuration.keys.back());
-            }
+            query_configuration.keys.push_back(*new_key);
+            configuration.keys.push_back(*new_key);
+            key = *new_key;
         }
 
         return std::make_shared<StorageS3Sink>(
@@ -1314,7 +1324,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             chosen_compression_method,
             query_configuration,
             query_configuration.url.bucket,
-            query_configuration.keys.back());
+            key);
     }
 }
 
