@@ -208,7 +208,7 @@ bool SystemRemoteDataPathsSource::nextDisk()
 
         auto & current = paths_stack.emplace_back();
 
-        /// Add dirs that we want to traverse. It's ok if some of them don't exist because traversal logic hadles
+        /// Add dirs that we want to traverse. It's ok if some of them don't exist because traversal logic handles
         /// cases when children of a directory get deleted while traversal is running.
         current.names.push_back({"store", nullptr});
         current.names.push_back({"data", nullptr});
