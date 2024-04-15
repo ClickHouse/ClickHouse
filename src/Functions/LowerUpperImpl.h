@@ -10,11 +10,9 @@
 namespace DB
 {
 
-namespace
-{
 DECLARE_DEFAULT_CODE(
 template <char not_case_lower_bound, char not_case_upper_bound>
-void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+static void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
     static constexpr auto flip_case_mask = 'A' ^ 'a';
      for (; src < src_end; ++src, ++dst)
@@ -26,7 +24,7 @@ void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 
 DECLARE_AVX512BW_SPECIFIC_CODE(
 template <char not_case_lower_bound, char not_case_upper_bound>
-void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+static void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
     static constexpr auto flip_case_mask = 'A' ^ 'a';
 
@@ -62,7 +60,7 @@ void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 
 DECLARE_AVX2_SPECIFIC_CODE(
 template <char not_case_lower_bound, char not_case_upper_bound>
-void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+static void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
     static constexpr auto flip_case_mask = 'A' ^ 'a';
 
@@ -103,7 +101,7 @@ void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 
 DECLARE_SSE42_SPECIFIC_CODE(
 template <char not_case_lower_bound, char not_case_upper_bound>
-void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+static void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
     static constexpr auto flip_case_mask = 'A' ^ 'a';
 
@@ -143,7 +141,7 @@ void arrayImpl(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 })
 
 template <char not_case_lower_bound, char not_case_upper_bound>
-void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::AVX512BW))
@@ -155,8 +153,6 @@ void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
     else
 #endif
     TargetSpecific::Default::arrayImpl<not_case_lower_bound, not_case_upper_bound>(src, src_end, dst);
-}
-
 }
 
 template <char not_case_lower_bound, char not_case_upper_bound>
@@ -188,7 +184,6 @@ struct LowerUpperImpl
     {
         array<not_case_lower_bound, not_case_upper_bound>(data.data(), data.data() + data.size(), data.data());
     }
-
 };
 
 template <typename T>
