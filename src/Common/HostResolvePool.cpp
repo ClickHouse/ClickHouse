@@ -139,6 +139,8 @@ void HostResolver::setSuccess(const Poco::Net::IPAddress & address)
     if (it == records.end())
         return;
 
+    it->fail_count = 0;
+
     auto old_weight = it->getWeight();
     ++it->usage;
     auto new_weight = it->getWeight();
@@ -158,8 +160,14 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
         if (it == records.end())
             return;
 
-        it->failed = true;
-        it->fail_time = now;
+        while (it != records.end() && it->address == address)
+        {
+            it->failed = true;
+            it->fail_time = now;
+            if (it->fail_count < RECORD_FAIL_COUNT_LIMIT)
+                ++it->fail_count;
+            ++it;
+        }
     }
 
     ProfileEvents::increment(metrics.failed);
@@ -223,7 +231,10 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
         {
             CurrentMetrics::add(metrics.active_count, 1);
             ProfileEvents::increment(metrics.discovered, 1);
-            merged.push_back(Record(*it_next, now));
+            if (merged.empty() || merged.back().address != *it_next)
+                merged.push_back(Record(*it_next, now));
+            else
+                merged.back().resolve_time = now;
             ++it_next;
         }
         else
@@ -237,7 +248,7 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
     }
 
     for (auto & rec : merged)
-        if (rec.failed && rec.fail_time < last_effective_resolve)
+        if (rec.failed && rec.fail_time < now - Poco::Timespan(history.totalSeconds() * (1ull << (rec.fail_count - 1)), 0))
             rec.failed = false;
 
     chassert(std::is_sorted(merged.begin(), merged.end()));

@@ -42,6 +42,7 @@ struct HostResolverMetrics
 };
 
 constexpr size_t DEFAULT_RESOLVE_TIME_HISTORY_SECONDS = 2*60;
+constexpr size_t RECORD_FAIL_COUNT_LIMIT = 6;
 
 
 class HostResolver : public std::enable_shared_from_this<HostResolver>
@@ -141,6 +142,7 @@ protected:
         size_t usage = 0;
         bool failed = false;
         Poco::Timestamp fail_time = 0;
+        size_t fail_count = 0;
 
         size_t weight_prefix_sum;
 
