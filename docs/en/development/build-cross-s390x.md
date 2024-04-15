@@ -17,6 +17,11 @@ s390x has two OpenSSL-related build options.
 -DENABLE_OPENSSL_DYNAMIC=0
 ```
 
+:::note
+s390x builds are temporarily disabled in CI.
+:::
+
+
 These instructions assume that the host machine is x86_64 and has all the tooling required to build natively based on the [build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but the following instructions should also work on Ubuntu 20.04.
 
 In addition to installing the tooling used to build natively, the following additional packages need to be installed:
