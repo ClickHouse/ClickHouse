@@ -104,7 +104,7 @@ def test_drop_s3_table(start_cluster):
     node_s3.query(
         "INSERT INTO test_s3_table SELECT number FROM system.numbers LIMIT 6;"
     )
-    
+
     node_s3.query("DETACH TABLE test_s3_table PERMANENTLY;")
     node_s3.query("SET allow_drop_detached_table=1; DROP TABLE test_s3_table SYNC;")
 
