@@ -22,9 +22,6 @@
 [submodule "contrib/capnproto"]
 	path = contrib/capnproto
 	url = https://github.com/ClickHouse/capnproto
-[submodule "contrib/double-conversion"]
-	path = contrib/double-conversion
-	url = https://github.com/google/double-conversion
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2
@@ -366,3 +363,6 @@
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/ClickHouse/openssl.git
+[submodule "contrib/double-conversion"]
+	path = contrib/double-conversion
+	url = https://github.com/ClickHouse/double-conversion.git

@@ -28,7 +28,7 @@ private:
     bool nextImpl() override;
 
 public:
-    ParallelReadBuffer(SeekableReadBuffer & input, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers, size_t range_step_, size_t file_size);
+    ParallelReadBuffer(SeekableReadBuffer & input, ThreadPoolCallbackRunnerUnsafe<void> schedule_, size_t max_working_readers, size_t range_step_, size_t file_size);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -63,7 +63,7 @@ private:
     size_t max_working_readers;
     std::atomic_size_t active_working_readers{0};
 
-    ThreadPoolCallbackRunner<void> schedule;
+    ThreadPoolCallbackRunnerUnsafe<void> schedule;
 
     SeekableReadBuffer & input;
     size_t file_size;
@@ -94,7 +94,7 @@ private:
 /// If `buf` is a SeekableReadBuffer with supportsReadAt() == true, creates a ParallelReadBuffer
 /// from it. Otherwise returns nullptr;
 std::unique_ptr<ParallelReadBuffer> wrapInParallelReadBufferIfSupported(
-    ReadBuffer & buf, ThreadPoolCallbackRunner<void> schedule, size_t max_working_readers,
+    ReadBuffer & buf, ThreadPoolCallbackRunnerUnsafe<void> schedule, size_t max_working_readers,
     size_t range_step, size_t file_size);
 
 }

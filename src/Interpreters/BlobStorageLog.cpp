@@ -1,4 +1,5 @@
 #include <Interpreters/BlobStorageLog.h>
+#include <base/getFQDNOrHostName.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,6 +27,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
 
     return ColumnsDescription
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the event."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
@@ -51,6 +53,7 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     auto event_time_seconds = timeInSeconds(event_time);
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[i++]->insert(event_time_seconds);
     columns[i++]->insert(Decimal64(timeInMicroseconds(event_time)));
