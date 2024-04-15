@@ -1071,7 +1071,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     auto current_context = data.getContext();
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
     {
         Array parameters;
         if (node.parameters)
@@ -1087,7 +1087,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
         }
 
-        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     }
 
     if (!function_builder)

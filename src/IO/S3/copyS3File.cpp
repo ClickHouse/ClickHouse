@@ -58,7 +58,7 @@ namespace
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_)
@@ -84,7 +84,7 @@ namespace
         const S3Settings::RequestSettings & request_settings;
         const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
         const std::optional<std::map<String, String>> & object_metadata;
-        ThreadPoolCallbackRunner<void> schedule;
+        ThreadPoolCallbackRunnerUnsafe<void> schedule;
         bool for_disk_s3;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
@@ -467,7 +467,7 @@ namespace
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyDataToS3File"))
@@ -650,7 +650,7 @@ namespace
             const S3Settings::RequestSettings & request_settings_,
             const ReadSettings & read_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyS3File"))
@@ -856,7 +856,7 @@ void copyDataToS3File(
     const S3Settings::RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
     CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
@@ -876,7 +876,7 @@ void copyS3File(
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
     if (settings.allow_native_copy)
