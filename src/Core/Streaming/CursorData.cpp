@@ -1,95 +1,71 @@
-#include <optional>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
-#include <base/defines.h>
-
-#include <Common/Exception.h>
-
-#include <Core/Field.h>
-#include <Core/Streaming/CursorData.h>
 #include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/CursorData.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
+
+const String kCursor = "cursor";
+const String kKeeperKey = "keeper_key";
+
+Poco::JSON::Object cursorDataToJson(const CursorData & data)
+{
+    Poco::JSON::Object json;
+
+    if (data.keeper_key.has_value())
+        json.set(kKeeperKey, data.keeper_key.value());
+
+    json.set(kCursor, cursorTreeToJson(data.tree));
+
+    return json;
 }
 
-// const String kCursor = "cursor";
-// const String kKeeperKey = "keeper_key";
+CursorData parseDataFromJson(const Poco::Dynamic::Var & var)
+{
+    const auto & json = var.extract<Poco::JSON::Object::Ptr>();
 
-// Map packCursorData(const CursorData & data)
-// {
-//     Map result{
-//         Tuple{kCursor, data.tree.collapse()},
-//     };
+    CursorData data {
+        .tree = buildCursorTree(json->getObject(kCursor)),
+    };
 
-//     if (data.keeper_key.has_value())
-//         result.push_back(Tuple{kKeeperKey, data.keeper_key.value()});
+    if (json->has(kKeeperKey))
+        data.keeper_key = json->getValue<String>(kKeeperKey);
 
-//     return result;
-// }
+    return data;
+}
 
-// CursorData unpackCursorData(const Map & packed_data)
-// {
-//     chassert(packed_data.size() <= 2);
+}
 
-//     std::optional<String> keeper_key;
-//     std::optional<CursorTree> tree;
+void readBinary(CursorDataMap & data_map, ReadBuffer & buf)
+{
+    String str_repr;
+    readBinary(str_repr, buf);
 
-//     for (const auto & raw_tuple : packed_data)
-//     {
-//         const auto & tuple = raw_tuple.safeGet<const Tuple &>();
-//         const auto & key = tuple.at(0).safeGet<String>();
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(str_repr).extract<Poco::JSON::Object::Ptr>();
 
-//         if (key == kKeeperKey)
-//             keeper_key = tuple.at(1).safeGet<String>();
-//         else if (key == kCursor)
-//             tree = CursorTree(tuple.at(1).safeGet<Map>());
-//         else
-//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packed cursor format");
-//     }
+    for (const auto & [table, serialized_data] : *json)
+        data_map[table] = parseDataFromJson(serialized_data);
+}
 
-//     chassert(tree.has_value());
+void writeBinary(const CursorDataMap & data_map, WriteBuffer & buf)
+{
+    Poco::JSON::Object json;
 
-//     return CursorData{
-//         .tree = std::move(tree.value()),
-//         .keeper_key = std::move(keeper_key),
-//     };
-// }
+    for (const auto & [table, data] : data_map)
+        json.set(table, cursorDataToJson(data));
 
-// }
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    json.stringify(oss);
 
-// void readBinary(CursorDataMap & data_map, ReadBuffer & buf)
-// {
-//     Map raw;
-//     readBinary(raw, buf);
-
-//     for (const auto & raw_tuple : raw)
-//     {
-//         const auto & tuple = raw_tuple.safeGet<const Tuple &>();
-//         const auto & table_name = tuple.at(0).safeGet<String>();
-//         const auto & data = tuple.at(1).safeGet<Map>();
-
-//         auto result = data_map.try_emplace(table_name, unpackCursorData(data));
-
-//         chassert(result.second);
-//     }
-// }
-
-// void writeBinary(const CursorDataMap & data_map, WriteBuffer & buf)
-// {
-//     Map raw;
-
-//     for (const auto & [table_name, data] : data_map)
-//         raw.push_back(Tuple{table_name, packCursorData(data)});
-
-//     writeBinary(raw, buf);
-// }
+    String str_repr = oss.str();
+    writeBinary(str_repr, buf);
+}
 
 }

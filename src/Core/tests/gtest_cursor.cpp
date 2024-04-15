@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/CursorData.h>
+
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 using namespace DB;
 
@@ -97,4 +101,46 @@ GTEST_TEST(Cursor, SimpleOperations)
     ASSERT_EQ(tree->getSubtree("part-1")->getValue("block_offset"), 200);
     ASSERT_EQ(tree->getSubtree("part-2")->getValue("block_number"), 110);
     ASSERT_EQ(tree->getSubtree("part-2")->getValue("block_offset"), 142);
+}
+
+GTEST_TEST(CursorData, RoundTripSerialization)
+{
+    Map collapsed_tree_1 = {
+        Tuple{"part-1.block_number", 10},
+        Tuple{"part-1.block_offset", 42},
+    };
+
+    Map collapsed_tree_2 = {
+        Tuple{"part-2.block_number", 110},
+        Tuple{"part-2.block_offset", 142},
+    };
+
+    CursorDataMap data_map = {
+        {"table-1",
+         CursorData{
+             .tree = buildCursorTree(collapsed_tree_1),
+             .keeper_key = std::nullopt,
+         }},
+        {"table-2",
+         CursorData{
+             .tree = buildCursorTree(collapsed_tree_2),
+             .keeper_key = "keeper-key",
+         }},
+    };
+
+    WriteBufferFromOwnString out;
+    writeBinary(data_map, out);
+
+    ReadBufferFromString in(out.str());
+    CursorDataMap data_map_2;
+    readBinary(data_map_2, in);
+
+    ASSERT_EQ(data_map.size(), data_map_2.size());
+
+    for (const auto & [table, data] : data_map)
+    {
+        const auto & data_2 = data_map_2.at(table);
+        ASSERT_EQ(data.keeper_key, data_2.keeper_key);
+        ASSERT_EQ(cursorTreeToString(data.tree), cursorTreeToString(data_2.tree));
+    }
 }

@@ -107,13 +107,20 @@ Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
     return result;
 }
 
-String cursorTreeToString(const CursorTreeNodePtr & ptr)
+Poco::JSON::Object cursorTreeToJson(const CursorTreeNodePtr & ptr)
 {
     std::map<String, Int64> collapsed_tree = collapseTree(ptr.get());
     Poco::JSON::Object json;
 
     for (const auto & [k, v] : collapsed_tree)
         json.set(k, v);
+
+    return json;
+}
+
+String cursorTreeToString(const CursorTreeNodePtr & ptr)
+{
+    auto json = cursorTreeToJson(ptr);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -149,7 +156,11 @@ CursorTreeNodePtr buildCursorTree(const String & serialized_tree)
 {
     Poco::JSON::Parser parser;
     auto json = parser.parse(serialized_tree).extract<Poco::JSON::Object::Ptr>();
+    return buildCursorTree(json);
+}
 
+CursorTreeNodePtr buildCursorTree(const Poco::JSON::Object::Ptr & json)
+{
     Map inter_repr;
 
     for (const auto & [k, v] : *json)

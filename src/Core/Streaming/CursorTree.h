@@ -3,6 +3,8 @@
 #include <memory>
 #include <variant>
 
+#include <Poco/JSON/Object.h>
+
 #include <Core/Field.h>
 #include <base/types.h>
 
@@ -39,9 +41,11 @@ private:
 
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
 String cursorTreeToString(const CursorTreeNodePtr & ptr);
+Poco::JSON::Object cursorTreeToJson(const CursorTreeNodePtr & ptr);
 
 CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
 CursorTreeNodePtr buildCursorTree(const String & serialized_tree);
+CursorTreeNodePtr buildCursorTree(const Poco::JSON::Object::Ptr & json);
 CursorTreeNodePtr buildCursorTree(const ContextPtr & context, const std::optional<String> & keeper_key, const std::optional<Map> & collapsed_tree);
 
 }
