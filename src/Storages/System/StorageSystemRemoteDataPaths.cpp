@@ -47,7 +47,7 @@ public:
                 disks.push_back(disk);
         }
 
-        /// Position a the first disk
+        /// Position at the first disk
         nextDisk();
     }
 
