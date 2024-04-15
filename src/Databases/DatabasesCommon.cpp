@@ -71,6 +71,17 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         query->replace(ast_create_query.refresh_strategy, metadata.refresh);
     }
 
+    if (metadata.sql_security_type)
+    {
+        auto new_sql_security = std::make_shared<ASTSQLSecurity>();
+        new_sql_security->type = metadata.sql_security_type;
+
+        if (metadata.definer)
+            new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
+
+        ast_create_query.sql_security = std::move(new_sql_security);
+    }
+
     /// MaterializedView, Dictionary are types of CREATE query without storage.
     if (ast_create_query.storage)
     {
@@ -215,7 +226,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
     return tryGetTableNoWait(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
@@ -352,7 +363,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
 {
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
 
-    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
+    for (auto it = getTablesIterator(local_context, filter, /*skip_not_loaded=*/false); it->isValid(); it->next())
     {
         auto storage = it->table();
         if (!storage)

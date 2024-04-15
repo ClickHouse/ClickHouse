@@ -111,4 +111,7 @@ inline String getFunctionName(const ASTPtr & ast) { return getFunctionName(ast.g
 inline std::optional<String> tryGetFunctionName(const ASTPtr & ast) { return tryGetFunctionName(ast.get()); }
 inline bool tryGetFunctionNameInto(const ASTPtr & ast, String & name) { return tryGetFunctionNameInto(ast.get(), name); }
 
+/// Checks if function is a lambda function definition `lambda((x, y), x + y)`
+bool isASTLambdaFunction(const ASTFunction & function);
+
 }

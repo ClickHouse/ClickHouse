@@ -483,7 +483,7 @@ Where:
 
 - `r1`- the number of unique visitors who visited the site during 2020-01-01 (the `cond1` condition).
 - `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
-- `r3`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
+- `r3`- the number of unique visitors who visited the site during a specific time period on 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
 ## uniqUpTo(N)(x)
 

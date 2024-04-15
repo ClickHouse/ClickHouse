@@ -1,21 +1,20 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <map>
+#include <mutex>
+#include <thread>
+#include <vector>
+#include <base/scope_guard.h>
+#include <boost/noncopyable.hpp>
 #include <Poco/Notification.h>
 #include <Poco/NotificationQueue.h>
 #include <Poco/Timestamp.h>
-#include <thread>
-#include <atomic>
-#include <mutex>
-#include <condition_variable>
-#include <vector>
-#include <map>
-#include <functional>
-#include <boost/noncopyable.hpp>
-#include <Common/ZooKeeper/Types.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool_fwd.h>
-#include <base/scope_guard.h>
+#include <Common/ZooKeeper/Types.h>
 
 
 namespace DB

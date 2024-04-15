@@ -1,0 +1,40 @@
+Parquet
+a	UInt64					
+a_nullable	Nullable(UInt64)					
+Arrow
+a	UInt64					
+a_nullable	Nullable(UInt64)					
+Parquet
+b	Array(Nullable(UInt64))					
+b_nullable	Array(Nullable(UInt64))					
+Arrow
+b	Array(Nullable(UInt64))					
+b_nullable	Array(Nullable(UInt64))					
+Parquet
+c	Tuple(\n    a UInt64,\n    b String)					
+c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+Arrow
+c	Tuple(\n    a UInt64,\n    b String)					
+c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+Parquet
+d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+Arrow
+d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+Parquet
+e	Map(UInt64, Nullable(String))					
+e_nullable	Map(UInt64, Nullable(String))					
+Arrow
+e	Map(UInt64, Nullable(String))					
+e_nullable	Map(UInt64, Nullable(String))					
+Parquet
+f	Map(UInt64, Map(UInt64, Nullable(String)))					
+f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
+Arrow
+f	Map(UInt64, Map(UInt64, Nullable(String)))					
+f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
+Parquet
+g	String					
+g_nullable	Nullable(String)					
+Arrow
+g	LowCardinality(String)					
+g_nullable	LowCardinality(String)					
