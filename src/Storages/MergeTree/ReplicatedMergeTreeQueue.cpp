@@ -1402,6 +1402,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
+        if (merger_mutator.merges_blocker.isCancelled())
+        {
+            constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
+            LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+            return false;
+        }
+
         /** If any of the required parts are now fetched or in merge process, wait for the end of this operation.
           * Otherwise, even if all the necessary parts for the merge are not present, you should try to make a merge.
           * If any parts are missing, instead of merge, there will be an attempt to download a part.
@@ -1435,12 +1442,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                         return false;
                 }
             }
-        }
-        if (merger_mutator.merges_blocker.isCancelled())
-        {
-            constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
-            LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
-            return false;
         }
 
         const auto data_settings = data.getSettings();
