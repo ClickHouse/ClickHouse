@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+TEST_USER="role_query_param_user"
+TEST_PASSWORD="foobar"
+TEST_USER_AUTH="$TEST_USER:$TEST_PASSWORD"
+
+TEST_ROLE="role_query_param_role"
+TEST_ROLE_ENABLED_BY_DEFAULT="role_query_param_role_enabled_by_default"
+TEST_ROLE_NOT_GRANTED="role_query_param_role_not_granted"
+TEST_ROLE_SPECIAL_CHARS="\`role_query_param_@!\\$\`" # = CREATE ROLE `role_query_param_@!\$`
+TEST_ROLE_SPECIAL_CHARS_URLENCODED="role_query_param_%40!%5C%24"
+
+TEST_DB="role_query_param_db"
+TEST_TABLE="role_query_param_table"
+TEST_TABLE_ENABLED_BY_DEFAULT="role_query_param_table_enabled_by_default"
+
+TEST_TABLE_QUERY="SELECT * FROM $TEST_DB.$TEST_TABLE"
+TEST_TABLE_ENABLED_BY_DEFAULT_QUERY="SELECT * FROM $TEST_DB.$TEST_TABLE_ENABLED_BY_DEFAULT"
+DEFAULT_DB_QUERY="SELECT * FROM $DEFAULT_TABLE"
+
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $TEST_USER"
+$CLICKHOUSE_CLIENT -q "DROP ROLE IF EXISTS $TEST_ROLE"
+$CLICKHOUSE_CLIENT -q "DROP ROLE IF EXISTS $TEST_ROLE_ENABLED_BY_DEFAULT"
+$CLICKHOUSE_CLIENT -q "DROP ROLE IF EXISTS $TEST_ROLE_NOT_GRANTED"
+$CLICKHOUSE_CLIENT -q "DROP ROLE IF EXISTS $TEST_ROLE_SPECIAL_CHARS"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $TEST_DB"
+
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE $TEST_DB"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE $TEST_DB.$TEST_TABLE_ENABLED_BY_DEFAULT (i Int32) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "INSERT INTO $TEST_DB.$TEST_TABLE_ENABLED_BY_DEFAULT VALUES (42)"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE $TEST_DB.$TEST_TABLE (i Int32) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "INSERT INTO $TEST_DB.$TEST_TABLE VALUES (144)"
+
+$CLICKHOUSE_CLIENT -q "CREATE USER $TEST_USER IDENTIFIED BY '$TEST_PASSWORD'"
+
+$CLICKHOUSE_CLIENT -q "CREATE ROLE $TEST_ROLE_ENABLED_BY_DEFAULT"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON $TEST_DB.$TEST_TABLE_ENABLED_BY_DEFAULT TO $TEST_ROLE_ENABLED_BY_DEFAULT"
+$CLICKHOUSE_CLIENT -q "GRANT $TEST_ROLE_ENABLED_BY_DEFAULT TO $TEST_USER"
+$CLICKHOUSE_CLIENT -q "SET DEFAULT ROLE $TEST_ROLE_ENABLED_BY_DEFAULT TO $TEST_USER"
+
+$CLICKHOUSE_CLIENT -q "CREATE ROLE $TEST_ROLE"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON $TEST_DB.$TEST_TABLE TO $TEST_ROLE"
+$CLICKHOUSE_CLIENT -q "GRANT $TEST_ROLE TO $TEST_USER"
+
+$CLICKHOUSE_CLIENT -q "CREATE ROLE $TEST_ROLE_SPECIAL_CHARS"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON $TEST_DB.$TEST_TABLE TO $TEST_ROLE_SPECIAL_CHARS"
+$CLICKHOUSE_CLIENT -q "GRANT $TEST_ROLE_SPECIAL_CHARS TO $TEST_USER"
+
+$CLICKHOUSE_CLIENT -q "CREATE ROLE $TEST_ROLE_NOT_GRANTED"
+
+echo "### Can query a table accessible by default without a role parameter"
+$CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL" --data-binary "$TEST_TABLE_ENABLED_BY_DEFAULT_QUERY"
+
+echo "### Can query a table with granted access with a role parameter"
+$CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE" --data-binary "$TEST_TABLE_QUERY"
+
+echo "### Can query a table when the role has special characters in the name"
+$CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE_SPECIAL_CHARS_URLENCODED" --data-binary "$TEST_TABLE_QUERY"
+
+echo "### Cannot query a table that requires a grant without a role parameter"
+OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL" --data-binary "$TEST_TABLE_QUERY")
+echo -ne $OUT | grep -o "Code: 497"     || echo "expected code 497, got: $OUT"
+echo -ne $OUT | grep -o "ACCESS_DENIED" || echo "expected ACCESS_DENIED error, got: $OUT"
+
+echo "### Cannot query a table with a role that does not have a grant"
+OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE" --data-binary "$TEST_TABLE_ENABLED_BY_DEFAULT_QUERY")
+echo -ne $OUT | grep -o "Code: 497"     || echo "expected code 497, got: $OUT"
+echo -ne $OUT | grep -o "ACCESS_DENIED" || echo "expected ACCESS_DENIED error, got: $OUT"
+
+echo "### Cannot set a role that is not granted to the user"
+OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE_NOT_GRANTED" --data-binary "$TEST_TABLE_QUERY")
+echo -ne $OUT | grep -o "Code: 511"    || echo "expected code 511, got: $OUT"
+echo -ne $OUT | grep -o "UNKNOWN_ROLE" || echo "expected UNKNOWN_ROLE error, got: $OUT"
+
+echo "### Cannot set a role that does not exist"
+OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=aaaaaaaaaa" --data-binary "$TEST_TABLE_QUERY")
+echo -ne $OUT | grep -o "Code: 511"    || echo "expected code 511, got: $OUT"
+echo -ne $OUT | grep -o "UNKNOWN_ROLE" || echo "expected UNKNOWN_ROLE error, got: $OUT"
+
+$CLICKHOUSE_CLIENT -q "DROP USER $TEST_USER"
+$CLICKHOUSE_CLIENT -q "DROP ROLE $TEST_ROLE"
+$CLICKHOUSE_CLIENT -q "DROP ROLE $TEST_ROLE_ENABLED_BY_DEFAULT"
+$CLICKHOUSE_CLIENT -q "DROP ROLE $TEST_ROLE_NOT_GRANTED"
+$CLICKHOUSE_CLIENT -q "DROP ROLE $TEST_ROLE_SPECIAL_CHARS"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE $TEST_DB"

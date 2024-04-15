@@ -1,0 +1,18 @@
+### Can query a table accessible by default without a role parameter
+42
+### Can query a table with granted access with a role parameter
+144
+### Can query a table when the role has special characters in the name
+144
+### Cannot query a table that requires a grant without a role parameter
+Code: 497
+ACCESS_DENIED
+### Cannot query a table with a role that does not have a grant
+Code: 497
+ACCESS_DENIED
+### Cannot set a role that is not granted to the user
+Code: 511
+UNKNOWN_ROLE
+### Cannot set a role that does not exist
+Code: 511
+UNKNOWN_ROLE

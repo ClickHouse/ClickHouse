@@ -5,6 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/Role.h>
+#include <Access/User.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -735,8 +736,10 @@ void HTTPHandler::processQuery(
     {
         auto role_name = params.get("role");
         auto role_id = context->getAccessControl().getID<Role>(role_name);
-        auto roles_to_set = std::vector{role_id};
-        context->setCurrentRoles(roles_to_set);
+        if (context->getUser()->granted_roles.isGranted(role_id))
+          context->setCurrentRoles(std::vector{role_id});
+        else
+          throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role {} is not granted to the current user", role_name);
     }
 
     /// Settings can be overridden in the query.
