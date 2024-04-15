@@ -56,7 +56,7 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 
 AsynchronousMetrics::AsynchronousMetrics(
-    int update_period_seconds,
+    unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))

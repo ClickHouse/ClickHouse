@@ -64,7 +64,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , metric_threads(metric_threads_)
     , metric_threads_active(metric_threads_active_)
     , metric_threads_scheduled(metric_threads_scheduled_)
-    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(*create_reader_pool, "Reader"))
+    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
 {
 }
 
@@ -590,7 +590,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     , callback(callback_)
 {
     ThreadPool pool(metric_threads_, metric_threads_active_, metric_threads_scheduled_, max_threads_count);
-    auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "ReadTaskIter");
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "ReadTaskIter");
 
     std::vector<std::future<String>> keys;
     keys.reserve(max_threads_count);

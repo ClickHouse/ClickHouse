@@ -30,7 +30,7 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
     bool for_disk_azure_blob_storage = false);
 
 
@@ -47,7 +47,7 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
     bool for_disk_azure_blob_storage = false);
 
 }

@@ -52,7 +52,7 @@ protected:
 
     mutable std::recursive_mutex mutex;
     ThreadPool list_objects_pool;
-    ThreadPoolCallbackRunner<BatchAndHasNext> list_objects_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<BatchAndHasNext> list_objects_scheduler;
     std::future<BatchAndHasNext> outcome_future;
     RelativePathsWithMetadata current_batch;
     RelativePathsWithMetadata::iterator current_batch_iterator;
