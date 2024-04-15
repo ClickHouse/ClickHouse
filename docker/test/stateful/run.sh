@@ -19,7 +19,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log >> /test_output/garbage.log 2>&1 &
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent &
 ./setup_minio.sh stateful
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
