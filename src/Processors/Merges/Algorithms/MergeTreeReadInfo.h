@@ -29,7 +29,7 @@ inline bool getVirtualRowFromChunk(const Chunk & chunk)
     const auto & info = chunk.getChunkInfo();
     if (const auto * read_info = typeid_cast<const MergeTreeReadInfo *>(info.get()))
         return read_info->virtual_row;
-    return 0;
+    return false;
 }
 
 }
