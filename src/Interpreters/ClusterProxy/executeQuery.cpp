@@ -541,7 +541,8 @@ void executeQueryForReplicatedMergeTreeCluster(
                 std::make_shared<ASTLiteral>(cluster_partition.getPartitionId()));
 
             /// FIXME(cluster): move this optimization into a common place
-            partition_filter = makeASTFunction("indexHint", std::move(partition_filter));
+            /// FIXME(cluster): broken
+            /* partition_filter = makeASTFunction("indexHint", std::move(partition_filter)); */
 
             auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
             auto where_expression = select_query.where();
