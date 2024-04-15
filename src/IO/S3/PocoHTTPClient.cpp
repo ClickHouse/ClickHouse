@@ -146,7 +146,9 @@ ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguratio
         .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
         .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
         .withTCPKeepAliveTimeout(Poco::Timespan(
-            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0));
+            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))
+        .withHTTPKeepAliveTimeout(Poco::Timespan(client_configuration.http_keep_alive_timeout, 0))
+        .withHTTPKeepAliveMaxRequests(client_configuration.http_keep_alive_max_requests);
 }
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)

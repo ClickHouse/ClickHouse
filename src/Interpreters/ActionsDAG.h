@@ -372,11 +372,45 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    ActionsDAGPtr cloneActionsForFilterPushDown(
+    ActionsDAGPtr splitActionsForFilterPushDown(
         const std::string & filter_name,
-        bool can_remove_filter,
+        bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
+
+    struct ActionsForJOINFilterPushDown
+    {
+        ActionsDAGPtr left_stream_filter_to_push_down;
+        bool left_stream_filter_removes_filter;
+        ActionsDAGPtr right_stream_filter_to_push_down;
+        bool right_stream_filter_removes_filter;
+    };
+
+    /** Split actions for JOIN filter push down.
+      *
+      * @param filter_name - name of filter node in current DAG.
+      * @param removes_filter - if filter is removed after it is applied.
+      * @param left_stream_available_columns_to_push_down - columns from left stream that are safe to use in push down conditions
+      * to left stream.
+      * @param left_stream_header - left stream header.
+      * @param right_stream_available_columns_to_push_down - columns from right stream that are safe to use in push down conditions
+      * to right stream.
+      * @param right_stream_header - right stream header.
+      * @param equivalent_columns_to_push_down - columns from left and right streams that are safe to use in push down conditions
+      * to left and right streams.
+      * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
+      * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
+      */
+    ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const Names & left_stream_available_columns_to_push_down,
+        const Block & left_stream_header,
+        const Names & right_stream_available_columns_to_push_down,
+        const Block & right_stream_header,
+        const Names & equivalent_columns_to_push_down,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
     bool
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
@@ -429,7 +463,9 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static ActionsDAGPtr createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
+    void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
 
 class FindOriginalNodeForOutputName
