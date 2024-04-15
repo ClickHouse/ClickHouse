@@ -572,6 +572,7 @@ void LocalServer::processConfig()
     const std::string clickhouse_dialect{"clickhouse"};
     load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
         && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
+    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -847,6 +848,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
+    if (options.count("wait_for_suggestions_to_load"))
+        config().setBool("wait_for_suggestions_to_load", true);
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
