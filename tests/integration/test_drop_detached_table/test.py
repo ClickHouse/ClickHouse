@@ -13,10 +13,10 @@ replica2 = cluster.add_instance(
 )
 
 node_s3 = cluster.add_instance(
-        "node_s3",
-        main_configs=["configs/disk_s3.xml"],
-        with_minio=True,
-    )
+    "node_s3",
+    main_configs=["configs/disk_s3.xml"],
+    with_minio=True,
+)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -69,19 +69,27 @@ def test_drop_replicated_table(start_cluster):
     create_replicated_table(replica1, "test_replicated_table")
     create_replicated_table(replica2, "test_replicated_table")
 
-    replica1.query("INSERT INTO test_replicated_table SELECT number FROM system.numbers LIMIT 6;")
+    replica1.query(
+        "INSERT INTO test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
+    )
     replica1.query("SYSTEM SYNC REPLICA test_replicated_table;", timeout=20)
 
     replica1.query("DETACH TABLE test_replicated_table PERMANENTLY;")
-    replica1.query("SET allow_drop_detached_table=1; DROP TABLE test_replicated_table SYNC;")
+    replica1.query(
+        "SET allow_drop_detached_table=1; DROP TABLE test_replicated_table SYNC;"
+    )
 
     replica2.query("DETACH TABLE test_replicated_table PERMANENTLY;")
-    replica2.query("SET allow_drop_detached_table=1; DROP TABLE test_replicated_table SYNC;")
+    replica2.query(
+        "SET allow_drop_detached_table=1; DROP TABLE test_replicated_table SYNC;"
+    )
 
 
 def test_drop_s3_table(start_cluster):
     create_s3_table(node_s3, "test_s3_table")
-    node_s3.query("INSERT INTO test_s3_table SELECT number FROM system.numbers LIMIT 6;")
+    node_s3.query(
+        "INSERT INTO test_s3_table SELECT number FROM system.numbers LIMIT 6;"
+    )
 
     node_s3.query("DETACH TABLE test_s3_table PERMANENTLY;")
     node_s3.query("SET allow_drop_detached_table=1; DROP TABLE test_s3_table SYNC;")
