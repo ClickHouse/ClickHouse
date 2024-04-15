@@ -739,7 +739,7 @@ void HTTPHandler::processQuery(
         if (context->getUser()->granted_roles.isGranted(role_id))
           context->setCurrentRoles(std::vector{role_id});
         else
-          throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role {} is not granted to the current user", role_name);
+          throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role {} does not exist or not granted to the current user", role_name);
     }
 
     /// Settings can be overridden in the query.
