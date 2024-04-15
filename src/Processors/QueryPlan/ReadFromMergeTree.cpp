@@ -1204,7 +1204,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0);
+                            sort_description, merging_params.default_aggregate_function, max_block_size_rows, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,

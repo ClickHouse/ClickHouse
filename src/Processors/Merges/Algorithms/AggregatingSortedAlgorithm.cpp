@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -17,7 +18,7 @@ AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefiniti
 AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
 
 static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
-    const Block & header, const SortDescription & description)
+    const Block & header, const SortDescription & description, const String & default_aggregate_function = "")
 {
     AggregatingSortedAlgorithm::ColumnsDefinition def = {};
     size_t num_columns = header.columns();
@@ -29,7 +30,8 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
 
         /// We leave only states of aggregate functions.
         if (!dynamic_cast<const DataTypeAggregateFunction *>(column.type.get())
-            && !dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+            && !dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName())
+            && default_aggregate_function.empty())
         {
             def.column_numbers_not_to_aggregate.push_back(i);
             continue;
@@ -60,10 +62,21 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
 
             def.columns_to_simple_aggregate.emplace_back(std::move(desc));
         }
-        else
+        else if (dynamic_cast<const DataTypeAggregateFunction *>(column.type->getCustomName()))
         {
             // standard aggregate function
             def.columns_to_aggregate.emplace_back(i);
+        }
+        else
+        {
+            AggregateFunctionProperties properties;
+            auto type = recursiveRemoveLowCardinality(column.type);
+            const auto & func = AggregateFunctionFactory::instance().get(default_aggregate_function, NullsAction::EMPTY, {column.type}, {}, properties);
+            AggregatingSortedAlgorithm::SimpleAggregateDescription desc(func, i, type.get() == column.type.get() ? nullptr : type, column.type);
+            if (desc.function->allocatesMemoryInArena())
+                def.allocates_memory_in_arena = true;
+
+            def.columns_to_simple_aggregate.emplace_back(std::move(desc));
         }
     }
 
@@ -253,10 +266,11 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
     SortDescription description_,
+    const String & default_aggregate_function,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
-    , columns_definition(defineColumns(header_, description_))
+    , columns_definition(defineColumns(header_, description_, default_aggregate_function))
     , merged_data(max_block_size_rows_, max_block_size_bytes_, columns_definition)
 {
 }
