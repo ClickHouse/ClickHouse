@@ -131,7 +131,7 @@ namespace
         return tl::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
     else                                                                     \
         /* Optimization: for error_handling = Zero/Null, only care that */   \
-        /* an error happend but which one specifically doesn't matter. */    \
+        /* an error happened but which one specifically doesn't matter. */   \
         return tl::unexpected(ErrorCodeAndMessage(error_code));              \
 }
 
