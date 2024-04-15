@@ -54,29 +54,29 @@ namespace
     constexpr Int32 maxYear = 2106;
 
     const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
-                {"mon", {"day", 1}},
-                {"tue", {"sday", 2}},
-                {"wed", {"nesday", 3}},
-                {"thu", {"rsday", 4}},
-                {"fri", {"day", 5}},
-                {"sat", {"urday", 6}},
-                {"sun", {"day", 7}},
-            };
+        {"mon", {"day", 1}},
+        {"tue", {"sday", 2}},
+        {"wed", {"nesday", 3}},
+        {"thu", {"rsday", 4}},
+        {"fri", {"day", 5}},
+        {"sat", {"urday", 6}},
+        {"sun", {"day", 7}},
+    };
 
     const std::unordered_map<String, std::pair<String, Int32>> monthMap{
-                {"jan", {"uary", 1}},
-                {"feb", {"ruary", 2}},
-                {"mar", {"ch", 3}},
-                {"apr", {"il", 4}},
-                {"may", {"", 5}},
-                {"jun", {"e", 6}},
-                {"jul", {"y", 7}},
-                {"aug", {"ust", 8}},
-                {"sep", {"tember", 9}},
-                {"oct", {"ober", 10}},
-                {"nov", {"ember", 11}},
-                {"dec", {"ember", 12}},
-            };
+        {"jan", {"uary", 1}},
+        {"feb", {"ruary", 2}},
+        {"mar", {"ch", 3}},
+        {"apr", {"il", 4}},
+        {"may", {"", 5}},
+        {"jun", {"e", 6}},
+        {"jul", {"y", 7}},
+        {"aug", {"ust", 8}},
+        {"sep", {"tember", 9}},
+        {"oct", {"ober", 10}},
+        {"nov", {"ember", 11}},
+        {"dec", {"ember", 12}},
+    };
 
     /// key: month, value: total days of current month if current year is leap year.
     constexpr Int32 leapDays[] = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -124,7 +124,8 @@ namespace
     using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
 
 
-#define RETURN_ERROR_BASED_ON_ERROR_HANDLING(error_code, ...)                \
+/// Returns an error based on the error handling mode
+#define RETURN_ERROR(error_code, ...)                                        \
 {                                                                            \
     if constexpr (error_handling == ErrorHandling::Exception)                \
         return tl::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
@@ -134,6 +135,7 @@ namespace
         return tl::unexpected(ErrorCodeAndMessage(error_code));              \
 }
 
+/// Run a function and either return an error or assign the result.
 #define ASSIGN_RESULT_OR_RETURN_ERROR(res, function_call) \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
@@ -208,16 +210,16 @@ namespace
         VoidOrError setEra(const String & text)
         {
             if (text == "bc")
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime")
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime")
             else if (text != "ad")
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text)
             return {};
         }
 
         VoidOrError setCentury(Int32 century)
         {
             if (century < 19 || century > 21)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century)
 
             year = 100 * century;
             has_year = true;
@@ -227,7 +229,7 @@ namespace
         VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
         {
             if (year_ < minYear || year_ > maxYear)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear)
 
             year = year_;
             has_year = true;
@@ -247,7 +249,7 @@ namespace
             else if (year_ >= 0 && year_ < 70)
                 year_ += 2000;
             else
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_)
 
             setYear(year_, false, false);
             return {};
@@ -256,7 +258,7 @@ namespace
         VoidOrError setMonth(Int32 month_)
         {
             if (month_ < 1 || month_ > 12)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_)
 
             month = month_;
             week_date_format = false;
@@ -272,7 +274,7 @@ namespace
         VoidOrError setWeek(Int32 week_)
         {
             if (week_ < 1 || week_ > 53)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
             week_date_format = true;
@@ -288,7 +290,7 @@ namespace
         VoidOrError setDayOfYear(Int32 day_of_year_)
         {
             if (day_of_year_ < 1 || day_of_year_ > 366)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_)
 
             day_of_year = day_of_year_;
             day_of_year_format = true;
@@ -304,7 +306,7 @@ namespace
         VoidOrError setDayOfMonth(Int32 day_of_month)
         {
             if (day_of_month < 1 || day_of_month > 31)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month)
 
             day = day_of_month;
             week_date_format = false;
@@ -320,7 +322,7 @@ namespace
         VoidOrError setDayOfWeek(Int32 day_of_week_)
         {
             if (day_of_week_ < 1 || day_of_week_ > 7)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
             week_date_format = true;
@@ -341,7 +343,7 @@ namespace
             else if (text == "pm")
                 is_am = false;
             else
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text)
             return {};
         }
 
@@ -374,7 +376,7 @@ namespace
             }
 
             if (hour_ < min_hour || hour_ > max_hour)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                RETURN_ERROR(
                     ErrorCodes::CANNOT_PARSE_DATETIME,
                     "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and hour_starts_at_1={}",
                     hour,
@@ -392,7 +394,7 @@ namespace
         VoidOrError setMinute(Int32 minute_)
         {
             if (minute_ < 0 || minute_ > 59)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_)
 
             minute = minute_;
             return {};
@@ -401,7 +403,7 @@ namespace
         VoidOrError setSecond(Int32 second_)
         {
             if (second_ < 0 || second_ > 59)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_)
 
             second = second_;
             return {};
@@ -461,7 +463,7 @@ namespace
         {
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (week_year_ < minYear || week_year_ > maxYear)
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
 
             Int32 days_since_epoch_of_jan_fourth;
             ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate(week_year_, 1, 4)))
@@ -472,7 +474,7 @@ namespace
         static Int32OrError daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_)
 
             Int32 res;
             ASSIGN_RESULT_OR_RETURN_ERROR(res, (daysSinceEpochFromDate(year_, 1, 1)))
@@ -483,7 +485,7 @@ namespace
         static Int32OrError daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_)
 
             Int32 res = cumulativeYearDays[year_ - 1970];
             res += isLeapYear(year_) ? cumulativeLeapDays[month_ - 1] : cumulativeDays[month_ - 1];
@@ -515,7 +517,7 @@ namespace
             if (seconds_since_epoch >= time_zone_offset)
                 seconds_since_epoch -= time_zone_offset;
             else
-                RETURN_ERROR_BASED_ON_ERROR_HANDLING(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
+                RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
 
             return seconds_since_epoch;
         }
@@ -722,7 +724,7 @@ namespace
                     if (auto result = checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment); !result.has_value())
                         return tl::unexpected(result.error());
                     if (std::string_view(cur, literal.size()) != literal)
-                        RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                        RETURN_ERROR(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
                             "Unable to parse fragment {} from {} because literal {} is expected but {} provided",
                             fragment,
@@ -790,7 +792,7 @@ namespace
             static VoidOrError checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & fragment)
             {
                 if (cur > end || cur + len > end) [[unlikely]]
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::NOT_ENOUGH_SPACE,
                         "Unable to parse fragment {} from {} because {}",
                         fragment,
@@ -809,7 +811,7 @@ namespace
                 }
 
                 if (*cur != expected) [[unlikely]]
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
@@ -831,7 +833,7 @@ namespace
                 }
 
                 if (*cur < '0' || *cur > '9') [[unlikely]]
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because {} is not a number",
                         fragment,
@@ -851,7 +853,7 @@ namespace
                 boost::to_lower(text);
                 auto it = dayOfWeekMap.find(text);
                 if (it == dayOfWeekMap.end())
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week short text {} ",
                         fragment,
@@ -872,7 +874,7 @@ namespace
                 boost::to_lower(text);
                 auto it = monthMap.find(text);
                 if (it == monthMap.end())
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year short text {}",
                         fragment,
@@ -893,7 +895,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -913,7 +915,7 @@ namespace
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
                         fragment,
@@ -1094,7 +1096,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1108,7 +1110,7 @@ namespace
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse second part of fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1150,7 +1152,7 @@ namespace
                 else if (*cur == '+')
                     sign = 1;
                 else
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown sign time zone offset: {}",
                         fragment,
@@ -1337,7 +1339,7 @@ namespace
 
                 /// Avoid integer overflow in (*)
                 if (max_digits_to_read >= std::numeric_limits<decltype(number)>::digits10) [[unlikely]]
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because max_digits_to_read is too big",
                         fragment,
@@ -1388,7 +1390,7 @@ namespace
 
                 /// Need to have read at least one digit.
                 if (cur == start) [[unlikely]]
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because read number failed",
                         fragment,
@@ -1396,7 +1398,7 @@ namespace
 
                 /// Check if number exceeds the range of Int32
                 if (number < std::numeric_limits<Int32>::min() || number > std::numeric_limits<Int32>::max()) [[unlikely]]
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because number is out of range of Int32",
                         fragment,
@@ -1475,7 +1477,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week text: {}",
                         fragment,
@@ -1534,7 +1536,7 @@ namespace
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
-                    RETURN_ERROR_BASED_ON_ERROR_HANDLING(
+                    RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year text: {}",
                         fragment,
