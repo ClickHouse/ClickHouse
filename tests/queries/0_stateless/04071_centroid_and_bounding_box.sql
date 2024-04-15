@@ -1,8 +1,12 @@
 SELECT 'boundingBoxCartesian Ring';
-SELECT boundingBoxCartesian([(0., 0.), (3., 5.), (6., 0.), (0., 0.)]);
+SELECT boundingBoxCartesian([(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]);
+SELECT 'boundingBoxSpherical Ring';
+SELECT boundingBoxSpherical([(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]);
 
 SELECT 'boundingBoxCartesian Polygon';
-SELECT boundingBoxCartesian([[(0., 0.), (3., 5.), (6., 0.), (0., 0.)]]);
+SELECT boundingBoxCartesian([[(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]]);
+SELECT 'boundingBoxSpherical Polygon';
+SELECT boundingBoxSpherical([[(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]]);
 
 SELECT 'boundingBoxCartesian Point';
 SELECT boundingBoxCartesian((3., 4.));
@@ -49,6 +53,30 @@ SELECT boundingBoxCartesian([[(178., 45.), (180., 45.), (-178., 45.), (-180., 45
 SELECT 'MultiPolygon across date line';
 SELECT boundingBoxSpherical([[[(179., 50.), (180., 50.), (180., 51.), (179., 51.), (179., 50.)]], [[(-180., 50.), (-179., 50.), (-179., 51.), (-180., 51.), (-180., 50.)]]]);
 
+SELECT 'boundingBoxCartesian Polygon with hole';
+SELECT boundingBoxCartesian([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]);
+
+SELECT 'boundingBoxSpherical Polygon with hole';
+SELECT boundingBoxSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]);
+
+SELECT 'boundingBoxCartesian negative coordinates';
+SELECT boundingBoxCartesian([(-5., -5.), (-5., 0.), (0., 0.), (0., -5.), (-5., -5.)]);
+
+SELECT 'boundingBoxSpherical negative coordinates';
+SELECT boundingBoxSpherical([(-5., -5.), (-5., 0.), (0., 0.), (0., -5.), (-5., -5.)]);
+
+SELECT 'boundingBoxCartesian large coordinates';
+SELECT boundingBoxCartesian([(1e10, 1e10), (1e10, 2e10), (2e10, 2e10), (2e10, 1e10), (1e10, 1e10)]);
+
+SELECT 'boundingBoxCartesian degenerate ring (all same points)';
+SELECT boundingBoxCartesian([(5., 5.), (5., 5.), (5., 5.)]);
+
+SELECT 'boundingBoxCartesian collinear points';
+SELECT boundingBoxCartesian([(0., 0.), (5., 5.), (10., 10.), (0., 0.)]);
+
+SELECT 'boundingBoxCartesian WKT MultiPolygon';
+SELECT boundingBoxCartesian(readWKTMultiPolygon('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((5 5, 5 7, 7 7, 7 5, 5 5)))'));
+
 SELECT boundingBoxCartesian(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'centroidCartesian Point';
@@ -74,6 +102,24 @@ SELECT centroidCartesian(readWKTPolygon('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))'));
 
 SELECT 'centroidCartesian triangle';
 SELECT centroidCartesian([(0., 0.), (6., 0.), (3., 6.), (0., 0.)]);
+
+SELECT 'centroidCartesian Polygon with hole';
+SELECT centroidCartesian([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]);
+
+SELECT 'centroidCartesian negative coordinates';
+SELECT centroidCartesian([(-5., -5.), (-5., 0.), (0., 0.), (0., -5.), (-5., -5.)]);
+
+SELECT 'centroidCartesian large coordinates';
+SELECT centroidCartesian([(1e10, 1e10), (1e10, 2e10), (2e10, 2e10), (2e10, 1e10), (1e10, 1e10)]);
+
+SELECT 'centroidCartesian degenerate ring (all same points)';
+SELECT centroidCartesian([(5., 5.), (5., 5.), (5., 5.)]);
+
+SELECT 'centroidCartesian collinear points';
+SELECT centroidCartesian([(0., 0.), (5., 5.), (10., 10.), (0., 0.)]);
+
+SELECT 'centroidCartesian WKT MultiPolygon';
+SELECT centroidCartesian(readWKTMultiPolygon('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((5 5, 5 7, 7 7, 7 5, 5 5)))'));
 
 SELECT centroidCartesian(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 

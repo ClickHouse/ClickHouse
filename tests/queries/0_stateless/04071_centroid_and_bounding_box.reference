@@ -1,7 +1,11 @@
 boundingBoxCartesian Ring
-[(0,0),(6,0),(6,5),(0,5),(0,0)]
+[(-40,50),(40,50),(40,60),(-40,60),(-40,50)]
+boundingBoxSpherical Ring
+[(-40,50),(40,50),(40,66.14134520154134),(-40,66.14134520154134),(-40,50)]
 boundingBoxCartesian Polygon
-[(0,0),(6,0),(6,5),(0,5),(0,0)]
+[(-40,50),(40,50),(40,60),(-40,60),(-40,50)]
+boundingBoxSpherical Polygon
+[(-40,50),(40,50),(40,66.14134520154134),(-40,66.14134520154134),(-40,50)]
 boundingBoxCartesian Point
 [(3,4),(3,4),(3,4),(3,4),(3,4)]
 boundingBoxCartesian LineString
@@ -18,6 +22,36 @@ boundingBoxSpherical Point
 [(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85)]
 boundingBoxSpherical LineString
 [(0,50),(10,50),(10,50.10752663762204),(0,50.10752663762204),(0,50)]
+Point near date line (179°)
+[(179,50),(179,50),(179,50),(179,50),(179,50)]
+Point near date line (-179°)
+[(-179,50),(-179,50),(-179,50),(-179,50),(-179,50)]
+LineString crossing date line (179° to -179°)
+[(179,50),(181,50),(181,50.004297195777966),(179,50.004297195777966),(179,50)]
+Polygon crossing date line
+[(178,45),(182,45),(182,55.016402351717474),(178,55.016402351717474),(178,45)]
+Narrow polygon crossing date line (175° to -175°)
+[(175,50),(185,50),(185,55.102567824635564),(175,55.102567824635564),(175,50)]
+Same geometry in Cartesian (no date line issue)
+[(-180,45),(180,45),(180,55),(-180,55),(-180,45)]
+MultiPolygon across date line
+[(179,50),(181,50),(181,51.00106700283179),(179,51.00106700283179),(179,50)]
+boundingBoxCartesian Polygon with hole
+[(0,0),(10,0),(10,10),(0,10),(0,0)]
+boundingBoxSpherical Polygon with hole
+[(0,0),(10,0),(10,10.03742304591073),(0,10.03742304591073),(0,0)]
+boundingBoxCartesian negative coordinates
+[(-5,-5),(0,-5),(0,0),(-5,0),(-5,-5)]
+boundingBoxSpherical negative coordinates
+[(-5,-5.004739244608394),(0,-5.004739244608394),(0,0),(-5,0),(-5,-5.004739244608394)]
+boundingBoxCartesian large coordinates
+[(10000000000,10000000000),(20000000000,10000000000),(20000000000,20000000000),(10000000000,20000000000),(10000000000,10000000000)]
+boundingBoxCartesian degenerate ring (all same points)
+[(5,5),(5,5),(5,5),(5,5),(5,5)]
+boundingBoxCartesian collinear points
+[(0,0),(10,0),(10,10),(0,10),(0,0)]
+boundingBoxCartesian WKT MultiPolygon
+[(0,0),(7,0),(7,7),(0,7),(0,0)]
 centroidCartesian Point
 (2,3)
 centroidCartesian Ring
@@ -34,3 +68,15 @@ centroidCartesian WKT
 (2,2)
 centroidCartesian triangle
 (3,2)
+centroidCartesian Polygon with hole
+(5,5)
+centroidCartesian negative coordinates
+(-2.5,-2.5)
+centroidCartesian large coordinates
+(15000000000,15000000000)
+centroidCartesian degenerate ring (all same points)
+(5,5)
+centroidCartesian collinear points
+(0,0)
+centroidCartesian WKT MultiPolygon
+(3.5,3.5)
