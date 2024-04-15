@@ -40,15 +40,21 @@ public:
         , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
         , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
-        , hdfs_root_path(hdfs_root_path_)
     {
+        const size_t begin_of_path = hdfs_root_path_.find('/', hdfs_root_path_.find("//") + 2);
+        url = hdfs_root_path_;
+        url_without_path = url.substr(0, begin_of_path);
+        if (begin_of_path < url.size())
+            data_directory = url.substr(begin_of_path);
+        else
+            data_directory = "/";
     }
 
     std::string getName() const override { return "HDFSObjectStorage"; }
 
-    std::string getCommonKeyPrefix() const override { return hdfs_root_path; }
+    std::string getCommonKeyPrefix() const override { return url; }
 
-    std::string getDescription() const override { return hdfs_root_path; }
+    std::string getDescription() const override { return url; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::HDFS; }
 
@@ -116,7 +122,9 @@ private:
     HDFSBuilderWrapper hdfs_builder;
     HDFSFSPtr hdfs_fs;
     SettingsPtr settings;
-    const std::string hdfs_root_path;
+    std::string url;
+    std::string url_without_path;
+    std::string data_directory;
 };
 
 }

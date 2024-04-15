@@ -34,15 +34,21 @@ void HDFSObjectStorage::startup()
 ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     /// what ever data_source_description.description value is, consider that key as relative key
-    return ObjectStorageKey::createAsRelative(hdfs_root_path, getRandomASCIIString(32));
+    chassert(data_directory.starts_with("/"));
+    return ObjectStorageKey::createAsRelative(
+        fs::path(url_without_path) / data_directory.substr(1), getRandomASCIIString(32));
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
 {
+    std::string path = object.remote_path;
+    if (path.starts_with(url_without_path))
+        path = path.substr(url_without_path.size());
+
     // const auto & path = object.remote_path;
     // const size_t begin_of_path = path.find('/', path.find("//") + 2);
     // const String remote_fs_object_path = path.substr(begin_of_path);
-    return (0 == hdfsExists(hdfs_fs.get(), object.remote_path.c_str()));
+    return (0 == hdfsExists(hdfs_fs.get(), path.c_str()));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
@@ -51,7 +57,14 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_root_path, object.remote_path, config, patchSettings(read_settings));
+    std::string path = object.remote_path;
+    if (path.starts_with(url))
+        path = path.substr(url.size());
+    if (path.starts_with("/"))
+        path.substr(1);
+
+    return std::make_unique<ReadBufferFromHDFS>(
+        fs::path(url_without_path) / "", fs::path(data_directory) / path, config, patchSettings(read_settings));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
@@ -69,8 +82,13 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
         // auto hdfs_path = path.substr(begin_of_path);
         // auto hdfs_uri = path.substr(0, begin_of_path);
 
+        std::string path = object_.remote_path;
+        if (path.starts_with(url))
+            path = path.substr(url.size());
+        if (path.starts_with("/"))
+            path.substr(1);
         return std::make_unique<ReadBufferFromHDFS>(
-            hdfs_root_path, object_.remote_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
+            fs::path(url_without_path) / "", fs::path(data_directory) / path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
     };
 
     return std::make_unique<ReadBufferFromRemoteFSGather>(
@@ -89,8 +107,11 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
-    auto path = object.remote_path.starts_with('/') ? object.remote_path.substr(1) : object.remote_path;
-    path = fs::path(hdfs_root_path) / path;
+    std::string path = object.remote_path;
+    if (path.starts_with("/"))
+        path = path.substr(1);
+    if (!path.starts_with(url))
+        path = fs::path(url) / path;
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
@@ -102,8 +123,9 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
-    const auto & path = object.remote_path;
-    // const size_t begin_of_path = path.find('/', path.find("//") + 2);
+    auto path = object.remote_path;
+    if (path.starts_with(url_without_path))
+        path = path.substr(url_without_path.size());
 
     /// Add path from root to file name
     int res = hdfsDelete(hdfs_fs.get(), path.c_str(), 0);
