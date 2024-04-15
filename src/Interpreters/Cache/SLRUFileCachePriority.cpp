@@ -209,8 +209,13 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     {
         return false;
     }
-    else
-        chassert(downgrade_candidates->size() > 0);
+
+    /// We can have no downgrade candidates because cache size could
+    /// reduce concurrently because of lock-free cache entries invalidation.
+    if (downgrade_candidates->size() == 0)
+    {
+        return true;
+    }
 
     if (!probationary_queue.collectCandidatesForEviction(
             downgrade_stat.total_stat.releasable_size, downgrade_stat.total_stat.releasable_count,

@@ -44,6 +44,9 @@ static bool intersects(T a_begin, T a_end, T b_begin, T b_end)
 
 void Expected::highlight(HighlightedRange range)
 {
+    if (!enable_highlighting)
+        return;
+
     auto it = highlights.lower_bound(range);
     while (it != highlights.end() && range.begin < it->end)
     {

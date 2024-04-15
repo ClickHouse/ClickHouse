@@ -10,7 +10,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
+TaskTracker::TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
@@ -22,7 +22,7 @@ TaskTracker::~TaskTracker()
     safeWaitAll();
 }
 
-ThreadPoolCallbackRunner<void> TaskTracker::syncRunner()
+ThreadPoolCallbackRunnerUnsafe<void> TaskTracker::syncRunner()
 {
     return [](Callback && callback, int64_t) mutable -> std::future<void>
     {
