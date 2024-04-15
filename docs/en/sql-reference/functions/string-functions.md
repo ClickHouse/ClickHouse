@@ -99,7 +99,7 @@ Alias: `OCTET_LENGTH`
 Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 Alias:
-- `CHAR_LENGTH``
+- `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
 
 ## leftPad
@@ -254,13 +254,69 @@ Result:
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
+*Syntax**
+
+``` sql
+lower(input)
+```
+
 Alias: `lcase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT lower('CLICKHOUSE');
+```
+
+```response
+┌─lower('CLICKHOUSE')─┐
+│ clickhouse          │
+└─────────────────────┘
+```
 
 ## upper
 
 Converts the ASCII Latin symbols in a string to uppercase.
 
+**Syntax**
+
+``` sql
+upper(input)
+```
+
 Alias: `ucase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT upper('clickhouse');
+```
+
+``` response
+┌─upper('clickhouse')─┐
+│ CLICKHOUSE          │
+└─────────────────────┘
+```
 
 ## lowerUTF8
 
@@ -277,6 +333,34 @@ Converts a string to uppercase, assuming that the string contains valid UTF-8 en
 Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+**Syntax**
+
+``` sql
+upperUTF8(input)
+```
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT upperUTF8('München') as Upperutf8;
+```
+
+``` response
+┌─Upperutf8─┐
+│ MÜNCHEN   │
+└───────────┘
+```
 
 ## isValidUTF8
 
@@ -588,8 +672,41 @@ Result:
 
 ## substringUTF8
 
-Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the substring of a string `s` which starts at the specified byte index `offset` for Unicode code points. Byte counting starts from `1`. If `offset` is `0`, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+substringUTF8(s, offset[, length])
+```
+
+**Arguments**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md) or [Enum](../../sql-reference/data-types/enum.md)
+- `offset`: The starting position of the substring in `s` . [(U)Int*](../../sql-reference/data-types/int-uint.md).
+- `length`: The maximum length of the substring. [(U)Int*](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned value**
+
+A substring of `s` with `length` many bytes, starting at index `offset`.
+
+**Implementation details**
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Example**
+
+```sql
+SELECT 'Täglich grüßt das Murmeltier.' AS str,
+       substringUTF8(str, 9),
+       substringUTF8(str, 9, 5)
+```
+
+```response
+Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
+```
 
 ## substringIndex
 
@@ -624,7 +741,39 @@ Result:
 
 ## substringIndexUTF8
 
-Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, specifically for Unicode code points.
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+substringIndexUTF8(s, delim, count)
+```
+
+**Arguments**
+
+- `s`: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
+- `delim`: The character to split. [String](../../sql-reference/data-types/string.md).
+- `count`: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Returned value**
+
+A substring [String](../../sql-reference/data-types/string.md) of `s` before `count` occurrences of `delim`.
+
+**Implementation details**
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Example**
+
+```sql
+SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)
+```
+
+```response
+www.straßen-in-europa
+```
 
 ## appendTrailingCharIfAbsent
 

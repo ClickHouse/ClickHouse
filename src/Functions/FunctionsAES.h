@@ -96,7 +96,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
 {
     if constexpr (compatibility_mode == CompatibilityMode::MySQL)
     {
-        switch (EVP_CIPHER_mode(evp_cipher))
+        switch (EVP_CIPHER_mode(evp_cipher)) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case EVP_CIPH_ECB_MODE: [[fallthrough]];
             case EVP_CIPH_CBC_MODE: [[fallthrough]];
@@ -107,7 +107,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
     }
     else if constexpr (compatibility_mode == CompatibilityMode::OpenSSL)
     {
-        switch (EVP_CIPHER_mode(evp_cipher))
+        switch (EVP_CIPHER_mode(evp_cipher)) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case EVP_CIPH_ECB_MODE: [[fallthrough]];
             case EVP_CIPH_CBC_MODE: [[fallthrough]];

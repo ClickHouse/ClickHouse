@@ -33,7 +33,7 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
         result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
-        result.append("USE_NEW_ANALYZER=1")
+        result.append("USE_OLD_ANALYZER=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")

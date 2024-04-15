@@ -18,8 +18,10 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
-from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
+# isort: on
+
+from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
 from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
 from report import (
     ERROR,
@@ -146,6 +148,11 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
+
+    if pr_info.is_merge_queue():
+        # skip report creation for the MQ
+        return
+
     # to reduce number of parameters, the Github is constructed on the fly
     gh = Github()
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
@@ -259,6 +266,12 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
     result = [comment_body]
 
+    if visible_table_rows:
+        visible_table_rows.sort()
+        result.append(table_header)
+        result.extend(visible_table_rows)
+        result.append(table_footer)
+
     if hidden_table_rows:
         hidden_table_rows.sort()
         result.append(details_header)
@@ -266,12 +279,6 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         result.extend(hidden_table_rows)
         result.append(table_footer)
         result.append(details_footer)
-
-    if visible_table_rows:
-        visible_table_rows.sort()
-        result.append(table_header)
-        result.extend(visible_table_rows)
-        result.append(table_footer)
 
     return "".join(result)
 
@@ -427,7 +434,7 @@ def set_mergeable_check(
         context=MERGEABLE_NAME,
         description=format_description(description),
         state=state,
-        target_url=GITHUB_JOB_URL(),
+        target_url=GITHUB_RUN_URL,
     )
 
 
@@ -439,7 +446,9 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
         or pr_info.release_pr
         or pr_info.number == 0
     )
-    if not_run:
+
+    # FIXME: For now, always set mergeable check in the Merge Queue. It's required to pass MQ
+    if not_run and not pr_info.is_merge_queue():
         # Let's avoid unnecessary work
         return
 

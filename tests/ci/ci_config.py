@@ -46,9 +46,14 @@ class Labels(metaclass=WithIter):
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     CI_SET_REDUCED = "ci_set_reduced"
+    CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
     CI_SET_ANALYZER = "ci_set_analyzer"
+    CI_SET_STATLESS = "ci_set_stateless"
+    CI_SET_STATEFUL = "ci_set_stateful"
+    CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
+    CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
 
     libFuzzer = "libFuzzer"
 
@@ -94,7 +99,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
     STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE = (
-        "Stateless tests (release, analyzer, s3, DatabaseReplicated)"
+        "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
     # merged into STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE:
     # STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
@@ -127,7 +132,7 @@ class JobNames(metaclass=WithIter):
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
-    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, analyzer)"
+    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
     INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
@@ -215,7 +220,7 @@ class JobConfig:
     digest: DigestConfig = field(default_factory=DigestConfig)
     # will be triggered for the job if omited in CI workflow yml
     run_command: str = ""
-    # job timeout
+    # job timeout, seconds
     timeout: Optional[int] = None
     # sets number of batches for multi-batch job
     num_batches: int = 1
@@ -380,7 +385,11 @@ upgrade_check_digest = DigestConfig(
     docker=["clickhouse/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
-    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
+    include_paths=[
+        "./tests/ci/integration_test_check.py",
+        "./tests/ci/integration_tests_runner.py",
+        "./tests/integration/",
+    ],
     exclude_files=[".md"],
     docker=IMAGES.copy(),
 )
@@ -508,10 +517,11 @@ clickbench_test_params = {
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
 }
-install_test_params = {
-    "digest": install_check_digest,
-    "run_command": 'install_check.py "$CHECK_NAME"',
-}
+install_test_params = JobConfig(
+    digest=install_check_digest,
+    run_command='install_check.py "$CHECK_NAME"',
+    timeout=900,
+)
 
 
 @dataclass
@@ -629,7 +639,9 @@ class CIConfig:
 
         assert result, f"BUG, no runner for [{check_name}]"
 
-        if ("aarch" in check_name or "arm" in check_name) and "aarch" not in result:
+        if (
+            "aarch" in check_name.lower() or "arm64" in check_name.lower()
+        ) and "aarch" not in result:
             if result == Runners.STRESS_TESTER:
                 # FIXME: no arm stress tester group atm
                 result = Runners.FUNC_TESTER_ARM
@@ -807,9 +819,15 @@ class CIConfig:
 CI_CONFIG = CIConfig(
     label_configs={
         Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        Labels.CI_SET_FAST: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+            ]
+        ),
         Labels.CI_SET_ARM: LabelConfig(
             run_jobs=[
-                # JobNames.STYLE_CHECK,
+                JobNames.STYLE_CHECK,
                 Build.PACKAGE_AARCH64,
                 JobNames.INTEGRATION_TEST_ARM,
             ]
@@ -831,6 +849,38 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
+        Labels.CI_SET_STATLESS: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATELESS_TEST_RELEASE,
+            ]
+        ),
+        Labels.CI_SET_STATLESS_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATELESS_TEST_ASAN,
+            ]
+        ),
+        Labels.CI_SET_STATEFUL: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATEFUL_TEST_RELEASE,
+            ]
+        ),
+        Labels.CI_SET_STATEFUL_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATEFUL_TEST_ASAN,
+            ]
+        ),
         Labels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
@@ -842,6 +892,7 @@ CI_CONFIG = CIConfig(
                         "tsan",
                         "msan",
                         "ubsan",
+                        "coverage",
                         # skip build report jobs as not all builds will be done
                         "build check",
                     )
@@ -1055,10 +1106,10 @@ CI_CONFIG = CIConfig(
     },
     test_configs={
         JobNames.INSTALL_TEST_AMD: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**install_test_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=install_test_params
         ),
         JobNames.INSTALL_TEST_ARM: TestConfig(
-            Build.PACKAGE_AARCH64, job_config=JobConfig(**install_test_params)  # type: ignore
+            Build.PACKAGE_AARCH64, job_config=install_test_params
         ),
         JobNames.STATEFUL_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
