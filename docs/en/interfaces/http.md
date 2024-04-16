@@ -346,6 +346,16 @@ To overcome this limitation, you could use the `role` query parameter instead:
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
 ```
 
+This will be an equivalent of executing `SET ROLE my_role` before the statement.
+
+Additionally, it is possible to specify multiple `role` query parameters:
+
+```
+curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
+```
+
+In this case, `?role=my_role&role=my_other_role` works similarly to executing `SET ROLE my_role, my_other_role` before the statement.
+
 ## HTTP response codes caveats {#http_response_codes_caveats}
 
 Because of limitation of HTTP protocol, HTTP 200 response code does not guarantee that a query was successful.
