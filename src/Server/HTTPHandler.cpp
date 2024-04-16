@@ -119,6 +119,7 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
+    extern const int ACCESS_DENIED;
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
@@ -196,7 +197,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     }
     else if (exception_code == ErrorCodes::UNKNOWN_USER ||
              exception_code == ErrorCodes::WRONG_PASSWORD ||
-             exception_code == ErrorCodes::AUTHENTICATION_FAILED)
+             exception_code == ErrorCodes::AUTHENTICATION_FAILED ||
+             exception_code == ErrorCodes::ACCESS_DENIED)
     {
         return HTTPResponse::HTTP_FORBIDDEN;
     }
@@ -732,14 +734,24 @@ void HTTPHandler::processQuery(
         return false;
     };
 
-    if (params.has("role"))
+    auto role_params_it = params.find("role");
+    if (role_params_it != params.end())
     {
-        auto role_name = params.get("role");
-        auto role_id = context->getAccessControl().getID<Role>(role_name);
-        if (context->getUser()->granted_roles.isGranted(role_id))
-          context->setCurrentRoles(std::vector{role_id});
-        else
-          throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role {} does not exist or not granted to the current user", role_name);
+        std::vector<UUID> roles_ids;
+        const auto & access_control = context->getAccessControl();
+        const auto & user = context->getUser();
+        for (; role_params_it != params.end(); role_params_it++)
+        {
+            if (role_params_it->first == "role")
+            {
+                auto role_id = access_control.getID<Role>(role_params_it->second);
+                if (user->granted_roles.isGranted(role_id))
+                    roles_ids.push_back(role_id);
+                else
+                    throw Exception(ErrorCodes::ACCESS_DENIED, "Role {} is not granted to the current user", role_params_it->second);
+            }
+        }
+        context->setCurrentRoles(roles_ids);
     }
 
     /// Settings can be overridden in the query.
