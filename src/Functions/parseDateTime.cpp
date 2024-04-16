@@ -135,6 +135,13 @@ namespace
         return tl::unexpected(ErrorCodeAndMessage(error_code));              \
 }
 
+/// Returns an error if the function call failed
+#define RETURN_ERROR_IF_FAILED(function_call)             \
+{                                                         \
+    if (auto result = function_call; !result.has_value()) \
+        return tl::unexpected(result.error());            \
+}
+
 /// Run a function and either return an error or assign the result.
 #define ASSIGN_RESULT_OR_RETURN_ERROR(res, function_call) \
 {                                                         \
@@ -721,8 +728,7 @@ namespace
                 else
                 {
                     /// literal:
-                    if (auto result = checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment); !result.has_value())
-                        return tl::unexpected(result.error());
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment))
                     if (std::string_view(cur, literal.size()) != literal)
                         RETURN_ERROR(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
@@ -740,10 +746,7 @@ namespace
             static PosOrError readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                {
-                    if (auto result = checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment); !result.has_value())
-                        return tl::unexpected(result.error());
-                }
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment))
 
                 res = (*cur - '0');
                 ++cur;
@@ -756,10 +759,7 @@ namespace
             static PosOrError readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                {
-                    if (auto result = checkSpace(cur, end, 3, "readNumber3 requires size >= 3", fragment); !result.has_value())
-                        return tl::unexpected(result.error());
-                }
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "readNumber3 requires size >= 3", fragment))
                 res = (*cur - '0');
                 ++cur;
                 res = res * 10 + (*cur - '0');
@@ -773,10 +773,7 @@ namespace
             static PosOrError readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                {
-                    if (auto result = checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment); !result.has_value())
-                        return tl::unexpected(result.error());
-                }
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment))
 
                 res = (*cur - '0');
                 ++cur;
@@ -805,10 +802,7 @@ namespace
             static PosOrError assertChar(Pos cur, Pos end, char expected, const String & fragment)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                {
-                    if (auto result = checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment); !result.has_value())
-                        return tl::unexpected(result.error());
-                }
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment))
 
                 if (*cur != expected) [[unlikely]]
                     RETURN_ERROR(
@@ -827,10 +821,7 @@ namespace
             static PosOrError assertNumber(Pos cur, Pos end, const String & fragment)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                {
-                    if (auto result = checkSpace(cur, end, 1, "assertNumber requires size >= 1", fragment); !result.has_value())
-                        return tl::unexpected(result.error());
-                }
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "assertNumber requires size >= 1", fragment))
 
                 if (*cur < '0' || *cur > '9') [[unlikely]]
                     RETURN_ERROR(
@@ -846,8 +837,7 @@ namespace
 
             static PosOrError mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment))
 
                 String text(cur, 3);
                 boost::to_lower(text);
@@ -859,16 +849,14 @@ namespace
                         fragment,
                         std::string_view(cur, end - cur),
                         text)
-                if (auto result = date.setDayOfWeek(it->second.second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(it->second.second))
                 cur += 3;
                 return cur;
             }
 
             static PosOrError mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment))
 
                 String text(cur, 3);
                 boost::to_lower(text);
@@ -881,16 +869,14 @@ namespace
                         std::string_view(cur, end - cur),
                         text)
 
-                if (auto result = date.setMonth(it->second.second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMonth(it->second.second))
                 cur += 3;
                 return cur;
             }
 
             static PosOrError mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
@@ -904,14 +890,12 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                if (auto result = checkSpace(
-                        cur,
-                        end,
-                        expected_remaining_size,
-                        "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size),
-                        fragment);
-                    !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(
+                    cur,
+                    end,
+                    expected_remaining_size,
+                    "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size),
+                    fragment))
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -923,8 +907,7 @@ namespace
                         text1 + text2)
                 cur += expected_remaining_size;
 
-                if (auto result = date.setMonth(it->second.second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMonth(it->second.second))
                 return cur;
             }
 
@@ -932,8 +915,7 @@ namespace
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
-                if (auto result = date.setMonth(month); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMonth(month))
                 return cur;
             }
 
@@ -941,8 +923,7 @@ namespace
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month))
-                if (auto result = date.setMonth(month); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMonth(month))
                 return cur;
             }
 
@@ -950,8 +931,7 @@ namespace
             {
                 Int32 century;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
-                if (auto result = date.setCentury(century); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setCentury(century))
                 return cur;
             }
 
@@ -959,8 +939,7 @@ namespace
             {
                 Int32 day_of_month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
-                if (auto result = date.setDayOfMonth(day_of_month); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day_of_month))
                 return cur;
             }
 
@@ -972,26 +951,22 @@ namespace
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                if (auto result = date.setMonth(month); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMonth(month))
 
                 Int32 day;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                if (auto result = date.setDayOfMonth(day); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day))
 
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
-                if (auto result = date.setYear(year); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear(year))
                 return cur;
             }
 
             static PosOrError mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
@@ -999,8 +974,7 @@ namespace
                 day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
 
-                if (auto result = date.setDayOfMonth(day_of_month); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day_of_month))
                 return cur;
             }
 
@@ -1018,12 +992,9 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
 
-                if (auto result = date.setYear(year); !result.has_value())
-                    return tl::unexpected(result.error());
-                if (auto result = date.setMonth(month); !result.has_value())
-                    return tl::unexpected(result.error());
-                if (auto result = date.setDayOfMonth(day); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear(year))
+                RETURN_ERROR_IF_FAILED(date.setMonth(month))
+                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day))
                 return cur;
             }
 
@@ -1031,8 +1002,7 @@ namespace
             {
                 Int32 year2;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                if (auto result = date.setYear2(year2); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear2(year2))
                 return cur;
             }
 
@@ -1040,8 +1010,7 @@ namespace
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                if (auto result = date.setYear(year); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear(year))
                 return cur;
             }
 
@@ -1049,17 +1018,14 @@ namespace
             {
                 Int32 day_of_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
-                if (auto result = date.setDayOfYear(day_of_year); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfYear(day_of_year))
                 return cur;
             }
 
             static PosOrError mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
-                if (auto result = date.setDayOfWeek(*cur - '0'); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment))
+                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(*cur - '0'))
                 ++cur;
                 return cur;
             }
@@ -1068,30 +1034,26 @@ namespace
             {
                 Int32 week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
-                if (auto result = date.setWeek(week); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setWeek(week))
                 return cur;
             }
 
             static PosOrError mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment))
 
                 Int32 day_of_week = *cur - '0';
                 if (day_of_week == 0)
                     day_of_week = 7;
 
-                if (auto result = date.setDayOfWeek(day_of_week); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(day_of_week))
                 ++cur;
                 return cur;
             }
 
             static PosOrError mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -1105,8 +1067,7 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                if (auto result = checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -1118,8 +1079,7 @@ namespace
                         text1 + text2)
                 cur += expected_remaining_size;
 
-                if (auto result = date.setDayOfWeek(it->second.second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(it->second.second))
                 return cur;
             }
 
@@ -1127,8 +1087,7 @@ namespace
             {
                 Int32 year2;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                if (auto result = date.setYear2(year2); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear2(year2))
                 return cur;
             }
 
@@ -1136,15 +1095,13 @@ namespace
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                if (auto result =  date.setYear(year); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear(year))
                 return cur;
             }
 
             static PosOrError mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment))
 
                 Int32 sign;
                 if (*cur == '-')
@@ -1175,40 +1132,33 @@ namespace
             {
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
-                if (auto result = date.setMinute(minute); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
                 return cur;
             }
 
             static PosOrError mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment))
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                if (auto result = date.setAMPM(text); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setAMPM(text))
                 cur += 2;
                 return cur;
             }
 
             static PosOrError mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment))
 
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                if (auto result = date.setHour(hour, true, true); !result.has_value())
-                    return tl::unexpected(result.error());
-
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
-                if (auto result = date.setMinute(minute); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
 
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, mysqlAMPM(cur, end, fragment, date))
                 return cur;
@@ -1216,19 +1166,15 @@ namespace
 
             static PosOrError mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment))
 
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                if (auto result = date.setHour(hour, false, false); !result.has_value())
-                    return tl::unexpected(result.error());
-
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                if (auto result = date.setMinute(minute); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
                 return cur;
             }
 
@@ -1236,15 +1182,13 @@ namespace
             {
                 Int32 second;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
-                if (auto result = date.setSecond(second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setSecond(second))
                 return cur;
             }
 
             static PosOrError mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & /*date*/)
             {
-                if (auto result = checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
 
                 for (size_t i = 0; i < 6; ++i)
                     ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
@@ -1254,8 +1198,7 @@ namespace
 
             static PosOrError mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment))
 
                 Int32 hour;
                 Int32 minute;
@@ -1265,12 +1208,9 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
-                if (auto result = date.setHour(hour, false, false); !result.has_value())
-                    return tl::unexpected(result.error());
-                if (auto result = date.setMinute(minute); !result.has_value())
-                    return tl::unexpected(result.error());
-                if (auto result = date.setSecond(second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
+                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
+                RETURN_ERROR_IF_FAILED(date.setSecond(second))
                 return cur;
             }
 
@@ -1278,8 +1218,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                if (auto result = date.setHour(hour, true, true); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
                 return cur;
             }
 
@@ -1287,8 +1226,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                if (auto result = date.setHour(hour, true, true); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
                 return cur;
             }
 
@@ -1296,8 +1234,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                if (auto result = date.setHour(hour, false, false); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
                 return cur;
             }
 
@@ -1305,8 +1242,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                if (auto result = date.setHour(hour, false, false); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
                 return cur;
             }
 
@@ -1411,13 +1347,11 @@ namespace
 
             static PosOrError jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment))
 
                 String era(cur, 2);
                 boost::to_lower(era);
-                if (auto result = date.setEra(era); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setEra(era))
                 cur += 2;
                 return cur;
             }
@@ -1426,8 +1360,7 @@ namespace
             {
                 Int32 century;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
-                if (auto result = date.setCentury(century); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setCentury(century))
                 return cur;
             }
 
@@ -1435,8 +1368,7 @@ namespace
             {
                 Int32 year_of_era;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
-                if (auto result = date.setYear(year_of_era, true); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear(year_of_era, true))
                 return cur;
             }
 
@@ -1444,8 +1376,7 @@ namespace
             {
                 Int32 week_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
-                if (auto result = date.setYear(week_year, false, true); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear(week_year, false, true))
                 return cur;
             }
 
@@ -1453,8 +1384,7 @@ namespace
             {
                 Int32 week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
-                if (auto result = date.setWeek(week); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setWeek(week))
                 return cur;
             }
 
@@ -1462,8 +1392,7 @@ namespace
             {
                 Int32 day_of_week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
-                if (auto result = date.setDayOfWeek(day_of_week); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(day_of_week))
                 return cur;
             }
 
@@ -1484,8 +1413,7 @@ namespace
                         std::string_view(cur, end - cur),
                         text1)
                 cur += 3;
-                if (auto result = date.setDayOfWeek(it->second.second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(it->second.second))
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1505,8 +1433,7 @@ namespace
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
-                if (auto result = date.setYear(year); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setYear(year))
                 return cur;
             }
 
@@ -1514,8 +1441,7 @@ namespace
             {
                 Int32 day_of_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
-                if (auto result = date.setDayOfYear(day_of_year); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfYear(day_of_year))
                 return cur;
             }
 
@@ -1523,15 +1449,13 @@ namespace
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
-                if (auto result = date.setMonth(month); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMonth(month))
                 return cur;
             }
 
             static PosOrError jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
@@ -1543,8 +1467,7 @@ namespace
                         std::string_view(cur, end - cur),
                         text1)
                 cur += 3;
-                if (auto result = date.setMonth(it->second.second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMonth(it->second.second))
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1572,13 +1495,11 @@ namespace
 
             static PosOrError jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result = checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment))
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                if (auto result = date.setAMPM(text); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setAMPM(text))
                 cur += 2;
                 return cur;
             }
@@ -1587,8 +1508,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                if (auto result = date.setHour(hour, true, false); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, false))
                 return cur;
             }
 
@@ -1596,8 +1516,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                if (auto result = date.setHour(hour, true, true); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
                 return cur;
             }
 
@@ -1605,8 +1524,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                if (auto result = date.setHour(hour, false, false); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
                 return cur;
             }
 
@@ -1614,8 +1532,7 @@ namespace
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                if (auto result = date.setHour(hour, false, true); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, true))
                 return cur;
             }
 
@@ -1623,8 +1540,7 @@ namespace
             {
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
-                if (auto result = date.setMinute(minute); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
                 return cur;
             }
 
@@ -1632,8 +1548,7 @@ namespace
             {
                 Int32 second;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
-                if (auto result = date.setSecond(second); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(date.setSecond(second))
                 return cur;
             }
         };
