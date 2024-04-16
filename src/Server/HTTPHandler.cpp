@@ -119,7 +119,7 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
-    extern const int ACCESS_DENIED;
+    extern const int SET_NON_GRANTED_ROLE;
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
@@ -198,7 +198,7 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     else if (exception_code == ErrorCodes::UNKNOWN_USER ||
              exception_code == ErrorCodes::WRONG_PASSWORD ||
              exception_code == ErrorCodes::AUTHENTICATION_FAILED ||
-             exception_code == ErrorCodes::ACCESS_DENIED)
+             exception_code == ErrorCodes::SET_NON_GRANTED_ROLE)
     {
         return HTTPResponse::HTTP_FORBIDDEN;
     }
@@ -748,7 +748,7 @@ void HTTPHandler::processQuery(
                 if (user->granted_roles.isGranted(role_id))
                     roles_ids.push_back(role_id);
                 else
-                    throw Exception(ErrorCodes::ACCESS_DENIED, "Role {} is not granted to the current user", role_params_it->second);
+                    throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", role_params_it->second);
             }
         }
         context->setCurrentRoles(roles_ids);

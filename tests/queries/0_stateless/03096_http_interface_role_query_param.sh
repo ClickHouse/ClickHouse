@@ -73,16 +73,6 @@ echo "### Sets multiple roles when there are other parameters in the query"
 $CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE1&$CHANGED_SETTING_NAME=$CHANGED_SETTING_VALUE&role=$TEST_ROLE2" --data-binary "$SHOW_CURRENT_ROLES_QUERY"
 $CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE1&$CHANGED_SETTING_NAME=$CHANGED_SETTING_VALUE&role=$TEST_ROLE2" --data-binary "$SHOW_CHANGED_SETTINGS_QUERY"
 
-echo "### Cannot set a role that is not granted to the user (single parameter)"
-OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE_NOT_GRANTED" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
-echo -ne $OUT | grep -o "Code: 497"     || echo "expected code 497, got: $OUT"
-echo -ne $OUT | grep -o "ACCESS_DENIED" || echo "expected ACCESS_DENIED error, got: $OUT"
-
-echo "### Cannot set a role that is not granted to the user (multiple parameters)"
-OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE1&role=$TEST_ROLE_NOT_GRANTED" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
-echo -ne $OUT | grep -o "Code: 497"     || echo "expected code 497, got: $OUT"
-echo -ne $OUT | grep -o "ACCESS_DENIED" || echo "expected ACCESS_DENIED error, got: $OUT"
-
 echo "### Cannot set a role that does not exist (single parameter)"
 OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=aaaaaaaaaaa" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
 echo -ne $OUT | grep -o "Code: 511"     || echo "expected code 511, got: $OUT"
@@ -92,6 +82,16 @@ echo "### Cannot set a role that does not exist (multiple parameters)"
 OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE1&role=aaaaaaaaaaa" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
 echo -ne $OUT | grep -o "Code: 511"     || echo "expected code 511, got: $OUT"
 echo -ne $OUT | grep -o "UNKNOWN_ROLE"  || echo "expected UNKNOWN_ROLE error, got: $OUT"
+
+echo "### Cannot set a role that is not granted to the user (single parameter)"
+OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE_NOT_GRANTED" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
+echo -ne $OUT | grep -o "Code: 512"            || echo "expected code 512, got: $OUT"
+echo -ne $OUT | grep -o "SET_NON_GRANTED_ROLE" || echo "expected SET_NON_GRANTED_ROLE error, got: $OUT"
+
+echo "### Cannot set a role that is not granted to the user (multiple parameters)"
+OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE1&role=$TEST_ROLE_NOT_GRANTED" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
+echo -ne $OUT | grep -o "Code: 512"            || echo "expected code 512, got: $OUT"
+echo -ne $OUT | grep -o "SET_NON_GRANTED_ROLE" || echo "expected SET_NON_GRANTED_ROLE error, got: $OUT"
 
 $CLICKHOUSE_CLIENT -n --query "
 DROP USER $TEST_USER;

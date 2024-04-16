@@ -25,15 +25,15 @@ max_result_rows	42
 03096_role_query_param_role1
 03096_role_query_param_role2
 max_result_rows	42
-### Cannot set a role that is not granted to the user (single parameter)
-Code: 497
-ACCESS_DENIED
-### Cannot set a role that is not granted to the user (multiple parameters)
-Code: 497
-ACCESS_DENIED
 ### Cannot set a role that does not exist (single parameter)
 Code: 511
 UNKNOWN_ROLE
 ### Cannot set a role that does not exist (multiple parameters)
 Code: 511
 UNKNOWN_ROLE
+### Cannot set a role that is not granted to the user (single parameter)
+Code: 512
+SET_NON_GRANTED_ROLE
+### Cannot set a role that is not granted to the user (multiple parameters)
+Code: 512
+SET_NON_GRANTED_ROLE
