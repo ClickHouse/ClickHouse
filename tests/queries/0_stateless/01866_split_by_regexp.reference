@@ -17,3 +17,4 @@ Test fallback of splitByRegexp to splitByChar if regexp is trivial
 ['a','b','c']
 ['a|b|c']
 ['a\\b\\c']
+AST Fuzzer failure
