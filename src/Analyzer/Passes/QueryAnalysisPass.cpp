@@ -1261,72 +1261,6 @@ private:
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
 
-    static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
-    {
-        if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-            return {};
-
-        if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
-        {
-            const auto & resolved_function = resolved_identifier->as<FunctionNode &>();
-
-            const auto & argument_nodes = resolved_function.getArguments().getNodes();
-
-            std::optional<JoinTableSide> result;
-            for (const auto & argument_node : argument_nodes)
-            {
-                auto table_side = getColumnSideFromJoinTree(argument_node, join_node);
-                if (table_side && result && *table_side != *result)
-                {
-                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                        "Ambiguous identifier {}. In scope {}",
-                        resolved_identifier->formatASTForErrorMessage(),
-                        join_node.formatASTForErrorMessage());
-                }
-                if (table_side)
-                    result = *table_side;
-            }
-            return result;
-        }
-
-        const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
-
-        if (join_node.getLeftTableExpression().get() == column_src)
-            return JoinTableSide::Left;
-        if (join_node.getRightTableExpression().get() == column_src)
-            return JoinTableSide::Right;
-        return {};
-    }
-
-    static QueryTreeNodePtr convertJoinedColumnTypeToNullIfNeeded(
-        const QueryTreeNodePtr & resolved_identifier,
-        const JoinKind & join_kind,
-        std::optional<JoinTableSide> resolved_side,
-        IdentifierResolveScope & scope)
-    {
-        if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
-            JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
-            (isFull(join_kind) ||
-            (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
-            (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
-        {
-            auto nullable_resolved_identifier = resolved_identifier->clone();
-            auto & resolved_column = nullable_resolved_identifier->as<ColumnNode &>();
-            auto new_result_type = makeNullableOrLowCardinalityNullable(resolved_column.getColumnType());
-            resolved_column.setColumnType(new_result_type);
-            if (resolved_column.hasExpression())
-            {
-                auto & resolved_expression = resolved_column.getExpression();
-                if (!resolved_expression->getResultType()->equals(*new_result_type))
-                    resolved_expression = buildCastFunction(resolved_expression, new_result_type, scope.context, true);
-            }
-            if (!nullable_resolved_identifier->isEqual(*resolved_identifier))
-                scope.join_columns_with_changed_types[nullable_resolved_identifier] = resolved_identifier;
-            return nullable_resolved_identifier;
-        }
-        return nullptr;
-    }
-
     /// Resolve identifier functions
 
     static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
@@ -3650,25 +3584,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             }
         }
     }
-
-    if (join_node_in_resolve_process || !resolved_identifier)
-        return resolved_identifier;
-
-    if (scope.join_use_nulls)
-    {
-        auto projection_name_it = node_to_projection_name.find(resolved_identifier);
-        auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);
-        if (nullable_resolved_identifier)
-        {
-            resolved_identifier = nullable_resolved_identifier;
-            /// Set the same projection name for new nullable node
-            if (projection_name_it != node_to_projection_name.end())
-            {
-                node_to_projection_name.emplace(resolved_identifier, projection_name_it->second);
-            }
-        }
-    }
-
     return resolved_identifier;
 }
 
@@ -4771,37 +4686,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         matched_expression_nodes_with_names = resolveQualifiedMatcher(matcher_node, scope);
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
-
-    if (scope.join_use_nulls)
-    {
-        /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
-          * we need to convert joined column type to Nullable.
-          * We are taking the nearest JoinNode to check to which table column belongs,
-          * because for LEFT/RIGHT join, we convert only the corresponding side.
-          */
-        const auto * nearest_query_scope = scope.getNearestQueryScope();
-        const QueryNode * nearest_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
-        const QueryTreeNodePtr & nearest_scope_join_tree = nearest_scope_query_node ? nearest_scope_query_node->getJoinTree() : nullptr;
-        const JoinNode * nearest_scope_join_node = nearest_scope_join_tree ? nearest_scope_join_tree->as<JoinNode>() : nullptr;
-        if (nearest_scope_join_node)
-        {
-            for (auto & [node, node_name] : matched_expression_nodes_with_names)
-            {
-                auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
-                auto projection_name_it = node_to_projection_name.find(node);
-                auto nullable_node = convertJoinedColumnTypeToNullIfNeeded(node, nearest_scope_join_node->getKind(), join_identifier_side, scope);
-                if (nullable_node)
-                {
-                    node = nullable_node;
-                    /// Set the same projection name for new nullable node
-                    if (projection_name_it != node_to_projection_name.end())
-                    {
-                        node_to_projection_name.emplace(node, projection_name_it->second);
-                    }
-                }
-            }
-        }
-    }
 
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())

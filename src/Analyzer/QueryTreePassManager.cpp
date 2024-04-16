@@ -48,6 +48,7 @@
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
+#include <Analyzer/Passes/RewriteJoinUseNullsPass.h>
 
 
 namespace DB
@@ -249,6 +250,7 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
+    manager.addPass(std::make_unique<RewriteJoinUseNullsPass>());
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
 
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
