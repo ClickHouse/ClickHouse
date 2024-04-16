@@ -545,10 +545,10 @@ void executeQueryForReplicatedMergeTreeCluster(
             /* partition_filter = makeASTFunction("indexHint", std::move(partition_filter)); */
 
             auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
-            auto where_expression = select_query.where();
-            if (where_expression)
-                partition_filter = makeASTFunction("and", where_expression, partition_filter);
-            select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(partition_filter));
+            auto expression = select_query.prewhere();
+            if (expression)
+                partition_filter = makeASTFunction("and", expression, partition_filter);
+            select_query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(partition_filter));
         }
 
         stream_factory.createForShard(shard_info,
