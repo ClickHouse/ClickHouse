@@ -429,10 +429,14 @@ bool LRUFileCachePriority::modifySizeLimits(
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot modify size limits to {} in size and {} in elements: "
-                        "not enough space freed. Current size: {}/{}, elements: {}/{}",
-                        max_size_, max_elements_,
-                        state->current_size, max_size, state->current_elements_num, max_elements);
+                        "not enough space freed. Current size: {}/{}, elements: {}/{} ({})",
+                        max_size_, max_elements_, state->current_size, max_size,
+                        state->current_elements_num, max_elements, description);
     }
+
+    LOG_INFO(log, "Modifying size limits from {} to {} in size, "
+             "from {} to {} in elements count",
+             max_size, max_size_, max_elements, max_elements_);
 
     max_size = max_size_;
     max_elements = max_elements_;
