@@ -285,7 +285,12 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
+            store = std::make_shared<GinIndexStore>(
+                stream_name,
+                data_part->getDataPartStoragePtr(),
+                data_part->getDataPartStoragePtr(),
+                storage.getSettings()->max_digestion_size_per_segment,
+                storage.getSettings()->inverted_index_map_to_granule_id);
             gin_index_stores[stream_name] = store;
         }
         skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));
@@ -392,7 +397,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSkipIndicesCalculationMicroseconds);
 
             size_t pos = granule.start_row;
-            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write);
+            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write, granule.mark_number);
             if (granule.is_complete)
                 ++skip_index_accumulated_marks[i];
 

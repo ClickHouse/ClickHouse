@@ -119,7 +119,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
     return std::make_shared<MergeTreeIndexGranuleMinMax>(index_name, index_sample_block, std::move(hyperrectangle));
 }
 
-void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "

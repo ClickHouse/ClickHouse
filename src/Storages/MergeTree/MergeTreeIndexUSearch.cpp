@@ -149,7 +149,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorUSearch<Metric>::getGranuleAndR
 }
 
 template <unum::usearch::metric_kind_t Metric>
-void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t)
 {
     if (*pos >= block.rows())
         throw Exception(

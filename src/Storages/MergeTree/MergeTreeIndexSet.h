@@ -54,7 +54,7 @@ struct MergeTreeIndexAggregatorSet final : IMergeTreeIndexAggregator
 
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
-    void update(const Block & block, size_t * pos, size_t limit) override;
+    void update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t) override;
 
 private:
     /// return true if has new data

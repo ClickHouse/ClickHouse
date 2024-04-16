@@ -152,11 +152,17 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)
     , storage(storage_)
 {
 }
-GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_)
+GinIndexStore::GinIndexStore(
+    const String & name_,
+    DataPartStoragePtr storage_,
+    MutableDataPartStoragePtr data_part_storage_builder_,
+    UInt64 max_digestion_size_,
+    UInt8 map_to_granule_id_)
     : name(name_)
     , storage(storage_)
     , data_part_storage_builder(data_part_storage_builder_)
     , max_digestion_size(max_digestion_size_)
+    , map_to_granule_id(map_to_granule_id_)
 {
 }
 

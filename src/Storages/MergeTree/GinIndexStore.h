@@ -131,7 +131,12 @@ public:
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
-    GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
+    GinIndexStore(
+        const String & name_,
+        DataPartStoragePtr storage_,
+        MutableDataPartStoragePtr data_part_storage_builder_,
+        UInt64 max_digestion_size_,
+        UInt8 map_to_granule_id);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -169,6 +174,7 @@ public:
 
 private:
     friend class GinIndexStoreDeserializer;
+    friend struct MergeTreeIndexAggregatorInverted;
 
     /// Initialize all indexing files for this store
     void initFileStreams();
@@ -197,6 +203,10 @@ private:
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
     const UInt64 max_digestion_size = 0;
+
+    // In the whole life circle of GinIndexStore when building index for a part, map_to_granule_id stays unchanged.
+    // It can be different for different parts, via ALTER TABLE MODIFY SETTING inverted_index_map_to_granule_id.
+    const UInt8 map_to_granule_id = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;

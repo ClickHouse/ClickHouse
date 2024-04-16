@@ -120,14 +120,27 @@ void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char *
         gin_filter.add(data + token_start, token_len, rowID, store);
 }
 
-void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t mark_number)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
                 "Position: {}, Block rows: {}.", *pos, block.rows());
 
-    size_t rows_read = std::min(limit, block.rows() - *pos);
-    auto row_id = store->getNextRowIDRange(rows_read);
+    if (unlikely(mark_number >= std::numeric_limits<UInt32>::max() && store->map_to_granule_id))
+        LOG_ERROR(getLogger("MergeTreeIndexAggregatorInverted"),
+            "Mark number overflows numberic maximum of UInt32, false positive rate can be higher.");
+
+    if (store->map_to_granule_id)
+        updateImpl<true>(block, pos, limit, static_cast<UInt32>(mark_number));
+    else
+        updateImpl<false>(block, pos, limit, static_cast<UInt32>(mark_number));
+}
+
+template <bool map_to_granule_id>
+void MergeTreeIndexAggregatorInverted::updateImpl(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] UInt32 granule_id)
+{
+    const size_t rows_read = std::min(limit, block.rows() - *pos);
+    auto row_id = map_to_granule_id ? granule_id : store->getNextRowIDRange(rows_read);
     auto start_row_id = row_id;
 
     for (size_t col = 0; col < index_columns.size(); ++col)
@@ -151,7 +164,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                    addToGinFilter(map_to_granule_id ? granule_id : row_id, ref.data, ref.size, granule->gin_filters[col]);
                     store->incrementCurrentSizeBy(ref.size);
                 }
                 current_position += 1;
@@ -166,18 +179,18 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                addToGinFilter(map_to_granule_id ? granule_id : row_id, ref.data, ref.size, granule->gin_filters[col]);
                 store->incrementCurrentSizeBy(ref.size);
                 row_id++;
                 if (store->needToWrite())
                     need_to_write = true;
             }
         }
-        granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
+        auto end_row_id = map_to_granule_id ? granule_id : static_cast<UInt32>(start_row_id + rows_read - 1);
+        granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, end_row_id);
+
         if (need_to_write)
-        {
             store->writeSegment();
-        }
     }
 
     granule->has_elems = true;

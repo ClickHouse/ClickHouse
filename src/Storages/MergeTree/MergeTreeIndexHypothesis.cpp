@@ -54,7 +54,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorHypothesis::getGranuleAndReset(
     return granule;
 }
 
-void MergeTreeIndexAggregatorHypothesis::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorHypothesis::update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t)
 {
     size_t rows_read = std::min(limit, block.rows() - *pos);
     if (rows_read == 0)

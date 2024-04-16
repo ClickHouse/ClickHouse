@@ -76,7 +76,7 @@ struct IMergeTreeIndexAggregator
     /// Updates the stored info using rows of the specified block.
     /// Reads no more than `limit` rows.
     /// After finishing updating `pos` will store the position of the first row which was not read.
-    virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
+    virtual void update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t mark_number) = 0;
 };
 
 using MergeTreeIndexAggregatorPtr = std::shared_ptr<IMergeTreeIndexAggregator>;
