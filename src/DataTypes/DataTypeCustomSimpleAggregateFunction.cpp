@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
+bool DataTypeCustomSimpleAggregateFunction::isSupportedFunction(const String & function_name, bool throw_unsupported)
 {
     /// TODO Make it sane.
     static const std::vector<String> supported_functions{
@@ -51,13 +51,19 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "minMappedArrays",
         "maxMappedArrays",
     };
-
-    // check function
-    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
+    if (std::find(std::begin(supported_functions), std::end(supported_functions), function_name) == std::end(supported_functions))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported aggregate function {}, supported functions are {}",
-                function->getName(), boost::algorithm::join(supported_functions, ","));
+        if (throw_unsupported)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported aggregate function {}, supported functions are {}",
+                            function_name, boost::algorithm::join(supported_functions, ","));
+        return false;
     }
+    return true;
+}
+
+void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
+{
+    isSupportedFunction(function->getName(), true);
 }
 
 String DataTypeCustomSimpleAggregateFunction::getName() const

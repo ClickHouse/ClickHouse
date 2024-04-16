@@ -362,7 +362,7 @@ public:
         /// For Replacing and VersionedCollapsing mode. Can be empty for Replacing.
         String version_column;
 
-        /// For Aggregating
+        /// For Aggregating mode.
         String default_aggregate_function;
 
         /// For Graphite mode.
