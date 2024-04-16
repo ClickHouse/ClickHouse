@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -96,6 +97,7 @@ echo -ne $OUT | grep -o "SET_NON_GRANTED_ROLE" || echo "expected SET_NON_GRANTED
 $CLICKHOUSE_CLIENT -n --query "
 DROP USER $TEST_USER;
 DROP ROLE $TEST_ROLE1;
+DROP ROLE $TEST_ROLE2;
 DROP ROLE $TEST_ROLE_ENABLED_BY_DEFAULT;
 DROP ROLE $TEST_ROLE_NOT_GRANTED;
 DROP ROLE $TEST_ROLE_SPECIAL_CHARS;
