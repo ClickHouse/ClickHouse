@@ -185,6 +185,8 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
         )
+        cmake_flags.append("-DENABLE_CLICKHOUSE_ODBC_BRIDGE=1")
+        build_target = f"{build_target} clickhouse-odbc-bridge"
         result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
         result.append("EXPORT_SOURCES_WITH_SUBMODULES=1")
     elif is_cross_darwin_arm:
@@ -201,6 +203,8 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake"
         )
+        cmake_flags.append("-DENABLE_CLICKHOUSE_ODBC_BRIDGE=1")
+        build_target = f"{build_target} clickhouse-odbc-bridge"
         result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
     elif is_cross_arm:
         cc = compiler[: -len(ARM_SUFFIX)]
