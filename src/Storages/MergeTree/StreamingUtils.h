@@ -1,0 +1,19 @@
+#pragma once
+
+#include <Processors/QueryPlan/QueryPlan.h>
+
+#include <Storages/SelectQueryInfo.h>
+
+namespace DB
+{
+
+/// Extends columns_to_read with queue mode columns.
+Names extendColumnsWithStreamingAux(const Names & columns_to_read);
+
+/// Builds FilterNode from CursorTree and adds it to the query plan.
+void addCursorFilterStep(QueryPlan & query_plan, SelectQueryInfo & info);
+
+/// Drops queue mode columns that not needed in result of the query.
+void addDropAuxColumnsStep(QueryPlan & query_plan, const Block & desired_header);
+
+}

@@ -41,10 +41,14 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/StreamingUtils.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <fmt/core.h>
 
 
@@ -270,6 +274,50 @@ void StorageMergeTree::read(
                 enable_parallel_reading))
             query_plan = std::move(*plan);
     }
+}
+
+void StorageMergeTree::streamingRead(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t max_block_size,
+        size_t num_streams)
+{
+    Names columns_to_read = extendColumnsWithStreamingAux(column_names);
+
+    /// Snapshot read plan
+
+    QueryPlanPtr storage_query_plan = reader.read(
+        columns_to_read, storage_snapshot, query_info, local_context, max_block_size, num_streams, nullptr, false);
+
+    if (storage_query_plan->isInitialized())
+        addCursorFilterStep(*storage_query_plan, query_info);
+    else
+        storage_query_plan->addStep(std::make_unique<ReadNothingStep>(storage_snapshot->getSampleBlockForColumns(columns_to_read)));
+
+    /// Subscription read plan
+
+    QueryPlanPtr subscription_query_plan = std::make_unique<QueryPlan>();
+    auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
+        getInMemoryMetadata().getSampleBlock(),
+        storage_query_plan->getCurrentDataStream().header,
+        storage_snapshot->getStreamSubscription());
+    subscription_query_plan->addStep(std::move(subscription_source));
+
+    /// Combination
+
+    auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
+        storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
+
+    std::vector<QueryPlanPtr> plans;
+    plans.push_back(std::move(storage_query_plan));
+    plans.push_back(std::move(subscription_query_plan));
+
+    query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
+    addDropAuxColumnsStep(query_plan, storage_snapshot->getSampleBlockForColumns(column_names));
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
