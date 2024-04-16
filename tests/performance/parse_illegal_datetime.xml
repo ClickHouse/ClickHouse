@@ -8,7 +8,8 @@
     </fill_query>
 
     <settings>
-        <max_threads>1</max_threads>
+        <!-- need test concurrency performance -->
+        <max_threads>10</max_threads>
     </settings>
 
     <query>
