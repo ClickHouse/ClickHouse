@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET allow_drop_detached_table=1;
 
 CREATE TABLE test_table_03093  (number UInt64) ENGINE=MergeTree ORDER BY number;
