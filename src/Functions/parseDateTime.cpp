@@ -665,27 +665,29 @@ namespace
                     continue;
 
                 Int64OrError result = 0;
+
                 /// Ensure all input was consumed
                 if (cur < end)
                 {
-                    if (error_handling == ErrorHandling::Exception)
-                        result = tl::unexpected(ErrorCodeAndMessage(
-                            ErrorCodes::CANNOT_PARSE_DATETIME,
-                            "Invalid format input {} is malformed at {}",
-                            str_ref.toView(),
-                            std::string_view(cur, end - cur)));
+                    result = tl::unexpected(ErrorCodeAndMessage(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Invalid format input {} is malformed at {}",
+                        str_ref.toView(),
+                        std::string_view(cur, end - cur)));
                 }
-                if (result)
+
+                if (result.has_value())
                 {
                     if (result = datetime.buildDateTime(time_zone); result.has_value())
-                    {
                         res_data[i] = static_cast<UInt32>(*result);
-                    }
                 }
+
                 if (!result.has_value())
                 {
                     if constexpr (error_handling == ErrorHandling::Zero)
+                    {
                         res_data[i] = 0;
+                    }
                     else if constexpr (error_handling == ErrorHandling::Null)
                     {
                         res_data[i] = 0;
@@ -694,7 +696,8 @@ namespace
                     else
                     {
                         static_assert(error_handling == ErrorHandling::Exception);
-                        throw Exception(result.error().error_code, "{}", result.error().error_message);
+                        const ErrorCodeAndMessage & err = result.error();
+                        throw Exception(err.error_code, "{}", err.error_message);
                     }
                 }
             }
