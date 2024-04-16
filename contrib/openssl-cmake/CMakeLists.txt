@@ -101,7 +101,7 @@ if(ARCH_AMD64)
     else()
         macro(perl_generate_asm FILE_IN FILE_OUT)
             add_custom_command(OUTPUT ${FILE_OUT}
-                COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT})
+                COMMAND ${CMAKE_COMMAND} -E env "CC=${CMAKE_CXX_COMPILER}" /usr/bin/env perl ${FILE_IN} ${FILE_OUT})
         endmacro()
 
         perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-x86_64.s)
