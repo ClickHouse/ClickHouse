@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_CURSOR_LOOKUP;
+}
+
 static void collapseTreeImpl(std::map<String, Int64> & collapsed_tree, std::vector<String> & path, CursorTreeNode * node)
 {
     for (const auto & [k, v] : *node)
@@ -41,7 +46,10 @@ static std::map<String, Int64> collapseTree(CursorTreeNode * node)
 const CursorTreeNodePtr & CursorTreeNode::getSubtree(const String & key) const
 {
     auto it = data.find(key);
-    chassert(it != data.end());
+
+    if (it == data.end())
+        throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Trying to extract subtree by key: '{}'", key);
+
     return std::get<CursorTreeNodePtr>(it->second);
 }
 
@@ -64,7 +72,10 @@ CursorTreeNodePtr & CursorTreeNode::next(const String & key)
 const Int64 & CursorTreeNode::getValue(const String & key) const
 {
     auto it = data.find(key);
-    chassert(it != data.end());
+
+    if (it == data.end())
+        throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Trying to extract value by key: '{}'", key);
+
     return std::get<Int64>(it->second);
 }
 
