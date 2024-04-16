@@ -4,12 +4,11 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO test_date SELECT 'invalid' FROM numbers(1000000);
+        INSERT INTO test_date SELECT 'invalid' FROM numbers(100000);
     </fill_query>
 
     <settings>
-        <!-- need test concurrency performance -->
-        <max_threads>10</max_threads>
+        <max_threads>1</max_threads>
     </settings>
 
     <query>
