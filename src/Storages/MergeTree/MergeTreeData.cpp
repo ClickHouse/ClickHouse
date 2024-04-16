@@ -1496,20 +1496,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     UNREACHABLE();
 }
 
-/// Wait for all tasks to finish and rethrow the first exception if any.
-/// The tasks access local variables of the caller function, so we can't just rethrow the first exception until all other tasks are finished.
-void waitForAllToFinishAndRethrowFirstError(std::vector<std::future<void>> & futures)
-{
-    /// First wait for all tasks to finish.
-    for (auto & future : futures)
-        future.wait();
-
-    /// Now rethrow the first exception if any.
-    for (auto & future : futures)
-        future.get();
-
-    futures.clear();
-}
 
 std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load)
 {
@@ -1520,83 +1506,67 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     /// Shuffle all the parts randomly to possible speed up loading them from JBOD.
     std::shuffle(parts_to_load.begin(), parts_to_load.end(), thread_local_rng);
 
-    auto runner = threadPoolCallbackRunner<void>(getActivePartsLoadingThreadPool().get(), "ActiveParts");
-    std::vector<std::future<void>> parts_futures;
-
     std::mutex part_select_mutex;
     std::mutex part_loading_mutex;
 
     std::vector<LoadPartResult> loaded_parts;
 
-    try
+    ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
+    while (true)
     {
-        while (true)
+        bool are_parts_to_load_empty = false;
         {
-            bool are_parts_to_load_empty = false;
-            {
-                std::lock_guard lock(part_select_mutex);
-                are_parts_to_load_empty = parts_to_load.empty();
-            }
-
-            if (are_parts_to_load_empty)
-            {
-                /// Wait for all scheduled tasks.
-                waitForAllToFinishAndRethrowFirstError(parts_futures);
-
-                /// At this point it is possible, that some other parts appeared in the queue for processing (parts_to_load),
-                /// because we added them from inside the pool.
-                /// So we need to recheck it.
-            }
-
-            PartLoadingTree::NodePtr current_part;
-            {
-                std::lock_guard lock(part_select_mutex);
-                if (parts_to_load.empty())
-                    break;
-
-                current_part = parts_to_load.back();
-                parts_to_load.pop_back();
-            }
-
-            parts_futures.push_back(runner(
-                [&, part = std::move(current_part)]()
-                {
-                    /// Pass a separate mutex to guard the set of parts, because this lambda
-                    /// is called concurrently but with already locked @data_parts_mutex.
-                    auto res = loadDataPartWithRetries(
-                        part->info, part->name, part->disk,
-                        DataPartState::Active, part_loading_mutex, loading_parts_initial_backoff_ms,
-                        loading_parts_max_backoff_ms, loading_parts_max_tries);
-
-                    part->is_loaded = true;
-                    bool is_active_part = res.part->getState() == DataPartState::Active;
-
-                    /// If part is broken or duplicate or should be removed according to transaction
-                    /// and it has any covered parts then try to load them to replace this part.
-                    if (!is_active_part && !part->children.empty())
-                    {
-                        std::lock_guard lock{part_select_mutex};
-                        for (const auto & [_, node] : part->children)
-                            parts_to_load.push_back(node);
-                    }
-
-                    {
-                        std::lock_guard lock(part_loading_mutex);
-                        loaded_parts.push_back(std::move(res));
-                    }
-                }, Priority{0}));
+            std::lock_guard lock(part_select_mutex);
+            are_parts_to_load_empty = parts_to_load.empty();
         }
-    }
-    catch (...)
-    {
-        /// Wait for all scheduled tasks
-        /// A future becomes invalid after .get() call
-        /// + .wait() method is used not to throw any exception here.
-        for (auto & future: parts_futures)
-            if (future.valid())
-                future.wait();
 
-        throw;
+        if (are_parts_to_load_empty)
+        {
+            /// Wait for all scheduled tasks.
+            runner.waitForAllToFinishAndRethrowFirstError();
+
+            /// At this point it is possible, that some other parts appeared in the queue for processing (parts_to_load),
+            /// because we added them from inside the pool.
+            /// So we need to recheck it.
+        }
+
+        PartLoadingTree::NodePtr current_part;
+        {
+            std::lock_guard lock(part_select_mutex);
+            if (parts_to_load.empty())
+                break;
+
+            current_part = parts_to_load.back();
+            parts_to_load.pop_back();
+        }
+
+        runner(
+            [&, part = std::move(current_part)]()
+            {
+                /// Pass a separate mutex to guard the set of parts, because this lambda
+                /// is called concurrently but with already locked @data_parts_mutex.
+                auto res = loadDataPartWithRetries(
+                    part->info, part->name, part->disk,
+                    DataPartState::Active, part_loading_mutex, loading_parts_initial_backoff_ms,
+                    loading_parts_max_backoff_ms, loading_parts_max_tries);
+
+                part->is_loaded = true;
+                bool is_active_part = res.part->getState() == DataPartState::Active;
+
+                /// If part is broken or duplicate or should be removed according to transaction
+                /// and it has any covered parts then try to load them to replace this part.
+                if (!is_active_part && !part->children.empty())
+                {
+                    std::lock_guard lock{part_select_mutex};
+                    for (const auto & [_, node] : part->children)
+                        parts_to_load.push_back(node);
+                }
+
+                {
+                    std::lock_guard lock(part_loading_mutex);
+                    loaded_parts.push_back(std::move(res));
+                }
+            }, Priority{0});
     }
 
     return loaded_parts;
@@ -1685,11 +1655,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
     }
 
-    auto runner = threadPoolCallbackRunner<void>(getActivePartsLoadingThreadPool().get(), "ActiveParts");
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
 
-    std::vector<std::future<void>> disks_futures;
-    disks_futures.reserve(disks.size());
+    ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
 
     for (size_t i = 0; i < disks.size(); ++i)
     {
@@ -1699,7 +1667,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
         auto & disk_parts = parts_to_load_by_disk[i];
 
-        disks_futures.push_back(runner([&, disk_ptr]()
+        runner([&, disk_ptr]()
         {
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
@@ -1711,11 +1679,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
                     disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
             }
-        }, Priority{0}));
+        }, Priority{0});
     }
 
     /// For iteration to be completed
-    waitForAllToFinishAndRethrowFirstError(disks_futures);
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
@@ -1900,8 +1868,9 @@ try
 
     std::atomic_size_t num_loaded_parts = 0;
 
-    auto runner = threadPoolCallbackRunner<void>(getOutdatedPartsLoadingThreadPool().get(), "OutdatedParts");
-    std::vector<std::future<void>> parts_futures;
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
+
+    ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), "OutdatedParts");
 
     while (true)
     {
@@ -1915,7 +1884,7 @@ try
             {
                 /// Wait for every scheduled task
                 /// In case of any exception it will be re-thrown and server will be terminated.
-                waitForAllToFinishAndRethrowFirstError(parts_futures);
+                runner.waitForAllToFinishAndRethrowFirstError();
 
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
@@ -1930,7 +1899,7 @@ try
             outdated_unloaded_data_parts.pop_back();
         }
 
-        parts_futures.push_back(runner([&, my_part = part]()
+        runner([&, my_part = part]()
         {
             auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
@@ -1947,12 +1916,10 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        }, Priority{}));
+        }, Priority{});
     }
 
-    /// Wait for every scheduled task
-    for (auto & future : parts_futures)
-        future.get();
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts, is_async ? "asynchronously" : "synchronously");
@@ -2450,7 +2417,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     /// Parallel parts removal.
     std::mutex part_names_mutex;
-    auto runner = threadPoolCallbackRunner<void>(getPartsCleaningThreadPool().get(), "PartsCleaning");
 
     /// This flag disallow straightforward concurrent parts removal. It's required only in case
     /// when we have parts on zero-copy disk + at least some of them were mutated.
@@ -2470,12 +2436,11 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         LOG_DEBUG(
             log, "Removing {} parts from filesystem (concurrently): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
 
-        std::vector<std::future<void>> parts_to_remove_futures;
-        parts_to_remove_futures.reserve(parts_to_remove.size());
+        ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), "PartsCleaning");
 
         for (const DataPartPtr & part : parts_to_remove)
         {
-            parts_to_remove_futures.push_back(runner([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
+            runner([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
             {
                 asMutableDeletingPart(part)->remove();
                 if (part_names_succeed)
@@ -2483,10 +2448,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                     std::lock_guard lock(part_names_mutex);
                     part_names_succeed->insert(part->name);
                 }
-            }, Priority{0}));
+            }, Priority{0});
         }
 
-        waitForAllToFinishAndRethrowFirstError(parts_to_remove_futures);
+        runner.waitForAllToFinishAndRethrowFirstError();
 
         return;
     }
@@ -2558,13 +2523,13 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         return independent_ranges;
     };
 
-    std::vector<std::future<void>> part_removal_futures;
+    ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), "PartsCleaning");
 
-    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed, &part_removal_futures](
+    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed](
         const MergeTreePartInfo & range, DataPartsVector && parts_in_range)
     {
         /// Below, range should be captured by copy to avoid use-after-scope on exception from pool
-        part_removal_futures.push_back(runner(
+        runner(
             [this, range, &part_names_mutex, part_names_succeed, batch = std::move(parts_in_range)]
         {
             LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartNameForLogs());
@@ -2578,7 +2543,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                     part_names_succeed->insert(part->name);
                 }
             }
-        }, Priority{0}));
+        }, Priority{0});
     };
 
     RemovalRanges independent_ranges = split_into_independent_ranges(parts_to_remove, /* split_times */ 0);
@@ -2642,7 +2607,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
     independent_ranges = split_into_independent_ranges(excluded_parts, /* split_times */ 0);
 
-    waitForAllToFinishAndRethrowFirstError(part_removal_futures);
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     for (size_t i = 0; i < independent_ranges.infos.size(); ++i)
     {
@@ -2651,7 +2616,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         schedule_parts_removal(range, std::move(parts_in_range));
     }
 
-    waitForAllToFinishAndRethrowFirstError(part_removal_futures);
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
