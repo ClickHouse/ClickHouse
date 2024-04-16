@@ -99,8 +99,102 @@ Alias: `OCTET_LENGTH`
 Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 Alias:
-- `CHAR_LENGTH``
+- `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
+
+## left
+
+Returns a substring of string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+left(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT left('Hello', 3);
+```
+
+Result:
+
+```response
+Hel
+```
+
+Query:
+
+```sql
+SELECT left('Hello', -3);
+```
+
+Result:
+
+```response
+He
+```
+
+## leftUTF8
+
+Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+leftUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+Прив
+```
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+Пр
+```
 
 ## leftPad
 
@@ -174,6 +268,100 @@ Result:
 ┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
 │ ***абвг                     │    дежз                │
 └─────────────────────────────┴────────────────────────┘
+```
+
+## right
+
+Returns a substring of string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+right(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT right('Hello', 3);
+```
+
+Result:
+
+```response
+llo
+```
+
+Query:
+
+```sql
+SELECT right('Hello', -3);
+```
+
+Result:
+
+```response
+lo
+```
+
+## rightUTF8
+
+Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+rightUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+ивет
+```
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+ет
 ```
 
 ## rightPad
@@ -254,13 +442,69 @@ Result:
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
+*Syntax**
+
+``` sql
+lower(input)
+```
+
 Alias: `lcase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT lower('CLICKHOUSE');
+```
+
+```response
+┌─lower('CLICKHOUSE')─┐
+│ clickhouse          │
+└─────────────────────┘
+```
 
 ## upper
 
 Converts the ASCII Latin symbols in a string to uppercase.
 
+**Syntax**
+
+``` sql
+upper(input)
+```
+
 Alias: `ucase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT upper('clickhouse');
+```
+
+``` response
+┌─upper('clickhouse')─┐
+│ CLICKHOUSE          │
+└─────────────────────┘
+```
 
 ## lowerUTF8
 
@@ -277,6 +521,34 @@ Converts a string to uppercase, assuming that the string contains valid UTF-8 en
 Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+**Syntax**
+
+``` sql
+upperUTF8(input)
+```
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT upperUTF8('München') as Upperutf8;
+```
+
+``` response
+┌─Upperutf8─┐
+│ MÜNCHEN   │
+└───────────┘
+```
 
 ## isValidUTF8
 

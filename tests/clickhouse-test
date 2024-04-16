@@ -69,6 +69,8 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
+TEST_MAX_RUN_TIME_IN_SECONDS = 120
+
 
 class SharedEngineReplacer:
     ENGINES_NON_REPLICATED_REGEXP = r"[ =]((Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|)MergeTree\(?\)?)"
@@ -681,7 +683,9 @@ class FailureReason(enum.Enum):
     STDERR = "having stderror: "
     EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
-    TOO_LONG = "Test runs too long (> 60s). Make it faster."
+    TOO_LONG = (
+        f"Test runs too long (> {TEST_MAX_RUN_TIME_IN_SECONDS}s). Make it faster."
+    )
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
@@ -903,6 +907,8 @@ class MergeTreeSettingsRandomizer:
             1, 32 * 1024 * 1024
         ),
         "cache_populated_by_fetch": lambda: random.randint(0, 1),
+        "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
+        "old_parts_lifetime": threshold_generator(0.2, 0.3, 30, 8 * 60),
     }
 
     @staticmethod
@@ -1420,7 +1426,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > 120
+            and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
             and "long" not in self.tags
         ):
             if debug_log:
@@ -3171,6 +3177,8 @@ def parse_args():
         help="Do not run shard related tests",
     )
 
+    # TODO: Remove upgrade-check option after release 24.3 and use
+    #       ignore_drop_queries_probability option in stress.py as in stress tests
     group.add_argument(
         "--upgrade-check",
         action="store_true",
