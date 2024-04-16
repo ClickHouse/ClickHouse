@@ -34,7 +34,6 @@ private:
     std::optional<size_t> max_splits;
     size_t splits;
     bool max_substrings_includes_remaining_string;
-    std::optional<size_t> result_reserve_size;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -67,21 +66,6 @@ public:
 
         max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
         max_splits = extractMaxSplits(arguments, 2);
-
-        const ColumnString * col_str = checkAndGetColumn<ColumnString>(arguments[strings_argument_position].column.get());
-        /// There is another possibility that the input column is ColumnConst. We ignore it because there is no need to get reserve size under such condition.
-        if (col_str)
-        {
-            const ColumnString::Chars & src_chars = col_str->getChars();
-            /// Consider use case: splitByChar(' ', 'a b c'), where input chars is "a b c\0", output chars is "a\0", "b\0", "c\0".
-            /// The size of output chars should never exceeds input chars
-            result_reserve_size = src_chars.size();
-        }
-    }
-
-    std::optional<size_t> getResultReserveSize() const
-    {
-        return result_reserve_size;
     }
 
     void set(Pos pos_, Pos end_)
@@ -93,7 +77,7 @@ public:
 
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (!pos) [[unlikely]]
+        if (!pos)
             return false;
 
         token_begin = pos;

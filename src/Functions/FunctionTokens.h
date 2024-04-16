@@ -58,7 +58,6 @@ private:
 
 public:
     static constexpr auto name = Generator::name;
-
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTokens>(context); }
 
     explicit FunctionTokens<Generator>(ContextPtr context)
@@ -107,13 +106,9 @@ public:
             const ColumnString::Chars & src_chars = col_str->getChars();
             const ColumnString::Offsets & src_offsets = col_str->getOffsets();
 
-            res_offsets.resize_exact(src_offsets.size());
+            res_offsets.reserve(src_offsets.size());
             res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
-            std::optional<size_t> res_chars_reserve_size = generator.getResultReserveSize();
-            if (res_chars_reserve_size.has_value())
-                res_strings_chars.reserve_exact(*res_chars_reserve_size);
-            else
-                res_strings_chars.reserve(src_chars.size());
+            res_strings_chars.reserve(src_chars.size());
 
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
@@ -122,40 +117,32 @@ public:
             ColumnString::Offset current_src_offset = 0;
             ColumnArray::Offset current_dst_offset = 0;
             ColumnString::Offset current_dst_strings_offset = 0;
-
-#define PROCESS_WITH_CUSTOM_RESIZE(RESIZE_METHOD) \
-            for (size_t i = 0; i < size; ++i) \
-            { \
-                Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]); \
-                current_src_offset = src_offsets[i]; \
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1; \
-                generator.set(pos, end); \
-                size_t j = 0; \
-                while (generator.get(token_begin, token_end)) \
-                { \
-                    size_t token_size = token_end - token_begin; \
-                    res_strings_chars.RESIZE_METHOD(res_strings_chars.size() + token_size + 1); \
-                    memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size); \
-                    res_strings_chars[current_dst_strings_offset + token_size] = 0; \
-                    current_dst_strings_offset += token_size + 1; \
-                    res_strings_offsets.push_back(current_dst_strings_offset); \
-                    ++j; \
-                } \
-                current_dst_offset += j; \
-                res_offsets[i] = current_dst_offset; \
-            }
-
-            if (res_chars_reserve_size.has_value())
+            for (size_t i = 0; i < size; ++i)
             {
-                /// If res_chars_reserve_size is not -1, then we are sure that the actual size of res_strings_chars doesn't exceed res_chars_reserve_size.
-                PROCESS_WITH_CUSTOM_RESIZE(resize_assume_reserved)
+                Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
+                current_src_offset = src_offsets[i];
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+
+                generator.set(pos, end);
+                size_t j = 0;
+                while (generator.get(token_begin, token_end))
+                {
+                    size_t token_size = token_end - token_begin;
+
+                    res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
+                    memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
+                    res_strings_chars[current_dst_strings_offset + token_size] = 0;
+
+                    current_dst_strings_offset += token_size + 1;
+                    res_strings_offsets.push_back(current_dst_strings_offset);
+                    ++j;
+                }
+
+                current_dst_offset += j;
+                res_offsets.push_back(current_dst_offset);
             }
-            else
-            {
-                PROCESS_WITH_CUSTOM_RESIZE(resize)
-            }
+
             return col_res;
-#undef PROCESS_WITH_CUSTOM_RESIZE
         }
         else if (col_str_const)
         {

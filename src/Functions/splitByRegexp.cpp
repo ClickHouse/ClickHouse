@@ -70,8 +70,6 @@ public:
         max_splits = extractMaxSplits(arguments, 2);
     }
 
-    std::optional<size_t> getResultReserveSize() const { return std::nullopt; }
-
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {

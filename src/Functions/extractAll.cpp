@@ -78,8 +78,6 @@ public:
         matches.resize(capture + 1);
     }
 
-    std::optional<size_t> getResultReserveSize() const { return std::nullopt; }
-
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
