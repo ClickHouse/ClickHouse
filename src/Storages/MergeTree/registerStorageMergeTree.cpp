@@ -16,6 +16,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
@@ -568,6 +570,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.default_aggregate_function);
             --arg_cnt;
+
+            if (!DataTypeCustomSimpleAggregateFunction::isSupportedFunction(merging_params.default_aggregate_function, false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_aggregate_function parameter must be a name of a SimpleAggregateFunction{}", verbose_help_message);
         }
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)

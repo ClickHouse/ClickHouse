@@ -1467,7 +1467,7 @@ public:
                 break;
 
             case MergeTreeData::MergingParams::Aggregating:
-                merged_transform = std::make_shared<AggregatingSortedTransform>(header, input_streams_count, sort_description, ctx->merging_params.default_aggregate_function, merge_block_size_rows, merge_block_size_bytes);
+                merged_transform = std::make_shared<AggregatingSortedTransform>(header, input_streams_count, sort_description, merging_params.default_aggregate_function, merge_block_size_rows, merge_block_size_bytes);
                 break;
 
             case MergeTreeData::MergingParams::Replacing:
