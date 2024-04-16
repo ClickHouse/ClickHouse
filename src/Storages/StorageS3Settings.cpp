@@ -18,18 +18,20 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
 }
 
-S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const Settings & settings)
+S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const Settings & settings, bool validate_settings)
 {
     updateFromSettings(settings, false);
-    validate();
+    if (validate_settings)
+        validate();
 }
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     const Settings & settings,
-    String setting_name_prefix)
-    : PartUploadSettings(settings)
+    String setting_name_prefix,
+    bool validate_settings)
+    : PartUploadSettings(settings, validate_settings)
 {
     String key = config_prefix + "." + setting_name_prefix;
     strict_upload_part_size = config.getUInt64(key + "strict_upload_part_size", strict_upload_part_size);
@@ -46,7 +48,8 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     storage_class_name = config.getString(config_prefix + ".s3_storage_class", storage_class_name);
     storage_class_name = Poco::toUpperInPlace(storage_class_name);
 
-    validate();
+    if (validate_settings)
+        validate();
 }
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
@@ -170,8 +173,8 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
 }
 
 
-S3Settings::RequestSettings::RequestSettings(const Settings & settings)
-    : upload_settings(settings)
+S3Settings::RequestSettings::RequestSettings(const Settings & settings, bool validate_settings)
+    : upload_settings(settings, validate_settings)
 {
     updateFromSettingsImpl(settings, false);
 }
@@ -190,8 +193,9 @@ S3Settings::RequestSettings::RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     const Settings & settings,
-    String setting_name_prefix)
-    : upload_settings(config, config_prefix, settings, setting_name_prefix)
+    String setting_name_prefix,
+    bool validate_settings)
+    : upload_settings(config, config_prefix, settings, setting_name_prefix, validate_settings)
 {
     String key = config_prefix + "." + setting_name_prefix;
     max_single_read_retries = config.getUInt64(key + "max_single_read_retries", settings.s3_max_single_read_retries);

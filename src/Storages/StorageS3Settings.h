@@ -44,13 +44,14 @@ struct S3Settings
 
         private:
             PartUploadSettings() = default;
-            explicit PartUploadSettings(const Settings & settings);
+            explicit PartUploadSettings(const Settings & settings, bool validate_settings = true);
             explicit PartUploadSettings(const NamedCollection & collection);
             PartUploadSettings(
                 const Poco::Util::AbstractConfiguration & config,
                 const String & config_prefix,
                 const Settings & settings,
-                String setting_name_prefix = {});
+                String setting_name_prefix = {},
+                bool validate_settings = true);
 
             friend struct RequestSettings;
         };
@@ -78,7 +79,7 @@ struct S3Settings
         void setStorageClassName(const String & storage_class_name) { upload_settings.storage_class_name = storage_class_name; }
 
         RequestSettings() = default;
-        explicit RequestSettings(const Settings & settings);
+        explicit RequestSettings(const Settings & settings, bool validate_settings = true);
         explicit RequestSettings(const NamedCollection & collection);
 
         /// What's the setting_name_prefix, and why do we need it?
@@ -92,7 +93,8 @@ struct S3Settings
             const Poco::Util::AbstractConfiguration & config,
             const String & config_prefix,
             const Settings & settings,
-            String setting_name_prefix = {});
+            String setting_name_prefix = {},
+            bool validate_settings = true);
 
         void updateFromSettingsIfChanged(const Settings & settings);
 

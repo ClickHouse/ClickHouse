@@ -282,12 +282,11 @@ void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr conte
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
-        return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
+        return s == "auto" || FormatFactory::instance().getAllFormats().contains(Poco::toLower(s));
     };
 
     if (engine_args.size() == 4)
     {
-        //'c1 UInt64, c2 UInt64
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
@@ -298,7 +297,9 @@ void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr conte
             if (with_structure)
                 structure = fourth_arg;
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format or account name specified without account key");
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unknown format or account name specified without account key: {}", fourth_arg);
         }
     }
     else if (engine_args.size() == 5)

@@ -36,11 +36,15 @@ extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context,
+    bool validate_settings)
 {
     const Settings & settings = context->getSettingsRef();
-    auto request_settings = S3Settings::RequestSettings(config, config_prefix, settings, "s3_");
+    auto request_settings = S3Settings::RequestSettings(config, config_prefix, settings, "s3_", validate_settings);
     auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
+
     return std::make_unique<S3ObjectStorageSettings>(
         request_settings,
         auth_settings,

@@ -77,7 +77,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     const auto & config = context->getConfigRef();
     const std::string config_prefix = "s3.";
 
-    auto s3_settings = getSettings(config, config_prefix, context);
+    auto s3_settings = getSettings(config, config_prefix, context, false); /// FIXME: add a setting
 
     auth_settings.updateFrom(s3_settings->auth_settings);
     s3_settings->auth_settings = auth_settings;

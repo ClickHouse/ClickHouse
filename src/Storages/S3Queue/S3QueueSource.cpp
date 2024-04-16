@@ -197,8 +197,22 @@ String StorageS3QueueSource::getName() const
     return name;
 }
 
+void StorageS3QueueSource::lazyInitialize()
+{
+    if (initialized)
+        return;
+
+    internal_source->lazyInitialize(processing_id);
+    reader = std::move(internal_source->reader);
+    if (reader)
+        reader_future = std::move(internal_source->reader_future);
+    initialized = true;
+}
+
 Chunk StorageS3QueueSource::generate()
 {
+    lazyInitialize();
+
     while (true)
     {
         if (!reader)

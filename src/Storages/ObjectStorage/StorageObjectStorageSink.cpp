@@ -96,9 +96,8 @@ void StorageObjectStorageSink::finalize()
 void StorageObjectStorageSink::release()
 {
     writer.reset();
-    write_buf->finalize();
+    write_buf.reset();
 }
-
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,

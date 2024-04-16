@@ -117,6 +117,7 @@ private:
 
     void applyActionAfterProcessing(const String & path);
     void appendLogElement(const std::string & filename, S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
+    void lazyInitialize();
 };
 
 }
