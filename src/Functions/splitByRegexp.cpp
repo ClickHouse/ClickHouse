@@ -167,7 +167,6 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        /// If the first argument is a trivial char, fallback from splitByRegexp to splitByChar for better performance
         if (patternIsTrivialChar(arguments))
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
         else
