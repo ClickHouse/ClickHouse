@@ -26,6 +26,11 @@
                 <table_function_remote_max_addresses>
                     <max>200</max>
                 </table_function_remote_max_addresses>
+
+                <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
+                <allow_experimental_analyzer>
+                    <readonly/>
+                </allow_experimental_analyzer>
             </constraints>
         </default>
     </profiles>

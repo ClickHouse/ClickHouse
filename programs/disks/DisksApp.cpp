@@ -166,7 +166,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     {
         String config_path = config().getString("config-file", getDefaultConfigFileName());
         ConfigProcessor config_processor(config_path, false, false);
-        config_processor.setConfigPath(fs::path(config_path).parent_path());
+        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), false, false);
     }
