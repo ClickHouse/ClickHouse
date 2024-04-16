@@ -184,12 +184,7 @@ private:
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
         if (!col)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}. "
-                "Must be constant string.",
-                arguments[0].column->getName(),
-                getName());
+            return false;
 
         String pattern = col->getValue<String>();
         if (pattern.size() == 1)
