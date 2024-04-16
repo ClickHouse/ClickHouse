@@ -734,22 +734,19 @@ void HTTPHandler::processQuery(
         return false;
     };
 
-    auto role_params_it = params.find("role");
-    if (role_params_it != params.end())
+    auto roles = params.getAll("role");
+    if (!roles.empty())
     {
-        std::vector<UUID> roles_ids;
         const auto & access_control = context->getAccessControl();
         const auto & user = context->getUser();
-        for (; role_params_it != params.end(); role_params_it++)
+        std::vector<UUID> roles_ids(roles.size());
+        for (size_t i = 0; i < roles.size(); i++)
         {
-            if (role_params_it->first == "role")
-            {
-                auto role_id = access_control.getID<Role>(role_params_it->second);
-                if (user->granted_roles.isGranted(role_id))
-                    roles_ids.push_back(role_id);
-                else
-                    throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", role_params_it->second);
-            }
+            auto role_id = access_control.getID<Role>(roles[i]);
+            if (user->granted_roles.isGranted(role_id))
+                roles_ids[i] = role_id;
+            else
+                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", roles[i].get());
         }
         context->setCurrentRoles(roles_ids);
     }
