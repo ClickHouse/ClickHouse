@@ -5699,19 +5699,19 @@ void StorageReplicatedMergeTree::readClusterImpl(
 
     Block header;
     ASTPtr modified_query_ast;
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    if (new_context->getSettingsRef().allow_experimental_analyzer)
     {
         auto modified_query_tree = buildQueryTreeForShard(query_info.planner_context, query_info.query_tree);
 
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(
-            modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+            modified_query_tree, new_context, SelectQueryOptions(processed_stage).analyze());
         modified_query_ast = queryNodeToSelectQuery(modified_query_tree);
     }
     else
     {
         modified_query_ast = query_info.query->clone();
         header
-            = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+            = InterpreterSelectQuery(modified_query_ast, new_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
 
     ClusterProxy::SelectStreamFactory select_stream_factory = ClusterProxy::SelectStreamFactory(
