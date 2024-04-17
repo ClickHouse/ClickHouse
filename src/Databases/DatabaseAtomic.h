@@ -90,6 +90,9 @@ protected:
     const UUID db_uuid;
 
     LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);
+
+private:
+    String GetPathSymlink(const String & table_name) const;
 };
 
 }
