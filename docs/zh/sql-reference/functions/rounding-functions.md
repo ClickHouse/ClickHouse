@@ -54,9 +54,6 @@ SELECT trunc(123.499, 1) as res；
 └───────┘
 ```
 
-
-通过DeepL.com（免费版）翻译
-
 ## 圆形(x\[,N\]) {#rounding_functions-round}
 
 将值取整到指定的小数位数。
