@@ -5,9 +5,8 @@ from typing import Tuple
 
 from github import Github
 
-from cherry_pick import Labels
+from ci_config import StatusNames
 from commit_status_helper import (
-    CI_STATUS_NAME,
     create_ci_report,
     format_description,
     get_commit,
@@ -206,7 +205,7 @@ def main():
             PENDING,
             ci_report_url,
             description,
-            CI_STATUS_NAME,
+            StatusNames.CI,
             pr_info,
         )
 

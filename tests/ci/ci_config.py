@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-from copy import deepcopy
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
@@ -179,6 +179,13 @@ class JobNames(metaclass=WithIter):
 
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "Bugfix validation"
+
+
+class StatusNames(metaclass=WithIter):
+    "Class with statuses that aren't related to particular jobs"
+    CI = "CI running"
+    MERGEABLE = "Mergeable Check"
+    SYNC = "A Sync"
 
 
 # dynamically update JobName with Build jobs
@@ -1348,7 +1355,7 @@ CI_CONFIG.validate()
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
     "PR Check",
-    "A Sync",  # Cloud sync
+    StatusNames.SYNC,
     JobNames.BUILD_CHECK,
     JobNames.BUILD_CHECK_SPECIAL,
     JobNames.DOCS_CHECK,
@@ -1461,9 +1468,9 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Integration tests ("),
     ),
     CheckDescription(
-        "Mergeable Check",
+        StatusNames.MERGEABLE,
         "Checks if all other necessary checks are successful",
-        lambda x: x == "Mergeable Check",
+        lambda x: x == StatusNames.MERGEABLE,
     ),
     CheckDescription(
         "Performance Comparison",
