@@ -28,7 +28,7 @@ def main():
     statuses = get_commit_filtered_statuses(commit)
     trigger_mergeable_check(commit, statuses)
 
-    if not pr_info.is_merge_queue():
+    if not pr_info.is_merge_queue:
         statuses = [s for s in statuses if s.context == CI_STATUS_NAME]
         if not statuses:
             return
