@@ -36,12 +36,12 @@ public:
         size_t buf_size_,
         const WriteSettings & write_settings_,
         std::shared_ptr<const AzureObjectStorageSettings> settings_,
-        ThreadPoolCallbackRunner<void> schedule_ = {});
+        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
 
     void nextImpl() override;
-
+    void preFinalize() override;
     std::string getFileName() const override { return blob_path; }
     void sync() override { next(); }
 
@@ -64,6 +64,9 @@ private:
     const size_t max_unexpected_write_error_retries;
     const std::string blob_path;
     const WriteSettings write_settings;
+
+    /// Track that prefinalize() is called only once
+    bool is_prefinalized = false;
 
     AzureClientPtr blob_container_client;
     std::vector<std::string> block_ids;

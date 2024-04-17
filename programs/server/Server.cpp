@@ -648,23 +648,22 @@ try
     }
 #endif
 
-#if USE_OPENSSL_INTREE
     /// When building openssl into clickhouse, clickhouse owns the configuration
     /// Therefore, the clickhouse openssl configuration should be kept separate from
     /// the OS. Default to the one in the standard config directory, unless overridden
     /// by a key in the config.
+    /// Note: this has to be done once at server initialization, because 'setenv' is not thread-safe.
     if (config().has("opensslconf"))
     {
         std::string opensslconf_path = config().getString("opensslconf");
-        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true);
+        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true); /// NOLINT
     }
     else
     {
         const String config_path = config().getString("config-file", "config.xml");
         const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
-        setenv("OPENSSL_CONF", config_dir.c_str(), true);
+        setenv("OPENSSL_CONF", config_dir.c_str(), true); /// NOLINT
     }
-#endif
 
     registerInterpreters();
     registerFunctions();
@@ -734,13 +733,17 @@ try
     LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 #endif
 
+    bool will_have_trace_collector = hasPHDRCache() && config().has("trace_log");
+
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(
         server_settings.max_thread_pool_size,
         server_settings.max_thread_pool_free_size,
-        server_settings.thread_pool_queue_size);
+        server_settings.thread_pool_queue_size,
+        will_have_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
+        will_have_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
         Stopwatch watch;
@@ -1569,6 +1572,9 @@ try
                     new_server_settings.http_connections_store_limit,
                 });
 
+            if (global_context->isServerCompletelyStarted())
+                CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings.cannot_allocate_thread_fault_injection_probability);
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -2057,6 +2063,8 @@ try
 
         startup_watch.stop();
         ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
+
+        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings.cannot_allocate_thread_fault_injection_probability);
 
         try
         {

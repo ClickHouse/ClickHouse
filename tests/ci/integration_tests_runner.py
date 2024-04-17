@@ -13,13 +13,13 @@ import string
 import subprocess
 import sys
 import time
-from typing import Any, Dict
 import zlib  # for crc32
 from collections import defaultdict
 from itertools import chain
+from typing import Any, Dict
 
-from integration_test_images import IMAGES
 from env_helper import CI
+from integration_test_images import IMAGES
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -342,6 +342,8 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse-common-static_",
             "clickhouse-server_",
             "clickhouse-client",
+            "clickhouse-odbc-bridge_",
+            "clickhouse-library-bridge_",
             "clickhouse-common-static-dbg_",
         ):  # order matters
             logging.info("Installing package %s", package)
@@ -395,9 +397,9 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def _compress_logs(directory, relpaths, result_path):
-        retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            f"tar --use-compress-program='zstd --threads=0' -cf {result_path} -C "
-            f"{directory} {' '.join(relpaths)}",
+        retcode = subprocess.call(
+            f"sudo tar --use-compress-program='zstd --threads=0' "
+            f"-cf {result_path} -C {directory} {' '.join(relpaths)}",
             shell=True,
         )
         # tar return 1 when the files are changed on compressing, we ignore it
@@ -430,9 +432,7 @@ class ClickhouseIntegrationTestsRunner:
             "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
         with open(out_file_full, "wb") as ofd:
-            subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                cmd, shell=True, stdout=ofd, stderr=ofd
-            )
+            subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
@@ -1005,9 +1005,7 @@ def run():
     if CI:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "sudo -E dmesg --clear", shell=True
-        )
+        subprocess.check_call("sudo -E dmesg --clear", shell=True)
 
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
@@ -1015,9 +1013,7 @@ def run():
     if CI:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "sudo -E dmesg -T", shell=True
-        )
+        subprocess.check_call("sudo -E dmesg -T", shell=True)
 
     status = (state, description)
     out_results_file = os.path.join(str(runner.path()), "test_results.tsv")
