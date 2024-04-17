@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, CIStages, Labels, JobNames
+from ci_config import CI_CONFIG, Build, CIStages, JobNames, Labels
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -49,7 +49,7 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
-from github import Github
+from github_helper import GitHub
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
@@ -1504,7 +1504,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 
     # create GH status
     pr_info = PRInfo()
-    commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
+    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
 
     def _concurrent_create_status(job: str, batch: int, num_batches: int) -> None:
         job_status = ci_cache.get_successful(job, batch, num_batches)
@@ -1994,7 +1994,7 @@ def main() -> int:
         else:
             # this is a test job - check if GH commit status or cache record is present
             commit = get_commit(
-                Github(get_best_robot_token(), per_page=100), pr_info.sha
+                GitHub(get_best_robot_token(), per_page=100), pr_info.sha
             )
 
             # rerun helper check
@@ -2110,7 +2110,7 @@ def main() -> int:
                         additional_urls=additional_urls or None,
                     )
                 commit = get_commit(
-                    Github(get_best_robot_token(), per_page=100), pr_info.sha
+                    GitHub(get_best_robot_token(), per_page=100), pr_info.sha
                 )
                 post_commit_status(
                     commit,
