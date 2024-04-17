@@ -1158,29 +1158,33 @@ bool StorageRabbitMQ::tryStreamToViews()
                 ++queue_empty;
 
             if (source->needChannelUpdate())
-                source->updateChannel(*connection);
-
-            /* false is returned by the sendAck function in only two cases:
-             * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
-             *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
-             *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
-             *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
-             *    consumers. So in this case duplicates are inevitable.
-             * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
-             *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
-             *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
-             *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
-             *    will ever happen.
-             */
-            if (write_failed ? source->sendNack() : source->sendAck())
             {
-                /// Iterate loop to activate error callbacks if they happened
-                connection->getHandler().iterateLoop();
-                if (!connection->isConnected())
-                    break;
+                source->updateChannel(*connection);
             }
+            else
+            {
+                /* false is returned by the sendAck function in only two cases:
+                * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
+                *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
+                *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
+                *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
+                *    consumers. So in this case duplicates are inevitable.
+                * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
+                *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
+                *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
+                *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
+                *    will ever happen.
+                */
+                if (write_failed ? source->sendNack() : source->sendAck())
+                {
+                    /// Iterate loop to activate error callbacks if they happened
+                    connection->getHandler().iterateLoop();
+                    if (!connection->isConnected())
+                        break;
+                }
 
-            connection->getHandler().iterateLoop();
+                connection->getHandler().iterateLoop();
+            }
         }
     }
 
