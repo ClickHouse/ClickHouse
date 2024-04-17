@@ -412,17 +412,12 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    ClusterProxy::SelectStreamFactory select_stream_factory =
-        ClusterProxy::SelectStreamFactory(
-            header,
-            {},
-            {},
-            processed_stage);
-
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        select_stream_factory,
+        StorageID::createEmpty(),
+        header,
+        processed_stage,
         modified_query_ast,
         context,
         storage_limits);
