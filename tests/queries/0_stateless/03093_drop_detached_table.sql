@@ -132,15 +132,15 @@ DETACH TABLE test_table_03093_buffer;
 DROP TABLE test_table_03093_buffer SYNC;
 DROP TABLE test_table_03093_null_for_buffer SYNC;
 
-CREATE TABLE test_table_03093_for_dist (key Nullable(UInt64)) Engine=TinyLog();
-CREATE TABLE test_table_03093_dist (key UInt64) Engine=Distributed('test_cluster_two_shards', currentDatabase(), 'test_table_03093_for_dist', key);
+CREATE TABLE test_table_03093_for_dist (key UInt64) Engine=TinyLog();
+CREATE TABLE test_table_03093_dist AS test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', currentDatabase(), 'test_table_03093_for_dist', key);
 INSERT INTO test_table_03093_dist SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_table_03093_dist;
 DROP TABLE test_table_03093_dist SYNC;
 DROP TABLE test_table_03093_for_dist SYNC;
 
-CREATE TABLE test_table_03093_for_dist (key Nullable(UInt64)) Engine=TinyLog();
-CREATE TABLE test_table_03093_dist_perm (key UInt64) Engine=Distributed('test_cluster_two_shards', currentDatabase(), 'test_table_03093_for_dist', key);
+CREATE TABLE test_table_03093_for_dist (key UInt64) Engine=TinyLog();
+CREATE TABLE test_table_03093_dist_perm AS test_table_03093_for_dist Engine=Distributed('test_cluster_two_shards', currentDatabase(), 'test_table_03093_for_dist', key);
 INSERT INTO test_table_03093_dist_perm SELECT toUInt64(number) FROM system.numbers LIMIT 6;
 DETACH TABLE test_table_03093_dist_perm PERMANENTLY;
 DROP TABLE test_table_03093_dist_perm SYNC;
