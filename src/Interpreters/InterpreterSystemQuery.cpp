@@ -731,10 +731,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
+            CannotAllocateThreadFaultInjector::setFaultProbability(0);
             break;
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
+            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
             break;
         case Type::UNFREEZE:
         {
