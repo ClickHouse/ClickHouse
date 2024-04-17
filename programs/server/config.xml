@@ -1579,6 +1579,42 @@
     </rocksdb>
     -->
 
+    <!-- <kafka> -->
+        <!-- Global configuration properties -->
+        <!--
+        NOTE: statistics should be consumed, otherwise it creates too much
+              entries in the queue, that leads to memory leak and slow shutdown.
+        default value: 0
+        <statistics_interval_ms>3000</statistics_interval_ms>
+        -->
+
+        <!-- Topic configuration properties -->
+        <!--
+        <kafka_topic>
+              <name>football</name>
+              <request_timeout_ms>6000</request_timeout_ms>
+        </kafka_topic>
+        -->
+
+        <!-- Producer configuration -->
+        <!--
+        <producer>
+            <compression_codec>gzip</compression_codec>
+            <kafka_topic>
+                <name>football</name>
+                <request_timeout_ms>6000</request_timeout_ms>
+            </kafka_topic>
+        </producer>
+        -->
+
+        <!-- Consumer configuration -->
+        <!--
+        <consumer>
+            <enable_auto_commit>true</enable_auto_commit>
+        </consumer>
+        -->
+    <!-- </kafka> -->
+
     <!-- Configuration for the query cache -->
     <query_cache>
         <max_size_in_bytes>1073741824</max_size_in_bytes>

@@ -363,7 +363,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             JoinKind::Left);
     }
 
-    if (join_filter_push_down_actions.right_stream_filter_to_push_down)
+    if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
     {
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
