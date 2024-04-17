@@ -1042,31 +1042,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     };
 }
 
-static ColumnsWithTypeAndName joinCastPlanColumnsToNullable(const ColumnsWithTypeAndName & cols, PlannerContextPtr & planner_context)
-{
-    ColumnsWithTypeAndName res;
-    for (const auto & col : cols)
-    {
-        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(col.name))
-        {
-            DataTypePtr type_to_check = col.type;
-            if (const auto * type_to_check_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type_to_check.get()))
-                type_to_check = type_to_check_low_cardinality->getDictionaryType();
-
-            if (type_to_check->canBeInsideNullable())
-            {
-                type_to_check = makeNullable(type_to_check);
-            }
-            res.push_back(ColumnWithTypeAndName(type_to_check->createColumn(), type_to_check, col.name));
-        }
-        else
-        {
-            res.push_back(col);
-        }
-    }
-    return res;
-}
-
 void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextPtr & planner_context, const FunctionOverloadResolverPtr & to_nullable_function)
 {
     auto cast_actions_dag = std::make_shared<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
@@ -1137,22 +1112,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     if (!join_constant && join_node.isOnJoinExpression())
     {
-        if (planner_context->getQueryContext()->getSettingsRef().join_use_nulls)
-        {
-            if (join_kind == JoinKind::Full)
-            {
-                left_plan_output_columns = joinCastPlanColumnsToNullable(left_plan_output_columns, planner_context);
-                right_plan_output_columns = joinCastPlanColumnsToNullable(right_plan_output_columns, planner_context);
-            }
-            else if (join_kind == JoinKind::Left)
-            {
-                right_plan_output_columns = joinCastPlanColumnsToNullable(right_plan_output_columns, planner_context);
-            }
-            else if (join_kind == JoinKind::Right)
-            {
-                left_plan_output_columns = joinCastPlanColumnsToNullable(left_plan_output_columns, planner_context);
-            }
-        }
         join_clauses_and_actions = buildJoinClausesAndActions(left_plan_output_columns,
             right_plan_output_columns,
             join_table_expression,

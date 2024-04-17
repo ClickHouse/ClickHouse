@@ -314,8 +314,10 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
-            if (support_mixed_join_condition)
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_mixed_join_condition;
+            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef().join_use_nulls;
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
             {
                 /// expression involves both tables.
                 /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
@@ -348,8 +350,10 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
-            if (support_mixed_join_condition)
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_mixed_join_condition;
+            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef().join_use_nulls;
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
             {
                 /// expression involves both tables.
                 const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
