@@ -1619,10 +1619,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         auto analyze_point_in_polygon = [&, this]() -> bool
         {
             /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
-
-            const auto atom_it = atom_map.find(func_name);
+            if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
+                return false;
             if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 return false;
+
+            const auto atom_it = atom_map.find(func_name);
 
             /// Analyze (x, y)
             RPNElement::MultiColumnsFunctionDescription column_desc;
