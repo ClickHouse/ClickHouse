@@ -10,6 +10,7 @@
 
 	        <allow_databases>
 	           <database>db1</database>
+			   <database>Memory</database>
 	        </allow_databases>
     	</restricted_user>
     </users>

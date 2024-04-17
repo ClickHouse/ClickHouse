@@ -205,7 +205,7 @@ namespace
         }
 
         /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
-        std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
+        static const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
             {AccessType::FILE, "File"},
             {AccessType::URL, "URL"},
             {AccessType::REMOTE, "Distributed"},
@@ -222,14 +222,31 @@ namespace
             {AccessType::AZURE, "AzureBlobStorage"}
         };
 
-        for (const auto & source_and_table_engine : source_and_table_engines)
+        /// Sync SOURCE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
+        if (access_control.doesTableEnginesRequireGrant())
         {
-            const auto & source = std::get<0>(source_and_table_engine);
-            const auto & table_engine = std::get<1>(source_and_table_engine);
-            if (res.isGranted(source) || res.isGranted(AccessType::TABLE_ENGINE, table_engine))
+            for (const auto & source_and_table_engine : source_and_table_engines)
             {
-                res.grant(source);
-                res.grant(AccessType::TABLE_ENGINE, table_engine);
+                const auto & source = std::get<0>(source_and_table_engine);
+                if (res.isGranted(source))
+                {
+                    const auto & table_engine = std::get<1>(source_and_table_engine);
+                    res.grant(AccessType::TABLE_ENGINE, table_engine);
+                }
+            }
+        }
+        else
+        {
+            /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
+            res.grant(AccessType::TABLE_ENGINE);
+            for (const auto & source_and_table_engine : source_and_table_engines)
+            {
+                const auto & source = std::get<0>(source_and_table_engine);
+                if (!res.isGranted(source))
+                {
+                    const auto & table_engine = std::get<1>(source_and_table_engine);
+                    res.revoke(AccessType::TABLE_ENGINE, table_engine);
+                }
             }
         }
 
@@ -575,9 +592,6 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
 
     if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
         flags &= ~AccessType::CLUSTER;
-
-    if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
-        flags &= ~AccessType::TABLE_ENGINE;
 
     if (!flags)
         return true;
