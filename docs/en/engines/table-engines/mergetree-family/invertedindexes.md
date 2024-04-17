@@ -209,7 +209,7 @@ is performance. In practice, users often search for multiple terms at once. For 
 '%big%'` can be evaluated directly using an inverted index by forming the union of the row id lists for terms "little" and "big". This also
 means that the parameter `GRANULARITY` supplied to index creation has no meaning (it may be removed from the syntax in the future).
 
-For those care about storage and I/O resources, `inverted_index_map_to_granule_id` can be set to `false`. Terms will map to granule ids
+For those care about storage and I/O resources, `inverted_index_map_to_granule_id` can be set to `true`. Terms will map to granule ids
 (mark numbers) instead of row ids in this case, which greatly reduces size of posting list files, at the cost of precision loss for queries
 with multiple terms.
 :::
