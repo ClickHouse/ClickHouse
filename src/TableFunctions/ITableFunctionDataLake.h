@@ -57,8 +57,10 @@ protected:
             auto object_storage = TableFunction::getObjectStorage(context, !is_insert_query);
             return Storage::getTableStructureFromData(object_storage, configuration, std::nullopt, context);
         }
-
-        return parseColumnsListFromString(configuration->structure, context);
+        else
+        {
+            return parseColumnsListFromString(configuration->structure, context);
+        }
     }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override

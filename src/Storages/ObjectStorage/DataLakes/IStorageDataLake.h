@@ -57,8 +57,8 @@ public:
         }
 
         return std::make_shared<IStorageDataLake<DataLakeMetadata, StorageSettings>>(
-            base_configuration, std::move(metadata), configuration, object_storage, engine_name_, context,
-            table_id_,
+            base_configuration, std::move(metadata), configuration, object_storage,
+            engine_name_, context, table_id_,
             columns_.empty() ? ColumnsDescription(schema_from_metadata) : columns_,
             constraints_, comment_, format_settings_);
     }
@@ -68,11 +68,23 @@ public:
     static ColumnsDescription getTableStructureFromData(
         ObjectStoragePtr object_storage_,
         ConfigurationPtr base_configuration,
-        const std::optional<FormatSettings> &,
+        const std::optional<FormatSettings> & format_settings_,
         ContextPtr local_context)
     {
         auto metadata = DataLakeMetadata::create(object_storage_, base_configuration, local_context);
-        return ColumnsDescription(metadata->getTableSchema());
+
+        auto schema_from_metadata = metadata->getTableSchema();
+        if (schema_from_metadata != NamesAndTypesList{})
+        {
+            return ColumnsDescription(std::move(schema_from_metadata));
+        }
+        else
+        {
+            ConfigurationPtr configuration = base_configuration->clone();
+            configuration->getPaths() = metadata->getDataFiles();
+            return Storage::getTableStructureFromData(
+                object_storage_, configuration, format_settings_, local_context);
+        }
     }
 
     void updateConfiguration(ContextPtr local_context) override
@@ -102,6 +114,10 @@ public:
         , base_configuration(base_configuration_)
         , current_metadata(std::move(metadata_))
     {
+        if (base_configuration->format == "auto")
+        {
+            base_configuration->format = Storage::configuration->format;
+        }
     }
 
 private:
