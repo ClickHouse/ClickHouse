@@ -2,6 +2,7 @@
 
 #include <Analyzer/FunctionNode.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
@@ -157,19 +158,32 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const
+void ConstantNode::convertToNullable()
 {
-    const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
-    return constant_column->structureEquals(*rhs_typed.constant_column);
+    constant_column = makeNullableSafe(constant_column);
+    constant_type = makeNullableSafe(constant_type);
 }
 
-void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+{
+    const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
+
+    if (constant_column->compareAt(0, 0, *rhs_typed.constant_column, 1) != 0)
+        return false;
+
+    return !compare_options.compare_types || constant_type->equals(*rhs_typed.constant_type);
+}
+
+void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
 {
     constant_column->updateHashFast(hash_state);
 
-    auto type_name = constant_type->getName();
-    hash_state.update(type_name.size());
-    hash_state.update(type_name);
+    if (compare_options.compare_types)
+    {
+        auto type_name = constant_type->getName();
+        hash_state.update(type_name.size());
+        hash_state.update(type_name);
+    }
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const

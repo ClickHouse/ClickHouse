@@ -16,8 +16,9 @@ ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
-dpkg -i package_folder/clickhouse-library-bridge_*.deb
+# Accept failure in the next two commands until 24.4 is released (for compatibility and Bugfix validation run)
+dpkg -i package_folder/clickhouse-odbc-bridge_*.deb || true
+dpkg -i package_folder/clickhouse-library-bridge_*.deb || true
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 

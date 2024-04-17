@@ -72,6 +72,8 @@ public:
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
     static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
+    /// Callback for any exception
+    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
 
 protected:
     // used to remove the sensitive information from exceptions if query_masking_rules is configured

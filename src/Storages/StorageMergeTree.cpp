@@ -2096,7 +2096,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = cloneAndLoadDataPart(
+        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
             src_part,
             TMP_PREFIX,
             dst_part_info,
@@ -2207,7 +2207,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
             src_part,
             TMP_PREFIX,
             dst_part_info,
@@ -2317,7 +2317,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
             try
             {
                 auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
-                calculated_checksums.checkEqual(part->checksums, true);
+                calculated_checksums.checkEqual(part->checksums, true, part->name);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
