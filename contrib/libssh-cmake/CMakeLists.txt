@@ -81,10 +81,6 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/server.c
 )
 
-if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
-    add_compile_definitions(USE_BORINGSSL=1)
-endif()
-
 configure_file(${LIB_SOURCE_DIR}/include/libssh/libssh_version.h.cmake ${LIB_BINARY_DIR}/include/libssh/libssh_version.h @ONLY)
 
 add_library(_ssh ${libssh_SRCS})
