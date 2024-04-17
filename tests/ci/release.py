@@ -7,6 +7,13 @@ The `gh` CLI preferred over the PyGithub to have an easy way to rollback bad
 release in command line by simple execution giving rollback commands
 
 On another hand, PyGithub is used for convenient getting commit's status from API
+
+To run this script on a freshly installed Ubuntu 22.04 system, it is enough to do the following commands:
+
+sudo apt install pip
+pip install requests boto3 github PyGithub
+sudo snap install gh
+gh auth login
 """
 
 

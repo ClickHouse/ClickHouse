@@ -35,7 +35,7 @@ public:
     ExternalDictionaryLibraryAPI::CStrings strings; // will pass pointer to lib
 
 private:
-    std::unique_ptr<ExternalDictionaryLibraryAPI::CString[]> ptr_holder = nullptr;
+    std::unique_ptr<ExternalDictionaryLibraryAPI::CString[]> ptr_holder;
     Container strings_holder;
 };
 
