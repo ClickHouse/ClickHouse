@@ -873,6 +873,7 @@ void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> & lock)
         ALLOW_ALLOCATIONS_IN_SCOPE;
         if (log_events)
             LOG_DEBUG(log, "Spawn loader worker #{} in {}", pool.workers, pool.name);
+        auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
         pool.thread_pool->scheduleOrThrowOnError([this, &pool] { worker(pool); });
     });
 }
