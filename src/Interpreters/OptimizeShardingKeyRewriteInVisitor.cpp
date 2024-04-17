@@ -157,7 +157,7 @@ public:
         {
             if (isTuple(constant->getResultType()))
             {
-                const auto & tuple = constant->getValue().get<Tuple &>();
+                const auto tuple = constant->getValue().get<Tuple>();
                 Tuple new_tuple;
                 new_tuple.reserve(tuple.size());
 
