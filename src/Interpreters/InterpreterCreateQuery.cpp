@@ -523,6 +523,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
     bool make_columns_nullable = mode <= LoadingStrictnessLevel::CREATE && context_->getSettingsRef().data_type_default_nullable;
+    bool has_columns_with_default_without_type = false;
 
     for (const auto & ast : columns_ast.children)
     {
@@ -597,14 +598,22 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                     setAlias(col_decl.default_expression->clone(), tmp_column_name));
             }
             else
+            {
+                has_columns_with_default_without_type = true;
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+            }
         }
     }
 
     Block defaults_sample_block;
-    /// set missing types and wrap default_expression's in a conversion-function if necessary
-    if (!default_expr_list->children.empty())
+    /// Set missing types and wrap default_expression's in a conversion-function if necessary.
+    /// We try to avoid that validation while restoring from a backup because it might be slow or troublesome
+    /// (for example, a default expression can contain dictGet() and that dictionary can access remote servers or
+    /// require different users to authenticate).
+    if (!default_expr_list->children.empty() && (has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
+    {
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
+    }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef().allow_suspicious_codecs;
@@ -1114,7 +1123,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.getTable(), getContext());
-        FunctionNameNormalizer().visit(query.get());
+        FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
         if (!create.is_dictionary && create_query.is_dictionary)
@@ -1184,7 +1193,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor().visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -1763,7 +1772,7 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
     bool is_create_database = create.database && !create.table;
