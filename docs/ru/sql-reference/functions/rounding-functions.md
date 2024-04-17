@@ -43,7 +43,7 @@ Alias: `truncate`.
 
 **Возвращаемое значение**
 
-- A data type of `input`.
+- Тип даных в `input`.
 
 **Пример**
 
