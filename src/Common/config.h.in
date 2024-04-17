@@ -55,11 +55,9 @@
 #cmakedefine01 USE_KRB5
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_ODBC
-#cmakedefine01 USE_BORINGSSL
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
-#cmakedefine01 USE_OPENSSL_INTREE
 #cmakedefine01 USE_ULID
 #cmakedefine01 FIU_ENABLE
 #cmakedefine01 USE_BCRYPT
