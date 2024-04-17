@@ -198,6 +198,10 @@ public:
         {
             leaveQueryNode(query_node);
         }
+        else if (auto * column_node = node->as<ColumnNode>())
+        {
+            leaveColumnNode(column_node);
+        }
     }
 
     void leaveFunctionNode(FunctionNode * function_node)
@@ -232,6 +236,24 @@ public:
         }
     }
 
+    void leaveColumnNode(ColumnNode * column_node)
+    {
+        auto column_source = column_node->getColumnSource();
+        if (auto * query_node = column_source->as<QueryNode>())
+        {
+            auto column_name = column_node->getColumnName();
+            for (const auto & projection_col   : query_node->getProjectionColumns())
+            {
+                if (projection_col.name == column_name)
+                {
+                    if (projection_col.type->isNullable())
+                        column_node->convertToNullable();
+                    break;
+                }
+            }
+        }
+    }
+
     void leaveQueryNode(QueryNode * query_node)
     {
         const auto & oldProjectionColumns = query_node->getProjectionColumns();
@@ -260,7 +282,7 @@ void RewriteJoinUseNullsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
 {
     if (context->getSettingsRef().join_use_nulls)
     {
-        LOG_ERROR(getLogger("RewriteJoinUseNullsPass"), "input query tree:\n{}", query_tree_node->dumpTree());
+        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "input query tree:\n{}", query_tree_node->dumpTree());
         std::unordered_map<QueryTreeNodePtr, std::unordered_set<QueryTreeNodePtr>> result_requiredColumns;
         /// Collect required columns for each table expression
         CollectTableRequiredColumnsVisitor table_required_columns_visitor(result_requiredColumns, context);
@@ -268,11 +290,11 @@ void RewriteJoinUseNullsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
         /// Rewrite table expressions to add a projection of converting columns to nullable if needed.
         RewriteJoinUseNullsTableExpressionVisitor table_expression_visitor(result_requiredColumns, context);
         table_expression_visitor.visit(query_tree_node);
-        LOG_ERROR(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsTableExpressionVisitor:\n{}", query_tree_node->dumpTree());
+        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsTableExpressionVisitor:\n{}", query_tree_node->dumpTree());
         /// Update eache node's nullability via backpropagation
         RewriteJoinUseNullsNullabilityVisitor nullability_visitor(context);
         nullability_visitor.visit(query_tree_node);
-        LOG_ERROR(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsNullabilityVisitor:\n{}", query_tree_node->dumpTree());
+        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsNullabilityVisitor:\n{}", query_tree_node->dumpTree());
     }
 }
 #endif
