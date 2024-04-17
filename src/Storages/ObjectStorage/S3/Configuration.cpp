@@ -79,7 +79,9 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
     auto s3_settings = getSettings(config, config_prefix, context, false); /// FIXME: add a setting
 
+    request_settings.updateFromSettingsIfChanged(context->getSettingsRef());
     auth_settings.updateFrom(s3_settings->auth_settings);
+
     s3_settings->auth_settings = auth_settings;
     s3_settings->request_settings = request_settings;
 
