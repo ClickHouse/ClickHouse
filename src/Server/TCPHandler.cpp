@@ -1246,8 +1246,10 @@ void TCPHandler::sendProfileEvents()
         state.profile_events_block_out->write(block);
         out->next();
 
-        LOG_TRACE(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
-            block.rows(), block.bytes(), stopwatch.elapsedMilliseconds());
+        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
+        if (elapsed_milliseconds > 100)
+            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+                block.rows(), block.bytes(), elapsed_milliseconds);
     }
 }
 
