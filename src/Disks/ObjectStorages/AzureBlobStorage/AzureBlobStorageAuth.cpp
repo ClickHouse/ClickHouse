@@ -6,6 +6,7 @@
 #include <Common/re2.h>
 #include <optional>
 #include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -161,12 +162,6 @@ template <class T>
 std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    if (config.has(config_prefix + ".use_workload_identity_for_azure"))
-    {
-        auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-        return std::make_unique<T>(url, workload_identity_credential);
-    }
-
     std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
         connection_str = config.getString(config_prefix + ".connection_string");
@@ -181,6 +176,12 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
             config.getString(config_prefix + ".account_key")
         );
         return std::make_unique<T>(url, storage_shared_key_credential);
+    }
+
+    if (config.getBool(config_prefix + ".use_workload_identity", false))
+    {
+        auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+        return std::make_unique<T>(url, workload_identity_credential);
     }
 
     auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
