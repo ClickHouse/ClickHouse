@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/IFunction.h>
 #include <Common/DateLUT.h>
@@ -38,8 +39,16 @@ struct ToStartOfTransform;
     TRANSFORM_DATE(Year)
     TRANSFORM_DATE(Quarter)
     TRANSFORM_DATE(Month)
-    TRANSFORM_DATE(Week)
 #undef TRANSFORM_DATE
+
+    template <>
+    struct ToStartOfTransform<IntervalKind::Kind::Week>
+    {
+        static auto execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), delta, /*week_mode*/ 1);
+        }
+    };
 
     template <>
     struct ToStartOfTransform<IntervalKind::Kind::Day>

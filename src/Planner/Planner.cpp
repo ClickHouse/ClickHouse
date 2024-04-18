@@ -3,8 +3,11 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Processors/QueryPlan/MaterializingCTEStep.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -15,6 +18,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>

@@ -403,13 +403,6 @@ The server successfully detected this situation and will download merged part fr
     M(S3PutObject, "Number of S3 API PutObject calls.") \
     M(S3GetObject, "Number of S3 API GetObject calls.") \
     \
-    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
-    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
-    M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
-    M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
-    M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
-    M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
-    \
     M(DiskS3DeleteObjects, "Number of DiskS3 API DeleteObject(s) calls.") \
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
@@ -440,6 +433,25 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.") \
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
+    \
+    M(AzureGetObject, "Number of Azure API GetObject calls.") \
+    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
+    M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
+    M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
+    M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
+    \
+    M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
+    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
+    M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
+    M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
+    M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.") \
+    \
+    M(ReadBufferFromAzureMicroseconds, "Time spent on reading from Azure.") \
+    M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.") \
+    M(ReadBufferFromAzureBytes, "Bytes read from Azure.") \
+    M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure") \
     \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.") \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.") \

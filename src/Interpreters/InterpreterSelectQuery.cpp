@@ -18,6 +18,7 @@
 #include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -413,8 +414,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (!options.is_subquery)
     {
         if (context->getSettingsRef().enable_global_with_statement)
-            ApplyWithAliasVisitor().visit(query_ptr);
-        ApplyWithSubqueryVisitor().visit(query_ptr);
+            ApplyWithAliasVisitor::visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -610,7 +611,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
-            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
+            StorageView::replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
@@ -630,7 +631,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
-            query_info.view_query = view->restoreViewName(getSelectQuery(), view_table);
+            query_info.view_query = StorageView::restoreViewName(getSelectQuery(), view_table);
             view = nullptr;
         }
 
@@ -1150,13 +1151,13 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
 {
     FillColumnDescription descr;
 
-    if (order_by_elem.fill_from)
-        std::tie(descr.fill_from, descr.fill_from_type) = getWithFillFieldValue(order_by_elem.fill_from, context);
-    if (order_by_elem.fill_to)
-        std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.fill_to, context);
+    if (order_by_elem.getFillFrom())
+        std::tie(descr.fill_from, descr.fill_from_type) = getWithFillFieldValue(order_by_elem.getFillFrom(), context);
+    if (order_by_elem.getFillTo())
+        std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.getFillTo(), context);
 
-    if (order_by_elem.fill_step)
-        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step, context);
+    if (order_by_elem.getFillStep())
+        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.getFillStep(), context);
     else
         descr.fill_step = order_by_elem.direction;
 
@@ -1202,8 +1203,8 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         std::shared_ptr<Collator> collator;
-        if (order_by_elem.collation)
-            collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
+        if (order_by_elem.getCollation())
+            collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.get<String>());
 
         if (order_by_elem.with_fill)
         {
@@ -2419,7 +2420,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         agg_count.create(place);
         SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
 
-        agg_count.set(place, *num_rows);
+        AggregateFunctionCount::set(place, *num_rows);
 
         auto column = ColumnAggregateFunction::create(func);
         column->insertFrom(place);
