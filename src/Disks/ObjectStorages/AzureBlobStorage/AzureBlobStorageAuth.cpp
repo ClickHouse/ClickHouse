@@ -198,7 +198,7 @@ Azure::Storage::Blobs::BlobClientOptions getAzureBlobClientOptions(const Poco::U
         else if (value == "ipv6")
             curl_options.IPResolve = CurlOptions::CURL_IPRESOLVE_V6;
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Undexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
     }
 
     Azure::Storage::Blobs::BlobClientOptions client_options;
