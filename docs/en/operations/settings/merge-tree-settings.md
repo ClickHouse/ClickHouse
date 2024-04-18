@@ -890,3 +890,5 @@ Default value: false
 
 Enables compact mode for binary serialization of discriminators in Variant data type.
 This mode allows to use significantly less memory for storing discriminators in parts when there is mostly one variant or a lot of NULL values.
+
+Default value: true
