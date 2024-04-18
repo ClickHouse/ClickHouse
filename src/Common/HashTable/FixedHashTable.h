@@ -114,6 +114,8 @@ template <typename Key, typename Cell, typename Size, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
+    size_t min = NUM_CELLS - 1;
+    size_t max = 0;
 
 protected:
     friend class const_iterator;
@@ -169,7 +171,7 @@ protected:
             ++ptr;
 
             /// Skip empty cells in the main buffer.
-            const auto * buf_end = container->buf + container->NUM_CELLS;
+            const auto * buf_end= container->buf + container->max + 1;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -294,14 +296,10 @@ public:
 
     const_iterator begin() const
     {
-        if (!buf)
+        if (!buf && min > max)
             return end();
 
-        const Cell * ptr = buf;
-        auto buf_end = buf + NUM_CELLS;
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-
+        const Cell * ptr = buf + min;
         return const_iterator(this, ptr);
     }
 
@@ -309,21 +307,17 @@ public:
 
     iterator begin()
     {
-        if (!buf)
+        if (!buf && min > max)
             return end();
 
-        Cell * ptr = buf;
-        auto buf_end = buf + NUM_CELLS;
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-
+        Cell * ptr = buf + min;
         return iterator(this, ptr);
     }
 
     const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        return const_iterator(this, buf ? buf + NUM_CELLS : buf);
+        return const_iterator(this, buf ? buf + max + 1: buf);
     }
 
     const_iterator cend() const
@@ -333,7 +327,7 @@ public:
 
     iterator end()
     {
-        return iterator(this, buf ? buf + NUM_CELLS : buf);
+        return iterator(this, buf ? buf + max + 1 : buf);
     }
 
 
@@ -350,6 +344,8 @@ public:
 
         new (&buf[x]) Cell(x, *this);
         inserted = true;
+        if (x < min) min = x;
+        if (x > max) max = x;
         this->increaseSize();
     }
 
