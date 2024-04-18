@@ -40,8 +40,7 @@ CREATE TABLE wikistat
     project LowCardinality(String),
     subproject LowCardinality(String),
     path String CODEC(ZSTD(3)),
-    hits UInt64 CODEC(ZSTD(3)),
-    size UInt64 CODEC(ZSTD(3))
+    hits UInt64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (path, time);
@@ -58,8 +57,7 @@ clickhouse-local --query "
     values[1] AS project,
     values[2] AS subproject,
     values[3] AS path,
-    (values[4])::UInt64 AS hits,
-    (values[5])::UInt64 AS size
+    (values[4])::UInt64 AS hits
   FROM file('pageviews*.gz', LineAsString)
   WHERE length(values) = 5 FORMAT Native
 " | clickhouse-client --query "INSERT INTO wikistat FORMAT Native"
