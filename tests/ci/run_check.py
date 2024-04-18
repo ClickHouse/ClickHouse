@@ -8,6 +8,7 @@ from github import Github
 
 # isort: on
 
+from cherry_pick import Labels
 from commit_status_helper import (
     CI_STATUS_NAME,
     create_ci_report,
@@ -26,7 +27,6 @@ from lambda_shared_package.lambda_shared.pr import (
 )
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS
-from cherry_pick import Labels
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -202,7 +202,7 @@ def main():
     ci_report_url = create_ci_report(pr_info, [])
     print("::notice ::Can run")
 
-    if not pr_info.is_merge_queue():
+    if not pr_info.is_merge_queue:
         # we need clean CI status for MQ to merge (no pending statuses)
         post_commit_status(
             commit,

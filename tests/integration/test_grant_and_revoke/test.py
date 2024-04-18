@@ -5,9 +5,8 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    user_configs=[
-        "configs/users.d/users.xml",
-    ],
+    main_configs=["configs/config.xml"],
+    user_configs=["configs/users.d/users.xml"],
 )
 
 
@@ -370,6 +369,7 @@ def test_implicit_create_temporary_table_grant():
     )
 
     instance.query("GRANT CREATE TABLE ON test.* TO A")
+    instance.query("GRANT TABLE ENGINE ON Memory TO A")
     instance.query("CREATE TEMPORARY TABLE tmp(name String)", user="A")
 
     instance.query("REVOKE CREATE TABLE ON *.* FROM A")
@@ -718,3 +718,74 @@ def test_current_grants_override():
             "REVOKE SELECT ON test.* FROM B",
         ]
     )
+
+
+def test_table_engine_grant_and_revoke():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
+    )
+
+    instance.query("GRANT TABLE ENGINE ON TinyLog TO A")
+
+    instance.query("CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A")
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT TABLE ENGINE ON TinyLog TO A",
+            "GRANT CREATE TABLE ON test.table1 TO A",
+        ]
+    )
+
+    instance.query("REVOKE TABLE ENGINE ON TinyLog FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog", user="A"
+    )
+
+    instance.query("REVOKE CREATE TABLE ON test.table1 FROM A")
+    instance.query("DROP TABLE test.table1")
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV([])
+
+
+def test_table_engine_and_source_grant():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+
+    instance.query("GRANT TABLE ENGINE ON PostgreSQL TO A")
+
+    instance.query(
+        """
+        CREATE TABLE test.table1(a Integer)
+        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
+        """,
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")
+
+    instance.query("REVOKE TABLE ENGINE ON PostgreSQL FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        """
+        CREATE TABLE test.table1(a Integer)
+        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
+        """,
+        user="A",
+    )
+
+    instance.query("GRANT SOURCES ON *.* TO A")
+
+    instance.query(
+        """
+        CREATE TABLE test.table1(a Integer)
+        engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
+        """,
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")
