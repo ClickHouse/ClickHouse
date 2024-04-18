@@ -1233,6 +1233,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    Stopwatch stopwatch;
     Block block;
     ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -1244,6 +1245,9 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
+
+        LOG_TRACE(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+            block.rows(), block.bytes(), stopwatch.elapsedMilliseconds());
     }
 }
 
