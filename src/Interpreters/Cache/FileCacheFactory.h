@@ -24,6 +24,8 @@ public:
 
         FileCacheSettings getSettings() const;
 
+        void setSettings(const FileCacheSettings & new_settings);
+
         const FileCachePtr cache;
         const std::string config_path;
 
@@ -52,6 +54,8 @@ public:
     FileCacheDataPtr getByName(const std::string & cache_name);
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
+
+    void clear();
 
 private:
     std::mutex mutex;

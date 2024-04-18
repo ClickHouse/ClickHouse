@@ -208,5 +208,6 @@ DataTypePtr FieldToDataType<on_error>::operator()(const bool &) const
 template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
+template class FieldToDataType<LeastSupertypeOnError::Variant>;
 
 }

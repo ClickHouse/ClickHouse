@@ -3,11 +3,13 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
@@ -21,10 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 
@@ -60,82 +58,35 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDis
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
     const String & object_key_prefix_,
-    const String & log_name,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
-    , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
+    , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
     , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
-{}
+{
+    data_source_description = DataSourceDescription{
+        .type = DataSourceType::ObjectStorage,
+        .object_storage_type = object_storage->getType(),
+        .metadata_type = metadata_storage->getType(),
+        .description = object_storage->getDescription(),
+        .is_encrypted = false,
+        .is_cached = object_storage->supportsCache(),
+    };
+}
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
 {
     return metadata_storage->getStorageObjects(local_path);
 }
 
-void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
-{
-    if (!metadata_storage->exists(local_path))
-        return;
-
-    /// Protect against concurrent delition of files (for example because of a merge).
-    if (metadata_storage->isFile(local_path))
-    {
-        try
-        {
-            paths_map.emplace_back(local_path, getStorageObjects(local_path));
-        }
-        catch (const Exception & e)
-        {
-            /// Unfortunately in rare cases it can happen when files disappear
-            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
-                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
-                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                return;
-
-            throw;
-        }
-    }
-    else
-    {
-        DirectoryIteratorPtr it;
-        try
-        {
-            it = iterateDirectory(local_path);
-        }
-        catch (const Exception & e)
-        {
-            /// Unfortunately in rare cases it can happen when files disappear
-            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
-                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
-                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                return;
-
-            throw;
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            if (e.code() == std::errc::no_such_file_or_directory)
-                return;
-            throw;
-        }
-
-        for (; it->isValid(); it->next())
-            DiskObjectStorage::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map);
-    }
-}
 
 bool DiskObjectStorage::exists(const String & path) const
 {
@@ -195,7 +146,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
             /// It may use s3-server-side copy
             auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
             auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
-            transaction->copyFile(from_file_path, to_file_path);
+            transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ {}, /*write_settings*/ {});
             transaction->commit();
     }
     else
@@ -257,12 +208,6 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    if (!id.starts_with(object_key_prefix))
-    {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_key_prefix, StackTrace().toString());
-        return false;
-    }
-
     auto object = StoredObject(id);
     return object_storage->exists(object);
 }
@@ -386,6 +331,7 @@ void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
     object_storage->shutdown();
+    metadata_storage->shutdown();
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
@@ -485,7 +431,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
     return std::make_shared<DiskObjectStorage>(
         getName(),
         object_key_prefix,
-        getName(),
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
@@ -524,10 +469,9 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    auto storage_objects = metadata_storage->getStorageObjects(path);
+    const auto storage_objects = metadata_storage->getStorageObjects(path);
 
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
-
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 

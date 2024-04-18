@@ -8,6 +8,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
+#include <Common/formatReadable.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -105,7 +106,7 @@ public:
             if (disk->reserved_bytes < size)
             {
                 disk->reserved_bytes = 0;
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+                LOG_ERROR(getLogger("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
             }
             else
             {
@@ -113,7 +114,7 @@ public:
             }
 
             if (disk->reservation_count == 0)
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+                LOG_ERROR(getLogger("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
             else
                 --disk->reservation_count;
         }
@@ -151,7 +152,6 @@ public:
         else
             return dir_path / entry->path().filename();
     }
-
 
     String name() const override { return entry->path().filename(); }
 
@@ -373,7 +373,7 @@ void DiskLocal::removeDirectory(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != rmdir(fs_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot rmdir {}", fs_path);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
 }
 
 void DiskLocal::removeRecursive(const String & path)
@@ -474,7 +474,7 @@ DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_fre
     : IDisk(name_, config, config_prefix)
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
-    , logger(&Poco::Logger::get("DiskLocal"))
+    , logger(getLogger("DiskLocal"))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
 }
@@ -493,7 +493,7 @@ DiskLocal::DiskLocal(const String & name_, const String & path_)
     : IDisk(name_)
     , disk_path(path_)
     , keep_free_space_bytes(0)
-    , logger(&Poco::Logger::get("DiskLocal"))
+    , logger(getLogger("DiskLocal"))
     , data_source_description(getLocalDataSourceDescription(disk_path))
 {
 }
@@ -581,7 +581,7 @@ try
         auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
-        buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
+        buf->write(data.data, DiskWriteCheckData::PAGE_SIZE_IN_BYTES);
         buf->finalize();
         buf->sync();
     }
@@ -727,7 +727,8 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map) -> DiskPtr
+        const DisksMap & map,
+        bool, bool) -> DiskPtr
     {
         String path;
         UInt64 keep_free_space_bytes;

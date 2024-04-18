@@ -2,12 +2,11 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Interpreters/Context.h>
-#include <Disks/TemporaryFileOnDisk.h>
+#include <Core/Block.h>
 #include <Disks/IVolume.h>
-#include <Common/CurrentMetrics.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace CurrentMetrics
@@ -27,6 +26,17 @@ using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 class TemporaryFileStream;
 using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
 
+class FileCache;
+
+struct TemporaryDataOnDiskSettings
+{
+    /// Max size on disk, if 0 there will be no limit
+    size_t max_size_on_disk = 0;
+
+    /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
+    String compression_codec = "LZ4";
+};
+
 /*
  * Used to account amount of temporary data written to disk.
  * If limit is set, throws exception if limit is exceeded.
@@ -42,21 +52,29 @@ public:
         std::atomic<size_t> uncompressed_size;
     };
 
-    explicit TemporaryDataOnDiskScope(VolumePtr volume_, size_t limit_)
-        : volume(std::move(volume_)), limit(limit_)
+    explicit TemporaryDataOnDiskScope(VolumePtr volume_, TemporaryDataOnDiskSettings settings_)
+        : volume(std::move(volume_))
+        , settings(std::move(settings_))
     {}
 
-    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * file_cache_, size_t limit_)
-        : volume(std::move(volume_)), file_cache(file_cache_), limit(limit_)
+    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * file_cache_, TemporaryDataOnDiskSettings settings_)
+        : volume(std::move(volume_))
+        , file_cache(file_cache_)
+        , settings(std::move(settings_))
     {}
 
-    explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, size_t limit_)
-        : parent(std::move(parent_)), volume(parent->volume), file_cache(parent->file_cache), limit(limit_)
+    explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, TemporaryDataOnDiskSettings settings_)
+        : parent(std::move(parent_))
+        , volume(parent->volume)
+        , file_cache(parent->file_cache)
+        , settings(std::move(settings_))
     {}
 
     /// TODO: remove
     /// Refactor all code that uses volume directly to use TemporaryDataOnDisk.
     VolumePtr getVolume() const { return volume; }
+
+    const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 
 protected:
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
@@ -67,14 +85,14 @@ protected:
     FileCache * file_cache = nullptr;
 
     StatAtomic stat;
-    size_t limit = 0;
+    const TemporaryDataOnDiskSettings settings;
 };
 
 /*
  * Holds the set of temporary files.
  * New file stream is created with `createStream`.
  * Streams are owned by this object and will be deleted when it is deleted.
- * It's a leaf node in temorarty data scope tree.
+ * It's a leaf node in temporary data scope tree.
  */
 class TemporaryDataOnDisk : private TemporaryDataOnDiskScope
 {

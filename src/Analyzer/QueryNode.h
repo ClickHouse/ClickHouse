@@ -99,6 +99,11 @@ public:
         return settings_changes;
     }
 
+    void clearSettingsChanges()
+    {
+        settings_changes.clear();
+    }
+
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
     {
@@ -217,6 +222,18 @@ public:
     void setIsGroupByAll(bool is_group_by_all_value)
     {
         is_group_by_all = is_group_by_all_value;
+    }
+
+    /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
+    bool isOrderByAll() const
+    {
+        return is_order_by_all;
+    }
+
+    /// Set query node ORDER BY ALL modifier value
+    void setIsOrderByAll(bool is_order_by_all_value)
+    {
+        is_order_by_all = is_order_by_all_value;
     }
 
     /// Returns true if query node WITH section is not empty, false otherwise
@@ -572,9 +589,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState &) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -590,6 +607,7 @@ private:
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
+    bool is_order_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;

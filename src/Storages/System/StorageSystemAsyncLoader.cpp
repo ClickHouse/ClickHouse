@@ -45,35 +45,36 @@ namespace
     }
 }
 
-NamesAndTypesList StorageSystemAsyncLoader::getNamesAndTypes()
+ColumnsDescription StorageSystemAsyncLoader::getColumnsDescription()
 {
-    return {
-        { "job",                std::make_shared<DataTypeString>() },
-        { "job_id",             std::make_shared<DataTypeUInt64>() },
-        { "dependencies",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-        { "dependencies_left",  std::make_shared<DataTypeUInt64>() },
-        { "status",             std::make_shared<DataTypeEnum8>(getTypeEnumValues<LoadStatus>()) },
-        { "is_executing",       std::make_shared<DataTypeUInt8>() },
-        { "is_blocked",         std::make_shared<DataTypeUInt8>() },
-        { "is_ready",           std::make_shared<DataTypeUInt8>() },
-        { "elapsed",            std::make_shared<DataTypeFloat64>()},
-        { "pool_id",            std::make_shared<DataTypeUInt64>() },
-        { "pool",               std::make_shared<DataTypeString>() },
-        { "priority",           std::make_shared<DataTypeInt64>() },
-        { "execution_pool_id",  std::make_shared<DataTypeUInt64>() },
-        { "execution_pool",     std::make_shared<DataTypeString>() },
-        { "execution_priority", std::make_shared<DataTypeInt64>() },
-        { "ready_seqno",        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
-        { "waiters",            std::make_shared<DataTypeUInt64>() },
-        { "exception",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()) },
-        { "schedule_time",      std::make_shared<DataTypeDateTime64>(TIME_SCALE) },
-        { "enqueue_time",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
-        { "start_time",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
-        { "finish_time",        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)) },
+    return ColumnsDescription
+    {
+        {"job", std::make_shared<DataTypeString>(), "Job name (may be not unique)."},
+        {"job_id", std::make_shared<DataTypeUInt64>(), "Unique ID of the job."},
+        {"dependencies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "List of IDs of jobs that should be done before this job."},
+        {"dependencies_left", std::make_shared<DataTypeUInt64>(), "Current number of dependencies left to be done."},
+        {"status", std::make_shared<DataTypeEnum8>(getTypeEnumValues<LoadStatus>()), "Current load status of a job: PENDING: Load job is not started yet. OK: Load job executed and was successful. FAILED: Load job executed and failed. CANCELED: Load job is not going to be executed due to removal or dependency failure."},
+        {"is_executing", std::make_shared<DataTypeUInt8>(), "The job is currently being executed by a worker."},
+        {"is_blocked", std::make_shared<DataTypeUInt8>(), "The job waits for its dependencies to be done."},
+        {"is_ready", std::make_shared<DataTypeUInt8>(), "The job is ready to be executed and waits for a worker."},
+        {"elapsed", std::make_shared<DataTypeFloat64>(), "Seconds elapsed since start of execution. Zero if job is not started. Total execution time if job finished."},
+        {"pool_id", std::make_shared<DataTypeUInt64>(), "ID of a pool currently assigned to the job."},
+        {"pool", std::make_shared<DataTypeString>(), "Name of `pool_id` pool."},
+        {"priority", std::make_shared<DataTypeInt64>(), "Priority of `pool_id` pool."},
+        {"execution_pool_id", std::make_shared<DataTypeUInt64>(), "ID of a pool the job is executed in. Equals initially assigned pool before execution starts."},
+        {"execution_pool", std::make_shared<DataTypeString>(), "Name of `execution_pool_id` pool."},
+        {"execution_priority", std::make_shared<DataTypeInt64>(), "Priority of execution_pool_id pool."},
+        {"ready_seqno", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Not null for ready jobs. Worker pulls the next job to be executed from a ready queue of its pool. If there are multiple ready jobs, then job with the lowest value of `ready_seqno` is picked."},
+        {"waiters", std::make_shared<DataTypeUInt64>(), "The number of threads waiting on this job."},
+        {"exception", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Not null for failed and canceled jobs. Holds error message raised during query execution or error leading to cancelling of this job along with dependency failure chain of job names."},
+        {"schedule_time", std::make_shared<DataTypeDateTime64>(TIME_SCALE), "Time when job was created and scheduled to be executed (usually with all its dependencies)."},
+        {"enqueue_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)), "Time when job became ready and was enqueued into a ready queue of it's pool. Null if the job is not ready yet."},
+        {"start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)), "Time when worker dequeues the job from ready queue and start its execution. Null if the job is not started yet."},
+        {"finish_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)), "Time when job execution is finished. Null if the job is not finished yet."},
     };
 }
 
-void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     TimePoint now = std::chrono::system_clock::now();
 

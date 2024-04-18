@@ -4,8 +4,8 @@ namespace DB
 {
 
 TTLDeleteAlgorithm::TTLDeleteAlgorithm(
-    const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
-    : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
+    const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
+    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
 {
     if (!isMinTTLExpired())
         new_ttl_info = old_ttl_info;
@@ -19,8 +19,8 @@ void TTLDeleteAlgorithm::execute(Block & block)
     if (!block || !isMinTTLExpired())
         return;
 
-    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
-    auto where_column = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
     MutableColumns result_columns;
     const auto & column_names = block.getNames();
@@ -54,7 +54,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
 
 void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    if (description.where_expression)
+    if (ttl_expressions.where_expression)
         data_part->ttl_infos.rows_where_ttl[description.result_column] = new_ttl_info;
     else
         data_part->ttl_infos.table_ttl = new_ttl_info;

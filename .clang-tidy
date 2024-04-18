@@ -5,128 +5,126 @@
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
-# TODO: Once clang(-tidy) 17 is the minimum, we can convert this list to YAML
-# See https://releases.llvm.org/17.0.1/tools/clang/tools/extra/docs/ReleaseNotes.html#improvements-to-clang-tidy
+HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 
-# TODO Let clang-tidy check headers in further directories
-#      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
-HeaderFilterRegex: '^.*/(base)/.*(h|hpp)$'
+Checks: [
+  '*',
 
-Checks: '*,
-    -abseil-*,
+  '-abseil-*',
 
-    -altera-*,
+  '-altera-*',
 
-    -android-*,
+  '-android-*',
 
-    -bugprone-assignment-in-if-condition,
-    -bugprone-branch-clone,
-    -bugprone-easily-swappable-parameters,
-    -bugprone-exception-escape,
-    -bugprone-implicit-widening-of-multiplication-result,
-    -bugprone-narrowing-conversions,
-    -bugprone-not-null-terminated-result,
-    -bugprone-reserved-identifier, # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
-    -bugprone-unchecked-optional-access,
+  '-bugprone-assignment-in-if-condition',
+  '-bugprone-branch-clone',
+  '-bugprone-easily-swappable-parameters',
+  '-bugprone-exception-escape',
+  '-bugprone-forward-declaration-namespace',
+  '-bugprone-implicit-widening-of-multiplication-result',
+  '-bugprone-narrowing-conversions',
+  '-bugprone-not-null-terminated-result',
+  '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
+  '-bugprone-unchecked-optional-access',
 
-    -cert-dcl16-c,
-    -cert-dcl37-c,
-    -cert-dcl51-cpp,
-    -cert-err58-cpp,
-    -cert-msc32-c,
-    -cert-msc51-cpp,
-    -cert-oop54-cpp,
-    -cert-oop57-cpp,
+  '-cert-dcl16-c',
+  '-cert-dcl37-c',
+  '-cert-dcl51-cpp',
+  '-cert-err58-cpp',
+  '-cert-msc32-c',
+  '-cert-msc51-cpp',
+  '-cert-oop54-cpp',
+  '-cert-oop57-cpp',
 
-    -clang-analyzer-unix.Malloc,
+  '-clang-analyzer-optin.performance.Padding',
 
-    -cppcoreguidelines-*, # impractical in a codebase as large as ClickHouse, also slow
+  '-clang-analyzer-unix.Malloc',
 
-    -darwin-*,
+  '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
-    -fuchsia-*,
+  '-darwin-*',
 
-    -google-build-using-namespace,
-    -google-readability-braces-around-statements,
-    -google-readability-casting,
-    -google-readability-function-size,
-    -google-readability-namespace-comments,
-    -google-readability-todo,
+  '-fuchsia-*',
 
-    -hicpp-avoid-c-arrays,
-    -hicpp-avoid-goto,
-    -hicpp-braces-around-statements,
-    -hicpp-explicit-conversions,
-    -hicpp-function-size,
-    -hicpp-member-init,
-    -hicpp-move-const-arg,
-    -hicpp-multiway-paths-covered,
-    -hicpp-named-parameter,
-    -hicpp-no-array-decay,
-    -hicpp-no-assembler,
-    -hicpp-no-malloc,
-    -hicpp-signed-bitwise,
-    -hicpp-special-member-functions,
-    -hicpp-uppercase-literal-suffix,
-    -hicpp-use-auto,
-    -hicpp-use-emplace,
-    -hicpp-vararg,
+  '-google-build-using-namespace',
+  '-google-readability-braces-around-statements',
+  '-google-readability-casting',
+  '-google-readability-function-size',
+  '-google-readability-namespace-comments',
+  '-google-readability-todo',
 
-    -linuxkernel-*,
+  '-hicpp-avoid-c-arrays',
+  '-hicpp-avoid-goto',
+  '-hicpp-braces-around-statements',
+  '-hicpp-explicit-conversions',
+  '-hicpp-function-size',
+  '-hicpp-member-init',
+  '-hicpp-move-const-arg',
+  '-hicpp-multiway-paths-covered',
+  '-hicpp-named-parameter',
+  '-hicpp-no-array-decay',
+  '-hicpp-no-assembler',
+  '-hicpp-no-malloc',
+  '-hicpp-signed-bitwise',
+  '-hicpp-special-member-functions',
+  '-hicpp-uppercase-literal-suffix',
+  '-hicpp-use-auto',
+  '-hicpp-use-emplace',
+  '-hicpp-vararg',
 
-    -llvm-*,
+  '-linuxkernel-*',
 
-    -llvmlibc-*,
+  '-llvm-*',
 
-    -openmp-*,
+  '-llvmlibc-*',
 
-    -misc-const-correctness,
-    -misc-include-cleaner, # useful but far too many occurrences
-    -misc-no-recursion,
-    -misc-non-private-member-variables-in-classes,
-    -misc-confusable-identifiers, # useful but slooow
-    -misc-use-anonymous-namespace,
+  '-openmp-*',
 
-    -modernize-avoid-c-arrays,
-    -modernize-concat-nested-namespaces,
-    -modernize-macro-to-enum,
-    -modernize-pass-by-value,
-    -modernize-return-braced-init-list,
-    -modernize-use-auto,
-    -modernize-use-default-member-init,
-    -modernize-use-emplace,
-    -modernize-use-nodiscard,
-    -modernize-use-override,
-    -modernize-use-trailing-return-type,
+  '-misc-const-correctness',
+  '-misc-include-cleaner', # useful but far too many occurrences
+  '-misc-no-recursion',
+  '-misc-non-private-member-variables-in-classes',
+  '-misc-confusable-identifiers', # useful but slooo
+  '-misc-use-anonymous-namespace',
 
-    -performance-inefficient-string-concatenation,
-    -performance-no-int-to-ptr,
-    -performance-avoid-endl,
-    -performance-unnecessary-value-param,
+  '-modernize-avoid-c-arrays',
+  '-modernize-concat-nested-namespaces',
+  '-modernize-macro-to-enum',
+  '-modernize-pass-by-value',
+  '-modernize-return-braced-init-list',
+  '-modernize-use-auto',
+  '-modernize-use-default-member-init',
+  '-modernize-use-emplace',
+  '-modernize-use-nodiscard',
+  '-modernize-use-trailing-return-type',
 
-    -portability-simd-intrinsics,
+  '-performance-inefficient-string-concatenation',
+  '-performance-no-int-to-ptr',
+  '-performance-avoid-endl',
+  '-performance-unnecessary-value-param',
 
-    -readability-avoid-unconditional-preprocessor-if,
-    -readability-braces-around-statements,
-    -readability-convert-member-functions-to-static,
-    -readability-else-after-return,
-    -readability-function-cognitive-complexity,
-    -readability-function-size,
-    -readability-identifier-length,
-    -readability-identifier-naming, # useful but too slow
-    -readability-implicit-bool-conversion,
-    -readability-isolate-declaration,
-    -readability-magic-numbers,
-    -readability-named-parameter,
-    -readability-redundant-declaration,
-    -readability-simplify-boolean-expr,
-    -readability-static-accessed-through-instance,
-    -readability-suspicious-call-argument,
-    -readability-uppercase-literal-suffix,
-    -readability-use-anyofallof,
+  '-portability-simd-intrinsics',
 
-    -zircon-*,
-'
+  '-readability-avoid-unconditional-preprocessor-if',
+  '-readability-braces-around-statements',
+  '-readability-convert-member-functions-to-static',
+  '-readability-else-after-return',
+  '-readability-function-cognitive-complexity',
+  '-readability-function-size',
+  '-readability-identifier-length',
+  '-readability-identifier-naming', # useful but too slow
+  '-readability-implicit-bool-conversion',
+  '-readability-isolate-declaration',
+  '-readability-magic-numbers',
+  '-readability-named-parameter',
+  '-readability-redundant-declaration',
+  '-readability-simplify-boolean-expr',
+  '-readability-suspicious-call-argument',
+  '-readability-uppercase-literal-suffix',
+  '-readability-use-anyofallof',
+
+  '-zircon-*'
+]
 
 WarningsAsErrors: '*'
 

@@ -24,6 +24,12 @@ void deserializeFromString(const SerializationCustomSimpleText & domain, IColumn
     domain.deserializeText(column, istr, settings, true);
 }
 
+bool tryDeserializeFromString(const SerializationCustomSimpleText & domain, IColumn & column, const String & s, const FormatSettings & settings)
+{
+    ReadBufferFromString istr(s);
+    return domain.tryDeserializeText(column, istr, settings, true);
+}
+
 }
 
 namespace DB
@@ -34,11 +40,31 @@ SerializationCustomSimpleText::SerializationCustomSimpleText(const Serialization
 {
 }
 
+bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, bool whole) const
+{
+    try
+    {
+        deserializeText(column, istr, settings, whole);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 void SerializationCustomSimpleText::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
     readStringUntilEOF(str, istr);
     deserializeFromString(*this, column, str, settings);
+}
+
+bool SerializationCustomSimpleText::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    readStringUntilEOF(str, istr);
+    return tryDeserializeFromString(*this, column, str, settings);
 }
 
 void SerializationCustomSimpleText::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -53,6 +79,13 @@ void SerializationCustomSimpleText::deserializeTextEscaped(IColumn & column, Rea
     deserializeFromString(*this, column, str, settings);
 }
 
+bool SerializationCustomSimpleText::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    readEscapedString(str, istr);
+    return tryDeserializeFromString(*this, column, str, settings);
+}
+
 void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeQuotedString(serializeToString(*this, column, row_num, settings), ostr);
@@ -63,6 +96,14 @@ void SerializationCustomSimpleText::deserializeTextQuoted(IColumn & column, Read
     String str;
     readQuotedString(str, istr);
     deserializeFromString(*this, column, str, settings);
+}
+
+bool SerializationCustomSimpleText::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    if (!tryReadQuotedString(str, istr))
+        return false;
+    return tryDeserializeFromString(*this, column, str, settings);
 }
 
 void SerializationCustomSimpleText::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -77,6 +118,13 @@ void SerializationCustomSimpleText::deserializeTextCSV(IColumn & column, ReadBuf
     deserializeFromString(*this, column, str, settings);
 }
 
+bool SerializationCustomSimpleText::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    readCSVStringInto<String, false, false>(str, istr, settings.csv);
+    return tryDeserializeFromString(*this, column, str, settings);
+}
+
 void SerializationCustomSimpleText::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeJSONString(serializeToString(*this, column, row_num, settings), ostr, settings);
@@ -85,8 +133,16 @@ void SerializationCustomSimpleText::serializeTextJSON(const IColumn & column, si
 void SerializationCustomSimpleText::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readJSONString(str, istr);
+    readJSONString(str, istr, settings.json);
     deserializeFromString(*this, column, str, settings);
+}
+
+bool SerializationCustomSimpleText::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    if (!tryReadJSONStringInto(str, istr, settings.json))
+        return false;
+    return tryDeserializeFromString(*this, column, str, settings);
 }
 
 void SerializationCustomSimpleText::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/Field.h>
+#include <Storages/ColumnsDescription.h>
 
 
 /// Call this function on crash.
@@ -27,10 +28,9 @@ struct CrashLogElement
     Array trace_full;
 
     static std::string name() { return "CrashLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class CrashLog : public SystemLog<CrashLogElement>

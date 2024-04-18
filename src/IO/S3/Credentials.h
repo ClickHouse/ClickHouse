@@ -22,6 +22,8 @@ inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
 inline static constexpr uint64_t DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 100;
+inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_TIMEOUT = 5;
+inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_MAX_REQUESTS = 100;
 
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
@@ -70,7 +72,7 @@ private:
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
 std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
@@ -88,7 +90,7 @@ protected:
 private:
     std::shared_ptr<AWSEC2MetadataClient> client;
     bool use_secure_pull;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
 class AWSInstanceProfileCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -107,7 +109,7 @@ private:
 
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;
     Int64 load_frequency_ms;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
 class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -133,7 +135,7 @@ private:
     Aws::String session_name;
     Aws::String token;
     bool initialized = false;
-    Poco::Logger * logger;
+    LoggerPtr logger;
     uint64_t expiration_window_seconds;
 };
 
@@ -163,7 +165,7 @@ private:
 
     DB::S3::PocoHTTPClientConfiguration aws_client_configuration;
     uint64_t expiration_window_seconds;
-    Poco::Logger * logger;
+    LoggerPtr logger;
 
     void Reload() override;
     void refreshIfExpired();

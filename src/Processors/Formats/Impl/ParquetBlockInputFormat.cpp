@@ -570,7 +570,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
         // We may be able to schedule more work now, but can't call scheduleMoreWorkIfNeeded() right
         // here because we're running on the same thread pool, so it'll deadlock if thread limit is
-        // reached. Wake up generate() instead.
+        // reached. Wake up read() instead.
         condvar.notify_all();
     };
 
@@ -579,7 +579,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     auto batch = row_group_batch.record_batch_reader->Next();
     if (!batch.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
 
     if (!*batch)
     {
@@ -601,7 +601,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &res.block_missing_values : nullptr;
-    row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(res.chunk, *tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
+    res.chunk = row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(*tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
 
     lock.lock();
 
@@ -637,7 +637,7 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     }
 }
 
-Chunk ParquetBlockInputFormat::generate()
+Chunk ParquetBlockInputFormat::read()
 {
     initializeIfNeeded();
 

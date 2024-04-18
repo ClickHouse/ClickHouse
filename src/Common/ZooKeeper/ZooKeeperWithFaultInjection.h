@@ -59,9 +59,10 @@ private:
 class ZooKeeperWithFaultInjection
 {
     zkutil::ZooKeeper::Ptr keeper;
+
     std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
     const UInt64 seed = 0;
 
     std::vector<std::string> session_ephemeral_nodes;
@@ -86,7 +87,7 @@ public:
         double fault_injection_probability,
         UInt64 fault_injection_seed,
         std::string name_,
-        Poco::Logger * logger_);
+        LoggerPtr logger_);
 
     explicit ZooKeeperWithFaultInjection(zkutil::ZooKeeper::Ptr const & keeper_) : keeper(keeper_) { }
     static ZooKeeperWithFaultInjection::Ptr createInstance(
@@ -94,7 +95,7 @@ public:
         UInt64 fault_injection_seed,
         zkutil::ZooKeeper::Ptr const & zookeeper,
         std::string name,
-        Poco::Logger * logger)
+        LoggerPtr logger)
     {
         /// validate all parameters here, constructor just accept everything
         if (fault_injection_probability < 0.0)
@@ -203,13 +204,15 @@ public:
 
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths);
 
+    bool anyExists(const std::vector<std::string> & paths);
+
     std::string create(const std::string & path, const std::string & data, int32_t mode);
 
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
 
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode);
 
-    Coordination::Responses multi(const Coordination::Requests & requests);
+    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false);
 
     void createIfNotExists(const std::string & path, const std::string & data);
 
@@ -239,9 +242,9 @@ public:
 
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
 
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
-    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
     ///
     /// mirror ZooKeeper interface: Async functions

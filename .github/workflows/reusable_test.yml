@@ -38,7 +38,7 @@ name: Testing workflow
       working-directory:
         description: sets custom working directory
         type: string
-        default: ""
+        default: "$GITHUB_WORKSPACE/tests/ci"
     secrets:
       secret_envs:
         description: if given, it's passed to the environments
@@ -96,22 +96,18 @@ jobs:
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.test_name}}'
       - name: Run
         run: |
-          if [ -n "${{ inputs.working-directory }}" ]; then
-            cd "${{ inputs.working-directory }}"
-          else
-            cd "$GITHUB_WORKSPACE/tests/ci"
-          fi
-          if [ -n "$(echo '${{ inputs.run_command }}' | tr -d '\n')" ]; then
-            echo "Running command from workflow input"
-            ${{ inputs.run_command }}
-          else
-            echo "Running command from job config"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --run --job-name '${{inputs.test_name}}'
-          fi
+          cd "${{ inputs.working-directory }}"
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" \
+            --infile ${{ toJson(inputs.data) }} \
+            --job-name '${{inputs.test_name}}' \
+            --run \
+            --run-command '''${{inputs.run_command}}'''
       - name: Post run
+        if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.test_name}}'
       - name: Mark as done
+        if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.test_name}}' --batch ${{matrix.batch}}
       - name: Clean

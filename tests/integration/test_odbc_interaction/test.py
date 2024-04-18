@@ -14,7 +14,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_odbc_drivers=True,
-    with_mysql=True,
+    with_mysql8=True,
     with_postgres=True,
     main_configs=["configs/openssl.xml", "configs/odbc_logging.xml"],
     dictionaries=[
@@ -55,13 +55,13 @@ def get_mysql_conn():
                 conn = pymysql.connect(
                     user="root",
                     password="clickhouse",
-                    host=cluster.mysql_ip,
-                    port=cluster.mysql_port,
+                    host=cluster.mysql8_ip,
+                    port=cluster.mysql8_port,
                 )
             else:
                 conn.ping(reconnect=True)
             logging.debug(
-                f"MySQL Connection establised: {cluster.mysql_ip}:{cluster.mysql_port}"
+                f"MySQL Connection establised: {cluster.mysql8_ip}:{cluster.mysql8_port}"
             )
             return conn
         except Exception as e:
@@ -230,7 +230,7 @@ def test_mysql_simple_select_works(started_cluster):
 
     node1.query(
         """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
 """.format(
             table_name, table_name
         )

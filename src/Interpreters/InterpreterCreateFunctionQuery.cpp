@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
@@ -6,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 
 
@@ -19,6 +21,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
+    FunctionNameNormalizer::visit(query_ptr.get());
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     ASTCreateFunctionQuery & create_function_query = updated_query_ptr->as<ASTCreateFunctionQuery &>();
 
@@ -49,6 +52,15 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     UserDefinedSQLFunctionFactory::instance().registerFunction(current_context, function_name, updated_query_ptr, throw_if_exists, replace_if_exists);
 
     return {};
+}
+
+void registerInterpreterCreateFunctionQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateFunctionQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateFunctionQuery", create_fn);
 }
 
 }

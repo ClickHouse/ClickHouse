@@ -97,8 +97,8 @@ c1	Array(Nullable(Bool))
 []
 [NULL]
 [false]
-c1	Nullable(String)					
-(1, 2, 3)
+c1	Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64))					
+(1,2,3)
 c1	Nullable(String)					
 123.123
 c1	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					

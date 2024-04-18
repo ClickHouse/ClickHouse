@@ -82,6 +82,30 @@ def test_postgres_select_insert(started_cluster):
     cursor.execute(f"DROP TABLE {table_name} ")
 
 
+def test_postgres_addresses_expr(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    table_name = "test_table"
+    table = f"""postgresql(`postgres5`)"""
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
+
+    node1.query(
+        f"""
+        INSERT INTO TABLE FUNCTION {table}
+        SELECT number, concat('name_', toString(number)), 3 from numbers(10000)"""
+    )
+    check1 = f"SELECT count() FROM {table}"
+    check2 = f"SELECT Sum(c) FROM {table}"
+    check3 = f"SELECT count(c) FROM {table} WHERE a % 2 == 0"
+    check4 = f"SELECT count() FROM {table} WHERE b LIKE concat('name_', toString(1))"
+    assert (node1.query(check1)).rstrip() == "10000"
+    assert (node1.query(check2)).rstrip() == "30000"
+    assert (node1.query(check3)).rstrip() == "5000"
+    assert (node1.query(check4)).rstrip() == "1"
+
+    cursor.execute(f"DROP TABLE {table_name} ")
+
+
 def test_postgres_conversions(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute(f"DROP TABLE IF EXISTS test_types")

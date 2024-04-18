@@ -31,6 +31,10 @@ This reduces maintenance effort and avoids redundancy.
 
 ## Configuration Settings and Usage
 
+:::note
+In ClickHouse Cloud, you must use [query level settings](/en/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/en/operations/configuration-files) is currently not supported.
+:::
+
 Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
 current session should utilize the query cache. For example, the first execution of query
 
@@ -63,8 +67,7 @@ SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
 
 For maximum control, it is generally recommended to provide settings `use_query_cache`, `enable_writes_to_query_cache` and
 `enable_reads_from_query_cache` only with specific queries. It is also possible to enable caching at user or profile level (e.g. via `SET
-use_query_cache = true`) but one should keep in mind that all `SELECT` queries including monitoring or debugging queries to system tables
-may return cached results then.
+use_query_cache = true`) but one should keep in mind that all `SELECT` queries may return cached results then.
 
 The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
 [system.query_cache](system-tables/query_cache.md). The number of query cache hits and misses since database start are shown as events
@@ -99,7 +102,7 @@ It is also possible to limit the cache usage of individual users using [settings
 constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
 allocate in the query cache and the maximum number of stored query results. For that, first provide configurations
 [query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
-[query_cache_max_entries](settings/settings.md#query-cache-size-max-entries) in a user profile in `users.xml`, then make both settings
+[query_cache_max_entries](settings/settings.md#query-cache-max-entries) in a user profile in `users.xml`, then make both settings
 readonly:
 
 ``` xml
@@ -140,7 +143,7 @@ value can be specified at session, profile or query level using setting [query_c
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
 from the query cache. To disable compression, use setting [query_cache_compress_entries](settings/settings.md#query-cache-compress-entries).
 
-ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#settings-max_block_size) rows. Due to filtering, aggregation,
+ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#setting-max_block_size) rows. Due to filtering, aggregation,
 etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
 [query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results) (enabled by default) controls if result blocks
 are squashed (if they are tiny) or split (if they are large) into blocks of 'max_block_size' size before insertion into the query result
@@ -170,6 +173,10 @@ Also, results of queries with non-deterministic functions are not cached by defa
 
 To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_nondeterministic_function_handling](settings/settings.md#query-cache-nondeterministic-function-handling).
+
+Results of queries that involve system tables, e.g. `system.processes` or `information_schema.tables`, are not cached by default. To force
+caching of results of queries with system tables regardless, use setting
+[query_cache_system_table_handling](settings/settings.md#query-cache-system-table-handling).
 
 :::note
 Prior to ClickHouse v23.11, setting 'query_cache_store_results_of_queries_with_nondeterministic_functions = 0 / 1' controlled whether

@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
@@ -35,8 +36,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"array", &isArray<IDataType>, nullptr, "Array"},
-            {"samples", &isUInt<IDataType>, isColumnConst, "const UInt*"},
+            {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"samples", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -80,7 +81,7 @@ public:
             const size_t cur_samples = std::min(num_elements, samples);
 
             indices.resize(num_elements);
-            std::iota(indices.begin(), indices.end(), prev_array_offset);
+            iota(indices.data(), indices.size(), prev_array_offset);
             std::shuffle(indices.begin(), indices.end(), rng);
 
             for (UInt64 i = 0; i < cur_samples; i++)
