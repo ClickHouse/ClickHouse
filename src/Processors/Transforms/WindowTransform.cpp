@@ -16,10 +16,6 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include "WindowTransform.h"
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 #include <limits>
 
@@ -1643,7 +1639,6 @@ struct WindowFunctionHelpers
     }
 };
 
-
 template<typename State>
 struct StatefulWindowFunction : public WindowFunction
 {
@@ -1672,8 +1667,6 @@ struct StatefulWindowFunction : public WindowFunction
     {
         return *reinterpret_cast<State *>(workspace.aggregate_function_state.data());
     }
-
-
 };
 
 struct ExponentialTimeDecayedSumState
@@ -2281,7 +2274,7 @@ public:
 
         if (remaining_rows <= 1)
             return;
-        while(remaining_rows > 0)
+        while (remaining_rows > 0)
         {
             auto block_rows_number = transform->blockRowsNumber(state.start_row);
             auto available_block_rows = block_rows_number - state.start_row.row;
