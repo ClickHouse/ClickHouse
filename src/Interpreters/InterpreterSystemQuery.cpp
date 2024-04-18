@@ -1170,7 +1170,9 @@ void InterpreterSystemQuery::unloadPrimaryKeys()
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
         }
-    } else {
+    }
+    else
+    {
         getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "Unloading primary keys for all tables");
 
