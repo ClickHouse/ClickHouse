@@ -16,6 +16,10 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include "WindowTransform.h"
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 #include <limits>
 
@@ -1609,7 +1613,36 @@ struct WindowFunctionHelpers
     {
         recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value);
     }
+
+    ALWAYS_INLINE static bool checkPartitionEnterFirstRow(const WindowTransform * transform) { return transform->current_row_number == 1; }
+
+    ALWAYS_INLINE static bool checkPartitionEnterLastRow(const WindowTransform * transform)
+    {
+        /// when partition_ended is false, it means that we don't reach the last row in this partition.
+        /// But when partition_ended is true, it doesn't mean that we reach the last row in this partition.
+        /// partition_ended is true when
+        /// - the input has finished. or
+        /// - current block contains next partition's data.
+        /// This is for fast check.
+        if (!transform->partition_ended)
+            return false;
+
+        auto current_row = transform->current_row;
+        current_row.row++;
+        const auto & partitoin_end_row = transform->partition_end;
+        /// If current_row == partitoin_end_row, return true. otherwise
+        if (current_row != partitoin_end_row)
+        {
+            if (current_row.row < transform->blockRowsNumber(current_row))
+                return false;
+            /// Next row to current_row may belong to next block.
+            if (partitoin_end_row.block != current_row.block + 1 || partitoin_end_row.row)
+                return false;
+        }
+        return true;
+    }
 };
+
 
 template<typename State>
 struct StatefulWindowFunction : public WindowFunction
@@ -1639,6 +1672,8 @@ struct StatefulWindowFunction : public WindowFunction
     {
         return *reinterpret_cast<State *>(workspace.aggregate_function_state.data());
     }
+
+
 };
 
 struct ExponentialTimeDecayedSumState
@@ -2128,7 +2163,7 @@ namespace
             }
         }
         // new partition
-        if (transform->current_row_number == 1) [[unlikely]]
+        if (WindowFunctionHelpers::checkPartitionEnterFirstRow(transform)) [[unlikely]]
         {
             current_partition_rows = 0;
             current_partition_inserted_row = 0;
@@ -2137,25 +2172,9 @@ namespace
         current_partition_rows++;
 
         // Only do the action when we meet the last row in this partition.
-        if (!transform->partition_ended)
+        if (!WindowFunctionHelpers::checkPartitionEnterLastRow(transform))
             return;
-        else
-        {
-            auto current_row = transform->current_row;
-            current_row.row++;
-            const auto & end_row = transform->partition_end;
-            if (current_row != end_row)
-            {
 
-                if (current_row.row < transform->blockRowsNumber(current_row))
-                    return;
-                if (end_row.block != current_row.block + 1 || end_row.row)
-                {
-                    return;
-                }
-                // else, current_row is the last input row.
-            }
-        }
         auto bucket_capacity = current_partition_rows / buckets;
         auto capacity_diff = current_partition_rows - bucket_capacity * buckets;
 
@@ -2210,6 +2229,115 @@ namespace
         }
     }
 }
+
+namespace
+{
+struct PercentRankState
+{
+    RowNumber start_row;
+    UInt64 current_partition_rows = 0;
+};
+}
+
+struct WindowFunctionPercentRank final : public StatefulWindowFunction<PercentRankState>
+{
+public:
+    WindowFunctionPercentRank(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    {}
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::ROWS;
+        frame.end_type = WindowFrame::BoundaryType::Unbounded;
+        return frame;
+    }
+
+    void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const override
+    {
+        checkFrameBoundType(transform);
+
+        auto & state = getWorkspaceState(transform, function_index);
+        if (WindowFunctionHelpers::checkPartitionEnterFirstRow(transform))
+        {
+            state.current_partition_rows = 0;
+            state.start_row = transform->current_row;
+        }
+
+        insertRankIntoColumn(transform, function_index);
+        state.current_partition_rows++;
+
+        if (!WindowFunctionHelpers::checkPartitionEnterLastRow(transform))
+        {
+            return;
+        }
+
+        UInt64 remaining_rows = state.current_partition_rows;
+        Float64 percent_rank_denominator = state.current_partition_rows - 1;
+
+        if (remaining_rows <= 1)
+            return;
+        while(remaining_rows > 0)
+        {
+            auto block_rows_number = transform->blockRowsNumber(state.start_row);
+            auto available_block_rows = block_rows_number - state.start_row.row;
+            if (available_block_rows <= remaining_rows)
+            {
+                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
+                for (size_t i = state.start_row.row; i < block_rows_number; ++i)
+                    data[i] = data[i] / percent_rank_denominator;
+
+                state.start_row.block++;
+                state.start_row.row = 0;
+                remaining_rows -= available_block_rows;
+            }
+            else
+            {
+                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
+                for (size_t i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
+                {
+                    data[i] = data[i]/percent_rank_denominator;
+                }
+                state.start_row.row += remaining_rows;
+                remaining_rows = 0;
+            }
+        }
+    }
+
+
+    inline PercentRankState & getWorkspaceState(const WindowTransform * transform, size_t function_index) const
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        return getState(workspace);
+    }
+
+    inline void insertRankIntoColumn(const WindowTransform * transform, size_t function_index) const
+    {
+        auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
+        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(transform->peer_group_start_row_number) - 1);
+    }
+private:
+    mutable bool has_check_frame_bound_type = false;
+    ALWAYS_INLINE void checkFrameBoundType(const WindowTransform * transform) const
+    {
+        if (has_check_frame_bound_type)
+            return;
+        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded
+            || transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Window frame for function 'percent_rank' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
+        }
+        has_check_frame_bound_type = true;
+    }
+};
 
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
@@ -2579,6 +2707,13 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
+                parameters);
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("percent_rank", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
         }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
