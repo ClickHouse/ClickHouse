@@ -399,19 +399,21 @@ void MergeTreeDataPartWriterWide::writeColumn(
     const auto & [name, type] = name_and_type;
     auto [it, inserted] = serialization_states.emplace(name, nullptr);
     auto serialization = data_part->getSerialization(name_and_type.name);
+    const auto & global_settings = storage.getContext()->getSettingsRef();
 
     if (inserted)
     {
         ISerialization::SerializeBinaryBulkSettings serialize_settings;
+        serialize_settings.use_compact_variant_discriminators_serialization = storage.getSettings()->use_compact_variant_discriminators_serialization;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
 
-    const auto & global_settings = storage.getContext()->getSettingsRef();
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
+    serialize_settings.use_compact_variant_discriminators_serialization = storage.getSettings()->use_compact_variant_discriminators_serialization;
 
     for (const auto & granule : granules)
     {
@@ -600,6 +602,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksum
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
+    serialize_settings.use_compact_variant_discriminators_serialization = storage.getSettings()->use_compact_variant_discriminators_serialization;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {

@@ -64,11 +64,12 @@ private:
         size_t current_task_last_mark,
         ISerialization::SubstreamsCache & cache);
 
+    void readPrefixes(size_t num_columns, size_t current_task_last_mark);
+
     void deserializePrefix(
         const SerializationPtr & serialization,
         const NameAndTypePair & name_and_type,
-        size_t current_task_last_mark,
-        ISerialization::SubstreamsCache & cache);
+        size_t current_task_last_mark);
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_set<std::string> prefetched_streams;

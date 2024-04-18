@@ -240,6 +240,8 @@ public:
         bool low_cardinality_use_single_dictionary_for_part = true;
 
         bool position_independent_encoding = true;
+
+        bool use_compact_variant_discriminators_serialization = false;
     };
 
     struct DeserializeBinaryBulkSettings

@@ -70,14 +70,25 @@ void SerializationVariant::enumerateStreams(
     settings.path.pop_back();
 }
 
-struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
+struct SerializationVariant::SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
 {
+    SerializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
+    {
+    }
+
+    SerializationVariant::DiscriminatorsSerializationMode discriminators_mode;
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
 };
 
-struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
+struct SerializationVariant::DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
 {
+    DeserializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
+    {
+    }
+
+    SerializationVariant::DiscriminatorsSerializationMode discriminators_mode;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
+    SerializationVariant::DiscriminatorsDeserializationState discriminators_state;
 };
 
 void SerializationVariant::serializeBinaryBulkStatePrefix(
@@ -85,9 +96,18 @@ void SerializationVariant::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
+    settings.path.push_back(Substream::VariantDiscriminators);
+    auto * discriminators_stream = settings.getter(settings.path);
+    settings.path.pop_back();
 
-    auto variant_state = std::make_shared<SerializeBinaryBulkStateVariant>();
+    if (!discriminators_stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for VariantDiscriminators in SerializationVariant::serializeBinaryBulkStatePrefix");
+
+    UInt64 mode = settings.use_compact_variant_discriminators_serialization ? DiscriminatorsSerializationMode::COMPACT : DiscriminatorsSerializationMode::BASIC;
+    writeBinaryLittleEndian(mode, *discriminators_stream);
+
+    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
+    auto variant_state = std::make_shared<SerializeBinaryBulkStateVariant>(mode);
     variant_state->states.resize(variants.size());
 
     settings.path.push_back(Substream::VariantElements);
@@ -125,7 +145,16 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
-    auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
+    settings.path.push_back(Substream::VariantDiscriminators);
+    auto * discriminators_stream = settings.getter(settings.path);
+    settings.path.pop_back();
+
+    if (!discriminators_stream)
+        return;
+
+    UInt64 mode;
+    readBinaryLittleEndian(mode, *discriminators_stream);
+    auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>(mode);
     variant_state->states.resize(variants.size());
 
     settings.path.push_back(Substream::VariantElements);
@@ -161,13 +190,66 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
 
     auto * variant_state = checkAndGetState<SerializeBinaryBulkStateVariant>(state);
 
-    /// If offset = 0 and limit == col.size() or we have only NULLs, we don't need to calculate
+    /// Write number of rows in this granule in compact mode.
+    if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
+        writeVarUInt(UInt64(limit), *discriminators_stream);
+
+    /// If column has only one none empty discriminators and no NULLs we don't need to
+    /// calculate limits for variants and use provided offset/limit.
+    if (auto non_empty_local_discr = col.getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+    {
+        auto non_empty_global_discr = col.globalDiscriminatorByLocal(*non_empty_local_discr);
+
+        /// In compact mode write the format of the granule and single non-empty discriminator.
+        if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
+        {
+            writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::COMPACT), *discriminators_stream);
+            writeBinaryLittleEndian(non_empty_global_discr, *discriminators_stream);
+        }
+        /// For basic mode just serialize this discriminator limit times.
+        else
+        {
+            for (size_t i = 0; i < limit; ++i)
+                writeBinaryLittleEndian(non_empty_global_discr, *discriminators_stream);
+        }
+
+        settings.path.push_back(Substream::VariantElements);
+        addVariantElementToPath(settings.path, non_empty_global_discr);
+        /// We can use the same offset/limit as for whole Variant column
+        variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->states[non_empty_global_discr]);
+        settings.path.pop_back();
+        settings.path.pop_back();
+        return;
+    }
+    /// If column has only NULLs, just serialize NULL discriminators.
+    else if (col.hasOnlyNulls())
+    {
+        /// In compact mode write single NULL_DISCRIMINATOR.
+        if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
+        {
+            writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::COMPACT), *discriminators_stream);
+            writeBinaryLittleEndian(ColumnVariant::NULL_DISCRIMINATOR, *discriminators_stream);
+        }
+        /// In basic mode write NULL_DISCRIMINATOR limit times.
+        else
+        {
+            for (size_t i = 0; i < limit; ++i)
+                writeBinaryLittleEndian(ColumnVariant::NULL_DISCRIMINATOR, *discriminators_stream);
+        }
+        return;
+    }
+
+    /// If offset = 0 and limit == col.size() we don't need to calculate
     /// offsets and limits for variants and need to just serialize whole columns.
-    if ((offset == 0 && limit == col.size()) || col.hasOnlyNulls())
+    if ((offset == 0 && limit == col.size()))
     {
         /// First, serialize discriminators.
-        /// If we have only NULLs or local and global discriminators are the same, just serialize the column as is.
-        if (col.hasOnlyNulls() || col.hasGlobalVariantsOrder())
+        /// Here we are sure that column contains different discriminators, use plain granule format in compact mode.
+        if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
+            writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::PLAIN), *discriminators_stream);
+
+        /// If local and global discriminators are the same, just serialize the column as is.
+        if (col.hasGlobalVariantsOrder())
         {
             SerializationNumber<ColumnVariant::Discriminator>().serializeBinaryBulk(col.getLocalDiscriminatorsColumn(), *discriminators_stream, offset, limit);
         }
@@ -191,35 +273,16 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
-    /// If we have only one non empty variant and no NULLs, we can use the same limit offset for this variant.
-    if (auto non_empty_local_discr = col.getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-    {
-        /// First, serialize discriminators.
-        /// We know that all discriminators are the same, so we just need to serialize this discriminator limit times.
-        auto non_empty_global_discr = col.globalDiscriminatorByLocal(*non_empty_local_discr);
-        for (size_t i = 0; i != limit; ++i)
-            writeBinaryLittleEndian(non_empty_global_discr, *discriminators_stream);
-
-        /// Second, serialize non-empty variant (other variants are empty and we can skip their serialization).
-        settings.path.push_back(Substream::VariantElements);
-        addVariantElementToPath(settings.path, non_empty_global_discr);
-        /// We can use the same offset/limit as for whole Variant column
-        variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->states[non_empty_global_discr]);
-        settings.path.pop_back();
-        settings.path.pop_back();
-        return;
-    }
-
     /// In general case we should iterate through local discriminators in range [offset, offset + limit] to serialize global discriminators and calculate offset/limit pair for each variant.
     const auto & local_discriminators = col.getLocalDiscriminators();
     const auto & offsets = col.getOffsets();
     std::vector<std::pair<size_t, size_t>> variant_offsets_and_limits(variants.size(), {0, 0});
     size_t end = offset + limit;
+    size_t num_non_empty_variants_in_range = 0;
+    ColumnVariant::Discriminator last_non_empty_variant_discr = 0;
     for (size_t i = offset; i < end; ++i)
     {
         auto global_discr = col.globalDiscriminatorByLocal(local_discriminators[i]);
-        writeBinaryLittleEndian(global_discr, *discriminators_stream);
-
         if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
         {
             /// If we see this discriminator for the first time, update offset
@@ -227,7 +290,36 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
                 variant_offsets_and_limits[global_discr].first = offsets[i];
             /// Update limit for this discriminator.
             ++variant_offsets_and_limits[global_discr].second;
+            ++num_non_empty_variants_in_range;
+            last_non_empty_variant_discr = global_discr;
         }
+    }
+
+    /// In basic mode just serialize discriminators as is row by row.
+    if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::BASIC)
+    {
+        for (size_t i = offset; i < end; ++i)
+            writeBinaryLittleEndian(col.globalDiscriminatorByLocal(local_discriminators[i]), *discriminators_stream);
+    }
+    /// In compact mode check if we have the same discriminator for all rows in this granule.
+    /// First, check if all values in granule are NULLs.
+    else if (num_non_empty_variants_in_range == 0)
+    {
+        writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::COMPACT), *discriminators_stream);
+        writeBinaryLittleEndian(ColumnVariant::NULL_DISCRIMINATOR, *discriminators_stream);
+    }
+    /// Then, check if there is only 1 variant and no NULLs in this granule.
+    else if (num_non_empty_variants_in_range == 1 && variant_offsets_and_limits[last_non_empty_variant_discr].second == limit)
+    {
+        writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::COMPACT), *discriminators_stream);
+        writeBinaryLittleEndian(last_non_empty_variant_discr, *discriminators_stream);
+    }
+    /// Otherwise there are different discriminators in this granule.
+    else
+    {
+        writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::PLAIN), *discriminators_stream);
+        for (size_t i = offset; i < end; ++i)
+            writeBinaryLittleEndian(col.globalDiscriminatorByLocal(local_discriminators[i]), *discriminators_stream);
     }
 
     /// Serialize variants in global order.
@@ -267,34 +359,62 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
     /// First, deserialize discriminators.
     settings.path.push_back(Substream::VariantDiscriminators);
+
+    DeserializeBinaryBulkStateVariant * variant_state = nullptr;
+    std::vector<size_t> variant_limits;
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
+        variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         col.getLocalDiscriminatorsPtr() = cached_discriminators;
     }
-    else
+    else if (auto * discriminators_stream = settings.getter(settings.path))
     {
-        auto * discriminators_stream = settings.getter(settings.path);
-        if (!discriminators_stream)
-            return;
+        variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
 
-        SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, limit, 0);
+        /// Deserialize discriminators according to serialization mode.
+        if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::BASIC)
+            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, limit, 0);
+        else
+            variant_limits = deserializeCompactDiscriminators(col.getLocalDiscriminatorsPtr(), limit, discriminators_stream, settings.continuous_reading, variant_state->discriminators_state);
+
         addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
     }
+    /// It may happen that there is no such stream, in this case just do nothing.
+    else
+    {
+        settings.path.pop_back();
+        return;
+    }
+
     settings.path.pop_back();
 
-    /// Second, calculate limits for each variant by iterating through new discriminators.
-    std::vector<size_t> variant_limits(variants.size(), 0);
-    auto & discriminators_data = col.getLocalDiscriminators();
-    size_t discriminators_offset = discriminators_data.size() - limit;
-    for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
+    /// Second, calculate limits for each variant by iterating through new discriminators
+    /// if we didn't do it during discriminators deserialization.
+    if (variant_limits.empty())
     {
-        ColumnVariant::Discriminator discr = discriminators_data[i];
-        if (discr != ColumnVariant::NULL_DISCRIMINATOR)
-            ++variant_limits[discr];
+        variant_limits.resize(variants.size(), 0);
+        auto & discriminators_data = col.getLocalDiscriminators();
+
+        /// We can actually read less than limit discriminators and we cannot determine the actual number of read rows
+        /// by discriminators column as it could be taken from the substreams cache. And we need actual number of read
+        /// rows to fill offsets correctly later if they are not in the cache. We can determine if offsets column is in cache
+        /// or not by comparing it with discriminators column size (they should be the same when offsets are in cache).
+        /// If offsets are not in the cache, we can use it's size to determine the actual number of read rows.
+        size_t num_new_discriminators = limit;
+        size_t offsets_size = col.getOffsetsPtr()->size();
+        if (discriminators_data.size() > offsets_size)
+            num_new_discriminators = discriminators_data.size() - offsets_size;
+        size_t discriminators_offset = discriminators_data.size() - num_new_discriminators;
+
+        for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
+        {
+            ColumnVariant::Discriminator discr = discriminators_data[i];
+            if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+                ++variant_limits[discr];
+        }
     }
 
     /// Now we can deserialize variants according to their limits.
-    auto * variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variants.size(); ++i)
     {
@@ -319,25 +439,120 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     }
     else
     {
-        auto & offsets = col.getOffsets();
-        offsets.reserve(offsets.size() + limit);
         std::vector<size_t> variant_offsets;
         variant_offsets.reserve(variants.size());
+        size_t num_non_empty_variants = 0;
+        ColumnVariant::Discriminator last_non_empty_discr = 0;
         for (size_t i = 0; i != variants.size(); ++i)
-            variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
-
-        for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
         {
-            ColumnVariant::Discriminator discr = discriminators_data[i];
-            if (discr == ColumnVariant::NULL_DISCRIMINATOR)
-                offsets.emplace_back();
-            else
-                offsets.push_back(variant_offsets[discr]++);
+            if (variant_limits[i])
+            {
+                ++num_non_empty_variants;
+                last_non_empty_discr = i;
+            }
+
+            variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
+        }
+
+        auto & discriminators_data = col.getLocalDiscriminators();
+        auto & offsets = col.getOffsets();
+        size_t num_new_offsets = discriminators_data.size() - offsets.size();
+        offsets.reserve(offsets.size() + num_new_offsets);
+        /// If there are only NULLs were read, fill offsets with 0.
+        if (num_non_empty_variants == 0)
+        {
+            offsets.resize_fill(discriminators_data.size(), 0);
+        }
+        /// If there is only 1 variant and no NULLs was read, fill offsets with sequential offsets of this variant.
+        else if (num_non_empty_variants == 1 && variant_limits[last_non_empty_discr] == num_new_offsets)
+        {
+            size_t first_offset = col.getVariantByLocalDiscriminator(last_non_empty_discr).size() - num_new_offsets;
+            for (size_t i = 0; i != num_new_offsets; ++i)
+                offsets.push_back(first_offset + i);
+        }
+        /// Otherwise iterate through discriminators and fill offsets accordingly.
+        else
+        {
+            size_t start = offsets.size();
+            for (size_t i = start; i != discriminators_data.size(); ++i)
+            {
+                ColumnVariant::Discriminator discr = discriminators_data[i];
+                if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+                    offsets.emplace_back();
+                else
+                    offsets.push_back(variant_offsets[discr]++);
+            }
         }
 
         addToSubstreamsCache(cache, settings.path, col.getOffsetsPtr());
     }
     settings.path.pop_back();
+}
+
+std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
+    DB::ColumnPtr & discriminators_column,
+    size_t limit,
+    ReadBuffer * stream,
+    bool continuous_reading,
+    DiscriminatorsDeserializationState & state) const
+{
+    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
+    auto & discriminators_data = discriminators.getData();
+
+    /// Reset state if we are reading from the start of the granule and not from the previous position in the file.
+    if (!continuous_reading)
+        state.remaining_rows_in_granule = 0;
+
+    /// Calculate limits for variants during discriminators deserialization.
+    std::vector<size_t> variant_limits(variants.size(), 0);
+    while (limit)
+    {
+        /// If we read all rows from current granule, start reading the next one.
+        if (state.remaining_rows_in_granule == 0)
+        {
+            if (stream->eof())
+                return variant_limits;
+
+            readDiscriminatorsGranuleStart(state, stream);
+        }
+
+        size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
+        if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
+        {
+            auto & data = discriminators.getData();
+            data.resize_fill(data.size() + limit_in_granule, state.compact_discr);
+            if (state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
+                variant_limits[state.compact_discr] += limit_in_granule;
+        }
+        else
+        {
+            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, limit_in_granule, 0);
+            size_t start = discriminators_data.size() - limit_in_granule;
+            for (size_t i = start; i != discriminators_data.size(); ++i)
+            {
+                ColumnVariant::Discriminator discr = discriminators_data[i];
+                if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+                    ++variant_limits[discr];
+            }
+        }
+
+        state.remaining_rows_in_granule -= limit_in_granule;
+        limit -= limit_in_granule;
+    }
+
+    return variant_limits;
+}
+
+void SerializationVariant::readDiscriminatorsGranuleStart(DB::SerializationVariant::DiscriminatorsDeserializationState & state, DB::ReadBuffer * stream)
+{
+    UInt64 granule_size;
+    readVarUInt(granule_size, *stream);
+    state.remaining_rows_in_granule = granule_size;
+    UInt8 granule_format;
+    readBinaryLittleEndian(granule_format, *stream);
+    state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
+    if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
+        readBinaryLittleEndian(state.compact_discr, *stream);
 }
 
 void SerializationVariant::addVariantElementToPath(DB::ISerialization::SubstreamPath & path, size_t i) const
