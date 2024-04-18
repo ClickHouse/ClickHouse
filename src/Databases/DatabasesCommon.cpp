@@ -226,7 +226,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
     return tryGetTableNoWait(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
@@ -363,7 +363,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
 {
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
 
-    for (auto it = getTablesIterator(local_context, filter, /*skip_not_loaded=*/false); it->isValid(); it->next())
+    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
     {
         auto storage = it->table();
         if (!storage)

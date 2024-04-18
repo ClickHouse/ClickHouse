@@ -292,7 +292,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-S3Settings StorageS3Settings::getSettings(const String & endpoint, const String & user, bool ignore_user) const
+S3Settings StorageS3Settings::getSettings(const String & endpoint, const String & user) const
 {
     std::lock_guard lock(mutex);
     auto next_prefix_setting = s3_settings.upper_bound(endpoint);
@@ -302,7 +302,7 @@ S3Settings StorageS3Settings::getSettings(const String & endpoint, const String 
     {
         std::advance(possible_prefix_setting, -1);
         const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
-        if (endpoint.starts_with(endpoint_prefix) && (ignore_user || settings.auth_settings.canBeUsedByUser(user)))
+        if (endpoint.starts_with(endpoint_prefix) && settings.auth_settings.canBeUsedByUser(user))
             return possible_prefix_setting->second;
     }
 

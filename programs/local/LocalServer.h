@@ -65,8 +65,6 @@ private:
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
-
-    std::unique_ptr<ReadBufferFromFile> input;
 };
 
 }

@@ -463,9 +463,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// nested_type will be nullptr, we should return nullptr in this case.
             if (!nested_type)
                 return nullptr;
-            /// Common type for Nullable(Nothing) and Variant(...) is Variant(...)
-            if (isVariant(nested_type))
-                return nested_type;
             return std::make_shared<DataTypeNullable>(nested_type);
         }
     }
