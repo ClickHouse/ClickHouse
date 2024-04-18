@@ -200,7 +200,9 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 
     consumer_channel->onError([&](const char * message)
     {
-        LOG_ERROR(log, "Channel {} received an error: {}", channel_id, message);
+        LOG_ERROR(
+            log, "Channel {} received an error: {} (usable: {}, connected: {})",
+            channel_id, message, consumer_channel->usable(), consumer_channel->connected());
 
         if (!consumer_channel->usable() || !consumer_channel->connected())
         {

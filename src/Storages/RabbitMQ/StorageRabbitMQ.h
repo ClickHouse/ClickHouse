@@ -77,6 +77,8 @@ public:
     void incrementReader();
     void decrementReader();
 
+    LoggerPtr log;
+
 private:
     ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
@@ -102,7 +104,6 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    LoggerPtr log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;

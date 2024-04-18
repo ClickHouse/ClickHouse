@@ -84,7 +84,7 @@ RabbitMQSource::RabbitMQSource(
     , nack_broken_messages(nack_broken_messages_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , log(getLogger("RabbitMQSource"))
+    , log(storage.log)
     , max_execution_time_ms(max_execution_time_)
 {
     storage.incrementReader();
