@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758 
+personal_ws-1.1 en 2758
 AArch
 ACLs
 ALTERs
@@ -29,6 +29,13 @@ Alexey
 AnyEvent
 AppleClang
 Approximative
+arrayDotProduct
+arrayEnumerateDenseRanked
+arrayEnumerateUniqRanked
+arrayFirstOrNull
+arrayLastOrNull
+arrayPartialShuffle
+arrayShuffle
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -176,6 +183,8 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
+Composable
+composable
 Config
 ConnectionDetails
 Const
@@ -452,6 +461,9 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Konstantin
+kostik
+kostikConsistentHash
 Korzeniewski
 Kubernetes
 LDAP
@@ -554,6 +566,17 @@ Mongodb
 mortonDecode
 mortonEncode
 MsgPack
+multiSearchAllPositionsCaseInsensitive
+multiSearchAllPositionsCaseInsensitiveUTF
+multiSearchAnyCaseInsensitive
+multiSearchAnyCaseInsensitiveUTF
+multiSearchAnyUTF
+multiSearchFirstIndexCaseInsensitive
+multiSearchFirstIndexCaseInsensitiveUTF
+multiSearchFirstIndexUTF
+multiSearchFirstPositionCaseInsensitive
+multiSearchFirstPositionCaseInsensitiveUTF
+multiSearchFirstPositionUTF
 MultiPolygon
 Multiline
 Multiqueries
@@ -655,6 +678,7 @@ OTLP
 OUTFILE
 ObjectId
 Observability
+Oblakov
 Octonica
 Ok
 OnTime
@@ -675,6 +699,7 @@ PCRE
 PRCP
 PREWHERE
 PROCESSLIST
+PROXYv
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
@@ -860,6 +885,7 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
+SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -989,6 +1015,7 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unshuffled
 Updatable
 Uppercased
 Uptime
@@ -1817,6 +1844,7 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -1935,6 +1963,7 @@ mmap
 mmapped
 modularization
 moduloOrZero
+moduli
 mongodb
 monthName
 moscow
@@ -2289,6 +2318,7 @@ retriable
 reverseUTF
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
@@ -2316,10 +2346,13 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
 russian
+rustc
+rustup
 rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
@@ -2646,6 +2679,12 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
+tupleModulo
+tupleModuloByNumber
 turbostat
 txt
 typename
@@ -2717,6 +2756,7 @@ varpop
 varsamp
 vectorized
 vectorscan
+vendoring
 verificationDepth
 verificationMode
 versionedcollapsingmergetree
@@ -2760,6 +2800,7 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
+wyHash
 xcode
 xeus
 xkcd
