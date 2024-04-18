@@ -101,5 +101,23 @@ SELECT
 FROM products INNER JOIN  product_groups USING (group_id)) t
 order by group_name, product_name, price;
 
+select '---- Q8 ----';
+SELECT *
+FROM
+(
+    SELECT
+        product_name,
+        group_name,
+        price,
+        percent_rank() OVER (PARTITION BY group_name ORDER BY price ASC) AS r
+    FROM products
+    INNER JOIN product_groups USING (group_id)
+) AS t
+ORDER BY
+    group_name ASC,
+	r ASC,
+    product_name ASC,
+	price ASC;
+
 drop table product_groups;
 drop table products;
