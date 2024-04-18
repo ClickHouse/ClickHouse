@@ -200,8 +200,12 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 
     consumer_channel->onError([&](const char * message)
     {
-        LOG_ERROR(log, "Channel {} in in error state: {}", channel_id, message);
-        state = State::ERROR;
+        LOG_ERROR(log, "Channel {} received an error: {}", channel_id, message);
+
+        if (!consumer_channel->usable() || !consumer_channel->connected())
+        {
+            state = State::ERROR;
+        }
     });
 }
 
@@ -209,6 +213,7 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 bool RabbitMQConsumer::needChannelUpdate()
 {
     chassert(consumer_channel);
+    // chassert(state != State::ERROR || !consumer_channel->usable() || !consumer_channel->connected() || !consumer_channel->ready());
     return state == State::ERROR;
 }
 

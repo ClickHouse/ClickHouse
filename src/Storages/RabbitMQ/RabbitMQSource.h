@@ -27,6 +27,7 @@ public:
 
     String getName() const override { return storage.getName(); }
     void updateChannel(RabbitMQConnection & connection) { consumer->updateChannel(connection); }
+    String getChannelID() const { return consumer->getChannelID(); }
 
     Chunk generate() override;
 

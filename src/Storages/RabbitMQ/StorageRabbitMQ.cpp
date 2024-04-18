@@ -1159,6 +1159,7 @@ bool StorageRabbitMQ::tryStreamToViews()
 
             if (source->needChannelUpdate())
             {
+                LOG_TEST(log, "Channel {} is in error state, will update", source->getChannelID());
                 source->updateChannel(*connection);
             }
             else
