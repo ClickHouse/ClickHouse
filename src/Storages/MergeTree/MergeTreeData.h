@@ -790,6 +790,9 @@ public:
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
+    /// Moves partition to specified Table
+    void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
+
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
