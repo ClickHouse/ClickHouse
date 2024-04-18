@@ -117,8 +117,10 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
             auto path = configuration.getPath();
-            configuration.setPath(removeFileNameFromURL(path));
-            archive_params.archive_name = configuration.getPath();
+            auto filename = removeFileNameFromURL(path);
+            configuration.setPath(path);
+
+            archive_params.archive_name = filename;
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;

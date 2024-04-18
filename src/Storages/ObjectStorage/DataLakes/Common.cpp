@@ -21,7 +21,7 @@ std::vector<String> listFiles(
         if (filename.ends_with(suffix))
             res.push_back(filename);
     }
-    LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files", res.size());
+    LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
     return res;
 }
 

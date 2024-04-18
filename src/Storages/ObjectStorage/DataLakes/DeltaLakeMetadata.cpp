@@ -27,10 +27,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct DeltaLakeMetadata::Impl final : private WithContext
+struct DeltaLakeMetadata::Impl
 {
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
+    ContextPtr context;
 
     /**
      * Useful links:
@@ -39,9 +40,9 @@ struct DeltaLakeMetadata::Impl final : private WithContext
      Impl(ObjectStoragePtr object_storage_,
           ConfigurationPtr configuration_,
           ContextPtr context_)
-        : WithContext(context_)
-        , object_storage(object_storage_)
+        : object_storage(object_storage_)
         , configuration(configuration_)
+        , context(context_)
     {
     }
 
@@ -137,7 +138,7 @@ struct DeltaLakeMetadata::Impl final : private WithContext
      */
     void processMetadataFile(const String & key, std::set<String> & result)
     {
-        auto read_settings = getContext()->getReadSettings();
+        auto read_settings = context->getReadSettings();
         auto buf = object_storage->readObject(StoredObject(key), read_settings);
 
         char c;
@@ -190,7 +191,7 @@ struct DeltaLakeMetadata::Impl final : private WithContext
             return 0;
 
         String json_str;
-        auto read_settings = getContext()->getReadSettings();
+        auto read_settings = context->getReadSettings();
         auto buf = object_storage->readObject(StoredObject(last_checkpoint_file), read_settings);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -252,7 +253,6 @@ struct DeltaLakeMetadata::Impl final : private WithContext
 
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
-        auto context = getContext();
         auto read_settings = context->getReadSettings();
         auto buf = object_storage->readObject(StoredObject(checkpoint_path), read_settings);
         auto format_settings = getFormatSettings(context);

@@ -72,7 +72,6 @@ std::unique_ptr<S3::Client> getClient(
     if (for_disk_s3)
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-
         url = S3::URI(endpoint);
         if (!url.key.ends_with('/'))
             url.key.push_back('/');
@@ -103,8 +102,8 @@ std::unique_ptr<S3::Client> getClient(
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", S3::DEFAULT_CONNECT_TIMEOUT_MS);
-    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", S3::DEFAULT_REQUEST_TIMEOUT_MS);
+    client_configuration.connectTimeoutMs = config.getUInt64(config_prefix + ".connect_timeout_ms", local_settings.s3_connect_timeout_ms.value);
+    client_configuration.requestTimeoutMs = config.getUInt64(config_prefix + ".request_timeout_ms", local_settings.s3_request_timeout_ms.value);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", S3::DEFAULT_MAX_CONNECTIONS);
     client_configuration.http_keep_alive_timeout = config.getUInt(config_prefix + ".http_keep_alive_timeout", S3::DEFAULT_KEEP_ALIVE_TIMEOUT);
     client_configuration.http_keep_alive_max_requests = config.getUInt(config_prefix + ".http_keep_alive_max_requests", S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS);

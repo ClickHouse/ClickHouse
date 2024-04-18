@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class DeltaLakeMetadata final : public IDataLakeMetadata, private WithContext
+class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
     using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
@@ -28,7 +28,9 @@ public:
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
-        return deltalake_metadata && getDataFiles() == deltalake_metadata->getDataFiles();
+        return deltalake_metadata
+            && !data_files.empty() && !deltalake_metadata->data_files.empty()
+            && data_files == deltalake_metadata->data_files;
     }
 
     static DataLakeMetadataPtr create(

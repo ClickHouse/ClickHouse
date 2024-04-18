@@ -193,7 +193,8 @@ void BackupWriterAzureBlobStorage::copyDataToFile(
 {
     copyDataToAzureBlobStorageFile(
         create_read_buffer, start_pos, length, client, configuration.container,
-        path_in_backup, settings, threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+        fs::path(configuration.blob_path) / path_in_backup, settings,
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;

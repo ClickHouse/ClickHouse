@@ -42,17 +42,25 @@ public:
         auto object_storage = base_configuration->createObjectStorage(context);
         DataLakeMetadataPtr metadata;
         NamesAndTypesList schema_from_metadata;
+
+        if (base_configuration->format == "auto")
+            base_configuration->format = "Parquet";
+
         ConfigurationPtr configuration = base_configuration->clone();
+
         try
         {
             metadata = DataLakeMetadata::create(object_storage, base_configuration, context);
             schema_from_metadata = metadata->getTableSchema();
-            configuration->getPaths() = metadata->getDataFiles();
+            configuration->setPaths(metadata->getDataFiles());
         }
         catch (...)
         {
             if (mode <= LoadingStrictnessLevel::CREATE)
                 throw;
+
+            metadata.reset();
+            configuration->setPaths({});
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
@@ -100,8 +108,8 @@ public:
 
         current_metadata = std::move(new_metadata);
         auto updated_configuration = base_configuration->clone();
-        /// If metadata wasn't changed, we won't list data files again.
-        updated_configuration->getPaths() = current_metadata->getDataFiles();
+        updated_configuration->setPaths(current_metadata->getDataFiles());
+
         Storage::configuration = updated_configuration;
     }
 

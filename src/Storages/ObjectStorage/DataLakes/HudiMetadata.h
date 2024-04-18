@@ -29,7 +29,9 @@ public:
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * hudi_metadata = dynamic_cast<const HudiMetadata *>(&other);
-        return hudi_metadata && getDataFiles() == hudi_metadata->getDataFiles();
+        return hudi_metadata
+            && !data_files.empty() && !hudi_metadata->data_files.empty()
+            && data_files == hudi_metadata->data_files;
     }
 
     static DataLakeMetadataPtr create(
