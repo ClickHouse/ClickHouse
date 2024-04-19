@@ -3,10 +3,7 @@ import logging
 import sys
 from typing import Tuple
 
-# isort: off
 from github import Github
-
-# isort: on
 
 from cherry_pick import Labels
 from commit_status_helper import (

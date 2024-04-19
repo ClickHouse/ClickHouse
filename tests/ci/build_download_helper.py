@@ -8,10 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
-# isort: off
 import requests
-
-# isort: on
 
 import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
