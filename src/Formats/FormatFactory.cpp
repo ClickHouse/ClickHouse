@@ -144,6 +144,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
+    format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
@@ -438,7 +439,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             settings.max_download_buffer_size);
 
         res = wrapInParallelReadBufferIfSupported(
-            buf, threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
+            buf, threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
             max_download_threads, settings.max_download_buffer_size, file_size);
     }
 
