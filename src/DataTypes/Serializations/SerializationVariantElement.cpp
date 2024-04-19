@@ -43,10 +43,6 @@ void SerializationVariantElement::serializeBinaryBulkStateSuffix(SerializeBinary
 
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
 {
-    DeserializeBinaryBulkStateVariantElement(UInt64 discriminators_version_) : discriminators_version(discriminators_version_)
-    {
-    }
-
     /// During deserialization discriminators and variant streams can be shared.
     /// For example we can read several variant elements together: "select v.UInt32, v.String from table",
     /// or we can read the whole variant and some of variant elements: "select v, v.UInt32 from table".
@@ -57,27 +53,39 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     /// substream cache correctly.
     ColumnPtr discriminators;
     ColumnPtr variant;
-    SerializationVariant::DiscriminatorsSerializationMode discriminators_version;
-    SerializationVariant::DiscriminatorsDeserializationState discriminators_state;
+    ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
 };
 
-void SerializationVariantElement::deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const
+void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
     settings.path.push_back(Substream::VariantDiscriminators);
-    auto * discriminators_stream = settings.getter(settings.path);
+
+    DeserializeBinaryBulkStatePtr discriminators_state;
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        discriminators_state = cached_state;
+    }
+    else if (auto * discriminators_stream = settings.getter(settings.path))
+    {
+        UInt64 mode;
+        readBinaryLittleEndian(mode, *discriminators_stream);
+        discriminators_state = std::make_shared<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(mode);
+    }
+    else
+    {
+        settings.path.pop_back();
+        return;
+    }
+
     settings.path.pop_back();
 
-    if (!discriminators_stream)
-        return;
-
-    UInt64 version;
-    readBinaryLittleEndian(version, *discriminators_stream);
-
-    auto variant_element_state = std::make_shared<DeserializeBinaryBulkStateVariantElement>(version);
+    auto variant_element_state = std::make_shared<DeserializeBinaryBulkStateVariantElement>();
+    variant_element_state->discriminators_state = discriminators_state;
 
     addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state);
+    nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
     state = std::move(variant_element_state);
@@ -108,13 +116,14 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
+        auto discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state->discriminators_state);
 
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
 
         /// Deserialize discriminators according to serialization mode.
-        if (variant_element_state->discriminators_version.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
+        if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
             SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*variant_element_state->discriminators->assumeMutable(), *discriminators_stream, limit, 0);
         else
             variant_limit = deserializeCompactDiscriminators(variant_element_state->discriminators, limit, discriminators_stream, settings.continuous_reading, *variant_element_state);
@@ -229,34 +238,35 @@ size_t SerializationVariantElement::deserializeCompactDiscriminators(
     size_t limit,
     DB::ReadBuffer * stream,
     bool continuous_reading,
-    DB::SerializationVariantElement::DeserializeBinaryBulkStateVariantElement & state) const
+    DeserializeBinaryBulkStateVariantElement & variant_element_state) const
 {
+    auto discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state.discriminators_state);
     auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
     auto & discriminators_data = discriminators.getData();
 
     /// Reset state if we are reading from the start of the granule and not from the previous position in the file.
     if (!continuous_reading)
-        state.discriminators_state.remaining_rows_in_granule = 0;
+        discriminators_state->remaining_rows_in_granule = 0;
 
     /// Calculate our variant limit during discriminators deserialization.
     size_t variant_limit = 0;
     while (limit)
     {
         /// If we read all rows from current granule, start reading the next one.
-        if (state.discriminators_state.remaining_rows_in_granule == 0)
+        if (discriminators_state->remaining_rows_in_granule == 0)
         {
             if (stream->eof())
                 return variant_limit;
 
-            SerializationVariant::readDiscriminatorsGranuleStart(state.discriminators_state, stream);
+            SerializationVariant::readDiscriminatorsGranuleStart(*discriminators_state, stream);
         }
 
-        size_t limit_in_granule = std::min(limit, state.discriminators_state.remaining_rows_in_granule);
-        if (state.discriminators_state.granule_format == SerializationVariant::CompactDiscriminatorsGranuleFormat::COMPACT)
+        size_t limit_in_granule = std::min(limit, discriminators_state->remaining_rows_in_granule);
+        if (discriminators_state->granule_format == SerializationVariant::CompactDiscriminatorsGranuleFormat::COMPACT)
         {
             auto & data = discriminators.getData();
-            data.resize_fill(data.size() + limit_in_granule, state.discriminators_state.compact_discr);
-            if (state.discriminators_state.compact_discr == variant_discriminator)
+            data.resize_fill(data.size() + limit_in_granule, discriminators_state->compact_discr);
+            if (discriminators_state->compact_discr == variant_discriminator)
                 variant_limit += limit_in_granule;
         }
         else
@@ -267,7 +277,7 @@ size_t SerializationVariantElement::deserializeCompactDiscriminators(
                 variant_limit += (discriminators_data[i] == variant_discriminator);
         }
 
-        state.discriminators_state.remaining_rows_in_granule -= limit_in_granule;
+        discriminators_state->remaining_rows_in_granule -= limit_in_granule;
         limit -= limit_in_granule;
     }
 
@@ -336,7 +346,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
 
     /// Special case for LowCardinality. We want the result to be LowCardinality(Nullable),
     /// but we don't have a good way to apply null-mask for LowCardinality(), so, we first
-    /// convert our column to LowCardinality(Nullable()) and then use expand which will
+    /// cont our column to LowCardinality(Nullable()) and then use expand which will
     /// fill rows with 0 in mask with default value (that is NULL).
     if (prev->lowCardinality())
         res_column = assert_cast<ColumnLowCardinality &>(*res_column).cloneNullable();

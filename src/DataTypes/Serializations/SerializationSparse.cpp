@@ -242,12 +242,13 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
 
 void SerializationSparse::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     auto state_sparse = std::make_shared<DeserializeStateSparse>();
 
     settings.path.push_back(Substream::SparseElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested);
+    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
     state = std::move(state_sparse);

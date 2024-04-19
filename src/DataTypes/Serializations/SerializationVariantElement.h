@@ -43,7 +43,8 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const override;
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -69,7 +70,7 @@ private:
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
-        DeserializeBinaryBulkStateVariantElement & state) const;
+        DeserializeBinaryBulkStateVariantElement & variant_element_state) const;
 
     void addVariantToPath(SubstreamPath & path) const;
     void removeVariantFromPath(SubstreamPath & path) const;

@@ -231,6 +231,9 @@ public:
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
     using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
 
+    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
+
+
     struct SerializeBinaryBulkSettings
     {
         OutputStreamGetter getter;
@@ -275,7 +278,8 @@ public:
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+        DeserializeBinaryBulkStatePtr & /*state*/,
+        SubstreamsDeserializeStatesCache * /*cache*/) const {}
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -394,6 +398,8 @@ public:
 
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
+    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 

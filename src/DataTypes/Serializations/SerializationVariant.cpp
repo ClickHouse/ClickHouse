@@ -70,25 +70,20 @@ void SerializationVariant::enumerateStreams(
     settings.path.pop_back();
 }
 
-struct SerializationVariant::SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
+struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
 {
     SerializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
     {
     }
 
     SerializationVariant::DiscriminatorsSerializationMode discriminators_mode;
-    std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
+    std::vector<ISerialization::SerializeBinaryBulkStatePtr> variant_states;
 };
 
-struct SerializationVariant::DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
+struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
 {
-    DeserializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
-    {
-    }
-
-    SerializationVariant::DiscriminatorsSerializationMode discriminators_mode;
-    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
-    SerializationVariant::DiscriminatorsDeserializationState discriminators_state;
+    ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
+    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
 };
 
 void SerializationVariant::serializeBinaryBulkStatePrefix(
@@ -108,14 +103,14 @@ void SerializationVariant::serializeBinaryBulkStatePrefix(
 
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
     auto variant_state = std::make_shared<SerializeBinaryBulkStateVariant>(mode);
-    variant_state->states.resize(variants.size());
+    variant_state->variant_states.resize(variants.size());
 
     settings.path.push_back(Substream::VariantElements);
 
     for (size_t i = 0; i < variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variants[i]->serializeBinaryBulkStatePrefix(col.getVariantByGlobalDiscriminator(i), settings, variant_state->states[i]);
+        variants[i]->serializeBinaryBulkStatePrefix(col.getVariantByGlobalDiscriminator(i), settings, variant_state->variant_states[i]);
         settings.path.pop_back();
     }
 
@@ -134,7 +129,7 @@ void SerializationVariant::serializeBinaryBulkStateSuffix(
     for (size_t i = 0; i < variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variants[i]->serializeBinaryBulkStateSuffix(settings, variant_state->states[i]);
+        variants[i]->serializeBinaryBulkStateSuffix(settings, variant_state->variant_states[i]);
         settings.path.pop_back();
     }
     settings.path.pop_back();
@@ -143,25 +138,39 @@ void SerializationVariant::serializeBinaryBulkStateSuffix(
 
 void SerializationVariant::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     settings.path.push_back(Substream::VariantDiscriminators);
-    auto * discriminators_stream = settings.getter(settings.path);
+
+    DeserializeBinaryBulkStatePtr discriminators_state;
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        discriminators_state = cached_state;
+    }
+    else if (auto * discriminators_stream = settings.getter(settings.path))
+    {
+        UInt64 mode;
+        readBinaryLittleEndian(mode, *discriminators_stream);
+        discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
+    }
+    else
+    {
+        settings.path.pop_back();
+        return;
+    }
+
     settings.path.pop_back();
 
-    if (!discriminators_stream)
-        return;
-
-    UInt64 mode;
-    readBinaryLittleEndian(mode, *discriminators_stream);
-    auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>(mode);
-    variant_state->states.resize(variants.size());
+    auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
+    variant_state->discriminators_state = discriminators_state;
+    variant_state->variant_states.resize(variants.size());
 
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i < variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variants[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->states[i]);
+        variants[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
     }
 
@@ -216,7 +225,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
         settings.path.push_back(Substream::VariantElements);
         addVariantElementToPath(settings.path, non_empty_global_discr);
         /// We can use the same offset/limit as for whole Variant column
-        variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->states[non_empty_global_discr]);
+        variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->variant_states[non_empty_global_discr]);
         settings.path.pop_back();
         settings.path.pop_back();
         return;
@@ -266,7 +275,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
         for (size_t i = 0; i != variants.size(); ++i)
         {
             addVariantElementToPath(settings.path, i);
-            variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), 0, 0, settings, variant_state->states[i]);
+            variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), 0, 0, settings, variant_state->variant_states[i]);
             settings.path.pop_back();
         }
         settings.path.pop_back();
@@ -335,7 +344,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
                 variant_offsets_and_limits[i].first,
                 variant_offsets_and_limits[i].second,
                 settings,
-                variant_state->states[i]);
+                variant_state->variant_states[i]);
             settings.path.pop_back();
         }
     }
@@ -370,12 +379,13 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
+        auto discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
 
         /// Deserialize discriminators according to serialization mode.
-        if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::BASIC)
+        if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
             SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, limit, 0);
         else
-            variant_limits = deserializeCompactDiscriminators(col.getLocalDiscriminatorsPtr(), limit, discriminators_stream, settings.continuous_reading, variant_state->discriminators_state);
+            variant_limits = deserializeCompactDiscriminators(col.getLocalDiscriminatorsPtr(), limit, discriminators_stream, settings.continuous_reading, *discriminators_state);
 
         addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
     }
@@ -419,7 +429,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     for (size_t i = 0; i != variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variants[i]->deserializeBinaryBulkWithMultipleStreams(col.getVariantPtrByLocalDiscriminator(i), variant_limits[i], settings, variant_state->states[i], cache);
+        variants[i]->deserializeBinaryBulkWithMultipleStreams(col.getVariantPtrByLocalDiscriminator(i), variant_limits[i], settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
     }
     settings.path.pop_back();
@@ -494,7 +504,7 @@ std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
     size_t limit,
     ReadBuffer * stream,
     bool continuous_reading,
-    DiscriminatorsDeserializationState & state) const
+    DeserializeBinaryBulkStateVariantDiscriminators & state) const
 {
     auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
     auto & discriminators_data = discriminators.getData();
@@ -543,7 +553,7 @@ std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
     return variant_limits;
 }
 
-void SerializationVariant::readDiscriminatorsGranuleStart(DB::SerializationVariant::DiscriminatorsDeserializationState & state, DB::ReadBuffer * stream)
+void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream)
 {
     UInt64 granule_size;
     readVarUInt(granule_size, *stream);

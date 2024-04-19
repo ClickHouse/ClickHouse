@@ -96,7 +96,8 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const override;
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -161,25 +162,28 @@ private:
         COMPACT = 1, /// Granule has single discriminator for all rows and it is serialized as single value.
     };
 
-    /// State of currently deserialized granule.
-    struct DiscriminatorsDeserializationState
+    struct DeserializeBinaryBulkStateVariantDiscriminators : public ISerialization::DeserializeBinaryBulkState
     {
+        DeserializeBinaryBulkStateVariantDiscriminators(UInt64 mode_) : mode(mode_)
+        {
+        }
+
+        DiscriminatorsSerializationMode mode;
+
+        /// Deserialize state of currently read granule in compact mode.
         CompactDiscriminatorsGranuleFormat granule_format = CompactDiscriminatorsGranuleFormat::PLAIN;
         size_t remaining_rows_in_granule = 0;
         ColumnVariant::Discriminator compact_discr = 0;
     };
-
-    struct SerializeBinaryBulkStateVariant;
-    struct DeserializeBinaryBulkStateVariant;
 
     std::vector<size_t> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
-        DiscriminatorsDeserializationState & state) const;
+        DeserializeBinaryBulkStateVariantDiscriminators & state) const;
 
-    static void readDiscriminatorsGranuleStart(DiscriminatorsDeserializationState & state, ReadBuffer * stream);
+    static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
 
     bool tryDeserializeTextEscapedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextQuotedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;

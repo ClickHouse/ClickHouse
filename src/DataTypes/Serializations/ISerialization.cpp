@@ -271,6 +271,23 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
     return it == cache->end() ? nullptr : it->second;
 }
 
+void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
+{
+    if (!cache || path.empty())
+        return;
+
+    cache->emplace(getSubcolumnNameForStream(path), state);
+}
+
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
+{
+    if (!cache || path.empty())
+        return nullptr;
+
+    auto it = cache->find(getSubcolumnNameForStream(path));
+    return it == cache->end() ? nullptr : it->second;
+}
+
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const auto & elem : path)
