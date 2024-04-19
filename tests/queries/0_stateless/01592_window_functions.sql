@@ -102,6 +102,9 @@ FROM products INNER JOIN  product_groups USING (group_id)) t
 order by group_name, product_name, price;
 
 select '---- Q8 ----';
+INSERT INTO product_groups  VALUES	(4, 'Unknow');
+INSERT INTO products (product_id,product_name, group_id,price) VALUES (12, 'Others', 4, 200);
+
 SELECT *
 FROM
 (
