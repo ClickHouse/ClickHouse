@@ -6,11 +6,7 @@ import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
-# isort: off
-# for some reason this line moves to the end
 from unidiff import PatchSet  # type: ignore
-
-# isort: on
 
 from build_download_helper import get_gh_api
 from env_helper import (
