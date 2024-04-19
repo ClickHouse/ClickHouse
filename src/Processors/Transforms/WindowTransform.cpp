@@ -2265,18 +2265,9 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
-    }
-
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
-        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded
-            || transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
+        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
         {
             LOG_ERROR(getLogger("WindowFunctionPercentRank"),
                 "Window frame for function 'percent_rank' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
