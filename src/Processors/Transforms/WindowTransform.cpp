@@ -17,6 +17,9 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 #include <limits>
 
 
@@ -71,6 +74,9 @@ public:
         size_t function_index) const = 0;
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
+
+    /// Is the frame type supported by this function.
+    virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
 };
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -401,6 +407,19 @@ WindowTransform::WindowTransform(const Block & input_header_,
                     window_description.frame.end_offset);
             }
         }
+    }
+
+    for (const auto & workspace : workspaces)
+    {
+        if (workspace.window_function_impl)
+        {
+            if (!workspace.window_function_impl->checkWindowFrameType(this))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'",
+                    workspace.aggregate_function->getName());
+            }
+        }
+
     }
 }
 
@@ -2086,8 +2105,6 @@ namespace
             const WindowTransform * transform,
             size_t function_index,
             const DataTypes & argument_types);
-
-        static void checkWindowFrameType(const WindowTransform * transform);
     };
 }
 
@@ -2107,6 +2124,29 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
     }
 
     bool allocatesMemoryInArena() const override { return false; }
+    
+    bool checkWindowFrameType(const WindowTransform * transform) const override
+    {
+        if (transform->order_by_indices.empty())
+        {
+            LOG_ERROR(getLogger("WindowFunctionNtile"), "Window frame for 'ntile' function must have ORDER BY clause");
+            return false;
+        }
+
+        // We must wait all for the partition end and get the total rows number in this
+        // partition. So before the end of this partition, there is no any block could be
+        // dropped out.
+        bool is_frame_supported = transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
+        if (!is_frame_supported)
+        {
+            LOG_ERROR(
+                getLogger("WindowFunctionNtile"),
+                "Window frame for function 'ntile' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
+            return false;
+        }
+        return true;
+    }
 
     std::optional<WindowFrame> getDefaultFrame() const override
     {
@@ -2134,7 +2174,6 @@ namespace
     {
         if (!buckets) [[unlikely]]
         {
-            checkWindowFrameType(transform);
             const auto & current_block = transform->blockAt(transform->current_row);
             const auto & workspace = transform->workspaces[function_index];
             const auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
@@ -2205,22 +2244,6 @@ namespace
             bucket_num += 1;
         }
     }
-
-    void NtileState::checkWindowFrameType(const WindowTransform * transform)
-    {
-        if (transform->order_by_indices.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for 'ntile' function must have ORDER BY clause");
-
-        // We must wait all for the partition end and get the total rows number in this
-        // partition. So before the end of this partition, there is no any block could be
-        // dropped out.
-        bool is_frame_supported = transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
-            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Unbounded;
-        if (!is_frame_supported)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function 'ntile' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
-        }
-    }
 }
 
 namespace
@@ -2249,11 +2272,22 @@ public:
         frame.end_type = WindowFrame::BoundaryType::Unbounded;
         return frame;
     }
+    
+    bool checkWindowFrameType(const WindowTransform * transform) const override
+    {
+        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded
+            || transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            LOG_ERROR(getLogger("WindowFunctionPercentRank"),
+                "Window frame for function 'percent_rank' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
+            return false;
+        }
+        return true;
+    }
+
 
     void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const override
     {
-        checkFrameBoundType(transform);
-
         auto & state = getWorkspaceState(transform, function_index);
         if (WindowFunctionHelpers::checkPartitionEnterFirstRow(transform))
         {
@@ -2314,21 +2348,6 @@ public:
     {
         auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
         assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(transform->peer_group_start_row_number) - 1);
-    }
-private:
-    mutable bool has_check_frame_bound_type = false;
-    ALWAYS_INLINE void checkFrameBoundType(const WindowTransform * transform) const
-    {
-        if (has_check_frame_bound_type)
-            return;
-        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded
-            || transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Window frame for function 'percent_rank' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
-        }
-        has_check_frame_bound_type = true;
     }
 };
 
