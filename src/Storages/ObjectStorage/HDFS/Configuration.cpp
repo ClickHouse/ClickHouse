@@ -73,9 +73,11 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
     std::string url_str;
     url_str = checkAndGetLiteralArgument<String>(args[0], "url");
 
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
     if (args.size() > 1)
     {
-        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
         format = checkAndGetLiteralArgument<String>(args[1], "format_name");
     }
 
@@ -83,18 +85,15 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
     {
         if (args.size() > 2)
         {
-            args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
             structure = checkAndGetLiteralArgument<String>(args[2], "structure");
         }
         if (args.size() > 3)
         {
-            args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], context);
             compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
         }
     }
     else if (args.size() > 2)
     {
-        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 
@@ -164,6 +163,9 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgs(
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
+
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         /// hdfs(url)
         if (count == 1)

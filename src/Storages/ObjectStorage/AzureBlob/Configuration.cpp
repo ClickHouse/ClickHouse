@@ -381,7 +381,7 @@ void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr conte
 }
 
 void StorageAzureBlobConfiguration::addStructureAndFormatToArgs(
-    ASTs & args, const String & structure_, const String & /* format */, ContextPtr context)
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context)
 {
     if (tryGetNamedCollectionWithOverrides(args, context))
     {
@@ -397,66 +397,129 @@ void StorageAzureBlobConfiguration::addStructureAndFormatToArgs(
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage Azure requires 3 to 7 arguments: "
-                            "StorageObjectStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
+                            "StorageObjectStorage(connection_string|storage_account_url, container_name, "
+                            "blobpath, [account_name, account_key, format, compression, structure])");
         }
 
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
+        auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto is_format_arg
             = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
 
+        /// (connection_string, container_name, blobpath)
         if (args.size() == 3)
         {
-            /// Add format=auto & compression=auto before structure argument.
-            args.push_back(std::make_shared<ASTLiteral>("auto"));
+            args.push_back(format_literal);
+            /// Add compression = "auto" before structure argument.
             args.push_back(std::make_shared<ASTLiteral>("auto"));
             args.push_back(structure_literal);
         }
+        /// (connection_string, container_name, blobpath, structure) or
+        /// (connection_string, container_name, blobpath, format)
+        /// We can distinguish them by looking at the 4-th argument: check if it's format name or not.
         else if (args.size() == 4)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name/structure");
+            /// (..., format) -> (..., format, compression, structure)
             if (is_format_arg(fourth_arg))
             {
+                if (fourth_arg == "auto")
+                    args[3] = format_literal;
                 /// Add compression=auto before structure argument.
                 args.push_back(std::make_shared<ASTLiteral>("auto"));
                 args.push_back(structure_literal);
             }
+            /// (..., structure) -> (..., format, compression, structure)
             else
             {
-                args.back() = structure_literal;
+                auto structure_arg = args.back();
+                args[3] = format_literal;
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                if (fourth_arg == "auto")
+                    args.push_back(structure_literal);
+                else
+                    args.push_back(structure_arg);
             }
         }
+        /// (connection_string, container_name, blobpath, format, compression) or
+        /// (storage_account_url, container_name, blobpath, account_name, account_key)
+        /// We can distinguish them by looking at the 4-th argument: check if it's format name or not.
         else if (args.size() == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
-            if (!is_format_arg(fourth_arg))
+            /// (..., format, compression) -> (..., format, compression, structure)
+            if (is_format_arg(fourth_arg))
             {
-                /// Add format=auto & compression=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                if (fourth_arg == "auto")
+                    args[3] = format_literal;
+                args.push_back(structure_literal);
             }
-            args.push_back(structure_literal);
-        }
-        else if (args.size() == 6)
-        {
-            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
-            if (!is_format_arg(fourth_arg))
+            /// (..., account_name, account_key) -> (..., account_name, account_key, format, compression, structure)
+            else
             {
+                args.push_back(format_literal);
                 /// Add compression=auto before structure argument.
                 args.push_back(std::make_shared<ASTLiteral>("auto"));
                 args.push_back(structure_literal);
             }
+        }
+        /// (connection_string, container_name, blobpath, format, compression, structure) or
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, structure) or
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, format)
+        else if (args.size() == 6)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(args[5], "format/structure");
+
+            /// (..., format, compression, structure)
+            if (is_format_arg(fourth_arg))
+            {
+                if (fourth_arg == "auto")
+                    args[3] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[5], "structure") == "auto")
+                    args[5] = structure_literal;
+            }
+            /// (..., account_name, account_key, format) -> (..., account_name, account_key, format, compression, structure)
+            else if (is_format_arg(sixth_arg))
+            {
+                if (sixth_arg == "auto")
+                    args[5] = format_literal;
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(structure_literal);
+            }
+            /// (..., account_name, account_key, structure) -> (..., account_name, account_key, format, compression, structure)
             else
             {
-                args.back() = structure_literal;
+                auto structure_arg = args.back();
+                args[5] = format_literal;
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                if (sixth_arg == "auto")
+                    args.push_back(structure_literal);
+                else
+                    args.push_back(structure_arg);
             }
         }
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, format, compression)
         else if (args.size() == 7)
         {
+            /// (..., format, compression) -> (..., format, compression, structure)
+            if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
+                args[5] = format_literal;
             args.push_back(structure_literal);
         }
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
         else if (args.size() == 8)
         {
-            args.back() = structure_literal;
+            if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
+                args[5] = format_literal;
+            if (checkAndGetLiteralArgument<String>(args[7], "structure") == "auto")
+                args[7] = structure_literal;
         }
     }
 }

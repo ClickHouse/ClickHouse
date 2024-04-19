@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/ReadFromStorageObjectStorage.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/Cache/SchemaCache.h>
 
 
@@ -193,6 +194,7 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
 {
     updateConfiguration(local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
+    const auto & query_settings = StorageSettings::create(local_context->getSettingsRef());
 
     if (configuration->withWildcard())
     {
@@ -209,7 +211,8 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
         {
             LOG_TEST(log, "Using PartitionedSink for {}", configuration->getPath());
             return std::make_shared<PartitionedStorageObjectStorageSink>(
-                object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
+                object_storage, configuration, query_settings,
+                format_settings, sample_block, local_context, partition_by_ast);
         }
     }
 
@@ -220,46 +223,19 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
                         getName(), configuration->getPath());
     }
 
-    const auto storage_settings = StorageSettings::create(local_context->getSettingsRef());
-
-    auto configuration_copy = configuration->clone();
-    if (!storage_settings.truncate_on_insert
-        && object_storage->exists(StoredObject(configuration->getPath())))
+    auto & paths = configuration->getPaths();
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, query_settings, paths.front(), paths.size()))
     {
-        if (storage_settings.create_new_file_on_insert)
-        {
-            auto & paths = configuration_copy->getPaths();
-            size_t index = paths.size();
-            const auto & first_key = paths[0];
-            auto pos = first_key.find_first_of('.');
-            String new_key;
-
-            do
-            {
-                new_key = first_key.substr(0, pos)
-                    + "."
-                    + std::to_string(index)
-                    + (pos == std::string::npos ? "" : first_key.substr(pos));
-                ++index;
-            }
-            while (object_storage->exists(StoredObject(new_key)));
-
-            paths.push_back(new_key);
-            configuration->getPaths().push_back(new_key);
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Object in bucket {} with key {} already exists. "
-                "If you want to overwrite it, enable setting [engine_name]_truncate_on_insert, if you "
-                "want to create a new file on each insert, enable setting [engine_name]_create_new_file_on_insert",
-                configuration_copy->getNamespace(), configuration_copy->getPaths().back());
-        }
+        paths.push_back(*new_key);
     }
 
     return std::make_shared<StorageObjectStorageSink>(
-        object_storage, configuration_copy, format_settings, sample_block, local_context);
+        object_storage,
+        configuration->clone(),
+        format_settings,
+        sample_block,
+        local_context);
 }
 
 template <typename StorageSettings>

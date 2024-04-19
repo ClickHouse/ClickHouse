@@ -31,8 +31,18 @@ void HDFSObjectStorage::startup()
 {
 }
 
+void HDFSObjectStorage::initializeHDFS() const
+{
+    if (hdfs_fs)
+        return;
+
+    hdfs_builder = createHDFSBuilder(url, config);
+    hdfs_fs = createHDFSFS(hdfs_builder.get());
+}
+
 ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
+    initializeHDFS();
     /// what ever data_source_description.description value is, consider that key as relative key
     chassert(data_directory.starts_with("/"));
     return ObjectStorageKey::createAsRelative(
@@ -41,6 +51,7 @@ ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string &
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
 {
+    initializeHDFS();
     std::string path = object.remote_path;
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
@@ -57,6 +68,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     std::optional<size_t>,
     std::optional<size_t>) const
 {
+    initializeHDFS();
     std::string path = object.remote_path;
     if (path.starts_with(url))
         path = path.substr(url.size());
@@ -73,6 +85,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
     std::optional<size_t>,
     std::optional<size_t>) const
 {
+    initializeHDFS();
     auto disk_read_settings = patchSettings(read_settings);
     auto read_buffer_creator =
         [this, disk_read_settings]
@@ -102,6 +115,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    initializeHDFS();
     if (attributes.has_value())
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
@@ -123,6 +137,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
+    initializeHDFS();
     auto path = object.remote_path;
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
@@ -136,24 +151,28 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
 
 void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
 {
+    initializeHDFS();
     for (const auto & object : objects)
         removeObject(object);
 }
 
 void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
+    initializeHDFS();
     if (exists(object))
         removeObject(object);
 }
 
 void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
+    initializeHDFS();
     for (const auto & object : objects)
         removeObjectIfExists(object);
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
 {
+    initializeHDFS();
     auto * file_info = hdfsGetPathInfo(hdfs_fs.get(), path.data());
     if (!file_info)
         throw Exception(ErrorCodes::HDFS_ERROR,
@@ -169,6 +188,7 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) co
 
 void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
+    initializeHDFS();
     auto * log = &Poco::Logger::get("HDFSObjectStorage");
     LOG_TRACE(log, "Trying to list files for {}", path);
 
@@ -222,6 +242,7 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
+    initializeHDFS();
     if (object_to_attributes.has_value())
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,

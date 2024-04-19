@@ -37,8 +37,6 @@ public:
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_)
         : config(config_)
-        , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
-        , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
     {
         const size_t begin_of_path = hdfs_root_path_.find('/', hdfs_root_path_.find("//") + 2);
@@ -117,10 +115,12 @@ public:
     bool isRemote() const override { return true; }
 
 private:
+    void initializeHDFS() const;
+
     const Poco::Util::AbstractConfiguration & config;
 
-    HDFSBuilderWrapper hdfs_builder;
-    HDFSFSPtr hdfs_fs;
+    mutable HDFSBuilderWrapper hdfs_builder;
+    mutable HDFSFSPtr hdfs_fs;
     SettingsPtr settings;
     std::string url;
     std::string url_without_path;

@@ -980,7 +980,7 @@ def test_read_subcolumns(started_cluster):
 
     assert (
         res
-        == "2\thdfs://hdfs1:9000/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
+        == "2\t/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
     )
 
     res = node.query(
@@ -989,7 +989,7 @@ def test_read_subcolumns(started_cluster):
 
     assert (
         res
-        == "2\thdfs://hdfs1:9000/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
+        == "2\t/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
     )
 
     res = node.query(
@@ -998,7 +998,7 @@ def test_read_subcolumns(started_cluster):
 
     assert (
         res
-        == "0\thdfs://hdfs1:9000/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
+        == "0\t/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
     )
 
     res = node.query(
@@ -1007,7 +1007,7 @@ def test_read_subcolumns(started_cluster):
 
     assert (
         res
-        == "42\thdfs://hdfs1:9000/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
+        == "42\t/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
     )
 
 

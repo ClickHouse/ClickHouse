@@ -157,7 +157,8 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings.server_side_encryption_customer_key_base64,
         std::move(sse_kms_config),
         auth_settings.headers,
-        credentials_configuration);
+        credentials_configuration,
+        auth_settings.session_token);
 }
 
 }

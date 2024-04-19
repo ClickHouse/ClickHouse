@@ -2,6 +2,7 @@
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -102,6 +103,7 @@ void StorageObjectStorageSink::release()
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    const StorageObjectStorageSettings & query_settings_,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
     ContextPtr context_,
@@ -109,6 +111,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     : PartitionedSink(partition_by, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , query_settings(query_settings_)
     , format_settings(format_settings_)
     , sample_block(sample_block_)
     , context(context_)
@@ -122,6 +125,12 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
 
     auto partition_key = replaceWildcards(configuration->getPath(), partition_id);
     validateKey(partition_key);
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, query_settings, partition_key, /* sequence_number */1))
+    {
+        partition_key = *new_key;
+    }
 
     return std::make_shared<StorageObjectStorageSink>(
         object_storage,

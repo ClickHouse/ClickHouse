@@ -84,7 +84,7 @@ struct HDFSStorageSettings
             .create_new_file_on_insert = settings.hdfs_create_new_file_on_insert,
             .schema_inference_use_cache = settings.schema_inference_use_cache_for_hdfs,
             .schema_inference_mode = settings.schema_inference_mode,
-            .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for hdfs
+            .skip_empty_files = settings.hdfs_skip_empty_files, /// TODO: add setting for hdfs
             .list_object_keys_size = settings.s3_list_object_keys_size, /// TODO: add a setting for hdfs
             .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
             .ignore_non_existent_file = settings.hdfs_ignore_file_doesnt_exist,
