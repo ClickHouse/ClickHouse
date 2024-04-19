@@ -164,7 +164,7 @@ private:
 
     struct DeserializeBinaryBulkStateVariantDiscriminators : public ISerialization::DeserializeBinaryBulkState
     {
-        DeserializeBinaryBulkStateVariantDiscriminators(UInt64 mode_) : mode(mode_)
+        explicit DeserializeBinaryBulkStateVariantDiscriminators(UInt64 mode_) : mode(mode_)
         {
         }
 
