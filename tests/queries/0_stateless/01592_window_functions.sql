@@ -109,14 +109,14 @@ FROM
         product_name,
         group_name,
         price,
-		rank() OVER (PARTITION BY group_name ORDER BY price ASC) AS rank,
+        rank() OVER (PARTITION BY group_name ORDER BY price ASC) AS rank,
         percent_rank() OVER (PARTITION BY group_name ORDER BY price ASC) AS percent
     FROM products
     INNER JOIN product_groups USING (group_id)
 ) AS t
 ORDER BY
     group_name ASC,
-	price ASC,
+    price ASC,
     product_name ASC;
 
 drop table product_groups;
