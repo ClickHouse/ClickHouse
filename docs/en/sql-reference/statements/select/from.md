@@ -61,7 +61,7 @@ SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
 
 ```sql
 SET final = 1;
-SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
 ```
 
 ## Implementation Details
