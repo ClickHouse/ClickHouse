@@ -20,6 +20,10 @@ class DownloadException(Exception):
     pass
 
 
+class APIException(Exception):
+    pass
+
+
 def get_with_retries(
     url: str,
     retries: int = DOWNLOAD_RETRIES_COUNT,
@@ -103,7 +107,7 @@ def get_gh_api(
             logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
-    raise exc
+    raise APIException("Unable to request data from GH API") from exc
 
 
 def get_build_name_for_check(check_name: str) -> str:
