@@ -160,14 +160,10 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
         if (it == records.end())
             return;
 
-        while (it != records.end() && it->address == address)
-        {
-            it->failed = true;
-            it->fail_time = now;
-            if (it->fail_count < RECORD_FAIL_COUNT_LIMIT)
-                ++it->fail_count;
-            ++it;
-        }
+        it->failed = true;
+        it->fail_time = now;
+        if (it->fail_count < RECORD_FAIL_COUNT_LIMIT)
+            ++it->fail_count;
     }
 
     ProfileEvents::increment(metrics.failed);
