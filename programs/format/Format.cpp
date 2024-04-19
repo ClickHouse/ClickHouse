@@ -237,7 +237,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 ASTPtr res = parseQueryAndMovePosition(
                     parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth, cmd_settings.max_parser_backtracks);
 
-                std::unique_ptr<ReadBuffer> insert_query_payload;
+                std::unique_ptr<ReadBuffer> insert_query_payload = nullptr;
                 /// If the query is INSERT ... VALUES, then we will try to parse the data.
                 if (auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {

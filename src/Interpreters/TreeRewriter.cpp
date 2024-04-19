@@ -1587,7 +1587,7 @@ void TreeRewriter::normalize(
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
     if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
-        FunctionNameNormalizer::visit(query.get());
+        FunctionNameNormalizer().visit(query.get());
 
     if (settings.optimize_move_to_prewhere)
     {

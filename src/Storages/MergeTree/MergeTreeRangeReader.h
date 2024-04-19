@@ -115,9 +115,6 @@ public:
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
 
-    /// Names of virtual columns that are filled in RangeReader.
-    static const NameSet virtuals_to_fill;
-
 private:
     /// Accumulates sequential read() requests to perform a large read instead of multiple small reads
     class DelayedStream
@@ -311,8 +308,6 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
-
-    void fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
     ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;

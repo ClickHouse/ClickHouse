@@ -1,4 +1,3 @@
-#include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -14,7 +13,6 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
 #include <Disks/SingleDiskVolume.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -66,7 +64,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
     auto full_relative_path = fs::path(root_path);
     if (detached)
-        full_relative_path /= MergeTreeData::DETACHED_DIR_NAME;
+        full_relative_path /= "detached";
 
     std::optional<String> original_checksums_content;
     std::optional<Strings> original_files_list;
@@ -111,7 +109,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     if (!exists("checksums.txt"))
         return false;
 
-    auto storage_from_detached = create(volume, fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME, detached_part_path, /*initialize=*/ true);
+    auto storage_from_detached = create(volume, fs::path(root_path) / "detached", detached_part_path, /*initialize=*/ true);
     if (!storage_from_detached->exists("checksums.txt"))
         return false;
 
@@ -492,7 +490,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
+    bool to_detached = dir_path.starts_with("detached/");
     return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 
@@ -620,7 +618,7 @@ void DataPartStorageOnDiskBase::remove(
         if (part_dir_without_slash.has_parent_path())
         {
             auto parent_path = part_dir_without_slash.parent_path();
-            if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
+            if (parent_path == "detached")
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Trying to remove detached part {} with path {} in remove function. It shouldn't happen",

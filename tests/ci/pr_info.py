@@ -26,7 +26,6 @@ NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
     ".md",
-    ".mdx",
     ".yml",
     ".txt",
     ".css",
@@ -199,6 +198,7 @@ class PRInfo:
             EventType.MERGE_QUEUE in github_event
         ):  # pull request and other similar events
             self.event_type = EventType.MERGE_QUEUE
+            # FIXME: need pr? we can parse it from ["head_ref": "refs/heads/gh-readonly-queue/test-merge-queue/pr-6751-4690229995a155e771c52e95fbd446d219c069bf"]
             self.number = 0
             self.sha = github_event[EventType.MERGE_QUEUE]["head_sha"]
             self.base_ref = github_event[EventType.MERGE_QUEUE]["base_ref"]
@@ -207,8 +207,6 @@ class PRInfo:
             self.base_name = github_event["repository"]["full_name"]
             # any_branch-name - the name of working branch name
             self.head_ref = github_event[EventType.MERGE_QUEUE]["head_ref"]
-            # parse underlying pr from ["head_ref": "refs/heads/gh-readonly-queue/test-merge-queue/pr-6751-4690229995a155e771c52e95fbd446d219c069bf"]
-            self.merged_pr = int(self.head_ref.split("/pr-")[-1].split("-")[0])
             # UserName/ClickHouse or ClickHouse/ClickHouse
             self.head_name = self.base_name
             self.user_login = github_event["sender"]["login"]
@@ -236,8 +234,6 @@ class PRInfo:
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
                 self.number = 0
-                if pull_request:
-                    self.merged_pr = pull_request["number"]
                 self.labels = set()
                 self.pr_html_url = f"{repo_prefix}/commits/{ref}"
                 self.base_ref = ref
@@ -310,34 +306,27 @@ class PRInfo:
         if need_changed_files:
             self.fetch_changed_files()
 
-    @property
     def is_master(self) -> bool:
         return self.number == 0 and self.head_ref == "master"
 
-    @property
     def is_release(self) -> bool:
         return self.number == 0 and bool(
             re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
         )
 
-    @property
     def is_release_branch(self) -> bool:
         return self.number == 0
 
-    @property
     def is_pr(self):
         return self.event_type == EventType.PULL_REQUEST
 
-    @property
-    def is_scheduled(self) -> bool:
+    def is_scheduled(self):
         return self.event_type == EventType.SCHEDULE
 
-    @property
-    def is_merge_queue(self) -> bool:
+    def is_merge_queue(self):
         return self.event_type == EventType.MERGE_QUEUE
 
-    @property
-    def is_dispatched(self) -> bool:
+    def is_dispatched(self):
         return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:

@@ -830,25 +830,23 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
-    std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
-    if (flush_pool)
-        runner.emplace(*flush_pool, "BufferFlush");
     for (auto & buf : buffers)
     {
-        if (runner)
+        if (flush_pool)
         {
-            (*runner)([&]()
+            scheduleFromThreadPool<void>([&] ()
             {
                 flushBuffer(buf, check_thresholds, false);
-            });
+            }, *flush_pool, "BufferFlush");
         }
         else
         {
             flushBuffer(buf, check_thresholds, false);
         }
     }
-    if (runner)
-        runner->waitForAllToFinishAndRethrowFirstError();
+
+    if (flush_pool)
+        flush_pool->wait();
 }
 
 

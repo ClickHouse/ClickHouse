@@ -1,28 +1,28 @@
 #pragma once
 
+#include <cerrno>
+#include <exception>
+#include <vector>
+#include <memory>
+
+#include <Poco/Exception.h>
+
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <base/int8_to_string.h>
 #include <base/scope_guard.h>
+#include <Common/AtomicLogger.h>
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 
-#include <cerrno>
-#include <exception>
-#include <memory>
-#include <vector>
-
 #include <fmt/format.h>
-#include <Poco/Exception.h>
 
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
-
-class AtomicLogger;
 
 [[noreturn]] void abortOnFailedAssertion(const String & description);
 
@@ -72,8 +72,6 @@ public:
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
     static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
-    /// Callback for any exception
-    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
 
 protected:
     // used to remove the sensitive information from exceptions if query_masking_rules is configured

@@ -432,12 +432,13 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
-    const auto metadata = reading.getStorageMetadata();
-    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
+    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter();
 
     AggregateProjectionCandidates candidates;
 
     const auto & parts = reading.getParts();
+
+    const auto metadata = reading.getStorageMetadata();
     ContextPtr context = reading.getContext();
 
     const auto & projections = metadata->projections;
