@@ -2121,6 +2121,8 @@ def main() -> int:
                     pr_info,
                     dump_to_file=True,
                 )
+                if job_report.status != SUCCESS:
+                    exit_code = 1
                 if not pr_info.is_merge_queue:
                     # in the merge queue mergeable status must be set only in FinishCheck (last job in wf)
                     update_mergeable_check(
