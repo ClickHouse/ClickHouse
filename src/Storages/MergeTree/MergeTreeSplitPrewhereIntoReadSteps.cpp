@@ -221,12 +221,23 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
-    auto condition_nodes = condition_root.children;
 
-    /// 2. Collect the set of columns that are used in the condition
+    /// 2. Collect the conditions set of columns that are used in each condition
+    ActionsDAG::NodeRawConstPtrs condition_nodes;
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
-    for (const auto & node : condition_nodes)
+    for (const auto & node : condition_root.children)
     {
+        /// We skip constant nodes because at this stage they should be always_true
+        /// In addition, when a constant node is the first step of reading chain and the storage doesn't have adaptive granularity,
+        /// the last granule 's rows will not be accurate because no physical read is performed, and it may cause some bug in range
+        /// reader. See https://github.com/ClickHouse/ClickHouse/issues/62741
+        if (node->column)
+        {
+            auto constant_description = ConstantFilterDescription(*node->column);
+            if (constant_description.always_true) /// At this stage the condition node cannot be always_false
+                continue;
+        }
+        condition_nodes.push_back(node);
         fillRequiredColumns(node, nodes_info);
     }
 
