@@ -17,28 +17,17 @@ SELECT * FROM elements ;
 
 ALTER TABLE elements
 UPDATE
-
-    `nested.key` = arrayFilter(
-    (c, k, v) -> NOT (match(k, '.*') AND match(v, 'chocolatine')),
-    `nested.key`, `nested.key`, `nested.value`
-    ),
-
-    `nested.value` = arrayFilter(
-    (c, k, v) -> NOT (match(k, '.*') AND match(v, 'chocolatine')),
-    `nested.value`, `nested.key`, `nested.value`
-    )
-
-WHERE id = 5555 AND 1=1
-    SETTINGS mutations_sync = 1 ;
+    `nested.key` = arrayFilter((x, v) -> NOT (match(v, 'chocolatine')), `nested.key`, `nested.value` ),
+    `nested.value` = arrayFilter((x, v) -> NOT (match(v, 'chocolatine')), `nested.value`, `nested.value`)
+WHERE id = 5555
+SETTINGS mutations_sync = 1 ;
 
 SELECT * FROM elements ;
 
 ALTER TABLE elements
 UPDATE
-
     `nested.value` = arrayMap(x -> concat(x, ' au chocolat'), `nested.value`)
-
-WHERE id = 5555 AND 1=1
-    SETTINGS mutations_sync = 1 ;
+WHERE id = 5555
+SETTINGS mutations_sync = 1 ;
 
 SELECT * FROM elements ;
