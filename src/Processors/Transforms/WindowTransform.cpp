@@ -2124,7 +2124,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
     }
 
     bool allocatesMemoryInArena() const override { return false; }
-    
+
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         if (transform->order_by_indices.empty())
@@ -2272,7 +2272,7 @@ public:
         frame.end_type = WindowFrame::BoundaryType::Unbounded;
         return frame;
     }
-    
+
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
         if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded
