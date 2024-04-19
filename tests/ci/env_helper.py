@@ -66,6 +66,8 @@ def GITHUB_JOB_URL(safe: bool = True) -> str:
         if safe:
             logging.warning("Using run URL as a fallback to not fail the job")
             return GITHUB_RUN_URL
+        raise
+
     return _GITHUB_JOB_URL
 
 
