@@ -296,7 +296,7 @@ public:
 
     const_iterator begin() const
     {
-        if (!buf && min > max)
+        if (!buf || min > max)
             return end();
 
         const Cell * ptr = buf + min;
@@ -307,7 +307,8 @@ public:
 
     iterator begin()
     {
-        if (!buf && min > max)
+        /// If the container is empty, the initialization of min/max will not work as min > max.
+        if (!buf || min > max)
             return end();
 
         Cell * ptr = buf + min;
