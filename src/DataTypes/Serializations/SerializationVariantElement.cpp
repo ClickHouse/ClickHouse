@@ -72,6 +72,7 @@ void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
         UInt64 mode;
         readBinaryLittleEndian(mode, *discriminators_stream);
         discriminators_state = std::make_shared<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(mode);
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
     }
     else
     {
