@@ -18,6 +18,7 @@ public:
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
     ASTPtr collation;
 
+    ASTPtr depends_on;
     bool with_fill = false;
     ASTPtr fill_from;
     ASTPtr fill_to;

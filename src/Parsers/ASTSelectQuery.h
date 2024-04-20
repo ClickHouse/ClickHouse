@@ -59,7 +59,7 @@ public:
             case Expression::ORDER_BY:
                 return "ORDER BY";
             case Expression::DEPENDS_ON:
-                return "ORDER BY";
+                return "DEPENDS ON";
             case Expression::LIMIT_BY_OFFSET:
                 return "LIMIT BY OFFSET";
             case Expression::LIMIT_BY_LENGTH:
@@ -92,7 +92,7 @@ public:
     bool group_by_with_grouping_sets = false;
     bool order_by_all = false;
     bool limit_with_ties = false;
-    bool depends_on_order_by = false;
+    bool depends_on = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
@@ -109,7 +109,7 @@ public:
     ASTPtr having()         const { return getExpression(Expression::HAVING); }
     ASTPtr window()         const { return getExpression(Expression::WINDOW); }
     ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
-    ASTPtr dependsOn()        const { return getExpression(Expression::DEPENDS_ON); }
+    ASTPtr dependsOn()      const { return getExpression(Expression::DEPENDS_ON); }
     ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }

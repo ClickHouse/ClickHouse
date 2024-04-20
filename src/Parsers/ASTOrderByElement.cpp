@@ -36,6 +36,10 @@ void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " COLLATE " << (settings.hilite ? hilite_none : "");
         collation->formatImpl(settings, state, frame);
     }
+    if (depends_on){
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEPENDS ON " << (settings.hilite ? hilite_none : "");
+        depends_on->formatImpl(settings, state, frame);
+    }
 
     if (with_fill)
     {
