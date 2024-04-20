@@ -10,9 +10,11 @@ class FunctionArraySymmetricDifference : public FunctionArrayLogicalBase<false>
 public:
     static constexpr auto name = "arraySymmetricDifference";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySymmetricDifference>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArraySymmetricDifference>(context); }
 
-    FunctionArraySymmetricDifference() : FunctionArrayLogicalBase<false>(name) { }
+    FunctionArraySymmetricDifference(ContextPtr context_) : FunctionArrayLogicalBase<false>(context_) { }
+protected:
+    ContextPtr context;
 };
 
 

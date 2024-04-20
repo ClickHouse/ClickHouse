@@ -40,7 +40,7 @@ template <bool intersect>
 class FunctionArrayLogicalBase : public IFunction
 {
 public:
-    explicit FunctionArrayLogicalBase(const char * name_) : name(name_) { }
+    explicit FunctionArrayLogicalBase(ContextPtr context_) : context(context_) { }
 
     String getName() const override { return name; }
 
@@ -59,7 +59,7 @@ public:
 
 private:
     ContextPtr context;
-    const char * name;
+    const char * name = intersect ? "arrayIntersect" : "arraySymmetricDifference";
 
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 6;

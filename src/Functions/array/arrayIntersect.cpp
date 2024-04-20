@@ -10,9 +10,11 @@ class FunctionArrayIntersect : public FunctionArrayLogicalBase<true>
 public:
     static constexpr auto name = "arrayIntersect";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayIntersect>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIntersect>(context); }
 
-    FunctionArrayIntersect() : FunctionArrayLogicalBase<true>(name) { }
+    FunctionArrayIntersect(ContextPtr context_) : FunctionArrayLogicalBase<true>(context_) { }
+protected:
+    ContextPtr context;
 };
 
 
