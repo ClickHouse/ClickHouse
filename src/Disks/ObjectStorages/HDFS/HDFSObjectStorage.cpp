@@ -33,11 +33,16 @@ void HDFSObjectStorage::startup()
 
 void HDFSObjectStorage::initializeHDFS() const
 {
-    if (hdfs_fs)
+    if (initialized)
+        return;
+
+    std::lock_guard lock(init_mutex);
+    if (initialized)
         return;
 
     hdfs_builder = createHDFSBuilder(url, config);
     hdfs_fs = createHDFSFS(hdfs_builder.get());
+    initialized = true;
 }
 
 ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const

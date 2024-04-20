@@ -121,6 +121,10 @@ private:
 
     mutable HDFSBuilderWrapper hdfs_builder;
     mutable HDFSFSPtr hdfs_fs;
+
+    mutable std::mutex init_mutex;
+    mutable std::atomic_bool initialized{false};
+
     SettingsPtr settings;
     std::string url;
     std::string url_without_path;
