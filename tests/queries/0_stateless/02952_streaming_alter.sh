@@ -40,6 +40,14 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "ALTER TABLE t_streaming_test DROP COLUMN c"
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test (*) select number, number from numbers(1)"
 read_until "$fifo_1" "0"
 
+echo "== Alter table: change type b =="
+
+$CLICKHOUSE_CLIENT "${opts[@]}" -q "ALTER TABLE t_streaming_test MODIFY COLUMN b UInt32"
+
+# insert some data into stream
+$CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test (*) select number, number from numbers(2)"
+read_until "$fifo_1" "1"
+
 echo "== Alter table: drop column b =="
 
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "ALTER TABLE t_streaming_test DROP COLUMN b"
@@ -50,4 +58,4 @@ exec {fd}<>$fifo_1
 
 # insert some data into stream
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test (a) select number from numbers(1)"
-read_until "$fifo_1" "Not found column b in block." | grep -o 'NOT_FOUND_COLUMN_IN_BLOCK'
+read_until "$fifo_1" "THERE_IS_NO_COLUMN" | grep -o 'THERE_IS_NO_COLUMN'

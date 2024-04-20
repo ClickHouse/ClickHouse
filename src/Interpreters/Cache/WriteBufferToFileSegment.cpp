@@ -26,9 +26,9 @@ namespace
     {
         auto query_context = CurrentThread::getQueryContext();
         if (query_context)
-            return query_context->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+            return query_context->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
         else
-            return Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+            return Context::getGlobalContextInstance()->getSettingsRef().temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds;
     }
 }
 

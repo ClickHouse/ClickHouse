@@ -8,6 +8,8 @@
 
 #include <QueryPipeline/Pipe.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 #include <Storages/Streaming/Subscription_fwd.h>
 
 namespace DB
@@ -35,7 +37,7 @@ protected:
     /// Converts block from subscription to output header metadata chunk.
     /// It is possible for sinks to change chunk somehow before pushing it to subscribers
     /// or it can be an alter table metadata change
-    Chunk ProjectBlock(Block block) const;
+    Chunk ProjectBlock(Block block);
 
     std::optional<Chunk> tryGenerate() override;
 
@@ -44,6 +46,9 @@ private:
     std::optional<int> fd;
 
     BlocksList cached_data;
+
+    Block subscription_stream_metadata;
+    ExpressionActionsPtr stream_converter;
 
     Poco::Logger * log = &Poco::Logger::get("SubscriptionSource");
 };

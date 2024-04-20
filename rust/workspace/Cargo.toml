@@ -1,0 +1,19 @@
+# workspace is required to vendor crates for all packages.
+[workspace]
+members = [
+    "skim",
+    "prql",
+]
+resolver = "2"
+
+[profile.release]
+debug = false
+
+# We use LTO to slightly decrease binary size
+[profile.release-thinlto]
+inherits = "release"
+lto = true
+
+[patch.crates-io]
+# Ref: https://github.com/lotabout/tuikit/pull/51
+tuikit = { git = "https://github.com/azat-rust/tuikit.git", rev = "e1994c0e03ff02c49cf1471f0cc3cbf185ce0104" }

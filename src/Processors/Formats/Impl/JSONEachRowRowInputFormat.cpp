@@ -132,6 +132,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
+    seen_columns_count++;
     const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
     read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
@@ -161,6 +162,14 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(*in);
+        if (seen_columns_count >= total_columns && format_settings.json.ignore_unnecessary_fields)
+        {
+            // Keep parsing the remaining fields in case of the json is invalid.
+            // But not look up the name in the name_map since the cost cannot be ignored
+            JSONUtils::skipColon(*in);
+            skipUnknownField(name_ref);
+            continue;
+        }
         const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
@@ -210,6 +219,8 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
 
     size_t num_columns = columns.size();
+    total_columns = num_columns;
+    seen_columns_count = 0;
 
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);

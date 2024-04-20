@@ -370,4 +370,12 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
+
+enum class FirstDayOfWeek
+{
+    Monday,
+    Sunday
+};
+
+DECLARE_SETTING_ENUM(FirstDayOfWeek)
 }

@@ -604,6 +604,8 @@ public:
 
     constexpr const char * getName() const override { return s.data(); }
 
+    Highlight highlight() const override { return Highlight::keyword; }
+
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
