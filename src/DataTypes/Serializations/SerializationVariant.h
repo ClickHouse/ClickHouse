@@ -178,7 +178,7 @@ private:
 
     static DeserializeBinaryBulkStatePtr deserializeDiscriminatorsStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        SubstreamsDeserializeStatesCache * cache) const;
+        SubstreamsDeserializeStatesCache * cache);
 
     std::vector<size_t> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
