@@ -128,7 +128,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
 
     if (unlikely(mark_number >= std::numeric_limits<UInt32>::max() && store->map_to_granule_id))
         LOG_ERROR(getLogger("MergeTreeIndexAggregatorInverted"),
-            "Mark number overflows numberic maximum of UInt32, false positive rate can be higher.");
+            "Mark number overflows numeric maximum of UInt32, false positive rate can be higher.");
 
     if (store->map_to_granule_id)
         updateImpl<true>(block, pos, limit, static_cast<UInt32>(mark_number));
