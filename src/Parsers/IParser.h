@@ -56,6 +56,7 @@ struct Expected
     absl::InlinedVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
 
+    bool enable_highlighting = false;
     std::set<HighlightedRange> highlights;
 
     /// 'description' should be statically allocated string.

@@ -557,6 +557,37 @@ Result:
 │        0 │
 └──────────┘
 ```
+## tanh
+
+Returns the [hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/tanh.html).
+
+**Syntax**
+
+``` sql
+tanh(x)
+```
+
+**Arguments**
+
+- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+- Values from the interval: `-1 < tanh(x) < 1`.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+``` sql
+SELECT tanh(0);
+```
+
+Result:
+
+```result
+0
+```
 
 ## atanh
 

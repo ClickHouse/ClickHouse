@@ -45,7 +45,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     size_t buf_size_,
     const WriteSettings & write_settings_,
     std::shared_ptr<const AzureObjectStorageSettings> settings_,
-    ThreadPoolCallbackRunner<void> schedule_)
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))

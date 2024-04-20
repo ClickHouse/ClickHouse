@@ -482,6 +482,7 @@ void Client::connect()
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
     load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
+    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -687,7 +688,11 @@ bool Client::processWithFuzzing(const String & full_query)
     try
     {
         const char * begin = full_query.data();
-        orig_ast = parseQuery(begin, begin + full_query.size(), true);
+        orig_ast = parseQuery(begin, begin + full_query.size(),
+            global_context->getSettingsRef(),
+            /*allow_multi_statements=*/ true,
+            /*is_interactive=*/ is_interactive,
+            /*ignore_error=*/ ignore_error);
     }
     catch (const Exception & e)
     {
