@@ -117,7 +117,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
-        auto discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state->discriminators_state);
+        auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state->discriminators_state);
 
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
@@ -241,7 +241,7 @@ size_t SerializationVariantElement::deserializeCompactDiscriminators(
     bool continuous_reading,
     DeserializeBinaryBulkStateVariantElement & variant_element_state) const
 {
-    auto discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state.discriminators_state);
+    auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state.discriminators_state);
     auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
     auto & discriminators_data = discriminators.getData();
 

@@ -72,7 +72,7 @@ void SerializationVariant::enumerateStreams(
 
 struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
 {
-    SerializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
+    explicit SerializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
     {
     }
 
@@ -380,7 +380,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
-        auto discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
+        auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
