@@ -5,5 +5,8 @@ started 0
 1 1
 == Alter table: drop column c ==
 0 0
+== Alter table: change type b ==
+0 0
+1 1
 == Alter table: drop column b ==
-NOT_FOUND_COLUMN_IN_BLOCK
+THERE_IS_NO_COLUMN

@@ -72,15 +72,28 @@ void SubscriptionSource::onCancel()
     subscription->disable();
 }
 
-Chunk SubscriptionSource::ProjectBlock(Block block) const
+Chunk SubscriptionSource::ProjectBlock(Block block)
 {
-    const Block& header = getPort().getHeader();
-    Block projection;
+    Block metadata_block = block.cloneEmpty();
 
-    for (const auto& header_column : header.getColumnsWithTypeAndName())
-        projection.insert(block.getByName(header_column.name));
+    /// if stream changed, we must recalculate converting actions
+    if (!blocksHaveEqualStructure(subscription_stream_metadata, metadata_block))
+    {
+        LOG_INFO(log, "Recalculating converting actions for new metadata: {}", metadata_block.dumpStructure());
 
-    return Chunk(projection.getColumns(), projection.rows());
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            metadata_block.getColumnsWithTypeAndName(),
+            getPort().getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+
+        subscription_stream_metadata = std::move(metadata_block);
+        stream_converter = std::make_shared<ExpressionActions>(std::move(convert_actions_dag));
+    }
+
+    chassert(stream_converter != nullptr);
+    stream_converter->execute(block);
+
+    return Chunk(block.getColumns(), block.rows());
 }
 
 }
