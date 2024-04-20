@@ -22,3 +22,4 @@ target_compile_definitions(_rpmalloc PRIVATE ENABLE_STATISTICS ENABLE_OVERRIDE E
 target_include_directories(_rpmalloc SYSTEM PUBLIC "${LIBRARY_DIR}")
 
 add_library(ch_contrib::rpmalloc ALIAS _rpmalloc)
+
