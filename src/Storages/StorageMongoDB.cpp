@@ -1,25 +1,36 @@
-#include <Storages/StorageMongoDB.h>
-#include <Storages/StorageMongoDBSocketFactory.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/NamedCollectionsHelpers.h>
+#include "config.h"
 
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Database.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Common/parseAddress.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#if USE_MONGODB
+#include <memory>
+
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
 #include <IO/Operators.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <unordered_set>
+#include <Processors/Sources/MongoDBSource.h>
+#include <QueryPipeline/Pipe.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageMongoDB.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Common/ErrorCodes.h>
+#include <Common/parseAddress.h>
 
-#include <DataTypes/DataTypeArray.h>
+#include <mongocxx/instance.hpp>
+
+#include <bsoncxx/json.hpp>
+#include <bsoncxx/builder/basic/document.hpp>
+#include <bsoncxx/builder/basic/array.hpp>
+
+using bsoncxx::builder::basic::document;
+using bsoncxx::builder::basic::array;
+using bsoncxx::builder::basic::make_document;
+using bsoncxx::builder::basic::kvp;
 
 namespace DB
 {
@@ -28,7 +39,11 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
+
+mongocxx::instance inst{};
 
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
@@ -42,12 +57,11 @@ StorageMongoDB::StorageMongoDB(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
-    : IStorage(table_id_)
-    , database_name(database_name_)
-    , collection_name(collection_name_)
-    , username(username_)
-    , password(password_)
-    , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
+    : IStorage{table_id_}
+    , database_name{database_name_}
+    , collection_name{collection_name_}
+    , uri{"mongodb://" + username_ + ":" + password_ + "@" + host_ + ":" + toString(port_) + "/" + database_name_ + "?" + options_}
+    , log(getLogger("StorageMongoDB (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -56,175 +70,15 @@ StorageMongoDB::StorageMongoDB(
     setInMemoryMetadata(storage_metadata);
 }
 
-
-void StorageMongoDB::connectIfNotConnected()
-{
-    std::lock_guard lock{connection_mutex};
-    if (!connection)
-    {
-        StorageMongoDBSocketFactory factory;
-        connection = std::make_shared<Poco::MongoDB::Connection>(uri, factory);
-    }
-
-    if (!authenticated)
-    {
-        Poco::URI poco_uri(uri);
-        auto query_params = poco_uri.getQueryParameters();
-        auto auth_source = std::find_if(query_params.begin(), query_params.end(),
-                                        [&](const std::pair<std::string, std::string> & param) { return param.first == "authSource"; });
-        auto auth_db = database_name;
-        if (auth_source != query_params.end())
-            auth_db = auth_source->second;
-
-        if (!username.empty() && !password.empty())
-        {
-            Poco::MongoDB::Database poco_db(auth_db);
-            if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
-        }
-
-        authenticated = true;
-    }
-}
-
-
-class StorageMongoDBSink : public SinkToStorage
-{
-public:
-    explicit StorageMongoDBSink(
-        const std::string & collection_name_,
-        const std::string & db_name_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        std::shared_ptr<Poco::MongoDB::Connection> connection_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , collection_name(collection_name_)
-        , db_name(db_name_)
-        , metadata_snapshot{metadata_snapshot_}
-        , connection(connection_)
-        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_))
-    {
-    }
-
-    String getName() const override { return "StorageMongoDBSink"; }
-
-    void consume(Chunk chunk) override
-    {
-        Poco::MongoDB::Database db(db_name);
-        Poco::MongoDB::Document::Vector documents;
-
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
-
-        size_t num_rows = block.rows();
-        size_t num_cols = block.columns();
-
-        const auto columns = block.getColumns();
-        const auto data_types = block.getDataTypes();
-        const auto data_names = block.getNames();
-
-        documents.reserve(num_rows);
-
-        for (const auto i : collections::range(0, num_rows))
-        {
-            Poco::MongoDB::Document::Ptr document = new Poco::MongoDB::Document();
-
-            for (const auto j : collections::range(0, num_cols))
-            {
-                insertValueIntoMongoDB(*document, data_names[j], *data_types[j], *columns[j], i);
-            }
-
-            documents.push_back(std::move(document));
-        }
-
-        if (is_wire_protocol_old)
-        {
-            Poco::SharedPtr<Poco::MongoDB::InsertRequest> insert_request = db.createInsertRequest(collection_name);
-            insert_request->documents() = std::move(documents);
-            connection->sendRequest(*insert_request);
-        }
-        else
-        {
-            Poco::SharedPtr<Poco::MongoDB::OpMsgMessage> insert_request = db.createOpMsgMessage(collection_name);
-            insert_request->setCommandName(Poco::MongoDB::OpMsgMessage::CMD_INSERT);
-            insert_request->documents() = std::move(documents);
-            connection->sendRequest(*insert_request);
-        }
-    }
-
-private:
-
-    void insertValueIntoMongoDB(
-        Poco::MongoDB::Document & document,
-        const std::string & name,
-        const IDataType & data_type,
-        const IColumn & column,
-        size_t idx)
-    {
-        WhichDataType which(data_type);
-
-        if (which.isArray())
-        {
-            const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-            const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-            size_t offset = offsets[idx - 1];
-            size_t next_offset = offsets[idx];
-
-            const IColumn & nested_column = column_array.getData();
-
-            const auto * array_type = assert_cast<const DataTypeArray *>(&data_type);
-            const DataTypePtr & nested_type = array_type->getNestedType();
-
-            Poco::MongoDB::Array::Ptr array = new Poco::MongoDB::Array();
-            for (size_t i = 0; i + offset < next_offset; ++i)
-            {
-                insertValueIntoMongoDB(*array, Poco::NumberFormatter::format(i), *nested_type, nested_column, i + offset);
-            }
-
-            document.add(name, array);
-            return;
-        }
-
-        /// MongoDB does not support UInt64 type, so just cast it to Int64
-        if (which.isNativeUInt())
-            document.add(name, static_cast<Poco::Int64>(column.getUInt(idx)));
-        else if (which.isNativeInt())
-            document.add(name, static_cast<Poco::Int64>(column.getInt(idx)));
-        else if (which.isFloat32())
-            document.add(name, static_cast<Float64>(column.getFloat32(idx)));
-        else if (which.isFloat64())
-            document.add(name, static_cast<Float64>(column.getFloat64(idx)));
-        else if (which.isDate())
-            document.add(name, Poco::Timestamp(DateLUT::instance().fromDayNum(DayNum(column.getUInt(idx))) * 1000000));
-        else if (which.isDateTime())
-            document.add(name, Poco::Timestamp(column.getUInt(idx) * 1000000));
-        else
-        {
-            WriteBufferFromOwnString ostr;
-            data_type.getDefaultSerialization()->serializeText(column, idx, ostr, FormatSettings{});
-            document.add(name, ostr.str());
-        }
-    }
-
-    String collection_name;
-    String db_name;
-    StorageMetadataPtr metadata_snapshot;
-    std::shared_ptr<Poco::MongoDB::Connection> connection;
-
-    const bool is_wire_protocol_old;
-};
-
-
 Pipe StorageMongoDB::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    connectIfNotConnected();
-
     storage_snapshot->check(column_names);
 
     Block sample_block;
@@ -234,13 +88,15 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, database_name, collection_name, Poco::MongoDB::Document{}, sample_block, max_block_size));
+    auto options = mongocxx::options::find();
+
+    return Pipe(std::make_shared<MongoDBSource>(uri, database_name, collection_name, createMongoDBQuery(&options, &query_info),
+                                                std::move(options), sample_block, max_block_size));
 }
 
-SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
+SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /* context */, bool /*async_insert*/)
 {
-    connectIfNotConnected();
-    return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
+    return nullptr; // TODO: implement
 }
 
 StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
@@ -291,6 +147,149 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
     return configuration;
 }
 
+String StorageMongoDB::getFuncName(const String & func)
+{
+    if (func == "equals")
+        return "$eq";
+    if (func == "greaterThan")
+        return "$gt";
+    if (func == "greaterOrEquals")
+        return "$gte";
+    if (func == "in")
+        return "$in";
+    if (func == "lessThan")
+        return "$lt";
+    if (func == "lessOrEquals")
+        return "$lte";
+    if (func == "notEquals")
+        return "$ne";
+    if (func == "notIn")
+        return "$ne";
+    if (func == "and")
+        return "$and";
+    if (func == "or")
+        return "$or";
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "function '{}' is not supported", func);
+}
+
+bsoncxx::types::bson_value::value StorageMongoDB::toBSONValue(const Field * field)
+{
+    switch(field->getType())
+    {
+        case Field::Types::Null:
+            return bsoncxx::types::b_null();
+        case Field::Types::UInt64:
+            return static_cast<Int64>(field->get<UInt64 &>());
+        case Field::Types::Int64:
+            return field->get<Int64 &>();
+        case Field::Types::Float64:
+            return field->get<Float64 &>();
+        case Field::Types::String:
+            return field->get<String &>();
+        case Field::Types::Array:
+        {
+            auto arr = array();
+            for (const auto & tuple_field : field->get<Array &>())
+                arr.append(toBSONValue(&tuple_field));
+            return arr.view();
+        }
+        case Field::Types::Tuple:
+        {
+            auto arr =array();
+            for (const auto & tuple_field : field->get<Tuple &>())
+                arr.append(toBSONValue(&tuple_field));
+            return arr.view();
+        }
+        case Field::Types::Map:
+        {
+            auto doc = document();
+            for (const auto & element : field->get<Map &>())
+            {
+                const auto & tuple = element.get<Tuple &>();
+                doc.append(kvp(tuple.at(0).get<String &>(), toBSONValue(&tuple.at(1))));
+            }
+            return doc.view();
+        }
+        case Field::Types::UUID:
+            return static_cast<String>(formatUUID(field->get<UUID &>()));
+        case Field::Types::Bool:
+            return static_cast<bool>(field->get<bool &>());
+        case Field::Types::Object:
+        {
+            auto doc = document();
+            for (const auto & [key, var] : field->get<Object &>())
+                doc.append(kvp(key, toBSONValue(&var)));
+            return doc.view();
+        }
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "field's type '{}' is not supported", field->getTypeName());
+    }
+}
+
+bsoncxx::document::value StorageMongoDB::visitFunction(const ASTFunction * func)
+{
+    const auto & func_name = getFuncName(func->name);
+    if (const auto & explist = func->children.at(0)->as<ASTExpressionList>())
+    {
+        if (const auto & identifier = explist->children.at(0)->as<ASTIdentifier>())
+        {
+            const auto & expression = explist->children.at(1);
+            if (const auto & literal = expression->as<ASTLiteral>())
+                return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, toBSONValue(&literal->value)))));
+            if (const auto & child_func = expression->as<ASTFunction>())
+                return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, visitFunction(child_func)))));
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "error during parsing the AST: the Function must have an ExpressionList or a Function as second argument, got '{}' instead",
+                expression->formatForErrorMessage());
+        }
+
+
+        auto arr = array();
+        for (const auto & child : explist->children)
+        {
+            if (const auto & child_func = child->as<ASTFunction>())
+                arr.append(visitFunction(child_func));
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "error during parsing the AST: expected a function in the ExpressionList, got '{}' instead",
+                    child->formatForErrorMessage());
+        }
+        return make_document(kvp(func_name, std::move(arr)));
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "error during parsing the AST: first child must be an ExpressionList, got '{}' instead", func->children.at(0)->formatForErrorMessage());
+}
+
+bsoncxx::document::value StorageMongoDB::createMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query)
+{
+    auto & query_tree = query->query_tree->as<QueryNode &>();
+
+    if (query_tree.hasLimit())
+        options->limit(query->limit);
+    if (query_tree.hasLimitBy()) 
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,"LIMIT BY is not supported.");
+    if (query_tree.hasOffset())
+        options->skip(query_tree.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>());
+    if (query_tree.hasWindow())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,"WINDOW is not supported.");
+
+    // TODO: _CAST support
+    // TODO: projections
+    // TODO: sort
+    // TODO: aggregation functions
+
+    if (query_tree.hasWhere())
+    {
+        auto filter = visitFunction( query_tree.getWhere()->toAST()->as<ASTFunction>());
+        LOG_INFO(log, "MongoDB query has built: '{}'", bsoncxx::to_json(filter));
+        return filter;
+    }
+
+    return make_document();
+}
+
 
 void registerStorageMongoDB(StorageFactory & factory)
 {
@@ -317,3 +316,4 @@ void registerStorageMongoDB(StorageFactory & factory)
 }
 
 }
+#endif

@@ -1,19 +1,43 @@
+#include "config.h"
 #include "MongoDBDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/StorageMongoDBSocketFactory.h>
+
+#if USE_MONGODB
+#include <bsoncxx/builder/basic/array.hpp>
+
+#include <Common/logger_useful.h>
+#include <IO/WriteHelpers.h>
+
+using bsoncxx::builder::basic::kvp;
+using bsoncxx::builder::basic::make_document;
+#endif
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    #if USE_MONGODB
+    extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int MONGODB_CANNOT_AUTHENTICATE;
+    #else
+    extern const int SUPPORT_IS_DISABLED;
+    #endif
+}
+
+#if USE_MONGODB
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method", "options"};
+    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "options"};
+#endif
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
-    auto create_mongo_db_dictionary = [](
+    #if USE_MONGODB
+    auto create_dictionary_source = [](
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
@@ -48,121 +72,71 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
-            config.getString(config_prefix + ".method", ""),
             configuration.database,
             config.getString(config_prefix + ".collection"),
             config.getString(config_prefix + ".options", ""),
             sample_block);
     };
+    #else
+    auto create_dictionary_source = [](
+        const DictionaryStructure & /* dict_struct */,
+        const Poco::Util::AbstractConfiguration & /* config */,
+        const std::string & /* root_config_prefix */,
+        Block & /* sample_block */,
+        ContextPtr /* context */,
+        const std::string & /* default_database */,
+        bool /* created_from_ddl */) -> DictionarySourcePtr
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "Dictionary source of type `mongodb` is disabled because ClickHouse was built without mongodb support.");
+    };
+    #endif
 
-    factory.registerSource("mongodb", create_mongo_db_dictionary);
+    factory.registerSource("mongodb", create_dictionary_source);
 }
 
-}
-
-#include <Common/logger_useful.h>
-#include <Poco/MongoDB/Array.h>
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Database.h>
-#include <Poco/MongoDB/ObjectId.h>
-#include <Poco/URI.h>
-#include <Poco/Util/AbstractConfiguration.h>
-
-// only after poco
-// naming conflict:
-// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
-// src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
-#include <IO/WriteHelpers.h>
-
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int MONGODB_CANNOT_AUTHENTICATE;
-}
-
-
+#if USE_MONGODB
 static const UInt64 max_block_size = 8192;
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct_,
-    const std::string & uri_,
+    const std::string & uri_str_,
     const std::string & host_,
-    UInt16 port_,
-    const std::string & user_,
+    const UInt16 & port_,
+    const std::string & username_,
     const std::string & password_,
-    const std::string & method_,
-    const std::string & db_,
-    const std::string & collection_,
+    const std::string & database_name_,
+    const std::string & collection_name_,
     const std::string & options_,
-    const Block & sample_block_)
+    Block & sample_block_)
     : dict_struct{dict_struct_}
-    , uri{uri_}
+    , uri_str{uri_str_}
     , host{host_}
     , port{port_}
-    , user{user_}
+    , username{username_}
     , password{password_}
-    , method{method_}
-    , db{db_}
-    , collection{collection_}
-    , options(options_)
+    , database_name{database_name_}
+    , collection_name{collection_name_}
+    , options{options_}
     , sample_block{sample_block_}
-    , connection{std::make_shared<Poco::MongoDB::Connection>()}
 {
-
-    StorageMongoDBSocketFactory socket_factory;
-    if (!uri.empty())
+    if (!uri_str.empty())
     {
-        // Connect with URI.
-        connection->connect(uri, socket_factory);
-
-        Poco::URI poco_uri(connection->uri());
-
-        // Parse database from URI. This is required for correctness -- the
-        // cursor is created using database name and collection name, so we have
-        // to specify them properly.
-        db = poco_uri.getPath();
-        // getPath() may return a leading slash, remove it.
-        if (!db.empty() && db[0] == '/')
-        {
-            db.erase(0, 1);
-        }
-
-        // Parse some other parts from URI, for logging and display purposes.
-        host = poco_uri.getHost();
-        port = poco_uri.getPort();
-        user = poco_uri.getUserInfo();
-        if (size_t separator = user.find(':'); separator != std::string::npos)
-        {
-            user.resize(separator);
-        }
+        uri = mongocxx::uri{uri_str};
+        host = uri.hosts()[0].name;
+        port = uri.hosts()[0].port;
+        username = uri.username();
+        database_name = uri.database();
     }
     else
-    {
-        // Connect with host/port/user/etc through constructing the uri
-        std::string uri_constructed("mongodb://" + host + ":" + std::to_string(port) + "/" + db + (options.empty() ? "" : "?" + options));
-        connection->connect(uri_constructed, socket_factory);
-
-        if (!user.empty())
-        {
-            Poco::MongoDB::Database poco_db(db);
-            if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
-                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
-        }
-    }
+        uri = mongocxx::uri{"mongodb://" + username_ + ":" + password_ + "@" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_};
 }
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
-    : MongoDBDictionarySource{
-        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db,
-        other.collection, other.options, other.sample_block
-    }
+    : MongoDBDictionarySource{other.dict_struct, other.uri_str, other.host, other.port, other.username, other.password, other.database_name,
+                              other.collection_name, other.options, other.sample_block}
 {
 }
 
@@ -170,7 +144,8 @@ MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
 QueryPipeline MongoDBDictionarySource::loadAll()
 {
-    return QueryPipeline(std::make_shared<MongoDBSource>(connection, db, collection, Poco::MongoDB::Document{}, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(uri, database_name, collection_name,
+                                                         make_document(), mongocxx::options::find{}, sample_block, max_block_size));
 }
 
 QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -178,25 +153,20 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
 
-    Poco::MongoDB::Document query;
+    auto ids_array = bsoncxx::builder::basic::array{};
+    for(const auto & id : ids)
+        ids_array.append(static_cast<Int64>(id));
 
-    /** NOTE: While building array, Poco::MongoDB requires passing of different unused element names, along with values.
-      * In general, Poco::MongoDB is quite inefficient and bulky.
-      */
+    auto query = make_document(kvp(dict_struct.id->name,  make_document(kvp("$in", ids_array))));
 
-    Poco::MongoDB::Array::Ptr ids_array(new Poco::MongoDB::Array);
-    for (const UInt64 id : ids)
-        ids_array->add(DB::toString(id), static_cast<Int32>(id));
-
-    query.addNewDocument(dict_struct.id->name).add("$in", ids_array);
-
-    return QueryPipeline(std::make_shared<MongoDBSource>(connection, db, collection, query, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(uri, database_name, collection_name,
+                                                         query.view(), mongocxx::options::find{}, sample_block, max_block_size));
 }
 
 
-QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/)
 {
-    if (!dict_struct.key)
+    /*if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
 
     Poco::MongoDB::Document query;
@@ -253,14 +223,16 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
     }
 
     /// If more than one key we should use $or
-    query.add("$or", keys_array);
+    query.add("$or", keys_array);*/
 
-    return QueryPipeline(std::make_shared<MongoDBSource>(connection, db, collection, query, sample_block, max_block_size));
+    return QueryPipeline{};
+    //return QueryPipeline(std::make_shared<MongoDBSource>(connection, db, collection, query, sample_block, max_block_size));
 }
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}.{},{}{}:{}", db, collection, (user.empty() ? " " : " " + user + '@'), host, port);
+    return fmt::format("MongoDB: {}.{},{}{}:{}", database_name, collection_name, (username.empty() ? " " : " " + username + '@'), host, port);
 }
+#endif
 
 }

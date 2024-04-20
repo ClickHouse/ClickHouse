@@ -37,7 +37,6 @@ target_link_libraries(clickhouse_dictionaries
         clickhouse_common_io
         dbms
         Poco::Data
-        Poco::MongoDB
         Poco::Redis
         string_utils
 )

@@ -1,3 +1,6 @@
+#include "config.h"
+
+#if USE_MONGODB
 #include <Storages/StorageMongoDB.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
@@ -127,3 +130,4 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory)
 }
 
 }
+#endif

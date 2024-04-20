@@ -19,7 +19,9 @@ void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+#if USE_MONGODB
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
+#endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON

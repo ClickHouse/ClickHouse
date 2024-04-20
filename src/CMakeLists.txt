@@ -414,9 +414,18 @@ dbms_target_link_libraries (
     PUBLIC
         boost::system
         clickhouse_common_io
-        Poco::MongoDB
         Poco::Redis
 )
+
+if (TARGET ch_contrib::mongocxx)
+    dbms_target_link_libraries(
+        PUBLIC
+            ch_contrib::libbson
+            ch_contrib::libmongoc
+            ch_contrib::bsoncxx
+            ch_contrib::mongocxx
+    )
+endif ()
 
 if (TARGET ch::mysqlxx)
     dbms_target_link_libraries (PUBLIC ch::mysqlxx)

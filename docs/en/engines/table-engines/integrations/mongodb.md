@@ -6,8 +6,55 @@ sidebar_label: MongoDB
 
 # MongoDB
 
-MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. Engine supports only non-nested data types. `INSERT` queries are not supported.
+MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. `INSERT` queries are not supported.
 
+Only MongoDB v3.6+ servers are supported.
+
+## Types mappings
+
+| MongoDB   | ClickHouse                 |
+|-----------|----------------------------|
+| bool      | UInt8                      |
+| int32     | Int32                      |
+| int64     | Int64                      |
+| double    | Float64                    |
+| date      | Date, DateTime, DateTime64 |
+| timestamp | Date, DateTime, DateTime64 |
+| string    | String, UUID               |
+| document  | String(as JSON)            |
+| array     | String(as JSON)            |
+| oid       | String                     |
+
+If key not found in MongoDB document, default value or null(if the column is nullable) will be inserted.
+
+## Where conditions
+Only basic conditions are supported:
+ * equals
+ * graterThan
+ * in
+ * lessThan
+ * lessOrEquals
+ * notEquals
+ * notIn
+ * and
+ * or
+
+Types that can be used in WHERE section:
+ * Null
+ * UInt64
+ * Int64
+ * Float64
+ * String
+ * Array
+ * Tuple
+ * Map
+ * UUID
+ * Bool
+ * Object
+
+## Other restrictions
+* `LIMIT BY` is not supported
+* window functions are not supported
 ## Creating a Table {#creating-a-table}
 
 ``` sql
