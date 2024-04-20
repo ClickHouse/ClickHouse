@@ -19,6 +19,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+using namespace std::literals;
+static constexpr std::array boolean_functions{
+    "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
+    "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNullNotIn"sv, "isNull"sv, "isNotNull"sv,
+    "like"sv,     "notLike"sv,     "ilike"sv,  "notILike"sv,        "empty"sv,        "notEmpty"sv,        "not"sv,    "and"sv,
+    "or"sv};
+
+static bool isBooleanFunction(const String & func_name)
+{
+    return std::any_of(
+        boolean_functions.begin(), boolean_functions.end(), [&](const auto boolean_func) { return func_name == boolean_func; });
+}
+
 /// Visitor that optimizes logical expressions _only_ in JOIN ON section
 class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>
 {
@@ -268,6 +281,12 @@ public:
         if (function_node->getFunctionName() == "and")
         {
             tryOptimizeAndEqualsNotEqualsChain(node);
+            return;
+        }
+
+        if (function_node->getFunctionName() == "equals")
+        {
+            tryOptimizeOutRedundantEquals(node);
             return;
         }
     }
@@ -568,6 +587,56 @@ private:
         auto or_function_resolver = FunctionFactory::instance().get("or", getContext());
         function_node.getArguments().getNodes() = std::move(or_operands);
         function_node.resolveAsFunction(or_function_resolver);
+    }
+
+    void tryOptimizeOutRedundantEquals(QueryTreeNodePtr & node)
+    {
+        auto & function_node = node->as<FunctionNode &>();
+        assert(function_node.getFunctionName() == "equals");
+
+        const auto function_arguments = function_node.getArguments().getNodes();
+        if (function_arguments.size() != 2)
+            return;
+
+        const auto & lhs = function_arguments[0];
+        const auto & rhs = function_arguments[1];
+
+        UInt64 constant_value;
+        bool is_lhs_const;
+        if (const auto * lhs_constant = lhs->as<ConstantNode>())
+        {
+            if (!lhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
+                || isNullableOrLowCardinalityNullable(lhs_constant->getResultType()))
+                return;
+            is_lhs_const = true;
+        }
+        else if (const auto * rhs_constant = rhs->as<ConstantNode>())
+        {
+            if (!rhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
+                || isNullableOrLowCardinalityNullable(rhs_constant->getResultType()))
+                return;
+            is_lhs_const = false;
+        }
+        else
+            return;
+
+        const FunctionNode * child_function = is_lhs_const ? rhs->as<FunctionNode>() : lhs->as<FunctionNode>();
+        if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
+            return;
+
+        // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
+        if (constant_value == 0)
+        {
+            auto not_resolver = FunctionFactory::instance().get("not", getContext());
+            const auto not_node = std::make_shared<FunctionNode>("not");
+            auto & arguments = not_node->getArguments().getNodes();
+            arguments.reserve(1);
+            arguments.push_back(is_lhs_const ? rhs : lhs);
+            not_node->resolveAsFunction(not_resolver->build(not_node->getArgumentColumns()));
+            node = not_node;
+        }
+        else
+            node = is_lhs_const ? rhs : lhs;
     }
 };
 
