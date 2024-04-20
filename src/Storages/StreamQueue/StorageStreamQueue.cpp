@@ -1,11 +1,15 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StreamQueue/StorageStreamQueue.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include "Parsers/ASTSelectQuery.h"
 
 namespace DB
 {
@@ -49,7 +53,7 @@ StorageStreamQueue::StorageStreamQueue(
     std::unique_ptr<StreamQueueSettings> settings_,
     const StorageID & table_id_,
     ContextPtr context_,
-    const StorageID & source_table_id_,
+    StorageID source_table_id_,
     const Names & column_names_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -68,7 +72,6 @@ StorageStreamQueue::StorageStreamQueue(
     storage_metadata.setComment(comment);
 
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
     task = getContext()->getSchedulePool().createTask("StreamQueueTask", [this] { threadFunc(); });
 
@@ -96,6 +99,15 @@ void StorageStreamQueue::threadFunc()
     if (shutdown_called)
         return;
 
+    const size_t dependencies_count = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
+    if (dependencies_count)
+        move_data();
+    task->scheduleAfter(settings->streamqueue_polling_min_timeout_ms);
+}
+
+void StorageStreamQueue::move_data()
+{
+    LOG_TRACE(log, "Source table name: {}", source_table_id);
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, getContext());
     if (!source_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Source table {} doesn't exist.", source_table_id.getNameForLogs());
@@ -105,6 +117,10 @@ void StorageStreamQueue::threadFunc()
     if (!source_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
+
+    auto queue_context = Context::createCopy(getContext());
+    queue_context->makeQueryContext();
+
     auto select = std::make_shared<ASTSelectQuery>();
     select->replaceDatabaseAndTable(source_table_id);
 
@@ -113,7 +129,27 @@ void StorageStreamQueue::threadFunc()
         select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
-    task->scheduleAfter(settings->streamqueue_polling_min_timeout_ms);
+    InterpreterSelectQuery select_interpreter(select, queue_context, SelectQueryOptions());
+    auto select_block_io = select_interpreter.execute();
+    PullingPipelineExecutor pulling_executor(select_block_io.pipeline);
+
+
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = table_id;
+
+    InterpreterInsertQuery insert_interpreter(insert, queue_context, false, true, true);
+    auto insert_block_io = insert_interpreter.execute();
+    PushingPipelineExecutor pushing_executor(insert_block_io.pipeline);
+
+
+    Block block;
+    while (pulling_executor.pull(block))
+    {
+        if (!block)
+            continue;
+        pushing_executor.push(block);
+    }
+    pushing_executor.finish();
 }
 
 StoragePtr createStorage(const StorageFactory::Arguments & args)
@@ -153,19 +189,24 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
             source_columns_description.toString());
     }
     Names column_names;
-    for (const auto & column : args.columns.getOrdinary()) {
+    for (const auto & column : args.columns.getOrdinary())
         column_names.push_back(column.name);
-    }
-    if (column_names.empty()) {
+    if (column_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table must have at least 1 column");
-    }
 
     auto settings = std::make_unique<StreamQueueSettings>();
     if (args.storage_def->settings)
         settings->loadFromQuery(*args.storage_def);
 
     return std::make_shared<StorageStreamQueue>(
-        std::move(settings), args.table_id, args.getContext(), source_storage_id, column_names, args.columns, args.constraints, args.comment);
+        std::move(settings),
+        args.table_id,
+        args.getContext(),
+        source_storage_id,
+        column_names,
+        args.columns,
+        args.constraints,
+        args.comment);
 }
 
 void registerStorageStreamQueue(StorageFactory & factory)

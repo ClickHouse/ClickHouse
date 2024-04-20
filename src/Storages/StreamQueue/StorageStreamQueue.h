@@ -1,9 +1,9 @@
 #pragma once
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/StreamQueue/StreamQueueSettings.h>
 #include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {
@@ -20,7 +20,7 @@ public:
         std::unique_ptr<StreamQueueSettings> settings_,
         const StorageID & table_id_,
         ContextPtr context_,
-        const StorageID & source_table_id_,
+        StorageID source_table_id_,
         const Names & column_names_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -32,9 +32,10 @@ private:
     void shutdown(bool is_drop) override;
 
     void threadFunc();
+    void move_data();
 
     std::unique_ptr<StreamQueueSettings> settings;
-    const StorageID & source_table_id;
+    StorageID source_table_id;
 
     Names column_names;
     String key_column;
