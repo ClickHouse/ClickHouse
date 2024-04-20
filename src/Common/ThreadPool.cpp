@@ -183,6 +183,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     {
         std::unique_lock lock(mutex);
 
+        if (CannotAllocateThreadFaultInjector::injectFault())
+            return on_error("fault injected");
+
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
@@ -545,4 +548,43 @@ void GlobalThreadPool::shutdown()
     {
         the_instance->finalize();
     }
+}
+
+CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()
+{
+    static CannotAllocateThreadFaultInjector ins;
+    return ins;
+}
+
+void CannotAllocateThreadFaultInjector::setFaultProbability(double probability)
+{
+    auto & ins = instance();
+    std::lock_guard lock(ins.mutex);
+    ins.enabled = 0 < probability && probability <= 1;
+    if (ins.enabled)
+        ins.random.emplace(probability);
+    else
+        ins.random.reset();
+}
+
+bool CannotAllocateThreadFaultInjector::injectFault()
+{
+    auto & ins = instance();
+    if (!ins.enabled.load(std::memory_order_relaxed))
+        return false;
+
+    if (ins.block_fault_injections)
+        return false;
+
+    std::lock_guard lock(ins.mutex);
+    return ins.random && (*ins.random)(ins.rndgen);
+}
+
+thread_local bool CannotAllocateThreadFaultInjector::block_fault_injections = false;
+
+scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
+{
+    auto & ins = instance();
+    ins.block_fault_injections = true;
+    return [&ins](){ ins.block_fault_injections = false; };
 }

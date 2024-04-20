@@ -241,7 +241,7 @@ private:
     LoggerPtr log = getLogger("StorageS3Source");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
 
