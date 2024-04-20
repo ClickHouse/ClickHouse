@@ -163,7 +163,7 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
 
 ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeDiscriminatorsStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    SubstreamsDeserializeStatesCache * cache) const
+    SubstreamsDeserializeStatesCache * cache)
 {
     settings.path.push_back(Substream::VariantDiscriminators);
 
