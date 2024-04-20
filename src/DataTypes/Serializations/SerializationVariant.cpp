@@ -141,27 +141,9 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(Substream::VariantDiscriminators);
-
-    DeserializeBinaryBulkStatePtr discriminators_state;
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
-    {
-        discriminators_state = cached_state;
-    }
-    else if (auto * discriminators_stream = settings.getter(settings.path))
-    {
-        UInt64 mode;
-        readBinaryLittleEndian(mode, *discriminators_stream);
-        discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
-    }
-    else
-    {
-        settings.path.pop_back();
+    DeserializeBinaryBulkStatePtr discriminators_state = deserializeDiscriminatorsStatePrefix(settings, cache);
+    if (!discriminators_state)
         return;
-    }
-
-    settings.path.pop_back();
 
     auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
     variant_state->discriminators_state = discriminators_state;
@@ -177,6 +159,29 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
 
     settings.path.pop_back();
     state = std::move(variant_state);
+}
+
+ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeDiscriminatorsStatePrefix(
+    DeserializeBinaryBulkSettings & settings,
+    SubstreamsDeserializeStatesCache * cache) const
+{
+    settings.path.push_back(Substream::VariantDiscriminators);
+
+    DeserializeBinaryBulkStatePtr discriminators_state = nullptr;
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        discriminators_state = cached_state;
+    }
+    else if (auto * discriminators_stream = settings.getter(settings.path))
+    {
+        UInt64 mode;
+        readBinaryLittleEndian(mode, *discriminators_stream);
+        discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
+    }
+
+    settings.path.pop_back();
+    return discriminators_state;
 }
 
 

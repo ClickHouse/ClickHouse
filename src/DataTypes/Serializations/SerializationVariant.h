@@ -176,6 +176,10 @@ private:
         ColumnVariant::Discriminator compact_discr = 0;
     };
 
+    static DeserializeBinaryBulkStatePtr deserializeDiscriminatorsStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        SubstreamsDeserializeStatesCache * cache) const;
+
     std::vector<size_t> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
         size_t limit,

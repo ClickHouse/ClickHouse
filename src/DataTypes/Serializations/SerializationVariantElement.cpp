@@ -60,27 +60,9 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
 void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(Substream::VariantDiscriminators);
-
-    DeserializeBinaryBulkStatePtr discriminators_state;
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
-    {
-        discriminators_state = cached_state;
-    }
-    else if (auto * discriminators_stream = settings.getter(settings.path))
-    {
-        UInt64 mode;
-        readBinaryLittleEndian(mode, *discriminators_stream);
-        discriminators_state = std::make_shared<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(mode);
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
-    }
-    else
-    {
-        settings.path.pop_back();
+    DeserializeBinaryBulkStatePtr discriminators_state = SerializationVariant::deserializeDiscriminatorsStatePrefix(settings, cache);
+    if (!discriminators_state)
         return;
-    }
-
-    settings.path.pop_back();
 
     auto variant_element_state = std::make_shared<DeserializeBinaryBulkStateVariantElement>();
     variant_element_state->discriminators_state = discriminators_state;
