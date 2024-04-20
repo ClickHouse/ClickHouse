@@ -49,6 +49,7 @@ namespace DB
     class DedupTokenInfo : public ChunkInfoCloneable<DedupTokenInfo>
     {
     public:
+        DedupTokenInfo() = default;
         DedupTokenInfo(const DedupTokenInfo & other) = default;
         explicit DedupTokenInfo(String first_part)
         {
@@ -68,9 +69,15 @@ namespace DB
             return result;
         }
 
+        bool empty() const
+        {
+            return token_parts.empty();
+        }
+
         void addTokenPart(String part)
         {
-            token_parts.push_back(std::move(part));
+            if (!part.empty())
+                token_parts.push_back(std::move(part));
         }
 
     private:

@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
@@ -293,6 +294,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     }
 
     String block_dedup_token;
+    std::shared_ptr<DedupTokenInfo> dedub_token_info_for_children = nullptr;
     if constexpr (!async_insert)
     {
         auto token_info = chunk.getChunkInfos().get<DedupTokenInfo>();
@@ -314,6 +316,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
         }
         else
         {
+            dedub_token_info_for_children = std::make_shared<DedupTokenInfo>();
+            chunk.getChunkInfos().add(dedub_token_info_for_children);
             LOG_DEBUG(storage.log,
                 "dedup token from hash is caclulated");
         }
@@ -382,9 +386,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
                 LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
             }
 
-            if (auto children_dedup_token = getDeduplicationTokenForChildren(chunk))
+            if (dedub_token_info_for_children)
             {
-                children_dedup_token->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
+                dedub_token_info_for_children->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
             }
         }
 

@@ -22,7 +22,14 @@ def __format(template, **params):
     return template.format(**kv_args)
 
 
-def instance_create_statement(table_name, table_columns, table_keys, table_engine, with_deduplication, no_merges=True):
+def instance_create_statement(
+    table_name,
+    table_columns,
+    table_keys,
+    table_engine,
+    with_deduplication,
+    no_merges=True,
+):
     template = """
         CREATE TABLE {table_name}
         {table_columns}
@@ -37,22 +44,36 @@ def instance_create_statement(table_name, table_columns, table_keys, table_engin
     params["table_columns"] = table_columns
     params["table_keys"] = table_keys
     params["table_no_merges"] = f"SYSTEM STOP MERGES {table_name};" if no_merges else ""
-    params["table_engine"] = "MergeTree()" if table_engine == "MergeTree" else f"ReplicatedMergeTree('/clickhouse/tables/{{database}}/{table_name}', '1')"
+    params["table_engine"] = (
+        "MergeTree()"
+        if table_engine == "MergeTree"
+        else f"ReplicatedMergeTree('/clickhouse/tables/{{database}}/{table_name}', '1')"
+    )
 
-    deduplication_window_setting_name = "non_replicated_deduplication_window" if table_engine == "MergeTree" else "replicated_deduplication_window"
+    deduplication_window_setting_name = (
+        "non_replicated_deduplication_window"
+        if table_engine == "MergeTree"
+        else "replicated_deduplication_window"
+    )
     deduplication_window_setting_value = 1000 if with_deduplication else 0
 
     settings = list()
-    settings += [f"{deduplication_window_setting_name}={deduplication_window_setting_value}"]
+    settings += [
+        f"{deduplication_window_setting_name}={deduplication_window_setting_value}"
+    ]
     params["table_settings"] = "SETTINGS " + ",".join(settings)
 
     return __format(template, **params)
 
 
-def instance_insert_statement(table_name, count, insert_method, insert_unique_blocks, use_insert_token):
-    insert_settings = "" if not use_insert_token else "SETTINGS insert_deduplication_token='UDT'"
+def instance_insert_statement(
+    table_name, count, insert_method, insert_unique_blocks, use_insert_token
+):
+    insert_settings = (
+        "" if not use_insert_token else "SETTINGS insert_deduplication_token='UDT'"
+    )
 
-    if insert_method == 'InsertSelect':
+    if insert_method == "InsertSelect":
         template = """
             INSERT INTO {table_name}
                 SELECT {insert_columns}
@@ -62,7 +83,9 @@ def instance_insert_statement(table_name, count, insert_method, insert_unique_bl
             template,
             table_name=table_name,
             count=count,
-            insert_columns="'src_4', 4" if not insert_unique_blocks else "'src_' || toString(number), number",
+            insert_columns="'src_4', 4"
+            if not insert_unique_blocks
+            else "'src_' || toString(number), number",
             insert_settings=insert_settings,
         )
 
@@ -74,7 +97,9 @@ def instance_insert_statement(table_name, count, insert_method, insert_unique_bl
 
         values = []
         for i in range(count):
-            values += [f"('src_{i}', {i})"] if insert_unique_blocks else ["('src_4', 4)"]
+            values += (
+                [f"('src_{i}', {i})"] if insert_unique_blocks else ["('src_4', 4)"]
+            )
         insert_values = ", ".join(values)
 
         return __format(
@@ -86,7 +111,9 @@ def instance_insert_statement(table_name, count, insert_method, insert_unique_bl
 
 
 def get_drop_tables_statements(tables):
-    return "".join([f"DROP TABLE IF EXISTS {table_name};\n" for table_name in tables[::-1]])
+    return "".join(
+        [f"DROP TABLE IF EXISTS {table_name};\n" for table_name in tables[::-1]]
+    )
 
 
 def get_logs_statement(args):
@@ -94,15 +121,17 @@ def get_logs_statement(args):
         return "SET send_logs_level='test';"
     return ""
 
+
 def str2bool(v):
     if isinstance(v, bool):
         return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+    if v.lower() in ("yes", "true", "t", "y", "1"):
         return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    elif v.lower() in ("no", "false", "f", "n", "0"):
         return False
     else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+        raise argparse.ArgumentTypeError("Boolean value expected.")
+
 
 class ArgsFactory:
     def __init__(self, parser):
@@ -110,29 +139,55 @@ class ArgsFactory:
 
     def add_opt_engine(self):
         self.__parser.add_argument(
-            "--table-engine", choices=["ReplicatedMergeTree", "MergeTree"], default="MergeTree")
+            "--table-engine",
+            choices=["ReplicatedMergeTree", "MergeTree"],
+            default="MergeTree",
+        )
 
     def add_opt_user_token(self):
-        self.__parser.add_argument("--use-insert-token", type=str2bool, nargs='?', const=True, default=False)
+        self.__parser.add_argument(
+            "--use-insert-token", type=str2bool, nargs="?", const=True, default=False
+        )
 
     def add_opt_single_thread(self):
-        self.__parser.add_argument("--single-thread", type=str2bool, nargs='?', const=True, default=True)
+        self.__parser.add_argument(
+            "--single-thread", type=str2bool, nargs="?", const=True, default=True
+        )
 
     def add_opt_dedup_src(self):
-        self.__parser.add_argument("--deduplicate-src-table", type=str2bool, nargs='?', const=True, default=True)
+        self.__parser.add_argument(
+            "--deduplicate-src-table",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+        )
 
     def add_opt_dedup_dst(self):
-        self.__parser.add_argument("--deduplicate-dst-table", type=str2bool, nargs='?', const=True, default=True)
+        self.__parser.add_argument(
+            "--deduplicate-dst-table",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+        )
 
     def add_opt_get_logs(self):
-        self.__parser.add_argument("--get-logs", type=str2bool, nargs='?', const=True, default=False)
+        self.__parser.add_argument(
+            "--get-logs", type=str2bool, nargs="?", const=True, default=False
+        )
 
     def add_opt_uniq_blocks(self):
-        self.__parser.add_argument("--insert-unique-blocks", type=str2bool, nargs='?', const=True, default=True)
+        self.__parser.add_argument(
+            "--insert-unique-blocks", type=str2bool, nargs="?", const=True, default=True
+        )
 
     def add_opt_insert_method(self):
         self.__parser.add_argument(
-            "--insert-method",  choices=["InsertSelect", "InsertValues"], default="InsertSelect")
+            "--insert-method",
+            choices=["InsertSelect", "InsertValues"],
+            default="InsertSelect",
+        )
 
     def add_all(self):
         self.add_opt_engine()
@@ -174,10 +229,16 @@ def test_insert_several_blocks(parser):
                 WHERE b % 2 = 0;
             """
 
-        drop_tables_statements = get_drop_tables_statements( ["table_a_b", "table_when_b_even", "mv_b_even"] )
+        drop_tables_statements = get_drop_tables_statements(
+            ["table_a_b", "table_when_b_even", "mv_b_even"]
+        )
 
         insert_statement = instance_insert_statement(
-            "table_a_b", 10, args.insert_method, args.insert_unique_blocks, args.use_insert_token
+            "table_a_b",
+            10,
+            args.insert_method,
+            args.insert_unique_blocks,
+            args.use_insert_token,
         )
 
         print_details_statements = f"""
@@ -189,8 +250,6 @@ def test_insert_several_blocks(parser):
             SELECT 'count', count() FROM table_when_b_even;
             {"" if not args.get_logs else "SELECT _part, count() FROM table_when_b_even GROUP BY _part ORDER BY _part;"}
             """
-
-
 
         if args.insert_unique_blocks:
             assert_first_insert_statements = f"""
@@ -278,7 +337,12 @@ def test_mv_generates_several_blocks(parser):
     ArgsFactory(parser).add_all()
 
     def calle(args):
-        tables = ["table_for_join_with", "table_a_b", "table_when_b_even_and_joined", "mv_b_even"]
+        tables = [
+            "table_for_join_with",
+            "table_a_b",
+            "table_when_b_even_and_joined",
+            "mv_b_even",
+        ]
         drop_tables_statements = get_drop_tables_statements(tables)
 
         details_print_for_table_for_join_with = ""
@@ -305,7 +369,11 @@ def test_mv_generates_several_blocks(parser):
         )
 
         insert_statement = instance_insert_statement(
-            "table_a_b", 5, args.insert_method, args.insert_unique_blocks, args.use_insert_token
+            "table_a_b",
+            5,
+            args.insert_method,
+            args.insert_unique_blocks,
+            args.use_insert_token,
         )
 
         details_print_statements = f"""
@@ -449,7 +517,11 @@ def test_several_mv_into_one_table(parser):
         )
 
         insert_statement = instance_insert_statement(
-            "table_src", 8, args.insert_method, args.insert_unique_blocks, args.use_insert_token
+            "table_src",
+            8,
+            args.insert_method,
+            args.insert_unique_blocks,
+            args.use_insert_token,
         )
 
         details_print_statements = f"""
@@ -568,9 +640,7 @@ def parse_args():
     test_mv_generates_several_blocks(
         subparsers.add_parser("mv_generates_several_blocks")
     )
-    test_several_mv_into_one_table(
-        subparsers.add_parser("several_mv_into_one_table")
-    )
+    test_several_mv_into_one_table(subparsers.add_parser("several_mv_into_one_table"))
     args = parser.parse_args()
     if args.test is None:
         parser.print_help()

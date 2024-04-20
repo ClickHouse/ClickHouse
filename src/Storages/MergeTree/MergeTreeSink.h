@@ -41,7 +41,6 @@ private:
     struct DelayedChunk;
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void fillDeduplicationTokenForChildren(Chunk &) const override { /* For MergeTree we get the tokens from part checksums */ }
     void finishDelayedChunk();
 };
 

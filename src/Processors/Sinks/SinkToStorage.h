@@ -25,24 +25,12 @@ protected:
     virtual void consume(Chunk & chunk) = 0;
     virtual bool lastBlockIsDuplicate() const { return false; }
 
-    virtual std::shared_ptr<DedupTokenInfo> setDeduplicationTokenForChildren(Chunk & chunk) const
+    void fillDeduplicationTokenForChildren(Chunk & chunk) const
     {
         auto token_info = chunk.getChunkInfos().get<DedupTokenInfo>();
         if (token_info)
-            return token_info;
+            return;
 
-        auto block_dedup_token_for_children = std::make_shared<DedupTokenInfo>("");
-        chunk.getChunkInfos().add(block_dedup_token_for_children);
-        return block_dedup_token_for_children;
-    }
-
-    virtual std::shared_ptr<DedupTokenInfo> getDeduplicationTokenForChildren(Chunk & chunk) const
-    {
-        return chunk.getChunkInfos().get<DedupTokenInfo>();
-    }
-
-    virtual void fillDeduplicationTokenForChildren(Chunk & chunk) const
-    {
         SipHash hash;
         for (const auto & colunm: chunk.getColumns())
         {
@@ -50,8 +38,9 @@ protected:
         }
         const auto hash_value = hash.get128();
 
-        chunk.getChunkInfos().get<DedupTokenInfo>()->addTokenPart(
-            fmt::format(":hash-{}", toString(hash_value.items[0]) + "_" + toString(hash_value.items[1])));
+        chunk.getChunkInfos().add(std::make_shared<DedupTokenInfo>(
+            fmt::format(":hash-{}", toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]))
+        ));
     }
 
 private:
