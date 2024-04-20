@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Processors/Transforms/NumberBlocksTransform.h>
@@ -84,6 +85,7 @@ void MergeTreeSink::consume(Chunk & chunk)
     bool support_parallel_write = false;
 
     String block_dedup_token;
+    std::shared_ptr<DedupTokenInfo> dedub_token_info_for_children = nullptr;
     if (storage.getDeduplicationLog())
     {
         auto token_info = chunk.getChunkInfos().get<DedupTokenInfo>();
@@ -102,6 +104,9 @@ void MergeTreeSink::consume(Chunk & chunk)
         }
         else
         {
+            dedub_token_info_for_children = std::make_shared<DedupTokenInfo>();
+            chunk.getChunkInfos().add(dedub_token_info_for_children);
+
             LOG_DEBUG(storage.log,
                 "dedup token from hash is caclulated");
         }
@@ -126,9 +131,9 @@ void MergeTreeSink::consume(Chunk & chunk)
         current_block.block.clear();
         current_block.partition.clear();
 
-        if (auto children_dedup_token = getDeduplicationTokenForChildren(chunk))
+        if (dedub_token_info_for_children)
         {
-            children_dedup_token->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
+            dedub_token_info_for_children->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
         }
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
