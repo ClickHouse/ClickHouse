@@ -1,11 +1,11 @@
-#include <Storages/ObjectStorage/ReadFromStorageObjectStorage.h>
+#include <Storages/ObjectStorage/ReadFromObjectStorageStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
 
-ReadFromStorageObejctStorage::ReadFromStorageObejctStorage(
+ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     const String & name_,
@@ -14,49 +14,41 @@ ReadFromStorageObejctStorage::ReadFromStorageObejctStorage(
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
     const std::optional<DB::FormatSettings> & format_settings_,
-    const StorageObjectStorageSettings & query_settings_,
     bool distributed_processing_,
     ReadFromFormatInfo info_,
     SchemaCache & schema_cache_,
     const bool need_only_count_,
     ContextPtr context_,
     size_t max_block_size_,
-    size_t num_streams_,
-    CurrentMetrics::Metric metric_threads_count_,
-    CurrentMetrics::Metric metric_threads_active_,
-    CurrentMetrics::Metric metric_threads_scheduled_)
+    size_t num_streams_)
     : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
     , virtual_columns(virtual_columns_)
     , format_settings(format_settings_)
-    , query_settings(query_settings_)
+    , query_settings(configuration->getQuerySettings(context_))
     , schema_cache(schema_cache_)
     , name(name_ + "Source")
     , need_only_count(need_only_count_)
     , max_block_size(max_block_size_)
     , num_streams(num_streams_)
     , distributed_processing(distributed_processing_)
-    , metric_threads_count(metric_threads_count_)
-    , metric_threads_active(metric_threads_active_)
-    , metric_threads_scheduled(metric_threads_scheduled_)
 {
 }
 
-void ReadFromStorageObejctStorage::createIterator(const ActionsDAG::Node * predicate)
+void ReadFromObjectStorageStep::createIterator(const ActionsDAG::Node * predicate)
 {
     if (!iterator_wrapper)
     {
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, object_storage, query_settings, distributed_processing,
-            context, predicate, virtual_columns, nullptr, metric_threads_count,
-            metric_threads_active, metric_threads_scheduled, context->getFileProgressCallback());
+            configuration, object_storage, distributed_processing,
+            context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 }
 
-void ReadFromStorageObejctStorage::applyFilters(ActionDAGNodes added_filter_nodes)
+void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
@@ -66,7 +58,7 @@ void ReadFromStorageObejctStorage::applyFilters(ActionDAGNodes added_filter_node
     createIterator(predicate);
 }
 
-void ReadFromStorageObejctStorage::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator(nullptr);
     auto context = getContext();
@@ -74,13 +66,9 @@ void ReadFromStorageObejctStorage::initializePipeline(QueryPipelineBuilder & pip
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto threadpool = std::make_shared<ThreadPool>(
-            metric_threads_count, metric_threads_active, metric_threads_scheduled, /* max_threads */1);
-
         auto source = std::make_shared<StorageObjectStorageSource>(
             getName(), object_storage, configuration, info, format_settings, query_settings,
-            context, max_block_size, iterator_wrapper, need_only_count, schema_cache,
-            std::move(threadpool), metric_threads_count, metric_threads_active, metric_threads_scheduled);
+            context, max_block_size, iterator_wrapper, need_only_count, schema_cache);
 
         source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));

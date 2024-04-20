@@ -11,10 +11,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/ReadFromStorageObjectStorage.h>
+#include <Storages/ObjectStorage/ReadFromObjectStorageStep.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -25,53 +24,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
 }
 
-template <typename StorageSettings>
-std::unique_ptr<StorageInMemoryMetadata> getStorageMetadata(
-    ObjectStoragePtr object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    const ColumnsDescription & columns,
-    const ConstraintsDescription & constraints,
-    std::optional<FormatSettings> format_settings,
-    const String & comment,
-    const std::string & engine_name,
-    const ContextPtr & context)
-{
-    using Storage = StorageObjectStorage<StorageSettings>;
-
-    auto storage_metadata = std::make_unique<StorageInMemoryMetadata>();
-    if (columns.empty())
-    {
-        auto fetched_columns = Storage::getTableStructureFromData(object_storage, configuration, format_settings, context);
-        storage_metadata->setColumns(fetched_columns);
-    }
-    else if (!columns.hasOnlyOrdinary())
-    {
-        /// We don't allow special columns.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine {} doesn't support special columns "
-                        "like MATERIALIZED, ALIAS or EPHEMERAL", engine_name);
-    }
-    else
-    {
-        if (configuration->format == "auto")
-            Storage::setFormatFromData(object_storage, configuration, format_settings, context);
-
-        storage_metadata->setColumns(columns);
-    }
-    storage_metadata->setConstraints(constraints);
-    storage_metadata->setComment(comment);
-    return storage_metadata;
-}
-
-template <typename StorageSettings>
-StorageObjectStorage<StorageSettings>::StorageObjectStorage(
+StorageObjectStorage::StorageObjectStorage(
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
-    const String & engine_name_,
     ContextPtr context,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -80,16 +39,13 @@ StorageObjectStorage<StorageSettings>::StorageObjectStorage(
     std::optional<FormatSettings> format_settings_,
     bool distributed_processing_,
     ASTPtr partition_by_)
-    : IStorage(table_id_, getStorageMetadata<StorageSettings>(
-                   object_storage_, configuration_, columns_, constraints_, format_settings_,
-                   comment, engine_name, context))
-    , engine_name(engine_name_)
+    : IStorage(table_id_)
+    , configuration(configuration_)
+    , object_storage(object_storage_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
-    , log(getLogger("Storage" + engine_name_))
-    , object_storage(object_storage_)
-    , configuration(configuration_)
+    , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context);
@@ -98,46 +54,41 @@ StorageObjectStorage<StorageSettings>::StorageObjectStorage(
     for (const auto & key : configuration->getPaths())
         objects.emplace_back(key);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(getInMemoryMetadataPtr()->getColumns()));
+    auto metadata = getStorageMetadata(
+        object_storage_, configuration_, columns_,
+        constraints_, format_settings_, comment, context);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
+    setInMemoryMetadata(std::move(metadata));
 }
 
-template <typename StorageSettings>
-bool StorageObjectStorage<StorageSettings>::prefersLargeBlocks() const
+String StorageObjectStorage::getName() const
+{
+    return configuration->getEngineName();
+}
+
+bool StorageObjectStorage::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);
 }
 
-template <typename StorageSettings>
-bool StorageObjectStorage<StorageSettings>::parallelizeOutputAfterReading(ContextPtr context) const
+bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
-template <typename StorageSettings>
-bool StorageObjectStorage<StorageSettings>::supportsSubsetOfColumns(const ContextPtr & context) const
+bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-template <typename StorageSettings>
-void StorageObjectStorage<StorageSettings>::updateConfiguration(ContextPtr context)
+void StorageObjectStorage::updateConfiguration(ContextPtr context)
 {
     if (!configuration->isStaticConfiguration())
         object_storage->applyNewSettings(context->getConfigRef(), "s3.", context);
 }
 
-template <typename StorageSettings>
-SchemaCache & StorageObjectStorage<StorageSettings>::getSchemaCache(const ContextPtr & context)
-{
-    static SchemaCache schema_cache(
-        context->getConfigRef().getUInt(
-            StorageSettings::SCHEMA_CACHE_MAX_ELEMENTS_CONFIG_SETTING,
-            DEFAULT_SCHEMA_CACHE_ELEMENTS));
-    return schema_cache;
-}
-
-template <typename StorageSettings>
-void StorageObjectStorage<StorageSettings>::read(
+void StorageObjectStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -155,13 +106,12 @@ void StorageObjectStorage<StorageSettings>::read(
                         getName());
     }
 
-    const auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    const auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
-    LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII SOURCE HEADER: {}", read_from_format_info.source_header.dumpStructure());
-    LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII FORMAT HEADER: {}", read_from_format_info.format_header.dumpStructure());
-    auto read_step = std::make_unique<ReadFromStorageObejctStorage>(
+    auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
         getName(),
@@ -170,23 +120,18 @@ void StorageObjectStorage<StorageSettings>::read(
         query_info,
         storage_snapshot,
         format_settings,
-        StorageSettings::create(local_context->getSettingsRef()),
         distributed_processing,
         std::move(read_from_format_info),
         getSchemaCache(local_context),
         need_only_count,
         local_context,
         max_block_size,
-        num_streams,
-        StorageSettings::ObjectStorageThreads(),
-        StorageSettings::ObjectStorageThreadsActive(),
-        StorageSettings::ObjectStorageThreadsScheduled());
+        num_streams);
 
     query_plan.addStep(std::move(read_step));
 }
 
-template <typename StorageSettings>
-SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
+SinkToStoragePtr StorageObjectStorage::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
@@ -194,7 +139,7 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
 {
     updateConfiguration(local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
-    const auto & query_settings = StorageSettings::create(local_context->getSettingsRef());
+    const auto & settings = configuration->getQuerySettings(local_context);
 
     if (configuration->withWildcard())
     {
@@ -209,23 +154,22 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
 
         if (partition_by_ast)
         {
-            LOG_TEST(log, "Using PartitionedSink for {}", configuration->getPath());
             return std::make_shared<PartitionedStorageObjectStorageSink>(
-                object_storage, configuration, query_settings,
-                format_settings, sample_block, local_context, partition_by_ast);
+                object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
         }
     }
 
     if (configuration->withGlobs())
     {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "{} key '{}' contains globs, so the table is in readonly mode",
-                        getName(), configuration->getPath());
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED,
+            "{} key '{}' contains globs, so the table is in readonly mode",
+            getName(), configuration->getPath());
     }
 
     auto & paths = configuration->getPaths();
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, paths.front(), paths.size()))
+            *object_storage, *configuration, settings, paths.front(), paths.size()))
     {
         paths.push_back(*new_key);
     }
@@ -238,9 +182,11 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
         local_context);
 }
 
-template <typename StorageSettings>
-void StorageObjectStorage<StorageSettings>::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageObjectStorage::truncate(
+    const ASTPtr &,
+    const StorageMetadataPtr &,
+    ContextPtr,
+    TableExclusiveLockHolder &)
 {
     if (configuration->withGlobs())
     {
@@ -257,34 +203,37 @@ void StorageObjectStorage<StorageSettings>::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
-template <typename StorageSettings>
-std::unique_ptr<ReadBufferIterator> StorageObjectStorage<StorageSettings>::createReadBufferIterator(
+std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
     ObjectInfos & read_keys,
     const ContextPtr & context)
 {
-    const auto settings = StorageSettings::create(context->getSettingsRef());
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, object_storage, settings, /* distributed_processing */false,
-        context, /* predicate */{}, /* virtual_columns */{}, &read_keys,
-        StorageSettings::ObjectStorageThreads(), StorageSettings::ObjectStorageThreadsActive(), StorageSettings::ObjectStorageThreadsScheduled());
+        configuration,
+        object_storage,
+        false/* distributed_processing */,
+        context,
+        {}/* predicate */,
+        {}/* virtual_columns */,
+        &read_keys);
 
     return std::make_unique<ReadBufferIterator>(
         object_storage, configuration, file_iterator,
-        format_settings, StorageSettings::create(context->getSettingsRef()), getSchemaCache(context), read_keys, context);
+        format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
 }
 
-template <typename StorageSettings>
-ColumnsDescription StorageObjectStorage<StorageSettings>::getTableStructureFromData(
+ColumnsDescription StorageObjectStorage::getTableStructureFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto read_buffer_iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto read_buffer_iterator = createReadBufferIterator(
+        object_storage, configuration, format_settings, read_keys, context);
+
     if (configuration->format == "auto")
     {
         auto [columns, format] = detectFormatAndReadSchema(format_settings, *read_buffer_iterator, context);
@@ -297,20 +246,34 @@ ColumnsDescription StorageObjectStorage<StorageSettings>::getTableStructureFromD
     }
 }
 
-template <typename StorageSettings>
-void StorageObjectStorage<StorageSettings>::setFormatFromData(
+void StorageObjectStorage::setFormatFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto read_buffer_iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto read_buffer_iterator = createReadBufferIterator(
+        object_storage, configuration, format_settings, read_keys, context);
     configuration->format = detectFormatAndReadSchema(format_settings, *read_buffer_iterator, context).second;
 }
 
-template class StorageObjectStorage<S3StorageSettings>;
-template class StorageObjectStorage<AzureStorageSettings>;
-template class StorageObjectStorage<HDFSStorageSettings>;
+SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context)
+{
+    static SchemaCache schema_cache(
+        context->getConfigRef().getUInt(
+            "schema_inference_cache_max_elements_for_" + configuration->getTypeName(),
+            DEFAULT_SCHEMA_CACHE_ELEMENTS));
+    return schema_cache;
+}
+
+SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)
+{
+    static SchemaCache schema_cache(
+        context->getConfigRef().getUInt(
+            "schema_inference_cache_max_elements_for_" + storage_type_name,
+            DEFAULT_SCHEMA_CACHE_ELEMENTS));
+    return schema_cache;
+}
 
 }

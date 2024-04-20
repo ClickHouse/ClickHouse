@@ -10,7 +10,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/parseGlobs.h>
 
@@ -18,6 +17,13 @@
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric StorageObjectStorageThreads;
+    extern const Metric StorageObjectStorageThreadsActive;
+    extern const Metric StorageObjectStorageThreadsScheduled;
 }
 
 namespace DB
@@ -37,16 +43,12 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ConfigurationPtr configuration_,
     const ReadFromFormatInfo & info,
     std::optional<FormatSettings> format_settings_,
-    const StorageObjectStorageSettings & query_settings_,
+    const StorageObjectStorage::QuerySettings & query_settings_,
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
     bool need_only_count_,
-    SchemaCache & schema_cache_,
-    std::shared_ptr<ThreadPool> reader_pool_,
-    CurrentMetrics::Metric metric_threads_,
-    CurrentMetrics::Metric metric_threads_active_,
-    CurrentMetrics::Metric metric_threads_scheduled_)
+    SchemaCache & schema_cache_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -57,13 +59,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
     , read_from_format_info(info)
-    , create_reader_pool(reader_pool_)
+    , create_reader_pool(std::make_shared<ThreadPool>(
+        CurrentMetrics::StorageObjectStorageThreads,
+        CurrentMetrics::StorageObjectStorageThreadsActive,
+        CurrentMetrics::StorageObjectStorageThreadsScheduled,
+        1/* max_threads */))
     , columns_desc(info.columns_description)
     , file_iterator(file_iterator_)
     , schema_cache(schema_cache_)
-    , metric_threads(metric_threads_)
-    , metric_threads_active(metric_threads_active_)
-    , metric_threads_scheduled(metric_threads_scheduled_)
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
 {
 }
@@ -76,25 +79,22 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
     ConfigurationPtr configuration,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorageSettings & settings,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
-    CurrentMetrics::Metric metric_threads_,
-    CurrentMetrics::Metric metric_threads_active_,
-    CurrentMetrics::Metric metric_threads_scheduled_,
     std::function<void(FileProgress)> file_progress_callback)
 {
     if (distributed_processing)
         return std::make_shared<ReadTaskIterator>(
             local_context->getReadTaskCallback(),
-            local_context->getSettingsRef().max_threads,
-            metric_threads_, metric_threads_active_, metric_threads_scheduled_);
+            local_context->getSettingsRef().max_threads);
 
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
+
+    auto settings = configuration->getQuerySettings(local_context);
 
     if (configuration->isPathWithGlobs())
     {
@@ -568,7 +568,8 @@ StorageObjectStorageSource::ReaderHolder::ReaderHolder(
 {
 }
 
-StorageObjectStorageSource::ReaderHolder & StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexcept
+StorageObjectStorageSource::ReaderHolder &
+StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexcept
 {
     /// The order of destruction is important.
     /// reader uses pipeline, pipeline uses read_buf.
@@ -581,15 +582,15 @@ StorageObjectStorageSource::ReaderHolder & StorageObjectStorageSource::ReaderHol
 }
 
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
-    const ReadTaskCallback & callback_,
-    size_t max_threads_count,
-    CurrentMetrics::Metric metric_threads_,
-    CurrentMetrics::Metric metric_threads_active_,
-    CurrentMetrics::Metric metric_threads_scheduled_)
+    const ReadTaskCallback & callback_, size_t max_threads_count)
     : IIterator("ReadTaskIterator")
     , callback(callback_)
 {
-    ThreadPool pool(metric_threads_, metric_threads_active_, metric_threads_scheduled_, max_threads_count);
+    ThreadPool pool(
+        CurrentMetrics::StorageObjectStorageThreads,
+        CurrentMetrics::StorageObjectStorageThreadsActive,
+        CurrentMetrics::StorageObjectStorageThreadsScheduled, max_threads_count);
+
     auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "ReadTaskIter");
 
     std::vector<std::future<String>> keys;

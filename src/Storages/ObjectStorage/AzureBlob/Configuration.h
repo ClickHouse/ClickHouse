@@ -18,8 +18,14 @@ class StorageAzureBlobConfiguration : public StorageObjectStorageConfiguration
     friend void registerBackupEngineAzureBlobStorage(BackupFactory & factory);
 
 public:
+    static constexpr auto type_name = "azure";
+    static constexpr auto engine_name = "Azure";
+
     StorageAzureBlobConfiguration() = default;
     StorageAzureBlobConfiguration(const StorageAzureBlobConfiguration & other);
+
+    std::string getTypeName() const override { return type_name; }
+    std::string getEngineName() const override { return engine_name; }
 
     Path getPath() const override { return blob_path; }
     void setPath(const Path & path) override { blob_path = path; }
@@ -30,6 +36,7 @@ public:
 
     String getDataSourceDescription() override { return fs::path(connection_url) / container; }
     String getNamespace() const override { return container; }
+    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
@@ -37,8 +44,8 @@ public:
 
     void fromNamedCollection(const NamedCollection & collection) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
-    static void addStructureAndFormatToArgs(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context);
+    void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context) override;
 
 protected:
     using AzureClient = Azure::Storage::Blobs::BlobContainerClient;

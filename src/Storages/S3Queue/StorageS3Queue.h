@@ -21,8 +21,7 @@ class S3QueueFilesMetadata;
 class StorageS3Queue : public IStorage, WithContext
 {
 public:
-    using Storage = StorageObjectStorage<S3StorageSettings>;
-    using ConfigurationPtr = Storage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     StorageS3Queue(
         std::unique_ptr<S3QueueSettings> s3queue_settings_,

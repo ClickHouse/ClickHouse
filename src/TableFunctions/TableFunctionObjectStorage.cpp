@@ -27,27 +27,27 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
+template <typename Definition, typename Configuration>
 ObjectStoragePtr TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
+    Definition, Configuration>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
         object_storage = configuration->createObjectStorage(context, create_readonly);
     return object_storage;
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
+template <typename Definition, typename Configuration>
 StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::getConfiguration() const
+    Definition, Configuration>::getConfiguration() const
 {
     if (!configuration)
         configuration = std::make_shared<Configuration>();
     return configuration;
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
+template <typename Definition, typename Configuration>
 std::vector<size_t> TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+    Definition, Configuration>::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
@@ -63,22 +63,21 @@ std::vector<size_t> TableFunctionObjectStorage<
     return result;
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::updateStructureAndFormatArgumentsIfNeeded(
+template <typename Definition, typename Configuration>
+void TableFunctionObjectStorage<Definition, Configuration>::updateStructureAndFormatArgumentsIfNeeded(
         ASTs & args, const String & structure, const String & format, const ContextPtr & context)
 {
-    Configuration::addStructureAndFormatToArgs(args, structure, format, context);
+    Configuration().addStructureAndFormatToArgs(args, structure, format, context);
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-void TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
+template <typename Definition, typename Configuration>
+void TableFunctionObjectStorage<Definition, Configuration>::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
 {
     StorageObjectStorageConfiguration::initialize(*getConfiguration(), engine_args, local_context, true);
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+template <typename Definition, typename Configuration>
+void TableFunctionObjectStorage<Definition, Configuration>::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Clone ast function, because we can modify its arguments like removing headers.
     auto ast_copy = ast_function->clone();
@@ -90,38 +89,38 @@ void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::par
     parseArgumentsImpl(args, context);
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
+template <typename Definition, typename Configuration>
 ColumnsDescription TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+    Definition, Configuration>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
     chassert(configuration);
     if (configuration->structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
         auto storage = getObjectStorage(context, !is_insert_query);
-        return StorageObjectStorage<StorageSettings>::getTableStructureFromData(storage, configuration, std::nullopt, context);
+        return StorageObjectStorage::getTableStructureFromData(storage, configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration->structure, context);
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
+template <typename Definition, typename Configuration>
 bool TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::supportsReadingSubsetOfColumns(const ContextPtr & context)
+    Definition, Configuration>::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
     chassert(configuration);
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
+template <typename Definition, typename Configuration>
 std::unordered_set<String> TableFunctionObjectStorage<
-    Definition, StorageSettings, Configuration>::getVirtualsToCheckBeforeUsingStructureHint() const
+    Definition, Configuration>::getVirtualsToCheckBeforeUsingStructureHint() const
 {
     return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-StoragePtr TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::executeImpl(
+template <typename Definition, typename Configuration>
+StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
     const ASTPtr & /* ast_function */,
     ContextPtr context,
     const std::string & table_name,
@@ -137,10 +136,9 @@ StoragePtr TableFunctionObjectStorage<Definition, StorageSettings, Configuration
     else if (!cached_columns.empty())
         columns = cached_columns;
 
-    StoragePtr storage = std::make_shared<StorageObjectStorage<StorageSettings>>(
+    StoragePtr storage = std::make_shared<StorageObjectStorage>(
         configuration,
         getObjectStorage(context, !is_insert_query),
-        Definition::storage_type_name,
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -159,7 +157,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 {
     UNUSED(factory);
 #if USE_AWS_S3
-    factory.registerFunction<TableFunctionObjectStorage<S3Definition, S3StorageSettings, StorageS3Configuration>>(
+    factory.registerFunction<TableFunctionObjectStorage<S3Definition, StorageS3Configuration>>(
     {
         .documentation =
         {
@@ -170,7 +168,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .allow_readonly = false
     });
 
-    factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, S3StorageSettings, StorageS3Configuration>>(
+    factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>>(
     {
         .documentation =
         {
@@ -181,7 +179,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .allow_readonly = false
     });
 
-    factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, S3StorageSettings, StorageS3Configuration>>(
+    factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration>>(
     {
         .documentation =
         {
@@ -191,7 +189,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .categories{"DataLake"}},
         .allow_readonly = false
     });
-    factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, S3StorageSettings, StorageS3Configuration>>(
+    factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>>(
     {
         .documentation =
         {
@@ -204,7 +202,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-    factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>>(
+    factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureBlobConfiguration>>(
     {
         .documentation =
         {
@@ -220,7 +218,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
     });
 #endif
 #if USE_HDFS
-    factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, HDFSStorageSettings, StorageHDFSConfiguration>>(
+    factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
     {
         .allow_readonly = false
     });
@@ -228,21 +226,21 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 }
 
 #if USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<AzureDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>;
-template class TableFunctionObjectStorage<AzureClusterDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>;
+template class TableFunctionObjectStorage<AzureDefinition, StorageAzureBlobConfiguration>;
+template class TableFunctionObjectStorage<AzureClusterDefinition, StorageAzureBlobConfiguration>;
 #endif
 
 #if USE_AWS_S3
-template class TableFunctionObjectStorage<S3Definition, S3StorageSettings, StorageS3Configuration>;
-template class TableFunctionObjectStorage<S3ClusterDefinition, S3StorageSettings, StorageS3Configuration>;
-template class TableFunctionObjectStorage<GCSDefinition, S3StorageSettings, StorageS3Configuration>;
-template class TableFunctionObjectStorage<COSNDefinition, S3StorageSettings, StorageS3Configuration>;
-template class TableFunctionObjectStorage<OSSDefinition, S3StorageSettings, StorageS3Configuration>;
+template class TableFunctionObjectStorage<S3Definition, StorageS3Configuration>;
+template class TableFunctionObjectStorage<S3ClusterDefinition, StorageS3Configuration>;
+template class TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>;
+template class TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration>;
+template class TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>;
 #endif
 
 #if USE_HDFS
-template class TableFunctionObjectStorage<HDFSDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
-template class TableFunctionObjectStorage<HDFSClusterDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
+template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
+template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
 }

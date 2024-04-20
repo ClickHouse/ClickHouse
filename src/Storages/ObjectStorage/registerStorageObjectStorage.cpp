@@ -2,22 +2,23 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
 
 namespace DB
 {
 
+#if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-template <typename StorageSettings>
-static std::shared_ptr<StorageObjectStorage<StorageSettings>> createStorageObjectStorage(
+static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
     const StorageFactory::Arguments & args,
-    typename StorageObjectStorage<StorageSettings>::ConfigurationPtr configuration,
-    const String & engine_name,
+    typename StorageObjectStorage::ConfigurationPtr configuration,
     ContextPtr context)
 {
     auto & engine_args = args.engine_args;
@@ -54,10 +55,9 @@ static std::shared_ptr<StorageObjectStorage<StorageSettings>> createStorageObjec
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
 
-    return std::make_shared<StorageObjectStorage<StorageSettings>>(
+    return std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context),
-        engine_name,
         args.getContext(),
         args.table_id,
         args.columns,
@@ -68,6 +68,8 @@ static std::shared_ptr<StorageObjectStorage<StorageSettings>> createStorageObjec
         partition_by);
 }
 
+#endif
+
 #if USE_AZURE_BLOB_STORAGE
 void registerStorageAzure(StorageFactory & factory)
 {
@@ -76,7 +78,7 @@ void registerStorageAzure(StorageFactory & factory)
         auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageAzureBlobConfiguration>();
         StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
-        return createStorageObjectStorage<AzureStorageSettings>(args, configuration, "Azure", context);
+        return createStorageObjectStorage(args, configuration, context);
     },
     {
         .supports_settings = true,
@@ -95,7 +97,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageS3Configuration>();
         StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
-        return createStorageObjectStorage<S3StorageSettings>(args, configuration, name, context);
+        return createStorageObjectStorage(args, configuration, context);
     },
     {
         .supports_settings = true,
@@ -130,7 +132,7 @@ void registerStorageHDFS(StorageFactory & factory)
         auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
-        return createStorageObjectStorage<HDFSStorageSettings>(args, configuration, "HDFS", context);
+        return createStorageObjectStorage(args, configuration, context);
     },
     {
         .supports_settings = true,

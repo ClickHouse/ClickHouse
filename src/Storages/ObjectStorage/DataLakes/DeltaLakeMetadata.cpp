@@ -184,7 +184,7 @@ struct DeltaLakeMetadata::Impl
      *
      *  We need to get "version", which is the version of the checkpoint we need to read.
      */
-    size_t readLastCheckpointIfExists()
+    size_t readLastCheckpointIfExists() const
     {
         const auto last_checkpoint_file = fs::path(configuration->getPath()) / deltalake_metadata_directory / "_last_checkpoint";
         if (!object_storage->exists(StoredObject(last_checkpoint_file)))

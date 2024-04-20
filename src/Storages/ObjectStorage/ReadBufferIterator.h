@@ -2,7 +2,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage_fwd_internal.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Formats/ReadSchemaUtils.h>
 
 
@@ -19,7 +18,6 @@ public:
         ConfigurationPtr configuration_,
         const FileIterator & file_iterator_,
         const std::optional<FormatSettings> & format_settings_,
-        const StorageObjectStorageSettings & query_settings_,
         SchemaCache & schema_cache_,
         ObjectInfos & read_keys_,
         const ContextPtr & context_);
@@ -50,7 +48,7 @@ private:
     const ConfigurationPtr configuration;
     const FileIterator file_iterator;
     const std::optional<FormatSettings> & format_settings;
-    const StorageObjectStorageSettings query_settings;
+    const StorageObjectStorage::QuerySettings query_settings;
     SchemaCache & schema_cache;
     ObjectInfos & read_keys;
     std::optional<String> format;

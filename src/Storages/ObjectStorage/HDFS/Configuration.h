@@ -13,8 +13,14 @@ namespace DB
 class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
 {
 public:
+    static constexpr auto type_name = "hdfs";
+    static constexpr auto engine_name = "HDFS";
+
     StorageHDFSConfiguration() = default;
     StorageHDFSConfiguration(const StorageHDFSConfiguration & other);
+
+    std::string getTypeName() const override { return type_name; }
+    std::string getEngineName() const override { return engine_name; }
 
     Path getPath() const override { return path; }
     void setPath(const Path & path_) override { path = path_; }
@@ -25,13 +31,14 @@ public:
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() override { return url; }
+    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
-    static void addStructureAndFormatToArgs(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context);
+    void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context) override;
 
     std::string getPathWithoutGlob() const override;
 

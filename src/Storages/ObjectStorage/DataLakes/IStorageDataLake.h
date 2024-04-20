@@ -21,17 +21,16 @@ namespace DB
 /// Storage for read-only integration with Apache Iceberg tables in Amazon S3 (see https://iceberg.apache.org/)
 /// Right now it's implemented on top of StorageS3 and right now it doesn't support
 /// many Iceberg features like schema evolution, partitioning, positional and equality deletes.
-template <typename DataLakeMetadata, typename StorageSettings>
-class IStorageDataLake final : public StorageObjectStorage<StorageSettings>
+template <typename DataLakeMetadata>
+class IStorageDataLake final : public StorageObjectStorage
 {
 public:
-    using Storage = StorageObjectStorage<StorageSettings>;
+    using Storage = StorageObjectStorage;
     using ConfigurationPtr = Storage::ConfigurationPtr;
 
     static StoragePtr create(
         ConfigurationPtr base_configuration,
         ContextPtr context,
-        const String & engine_name_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -64,9 +63,9 @@ public:
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        return std::make_shared<IStorageDataLake<DataLakeMetadata, StorageSettings>>(
+        return std::make_shared<IStorageDataLake<DataLakeMetadata>>(
             base_configuration, std::move(metadata), configuration, object_storage,
-            engine_name_, context, table_id_,
+            context, table_id_,
             columns_.empty() ? ColumnsDescription(schema_from_metadata) : columns_,
             constraints_, comment_, format_settings_);
     }
@@ -133,9 +132,9 @@ private:
     DataLakeMetadataPtr current_metadata;
 };
 
-using StorageIceberg = IStorageDataLake<IcebergMetadata, S3StorageSettings>;
-using StorageDeltaLake = IStorageDataLake<DeltaLakeMetadata, S3StorageSettings>;
-using StorageHudi = IStorageDataLake<HudiMetadata, S3StorageSettings>;
+using StorageIceberg = IStorageDataLake<IcebergMetadata>;
+using StorageDeltaLake = IStorageDataLake<DeltaLakeMetadata>;
+using StorageHudi = IStorageDataLake<HudiMetadata>;
 
 }
 

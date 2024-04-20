@@ -3,7 +3,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage_fwd_internal.h>
 #include <Processors/Formats/IInputFormat.h>
 
@@ -28,16 +27,12 @@ public:
         ConfigurationPtr configuration,
         const ReadFromFormatInfo & info,
         std::optional<FormatSettings> format_settings_,
-        const StorageObjectStorageSettings & query_settings_,
+        const StorageObjectStorage::QuerySettings & query_settings_,
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
         bool need_only_count_,
-        SchemaCache & schema_cache_,
-        std::shared_ptr<ThreadPool> reader_pool_,
-        CurrentMetrics::Metric metric_threads_,
-        CurrentMetrics::Metric metric_threads_active_,
-        CurrentMetrics::Metric metric_threads_scheduled_);
+        SchemaCache & schema_cache_);
 
     ~StorageObjectStorageSource() override;
 
@@ -53,15 +48,11 @@ public:
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
         ObjectStoragePtr object_storage,
-        const StorageObjectStorageSettings & settings,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
-        CurrentMetrics::Metric metric_threads_,
-        CurrentMetrics::Metric metric_threads_active_,
-        CurrentMetrics::Metric metric_threads_scheduled_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
 protected:
@@ -69,7 +60,7 @@ protected:
     ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const std::optional<FormatSettings> format_settings;
-    const StorageObjectStorageSettings query_settings;
+    const StorageObjectStorage::QuerySettings query_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
     const ReadFromFormatInfo read_from_format_info;
@@ -78,10 +69,6 @@ protected:
     std::shared_ptr<IIterator> file_iterator;
     SchemaCache & schema_cache;
     bool initialized = false;
-
-    const CurrentMetrics::Metric metric_threads;
-    const CurrentMetrics::Metric metric_threads_active;
-    const CurrentMetrics::Metric metric_threads_scheduled;
 
     size_t total_rows_in_file = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
@@ -149,12 +136,7 @@ protected:
 class StorageObjectStorageSource::ReadTaskIterator : public IIterator
 {
 public:
-    ReadTaskIterator(
-        const ReadTaskCallback & callback_,
-        size_t max_threads_count,
-        CurrentMetrics::Metric metric_threads_,
-        CurrentMetrics::Metric metric_threads_active_,
-        CurrentMetrics::Metric metric_threads_scheduled_);
+    ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
     size_t estimatedKeysCount() override { return buffer.size(); }
 

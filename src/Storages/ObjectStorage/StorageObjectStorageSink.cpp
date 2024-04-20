@@ -103,7 +103,6 @@ void StorageObjectStorageSink::release()
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
-    const StorageObjectStorageSettings & query_settings_,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
     ContextPtr context_,
@@ -111,7 +110,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     : PartitionedSink(partition_by, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
-    , query_settings(query_settings_)
+    , query_settings(configuration_->getQuerySettings(context_))
     , format_settings(format_settings_)
     , sample_block(sample_block_)
     , context(context_)

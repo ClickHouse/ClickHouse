@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -24,47 +25,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::StorageObjectStorageCluster(
+StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
-    const Storage::ConfigurationPtr & configuration_,
+    ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
-    const String & engine_name_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : IStorageCluster(cluster_name_,
-                      table_id_,
-                      getLogger(fmt::format("{}({})", engine_name_, table_id_.table_name)))
-    , engine_name(engine_name_)
+    : IStorageCluster(
+        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
     configuration->check(context_);
-    StorageInMemoryMetadata storage_metadata;
+    auto metadata = getStorageMetadata(
+        object_storage, configuration, columns_, constraints_,
+        {}/* format_settings */, ""/* comment */, context_);
 
-    if (columns_.empty())
-    {
-        ColumnsDescription columns = Storage::getTableStructureFromData(object_storage, configuration, /*format_settings=*/std::nullopt, context_);
-        storage_metadata.setColumns(columns);
-    }
-    else
-    {
-        if (configuration->format == "auto")
-            StorageS3::setFormatFromData(object_storage, configuration, /*format_settings=*/std::nullopt, context_);
-
-        storage_metadata.setColumns(columns_);
-    }
-
-    storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
+    setInMemoryMetadata(std::move(metadata));
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-void StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::updateQueryToSendIfNeeded(
+std::string StorageObjectStorageCluster::getName() const
+{
+    return configuration->getEngineName();
+}
+
+void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
@@ -72,24 +60,32 @@ void StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::up
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Expected SELECT query from table function {}, got '{}'",
-                        engine_name, queryToString(query));
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected SELECT query from table function {}, got '{}'",
+            configuration->getEngineName(), queryToString(query));
     }
 
-    TableFunction::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        configuration->format,
-        context);
+    ASTs & args = expression_list->children;
+    const auto & structure = storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription();
+    if (args.empty())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected empty list of arguments for {}Cluster table function",
+            configuration->getEngineName());
+    }
+
+    ASTPtr cluster_name_arg = args.front();
+    args.erase(args.begin());
+    configuration->addStructureAndFormatToArgs(args, structure, configuration->format, context);
+    args.insert(args.begin(), cluster_name_arg);
 }
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-RemoteQueryExecutor::Extension
-StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTaskIteratorExtension(
+RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
-    const auto settings = StorageSettings::create(local_context->getSettingsRef());
+    const auto settings = configuration->getQuerySettings(local_context);
     auto iterator = std::make_shared<StorageObjectStorageSource::GlobIterator>(
         object_storage, configuration, predicate, virtual_columns, local_context,
         nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match,
@@ -105,18 +101,5 @@ StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::getTask
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
-
-
-#if USE_AWS_S3
-template class StorageObjectStorageCluster<S3ClusterDefinition, S3StorageSettings, StorageS3Configuration>;
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-template class StorageObjectStorageCluster<AzureClusterDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>;
-#endif
-
-#if USE_HDFS
-template class StorageObjectStorageCluster<HDFSClusterDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
-#endif
 
 }

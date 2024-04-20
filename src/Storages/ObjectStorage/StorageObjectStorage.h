@@ -1,31 +1,22 @@
 #pragma once
-
-#include <Common/re2.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 
-
 namespace DB
 {
 
-struct SelectQueryInfo;
 class StorageObjectStorageConfiguration;
-struct S3StorageSettings;
-struct HDFSStorageSettings;
-struct AzureStorageSettings;
-class PullingPipelineExecutor;
-using ReadTaskCallback = std::function<String()>;
-class IOutputFormat;
-class IInputFormat;
-class SchemaCache;
 class ReadBufferIterator;
+class SchemaCache;
 
-
-template <typename StorageSettings>
+/**
+ * A general class containing implementation for external table engines
+ * such as StorageS3, StorageAzure, StorageHDFS.
+ * Works with an object of IObjectStorage class.
+ */
 class StorageObjectStorage : public IStorage
 {
 public:
@@ -35,10 +26,26 @@ public:
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
 
+    struct QuerySettings
+    {
+        /// Insert settings:
+        bool truncate_on_insert;
+        bool create_new_file_on_insert;
+
+        /// Schema inference settings:
+        bool schema_inference_use_cache;
+        SchemaInferenceMode schema_inference_mode;
+
+        /// List settings:
+        bool skip_empty_files;
+        size_t list_object_keys_size;
+        bool throw_on_zero_files_match;
+        bool ignore_non_existent_file;
+    };
+
     StorageObjectStorage(
         ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
-        const String & engine_name_,
         ContextPtr context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -48,17 +55,17 @@ public:
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
-    String getName() const override { return engine_name; }
+    String getName() const override;
 
     void read(
         QueryPlan & query_plan,
-        const Names &,
-        const StorageSnapshotPtr &,
-        SelectQueryInfo &,
-        ContextPtr,
-        QueryProcessingStage::Enum,
-        size_t,
-        size_t) override;
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
 
     SinkToStoragePtr write(
         const ASTPtr & query,
@@ -84,7 +91,9 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    static SchemaCache & getSchemaCache(const ContextPtr & context);
+    SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
     static ColumnsDescription getTableStructureFromData(
         const ObjectStoragePtr & object_storage,
@@ -108,19 +117,15 @@ protected:
         ObjectInfos & read_keys,
         const ContextPtr & context);
 
+    ConfigurationPtr configuration;
+    const ObjectStoragePtr object_storage;
     const std::string engine_name;
-    std::optional<FormatSettings> format_settings;
+    const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
 
     LoggerPtr log;
-    ObjectStoragePtr object_storage;
-    ConfigurationPtr configuration;
     std::mutex configuration_update_mutex;
 };
-
-using StorageS3 = StorageObjectStorage<S3StorageSettings>;
-using StorageAzureBlob = StorageObjectStorage<AzureStorageSettings>;
-using StorageHDFS = StorageObjectStorage<HDFSStorageSettings>;
 
 }

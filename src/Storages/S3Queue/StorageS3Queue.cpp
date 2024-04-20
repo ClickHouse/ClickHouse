@@ -37,13 +37,6 @@ namespace ProfileEvents
     extern const Event S3ListObjects;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric ObjectStorageS3Threads;
-    extern const Metric ObjectStorageS3ThreadsActive;
-    extern const Metric ObjectStorageS3ThreadsScheduled;
-}
-
 namespace DB
 {
 
@@ -151,14 +144,14 @@ StorageS3Queue::StorageS3Queue(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = Storage::getTableStructureFromData(object_storage, configuration, format_settings, context_);
+        auto columns = StorageObjectStorage::getTableStructureFromData(object_storage, configuration, format_settings, context_);
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (configuration->format == "auto")
         {
-            StorageObjectStorage<S3StorageSettings>::setFormatFromData(object_storage, configuration, format_settings, context_);
+            StorageObjectStorage::setFormatFromData(object_storage, configuration, format_settings, context_);
         }
         storage_metadata.setColumns(columns_);
     }
@@ -370,26 +363,18 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     size_t max_block_size,
     ContextPtr local_context)
 {
-    auto threadpool = std::make_shared<ThreadPool>(CurrentMetrics::ObjectStorageS3Threads,
-                                                   CurrentMetrics::ObjectStorageS3ThreadsActive,
-                                                   CurrentMetrics::ObjectStorageS3ThreadsScheduled,
-                                                   /* max_threads */1);
     auto internal_source = std::make_unique<StorageObjectStorageSource>(
         getName(),
         object_storage,
         configuration,
         info,
         format_settings,
-        S3StorageSettings::create(local_context->getSettingsRef()),
+        configuration->getQuerySettings(local_context),
         local_context,
         max_block_size,
         file_iterator,
         false,
-        Storage::getSchemaCache(local_context),
-        threadpool,
-        CurrentMetrics::ObjectStorageS3Threads,
-        CurrentMetrics::ObjectStorageS3ThreadsActive,
-        CurrentMetrics::ObjectStorageS3ThreadsScheduled);
+        StorageObjectStorage::getSchemaCache(local_context, configuration->getTypeName()));
 
     auto file_deleter = [=, this](const std::string & path) mutable
     {
@@ -596,7 +581,7 @@ void StorageS3Queue::checkTableStructure(const String & zookeeper_prefix, const 
 
 std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
-    auto settings = S3StorageSettings::create(local_context->getSettingsRef());
+    auto settings = configuration->getQuerySettings(local_context);
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
         object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 

@@ -39,7 +39,7 @@ protected:
             columns = cached_columns;
 
         StoragePtr storage = Storage::create(
-            configuration, context, "", StorageID(TableFunction::getDatabaseName(), table_name),
+            configuration, context, StorageID(TableFunction::getDatabaseName(), table_name),
             columns, ConstraintsDescription{}, String{}, std::nullopt, LoadingStrictnessLevel::CREATE);
 
         storage->startup();

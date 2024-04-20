@@ -14,8 +14,8 @@
 namespace DB
 {
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Configuration>::executeImpl(
+template <typename Definition, typename Configuration>
+StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
@@ -34,10 +34,9 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Config
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
-        storage = std::make_shared<StorageObjectStorage<StorageSettings>>(
+        storage = std::make_shared<StorageObjectStorage>(
             configuration,
             object_storage,
-            Definition::storage_type_name,
             context,
             StorageID(Base::getDatabaseName(), table_name),
             columns,
@@ -49,11 +48,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Config
     }
     else
     {
-        storage = std::make_shared<StorageObjectStorageCluster<Definition, StorageSettings, Configuration>>(
+        storage = std::make_shared<StorageObjectStorageCluster>(
             ITableFunctionCluster<Base>::cluster_name,
             configuration,
             object_storage,
-            Definition::storage_type_name,
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
@@ -107,14 +105,14 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
 }
 
 #if USE_AWS_S3
-template class TableFunctionObjectStorageCluster<S3ClusterDefinition, S3StorageSettings, StorageS3Configuration>;
+template class TableFunctionObjectStorageCluster<S3ClusterDefinition, StorageS3Configuration>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorageCluster<AzureClusterDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>;
+template class TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureBlobConfiguration>;
 #endif
 
 #if USE_HDFS
-template class TableFunctionObjectStorageCluster<HDFSClusterDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
+template class TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 }

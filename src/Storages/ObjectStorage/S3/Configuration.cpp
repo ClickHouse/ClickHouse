@@ -70,6 +70,21 @@ StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & ot
     keys = other.keys;
 }
 
+StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(const ContextPtr & context) const
+{
+    const auto & settings = context->getSettingsRef();
+    return StorageObjectStorage::QuerySettings{
+        .truncate_on_insert = settings.s3_truncate_on_insert,
+        .create_new_file_on_insert = settings.s3_create_new_file_on_insert,
+        .schema_inference_use_cache = settings.schema_inference_use_cache_for_s3,
+        .schema_inference_mode = settings.schema_inference_mode,
+        .skip_empty_files = settings.s3_skip_empty_files,
+        .list_object_keys_size = settings.s3_list_object_keys_size,
+        .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+        .ignore_non_existent_file = settings.s3_ignore_file_doesnt_exist,
+    };
+}
+
 ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
     assertInitialized();

@@ -1,18 +1,30 @@
 #pragma once
 #include <Core/Types.h>
+#include "StorageObjectStorage.h"
 
 namespace DB
 {
 
 class IObjectStorage;
 class StorageObjectStorageConfiguration;
+using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 struct StorageObjectStorageSettings;
 
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
-    const StorageObjectStorageSettings & query_settings,
+    const StorageObjectStorage::QuerySettings & settings,
     const std::string & key,
     size_t sequence_number);
+
+
+StorageInMemoryMetadata getStorageMetadata(
+    ObjectStoragePtr object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
+    std::optional<FormatSettings> format_settings,
+    const String & comment,
+    const ContextPtr & context);
 
 }

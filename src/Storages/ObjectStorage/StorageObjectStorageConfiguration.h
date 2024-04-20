@@ -1,6 +1,7 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include "StorageObjectStorage.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -27,6 +28,9 @@ public:
         ContextPtr local_context,
         bool with_table_structure);
 
+    virtual std::string getTypeName() const = 0;
+    virtual std::string getEngineName() const = 0;
+
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
@@ -36,6 +40,9 @@ public:
 
     virtual String getDataSourceDescription() = 0;
     virtual String getNamespace() const = 0;
+    virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;
+    virtual void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
 
     bool withWildcard() const;
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }

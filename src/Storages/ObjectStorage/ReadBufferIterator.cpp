@@ -1,5 +1,4 @@
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
 
@@ -19,7 +18,6 @@ ReadBufferIterator::ReadBufferIterator(
     ConfigurationPtr configuration_,
     const FileIterator & file_iterator_,
     const std::optional<FormatSettings> & format_settings_,
-    const StorageObjectStorageSettings & query_settings_,
     SchemaCache & schema_cache_,
     ObjectInfos & read_keys_,
     const ContextPtr & context_)
@@ -28,7 +26,7 @@ ReadBufferIterator::ReadBufferIterator(
     , configuration(configuration_)
     , file_iterator(file_iterator_)
     , format_settings(format_settings_)
-    , query_settings(query_settings_)
+    , query_settings(configuration->getQuerySettings(context_))
     , schema_cache(schema_cache_)
     , read_keys(read_keys_)
     , format(configuration->format == "auto" ? std::nullopt : std::optional<String>(configuration->format))

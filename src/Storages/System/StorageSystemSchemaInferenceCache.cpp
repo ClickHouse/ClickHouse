@@ -9,6 +9,9 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
 
 namespace DB
 {
@@ -74,14 +77,14 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
 {
     fillDataImpl(res_columns, StorageFile::getSchemaCache(context), "File");
 #if USE_AWS_S3
-    fillDataImpl(res_columns, StorageS3::getSchemaCache(context), "S3");
+    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageS3Configuration::type_name), "S3");
 #endif
 #if USE_HDFS
-    fillDataImpl(res_columns, StorageHDFS::getSchemaCache(context), "HDFS");
+    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageHDFSConfiguration::type_name), "HDFS");
 #endif
     fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
 #if USE_AZURE_BLOB_STORAGE
-    fillDataImpl(res_columns, StorageAzureBlob::getSchemaCache(context), "Azure"); /// FIXME
+    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageAzureBlobConfiguration::type_name), "Azure");
 #endif
 }
 

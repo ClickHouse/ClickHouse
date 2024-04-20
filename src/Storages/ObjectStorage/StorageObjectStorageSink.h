@@ -1,7 +1,6 @@
 #pragma once
 #include <Storages/PartitionedSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 
@@ -47,7 +46,6 @@ public:
     PartitionedStorageObjectStorageSink(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
-        const StorageObjectStorageSettings & query_settings_,
         std::optional<FormatSettings> format_settings_,
         const Block & sample_block_,
         ContextPtr context_,
@@ -61,7 +59,7 @@ private:
 
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
-    const StorageObjectStorageSettings query_settings;
+    const StorageObjectStorage::QuerySettings query_settings;
     const std::optional<FormatSettings> format_settings;
     const Block sample_block;
     const ContextPtr context;

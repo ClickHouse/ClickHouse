@@ -7,7 +7,6 @@
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 #include <Interpreters/S3QueueLog.h>
 
 
@@ -21,7 +20,7 @@ struct ObjectMetadata;
 class StorageS3QueueSource : public ISource, WithContext
 {
 public:
-    using Storage = StorageObjectStorage<S3StorageSettings>;
+    using Storage = StorageObjectStorage;
 
     using ConfigurationPtr = Storage::ConfigurationPtr;
     using GlobIterator = StorageObjectStorageSource::GlobIterator;

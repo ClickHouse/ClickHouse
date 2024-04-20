@@ -6,7 +6,6 @@
 #include <Storages/ObjectStorage/DataLakes/IStorageDataLake.h>
 #include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageQuerySettings.h>
 
 
 namespace DB
@@ -24,7 +23,7 @@ void registerStorageIceberg(StorageFactory & factory)
             StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
 
             return StorageIceberg::create(
-                configuration, args.getContext(), "Iceberg", args.table_id, args.columns,
+                configuration, args.getContext(), args.table_id, args.columns,
                 args.constraints, args.comment, std::nullopt, args.mode);
         },
         {
@@ -47,7 +46,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
 
             return StorageDeltaLake::create(
-                configuration, args.getContext(), "DeltaLake", args.table_id, args.columns,
+                configuration, args.getContext(), args.table_id, args.columns,
                 args.constraints, args.comment, std::nullopt, args.mode);
         },
         {
@@ -68,7 +67,7 @@ void registerStorageHudi(StorageFactory & factory)
             StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
 
             return StorageHudi::create(
-                configuration, args.getContext(), "Hudi", args.table_id, args.columns,
+                configuration, args.getContext(), args.table_id, args.columns,
                 args.constraints, args.comment, std::nullopt, args.mode);
         },
         {

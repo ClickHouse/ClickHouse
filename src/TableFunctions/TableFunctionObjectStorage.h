@@ -85,7 +85,7 @@ struct HDFSDefinition
                                       " - uri, format, structure, compression_method\n";
 };
 
-template <typename Definition, typename StorageSettings, typename Configuration>
+template <typename Definition, typename Configuration>
 class TableFunctionObjectStorage : public ITableFunction
 {
 public:
@@ -142,14 +142,14 @@ protected:
 };
 
 #if USE_AWS_S3
-using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, S3StorageSettings, StorageS3Configuration>;
+using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, StorageS3Configuration>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>;
+using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureBlobConfiguration>;
 #endif
 
 #if USE_HDFS
-using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
+using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 #endif
 }

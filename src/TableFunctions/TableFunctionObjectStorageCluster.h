@@ -56,8 +56,8 @@ struct HDFSClusterDefinition
                                       " - cluster_name, uri, format, structure, compression_method\n";
 };
 
-template <typename Definition, typename StorageSettings, typename Configuration>
-class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, StorageSettings, Configuration>>
+template <typename Definition, typename Configuration>
+class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration>>
 {
 public:
     static constexpr auto name = Definition::name;
@@ -67,7 +67,7 @@ public:
     String getSignature() const override { return signature; }
 
 protected:
-    using Base = TableFunctionObjectStorage<Definition, StorageSettings, Configuration>;
+    using Base = TableFunctionObjectStorage<Definition, Configuration>;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -86,14 +86,14 @@ protected:
 };
 
 #if USE_AWS_S3
-using TableFunctionS3Cluster = TableFunctionObjectStorageCluster<S3ClusterDefinition, S3StorageSettings, StorageS3Configuration>;
+using TableFunctionS3Cluster = TableFunctionObjectStorageCluster<S3ClusterDefinition, StorageS3Configuration>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClusterDefinition, AzureStorageSettings, StorageAzureBlobConfiguration>;
+using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureBlobConfiguration>;
 #endif
 
 #if USE_HDFS
-using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, HDFSStorageSettings, StorageHDFSConfiguration>;
+using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 }

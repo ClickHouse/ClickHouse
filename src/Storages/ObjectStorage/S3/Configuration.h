@@ -7,6 +7,7 @@
 #include <IO/S3/getObjectInfo.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Common/CurrentMetrics.h>
 
 namespace DB
 {
@@ -14,8 +15,13 @@ namespace DB
 class StorageS3Configuration : public StorageObjectStorageConfiguration
 {
 public:
+    static constexpr auto type_name = "s3";
+
     StorageS3Configuration() = default;
     StorageS3Configuration(const StorageS3Configuration & other);
+
+    std::string getTypeName() const override { return type_name; }
+    std::string getEngineName() const override { return url.storage_name; }
 
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
@@ -26,6 +32,7 @@ public:
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() override;
+    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;
@@ -34,8 +41,8 @@ public:
     bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
-    static void addStructureAndFormatToArgs(
-        ASTs & args, const String & structure, const String & format, ContextPtr context);
+    void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure, const String & format, ContextPtr context) override;
 
 private:
     void fromNamedCollection(const NamedCollection & collection) override;
