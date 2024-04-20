@@ -978,37 +978,25 @@ def test_read_subcolumns(started_cluster):
         f"select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert (
-        res
-        == "2\t/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
-    )
+    assert res == "2\t/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
 
     res = node.query(
         f"select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert (
-        res
-        == "2\t/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
-    )
+    assert res == "2\t/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
 
     res = node.query(
         f"select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert (
-        res
-        == "0\t/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
-    )
+    assert res == "0\t/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
 
     res = node.query(
         f"select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
     )
 
-    assert (
-        res
-        == "42\t/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
-    )
+    assert res == "42\t/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
 
 
 def test_union_schema_inference_mode(started_cluster):
