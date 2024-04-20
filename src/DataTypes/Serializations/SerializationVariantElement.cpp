@@ -347,7 +347,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
 
     /// Special case for LowCardinality. We want the result to be LowCardinality(Nullable),
     /// but we don't have a good way to apply null-mask for LowCardinality(), so, we first
-    /// cont our column to LowCardinality(Nullable()) and then use expand which will
+    /// convert our column to LowCardinality(Nullable()) and then use expand which will
     /// fill rows with 0 in mask with default value (that is NULL).
     if (prev->lowCardinality())
         res_column = assert_cast<ColumnLowCardinality &>(*res_column).cloneNullable();
