@@ -212,6 +212,7 @@
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #elif defined(__loongarch64)
 #    define POCO_ARCH POCO_ARCH_LOONGARCH64
+#    define POCO_ARCH_LITTLE_ENDIAN 1
 #endif
 
 
