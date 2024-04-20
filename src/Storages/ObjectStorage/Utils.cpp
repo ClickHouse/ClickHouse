@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
