@@ -1372,6 +1372,7 @@ countMatches
 countMatchesCaseInsensitive
 countSubstrings
 countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
