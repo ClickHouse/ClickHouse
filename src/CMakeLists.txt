@@ -620,6 +620,11 @@ if (TARGET ch_rust::skim)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
+if (TARGET ch_rust::pco)
+    dbms_target_link_libraries(PRIVATE ch_rust::pco)
+    target_link_libraries(clickhouse_compression PRIVATE ch_rust::pco)
+endif ()
+
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories

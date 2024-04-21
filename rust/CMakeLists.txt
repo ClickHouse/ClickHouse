@@ -128,3 +128,4 @@ endfunction()
 
 add_rust_subdirectory (skim)
 add_rust_subdirectory (prql)
+add_rust_subdirectory (pco)

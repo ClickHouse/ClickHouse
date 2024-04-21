@@ -59,6 +59,7 @@
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
+#cmakedefine01 USE_PCO
 #cmakedefine01 USE_OPENSSL_INTREE
 #cmakedefine01 USE_ULID
 #cmakedefine01 FIU_ENABLE

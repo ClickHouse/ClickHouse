@@ -13,6 +13,7 @@
                 <value>DoubleDelta</value>
                 <value>Gorilla</value>
                 <value>FPC</value>
+                <value>Quantile</value>
             </values>
         </substitution>
         <substitution>
