@@ -230,16 +230,49 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. 
 
-## roundAge(num)
+## roundAge
 
-Accepts a number. If the number is
-- smaller than 1, it returns 0,
-- between 1 and 17, it returns 17,
-- between 18 and 24, it returns 18,
-- between 25 and 34, it returns 25,
-- between 35 and 44, it returns 35,
-- between 45 and 54, it returns 45,
-- larger than 55, it returns 55.
+Accepts a number within various commonly used ranges of human age and returns either a maximum or a minimum within that range.
+
+**Syntax**
+
+```sql
+roundAge(num)
+```
+
+**Parameters**
+
+- `age`: A number representing an age in years. [Numeric](../data-types/int-uint.md).
+
+**Returned value**
+
+- Returns `0`, for $age \lt 1$.
+- Returns `17`, for $1 \leq age \leq 17$.
+- Returns `18`, for $18 \leq age \leq 24$.
+- Returns `25`, for $25 \leq age \leq 34$.
+- Returns `35`, for $35 \leq age \leq 44$.
+- Returns `45`, for $45 \leq age \leq 54$.
+- Returns `55`, for $age \geq 55$.
+
+**Example**
+
+Query:
+
+```sql
+SELECT *, roundAge(*) FROM system.numbers WHERE number IN (0, 5, 20, 31, 37, 54, 72);
+```
+
+```response
+┌─number─┬─roundAge(number)─┐
+│      0 │                0 │
+│      5 │               17 │
+│     20 │               18 │
+│     31 │               25 │
+│     37 │               35 │
+│     54 │               45 │
+│     72 │               55 │
+└────────┴──────────────────┘
+```
 
 ## roundDown(num, arr)
 
