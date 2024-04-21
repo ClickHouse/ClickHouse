@@ -1708,9 +1708,18 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        zookeeper_path = args.context->getMacros()->expand(zookeeper_path);
-        shard_name = args.context->getMacros()->expand(shard_name);
-        replica_name = args.context->getMacros()->expand(replica_name);
+        /// Expand macros.
+        Macros::MacroExpansionInfo info;
+        info.table_id.database_name = args.database_name;
+        info.table_id.uuid = args.uuid;
+        zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
+
+        info.level = 0;
+        info.table_id.uuid = UUIDHelpers::Nil;
+        shard_name = args.context->getMacros()->expand(shard_name, info);
+
+        info.level = 0;
+        replica_name = args.context->getMacros()->expand(replica_name, info);
 
         DatabaseReplicatedSettings database_replicated_settings{};
         if (engine_define->settings)
