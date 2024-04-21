@@ -226,9 +226,53 @@ roundBankers(10.755, 2) = 10.76
 
 Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
 
-## roundDuration(num)
+## roundDuration
 
-Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. 
+Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set: $\set{1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000}$. 
+
+**Syntax**
+
+```sql
+roundDuration(num)
+```
+
+**Parameters**
+
+- `age`: A number representing an age in years. [Numeric](../data-types/int-uint.md).
+
+**Returned value**
+
+- `0`, for `num` $\lt 1$.
+- One of $\set{1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000}$, otherwise. [UInt8](../data-types/int-uint.md).
+
+Query:
+
+```sql
+SELECT *, roundDuration(*) FROM system.numbers WHERE number IN (0, 9, 19, 47, 101, 149, 205, 271, 421, 789, 1423, 2345, 4567, 9876, 24680, 42573)
+```
+
+Result:
+
+```response
+┌─number─┬─roundDuration(number)─┐
+│      0 │                     0 │
+│      9 │                     1 │
+│     19 │                    10 │
+│     47 │                    30 │
+│    101 │                    60 │
+│    149 │                   120 │
+│    205 │                   180 │
+│    271 │                   240 │
+│    421 │                   300 │
+│    789 │                   600 │
+│   1423 │                  1200 │
+│   2345 │                  1800 │
+│   4567 │                  3600 │
+│   9876 │                  7200 │
+│  24680 │                 18000 │
+│  42573 │                 36000 │
+└────────┴───────────────────────┘
+```
 
 ## roundAge
 
