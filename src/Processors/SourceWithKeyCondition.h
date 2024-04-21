@@ -15,12 +15,16 @@ class SourceWithKeyCondition : public ISource
 protected:
     /// Represents pushed down filters in source
     std::shared_ptr<const KeyCondition> key_condition;
+    ActionsDAGPtr filter_dag;
+    ContextPtr ctx;
 
-    void setKeyConditionImpl(const ActionsDAGPtr & filter_actions_dag, ContextPtr context, const Block & keys)
+    void setKeyConditionImpl(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & keys)
     {
+        setContext(context_);
+        setActionsDag(filter_actions_dag);
         key_condition = std::make_shared<const KeyCondition>(
             filter_actions_dag,
-            context,
+            ctx,
             keys.getNames(),
             std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())));
     }
@@ -28,6 +32,16 @@ protected:
 public:
     using Base = ISource;
     using Base::Base;
+
+    void setActionsDag(const ActionsDAGPtr & filter_actions_dag_)
+    {
+        filter_dag = filter_actions_dag_;
+    }
+
+    void setContext(ContextPtr context_)
+    {
+        ctx = context_;
+    }
 
     /// Set key_condition directly. It is used for filter push down in source.
     virtual void setKeyCondition(const std::shared_ptr<const KeyCondition> & key_condition_) { key_condition = key_condition_; }

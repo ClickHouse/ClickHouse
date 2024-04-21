@@ -2807,6 +2807,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
+
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
                 TMP_PREFIX + "clone_",

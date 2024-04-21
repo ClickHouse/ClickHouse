@@ -1,5 +1,6 @@
 #include "ParquetBlockInputFormat.h"
 #include <boost/algorithm/string/case_conv.hpp>
+#include "ParquetBloomFilterCondition.h"
 
 #if USE_PARQUET
 
@@ -13,6 +14,8 @@
 #include <arrow/status.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/schema.h>
+#include <parquet/bloom_filter.h>
+#include <parquet/bloom_filter_reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
 #include "ArrowBufferedStreams.h"
@@ -232,6 +235,109 @@ static std::optional<Field> decodePlainParquetValueSlow(const std::string & data
     return field;
 }
 
+static auto bloomFilterMaybeContains(
+    int row_group, ActionsDAGPtr filter_dag,
+    const Block & header,
+    const std::unordered_map<std::string, int> & column_name_to_index,
+    auto arrow_file,
+    auto metadata,
+    auto context)
+{
+    std::unique_ptr<parquet::arrow::FileReader> file_reader;
+
+    parquet::arrow::FileReaderBuilder builder;
+    THROW_ARROW_NOT_OK(
+        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
+    //        builder.properties(properties);
+    // TODO: Pass custom memory_pool() to enable memory accounting with non-jemalloc allocators.
+    THROW_ARROW_NOT_OK(builder.Build(&file_reader));
+
+    auto & bf_reader = file_reader->parquet_reader()->GetBloomFilterReader();
+    auto rg_bf = bf_reader.RowGroup(row_group);
+
+    if (!rg_bf)
+    {
+        return true;
+    }
+
+    ParquetBloomFilterCondition pbfc(filter_dag, context, header);
+
+    ParquetBloomFilterCondition::IndexToColumnBF index_to_column_bf;
+
+    auto get_header_index_by_column_name = [&](const std::string & column_name) -> std::size_t
+    {
+        for (auto i = 0u; i < header.columns(); ++i)
+        {
+            if (header.getByPosition(i).name == column_name)
+            {
+                return i;
+            }
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} not found in Parquet file", column_name);
+    };
+
+    // build index_to_bf based on column_name_to_index
+    for (const auto & [column_name, index] : column_name_to_index)
+    {
+        auto bf = rg_bf->GetColumnBloomFilter(index);
+
+        if (!bf)
+        {
+            continue;
+        }
+
+        index_to_column_bf[get_header_index_by_column_name(column_name)] = std::move(bf);
+    }
+
+    return pbfc.mayBeTrueOnRowGroup(index_to_column_bf);
+}
+
+//static auto bloomFilterMaybeContains(int row_group, std::unordered_map<std::size_t, std::vector<Field>> column_indice_to_values, auto arrow_file, auto metadata)
+//{
+//    std::unique_ptr<parquet::arrow::FileReader> file_reader;
+//
+//    parquet::arrow::FileReaderBuilder builder;
+//    THROW_ARROW_NOT_OK(
+//        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
+//    //        builder.properties(properties);
+//    // TODO: Pass custom memory_pool() to enable memory accounting with non-jemalloc allocators.
+//    THROW_ARROW_NOT_OK(builder.Build(&file_reader));
+//
+//    auto & bf_reader = file_reader->parquet_reader()->GetBloomFilterReader();
+//    auto rg_bf = bf_reader.RowGroup(row_group);
+//
+//    if (!rg_bf)
+//    {
+//        return true;
+//    }
+//
+//    for (auto & [index, values] : column_indice_to_values)
+//    {
+//        auto bf = rg_bf->GetColumnBloomFilter(static_cast<int>(index));
+//
+//        // do all columns need to have bloom filters?
+//        if (!bf)
+//        {
+//            continue;
+//        }
+//
+//        for (const auto & value : values)
+//        {
+//            // convert Field into hashable type
+//            auto str = value.get<std::string>();
+//            parquet::ByteArray ba(str);
+//
+//            if (!bf->FindHash(bf->Hash(&ba)))
+//            {
+//                return false;
+//            }
+//        }
+//    }
+//
+//    return true;
+//}
+
 /// Range of values for each column, based on statistics in the Parquet metadata.
 /// This is lower/upper bounds, not necessarily exact min and max, e.g. the min/max can be just
 /// missing in the metadata.
@@ -409,7 +515,12 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     ArrowFieldIndexUtil field_util(
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
-    column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
+    auto column_name_to_index = field_util.findRequiredIndices(getPort().getHeader(), *schema);
+
+    for (auto & [column_name, index] : column_name_to_index)
+    {
+        column_indices.push_back(index);
+    }
 
     int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
@@ -418,6 +529,12 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     {
         if (skip_row_groups.contains(row_group))
             continue;
+
+        if (format_settings.parquet.bloom_filter_push_down
+            && !bloomFilterMaybeContains(row_group, filter_dag, getPort().getHeader(), column_name_to_index, arrow_file, metadata, ctx))
+        {
+            continue;
+        }
 
         if (format_settings.parquet.filter_push_down && key_condition
             && !key_condition
