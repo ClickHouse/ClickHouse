@@ -5174,8 +5174,8 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Lambda {} expect {} arguments. Actual {}. In scope {}",
             lambda_to_resolve.formatASTForErrorMessage(),
-            arguments_size,
             lambda_arguments_nodes_size,
+            arguments_size,
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
