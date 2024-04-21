@@ -15,6 +15,12 @@ uint64_t StreamSubscription::getManagerSnapshot() const
     return snapshot;
 }
 
+bool StreamSubscription::isEmpty() const
+{
+    std::unique_lock guard(mutex);
+    return ready_blocks.empty();
+}
+
 #if defined(OS_LINUX)
 
 void StreamSubscription::push(Block block)

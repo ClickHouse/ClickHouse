@@ -46,6 +46,7 @@ private:
     std::optional<int> fd;
 
     BlocksList cached_data;
+    bool is_async_state = false;
 
     Block subscription_stream_metadata;
     ExpressionActionsPtr stream_converter;
