@@ -40,3 +40,5 @@ add_library(ch_rust::prql ALIAS _ch_rust_prql)
 target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
 add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
 
+target_include_directories(_ch_rust_pco INTERFACE pco/include)
+add_library(ch_rust::pco ALIAS _ch_rust_pco)
