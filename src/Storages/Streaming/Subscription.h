@@ -18,6 +18,8 @@ public:
     void push(Block block);
     BlocksList extractAll();
 
+    bool isEmpty() const;
+
     // returns event_fd's native handle for unix systems
     // otherwise returns nullopt
     std::optional<int> fd() const;
@@ -27,7 +29,7 @@ public:
 
 private:
     // data
-    std::mutex mutex;
+    mutable std::mutex mutex;
     BlocksList ready_blocks;
 
     // synchronization

@@ -16,23 +16,27 @@ SubscriptionSource::SubscriptionSource(Block storage_sample_, StreamSubscription
 
 IProcessor::Status SubscriptionSource::prepare()
 {
-    Status base_status = ISource::prepare();
-
-    // if needs to generate new chunk and we have not any cached data
-    // fallback to Async to wait on subscription if possible
-    if (base_status == Status::Ready && cached_data.empty() && fd.has_value())
+    if (is_async_state)
         return Status::Async;
 
-    return base_status;
+    return ISource::prepare();
 }
 
 std::optional<Chunk> SubscriptionSource::tryGenerate()
 {
+    is_async_state = false;
+
     if (isCancelled())
         return std::nullopt;
 
     if (cached_data.empty())
     {
+        if (fd.has_value() && subscription->isEmpty())
+        {
+            is_async_state = true;
+            return Chunk();
+        }
+
         LOG_DEBUG(log, "extracting new batch");
         auto new_blocks = subscription->extractAll();
         cached_data.splice(cached_data.end(), new_blocks);

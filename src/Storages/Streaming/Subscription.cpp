@@ -6,6 +6,12 @@
 namespace DB
 {
 
+bool StreamSubscription::isEmpty() const
+{
+    std::unique_lock guard(mutex);
+    return ready_blocks.empty();
+}
+
 #if defined(OS_LINUX)
 
 void StreamSubscription::push(Block block)
