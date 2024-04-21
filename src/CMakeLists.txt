@@ -185,6 +185,11 @@ if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
+if (TARGET ch_contrib::lfmalloc)
+    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::lfmalloc)
+    target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::lfmalloc)
+endif()
+
 if (TARGET ch_contrib::azure_sdk)
     target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::azure_sdk)
 endif()
