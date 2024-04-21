@@ -262,6 +262,8 @@ Query:
 SELECT *, roundAge(*) FROM system.numbers WHERE number IN (0, 5, 20, 31, 37, 54, 72);
 ```
 
+Result:
+
 ```response
 ┌─number─┬─roundAge(number)─┐
 │      0 │                0 │
@@ -274,6 +276,42 @@ SELECT *, roundAge(*) FROM system.numbers WHERE number IN (0, 5, 20, 31, 37, 54,
 └────────┴──────────────────┘
 ```
 
-## roundDown(num, arr)
+## roundDown
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
+
+**Syntax**
+
+```sql
+roundDown(num, arr)
+```
+
+**Parameters**
+
+- `age`: A number representing an age in years. [Numeric](../data-types/int-uint.md).
+- `arr`: Array of elements to round `age` down to. [Array](../data-types/array.md)([Numeric](../data-types/int-uint.md))
+
+**Returned value**
+
+- Number rounded down to an element in `arr`. If the value is less than the lowest bound, the lowest bound is returned. [Numeric](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT *, roundDown(*, [3, 4, 5]) FROM system.numbers WHERE number IN (0, 1, 2, 3, 4, 5)
+```
+
+Result:
+
+```response
+┌─number─┬─roundDown(number, [3, 4, 5])─┐
+│      0 │                            3 │
+│      1 │                            3 │
+│      2 │                            3 │
+│      3 │                            3 │
+│      4 │                            4 │
+│      5 │                            5 │
+└────────┴──────────────────────────────┘
+```
