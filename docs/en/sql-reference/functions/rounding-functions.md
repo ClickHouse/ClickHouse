@@ -79,9 +79,9 @@ round(expression [, decimal_places])
 
 The rounded number of the same type as the input number.
 
-### Examples
+**Examples**
 
-**Example of use with Float**
+Example of usage with Float:
 
 ``` sql
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
@@ -95,7 +95,7 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 └─────┴──────────────────────────┘
 ```
 
-**Example of use with Decimal**
+Example of usage with Decimal:
 
 ``` sql
 SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
@@ -124,9 +124,7 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 └────────┴──────────────────────────────────────────────────┘
 ```
 
-**Examples of rounding**
-
-Rounding to the nearest number.
+Examples of rounding to the nearest number:
 
 ``` text
 round(3.2, 0) = 3
@@ -183,9 +181,7 @@ roundBankers(expression [, decimal_places])
 
 A value rounded by the banker’s rounding method.
 
-### Examples
-
-**Example of use**
+**Examples**
 
 Query:
 
@@ -210,7 +206,7 @@ Result:
 └─────┴───┘
 ```
 
-**Examples of Banker’s rounding**
+Examples of Banker’s rounding:
 
 ``` text
 roundBankers(0.4) = 0
