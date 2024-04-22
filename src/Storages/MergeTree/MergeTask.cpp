@@ -9,6 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -1085,6 +1086,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     if (global_ctx->deduplicate)
     {
         const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+        const bool queue_mode = isInQueueMode(global_ctx);
 
         /// We don't want to deduplicate by virtual persistent column.
         /// If deduplicate_by_columns is empty, add all columns except virtuals.
@@ -1093,6 +1095,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             for (const auto & column_name : global_ctx->merging_column_names)
             {
                 if (virtuals.tryGet(column_name, VirtualsKind::Persistent))
+                    continue;
+
+                if (queue_mode && isQueueModeColumn(column_name))
                     continue;
 
                 global_ctx->deduplicate_by_columns.emplace_back(column_name);
