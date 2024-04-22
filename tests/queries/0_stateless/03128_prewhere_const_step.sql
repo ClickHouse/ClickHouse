@@ -5,3 +5,7 @@ INSERT INTO account_test__fuzz_36 SELECT * FROM generateRandom(1234) LIMIT 50000
 
 SELECT count() FROM account_test__fuzz_36 PREWHERE 1 AND id > 0;
 SELECT count() FROM account_test__fuzz_36 PREWHERE 1 = 1 AND id > 0;
+SELECT count() FROM account_test__fuzz_36 PREWHERE 1 = 1 AND 1 IN (SELECT 1) AND id > 0;
+SELECT count() FROM account_test__fuzz_36 PREWHERE 1 = 1 AND 1 IN (SELECT number FROM numbers(10)) AND id > 0;
+SELECT count() FROM account_test__fuzz_36 PREWHERE toNullable(1) AND id > 0;
+SELECT count() FROM account_test__fuzz_36 PREWHERE materialize(1) AND id > 0;
