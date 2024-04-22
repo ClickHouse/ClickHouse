@@ -16,17 +16,25 @@ SubscriptionSource::SubscriptionSource(Block storage_sample_, StreamSubscription
 
 IProcessor::Status SubscriptionSource::prepare()
 {
+    if (finished)
+        return Status::Finished;
+
     if (is_async_state)
         return Status::Async;
 
-    return ISource::prepare();
+    auto base_status = ISource::prepare();
+
+    if (base_status == Status::Finished)
+        finished = true;
+
+    return base_status;
 }
 
 std::optional<Chunk> SubscriptionSource::tryGenerate()
 {
     is_async_state = false;
 
-    if (isCancelled())
+    if (isCancelled() || finished)
         return std::nullopt;
 
     if (cached_data.empty())
@@ -66,6 +74,7 @@ void SubscriptionSource::onUpdatePorts()
     if (getPort().isFinished())
     {
         LOG_DEBUG(log, "output port is finished, disabling subscription");
+        finished = true;
         subscription->disable();
     }
 }
@@ -73,6 +82,7 @@ void SubscriptionSource::onUpdatePorts()
 void SubscriptionSource::onCancel()
 {
     LOG_DEBUG(log, "query is cancelled, disabling subscription");
+    finished = true;
     subscription->disable();
 }
 
