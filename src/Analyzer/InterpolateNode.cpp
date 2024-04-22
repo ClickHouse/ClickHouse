@@ -28,13 +28,13 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
     getInterpolateExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool InterpolateNode::isEqualImpl(const IQueryTreeNode &) const
+bool InterpolateNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
 {
     /// No state in interpolate node
     return true;
 }
 
-void InterpolateNode::updateTreeHashImpl(HashState &) const
+void InterpolateNode::updateTreeHashImpl(HashState &, CompareOptions) const
 {
     /// No state in interpolate node
 }
