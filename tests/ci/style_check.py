@@ -191,14 +191,14 @@ def main():
             future = executor.submit(subprocess.run, cmd_shell, shell=True)
             _ = future.result()
 
+    autofix_description = ""
     if args.push:
         try:
             commit_push_staged(pr_info)
         except subprocess.SubprocessError:
             # do not fail the whole script if the autofix didn't work out
-            logging.error(
-                "Unable to push the autofix. Continue."
-            )
+            logging.error("Unable to push the autofix. Continue.")
+            autofix_description = ( "Failed to push autofix to the PR. " )
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
@@ -210,7 +210,7 @@ def main():
     state, description, test_results, additional_files = process_result(temp_path)
 
     JobReport(
-        description=description,
+        description=f"{autofix_description}{description}",
         test_results=test_results,
         status=state,
         start_time=stopwatch.start_time_str,
