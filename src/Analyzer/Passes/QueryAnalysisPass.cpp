@@ -84,9 +84,6 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
@@ -8256,11 +8253,9 @@ QueryAnalysisPass::QueryAnalysisPass(bool only_analyze_) : only_analyze(only_ana
 
 void QueryAnalysisPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    LOG_ERROR(getLogger("QueryAnalysisPass"), "xxx query_tree_node:\n{}", query_tree_node->dumpTree());
     QueryAnalyzer analyzer(only_analyze);
     analyzer.resolve(query_tree_node, table_expression, context);
     createUniqueTableAliases(query_tree_node, table_expression, context);
-    LOG_ERROR(getLogger("QueryAnalysisPass"), "xxx - query_tree_node:\n{}", query_tree_node->dumpTree());
 }
 
 }

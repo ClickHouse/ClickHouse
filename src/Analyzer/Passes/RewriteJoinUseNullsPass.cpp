@@ -190,10 +190,9 @@ private:
   */
 void RewriteJoinUseNullsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    bool flag = true;
-    if (context->getSettingsRef().join_use_nulls && flag)
+    if (context->getSettingsRef().join_use_nulls)
     {
-        LOG_ERROR(getLogger("RewriteJoinUseNullsPass"), "input query tree:\n{}", query_tree_node->dumpTree());
+        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "input query tree:\n{}", query_tree_node->dumpTree());
         std::unordered_map<QueryTreeNodePtr, std::unordered_set<QueryTreeNodePtr>> result_requiredColumns;
         /// Collect required columns for each table expression
         CollectTableRequiredColumnsVisitor table_required_columns_visitor(result_requiredColumns, context);
@@ -201,7 +200,7 @@ void RewriteJoinUseNullsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
         /// Rewrite table expressions to add a projection of converting columns to nullable if needed.
         RewriteJoinUseNullsTableExpressionVisitor table_expression_visitor(result_requiredColumns, context);
         table_expression_visitor.visit(query_tree_node);
-        LOG_ERROR(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsTableExpressionVisitor:\n{}", query_tree_node->dumpTree());
+        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsTableExpressionVisitor:\n{}", query_tree_node->dumpTree());
     }
 }
 }
