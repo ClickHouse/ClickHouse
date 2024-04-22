@@ -175,7 +175,7 @@ void registerFormats()
     registerOutputFormatNative(factory);
 
     registerOutputFormatCBOR(factory);
-    //TODO: registerInputFormatCBOR
+    registerInputFormatCBOR(factory);
 
     registerInputFormatRowBinary(factory);
     registerOutputFormatRowBinary(factory);
