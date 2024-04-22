@@ -51,6 +51,169 @@ SELECT generateUUIDv4(1), generateUUIDv4(2)
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
+## generateUUIDv7
+
+Generates the [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04). The generated UUID contains current timestamp in milliseconds followed by version 7 and variant 2 markers and random data in the following bit layout.
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |       rand_a          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                        rand_b                             |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
+**Syntax**
+
+``` sql
+generateUUIDv7([x])
+```
+
+**Arguments**
+
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+
+**Returned value**
+
+The UUID type value.
+
+**Usage example**
+
+This example demonstrates creating a table with the UUID type column and inserting a UUIDv7 value into the table.
+
+``` sql
+CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+
+INSERT INTO t_uuid SELECT generateUUIDv7()
+
+SELECT * FROM t_uuid
+```
+
+```response
+┌────────────────────────────────────x─┐
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b │
+└──────────────────────────────────────┘
+```
+
+**Usage example if it is needed to generate multiple values in one row**
+
+```sql
+SELECT generateUUIDv7(1), generateUUIDv7(2)
+┌─generateUUIDv7(1)────────────────────┬─generateUUIDv7(2)────────────────────┐
+│ 018f05b1-8c2e-7567-a988-48d09606ae8c │ 018f05b1-8c2e-7946-895b-fcd7635da9a0 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+## generateUUIDv7WithCounter
+
+Generates the [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+The generated UUID contains current timestamp in milliseconds followed by version 7 and variant 2 markers, counter and random data in the following bit layout. At any given new timestamp in unix_ts_ms the counter starts from some random value and then it's being increased by 1 on each new UUID v7 with counter generation until current timestamp changes. The counter overflow causes unix_ts_ms field increment by 1 and the counter restart from a random value. Counter increment monotony at one timestamp is guaranteed across all `generateUUIDv7WithCounter` functions running simultaneously.
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |   counter_high_bits   |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                   counter_low_bits                        |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
+**Syntax**
+
+``` sql
+generateUUIDv7WithCounter([x])
+```
+
+**Arguments**
+
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+
+**Returned value**
+
+The UUID type value.
+
+**Usage example**
+
+This example demonstrates creating a table with the UUID type column and inserting a UUIDv7 value into the table.
+
+``` sql
+CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+
+INSERT INTO t_uuid SELECT generateUUIDv7WithCounter()
+
+SELECT * FROM t_uuid
+```
+
+```response
+┌────────────────────────────────────x─┐
+│ 018f05c7-56e3-7ac3-93e9-1d93c4218e0e │
+└──────────────────────────────────────┘
+```
+
+**Usage example if it is needed to generate multiple values in one row**
+
+```sql
+SELECT generateUUIDv7WithCounter(1), generateUUIDv7WithCounter(2)
+┌─generateUUIDv7WithCounter(1)─────────┬─generateUUIDv7WithCounter(2)─────────┐
+│ 018f05c9-4ab8-7b86-b64e-c9f03fbd45d1 │ 018f05c9-4ab8-7b86-b64e-c9f12efb7e16 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+## generateUUIDv7WithFastCounter
+
+Generates the [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+This function is a faster version of `generateUUIDv7WithCounter` function giving no guarantee on counter monotony across different requests running simultaneously. Counter increment monotony at one timestamp is guaranteed only within one thread calling this function to generate many UUIDs.
+
+**Syntax**
+
+``` sql
+generateUUIDv7WithFastCounter([x])
+```
+
+**Arguments**
+
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+
+**Returned value**
+
+The UUID type value.
+
+**Usage example**
+
+This example demonstrates creating a table with the UUID type column and inserting a UUIDv7 value into the table.
+
+``` sql
+CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+
+INSERT INTO t_uuid SELECT generateUUIDv7WithFastCounter()
+
+SELECT * FROM t_uuid
+```
+
+```response
+┌────────────────────────────────────x─┐
+│ 018f05e2-e3b2-70cb-b8be-64b09b626d32 │
+└──────────────────────────────────────┘
+```
+
+**Usage example if it is needed to generate multiple values in one row**
+
+```sql
+SELECT generateUUIDv7WithFastCounter(1), generateUUIDv7WithFastCounter(2)
+┌─generateUUIDv7WithFastCounter(1)─────┬─generateUUIDv7WithFastCounter(2)─────┐
+│ 018f05e1-14ee-7bc5-9906-207153b400b1 │ 018f05e1-14ee-7bc5-9906-2072b8e96758 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
 ## empty
 
 Checks whether the input UUID is empty.
@@ -339,6 +502,94 @@ SELECT
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ @</a;]~!p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘
+```
+
+## UUIDToNum
+
+Accepts `UUID` and returns a [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default). This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so intermediate conversion from UUID to string is not required to extract bytes from a UUID.
+
+**Syntax**
+
+``` sql
+UUIDToNum(uuid[, variant = 1])
+```
+
+**Arguments**
+
+- `uuid` — [UUID](../data-types/uuid.md).
+- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
+
+**Returned value**
+
+FixedString(16)
+
+**Usage examples**
+
+``` sql
+SELECT
+    toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
+    UUIDToNum(uuid) AS bytes
+```
+
+```response
+┌─uuid─────────────────────────────────┬─bytes────────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
+└──────────────────────────────────────┴──────────────────┘
+```
+
+``` sql
+SELECT
+    toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
+    UUIDToNum(uuid, 2) AS bytes
+```
+
+```response
+┌─uuid─────────────────────────────────┬─bytes────────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ @</a;]~!p{jTj={) │
+└──────────────────────────────────────┴──────────────────┘
+```
+
+## UUIDv7ToDateTime
+
+Accepts `UUID` having version 7 and extracts the timestamp from it. 
+
+**Syntax**
+
+``` sql
+UUIDv7ToDateTime(uuid[, timezone])
+```
+
+**Arguments**
+
+- `uuid` — [UUID](../data-types/uuid.md) of version 7.
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Timestamp with milliseconds precision (1970-01-01 00:00:00.000 in case of non version 7 UUID).
+
+Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
+
+**Usage examples**
+
+``` sql
+SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
+```
+
+```response
+┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
+│                                          2024-04-22 15:30:29.048 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')
+```
+
+```response
+┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## serverUUID()
