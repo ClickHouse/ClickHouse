@@ -222,13 +222,49 @@ roundBankers(10.755, 2) = 10.76
 
 - [round](#rounding_functions-round)
 
-## roundToExp2(num)
+## roundToExp2
 
-Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
+Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
+
+**Syntax**
+
+```sql
+roundToExp2(num)
+```
+
+**Parameters**
+
+- `num`: A number representing an age in years. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
+
+**Returned value**
+
+- `0`, for `num` $\lt 1$. [UInt8](../data-types/int-uint.md).
+- `num` rounded down to the nearest (whole non-negative) degree of two. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) equivalent to the input type.
+
+**Example**
+
+Query:
+
+```sql
+SELECT *, roundToExp2(*) FROM system.numbers WHERE number IN (0, 2, 5, 10, 19, 50)
+```
+
+Result:
+
+```response
+┌─number─┬─roundToExp2(number)─┐
+│      0 │                   0 │
+│      2 │                   2 │
+│      5 │                   4 │
+│     10 │                   8 │
+│     19 │                  16 │
+│     50 │                  32 │
+└────────┴─────────────────────┘
+```
 
 ## roundDuration
 
-Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set: $\set{1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000}$. 
+Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`. 
 
 **Syntax**
 
@@ -238,12 +274,14 @@ roundDuration(num)
 
 **Parameters**
 
-- `age`: A number representing an age in years. [Numeric](../data-types/int-uint.md).
+- `num`: A number to round to one of the numbers in the set of common durations. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
 
 **Returned value**
 
 - `0`, for `num` $\lt 1$.
-- One of $\set{1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000}$, otherwise. [UInt8](../data-types/int-uint.md).
+- Otherwise, one of: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`. [UInt16](../data-types/int-uint.md).
+
+**Example**
 
 Query:
 
@@ -286,7 +324,7 @@ roundAge(num)
 
 **Parameters**
 
-- `age`: A number representing an age in years. [Numeric](../data-types/int-uint.md).
+- `age`: A number representing an age in years. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
 
 **Returned value**
 
@@ -297,6 +335,8 @@ roundAge(num)
 - Returns `35`, for $35 \leq age \leq 44$.
 - Returns `45`, for $45 \leq age \leq 54$.
 - Returns `55`, for $age \geq 55$.
+
+Type: [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -332,12 +372,12 @@ roundDown(num, arr)
 
 **Parameters**
 
-- `age`: A number representing an age in years. [Numeric](../data-types/int-uint.md).
-- `arr`: Array of elements to round `age` down to. [Array](../data-types/array.md)([Numeric](../data-types/int-uint.md))
+- `num`: A number to round down. [Numeric](../data-types/int-uint.md).
+- `arr`: Array of elements to round `age` down to. [Array](../data-types/array.md) of [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) type.
 
 **Returned value**
 
-- Number rounded down to an element in `arr`. If the value is less than the lowest bound, the lowest bound is returned. [Numeric](../data-types/int-uint.md).
+- Number rounded down to an element in `arr`. If the value is less than the lowest bound, the lowest bound is returned. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) type deduced from the type of `arr`.
 
 **Example**
 
