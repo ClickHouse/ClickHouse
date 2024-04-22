@@ -439,7 +439,6 @@ bool StorageWindowView::optimize(
     bool cleanup,
     ContextPtr local_context)
 {
-    throwIfWindowViewIsDisabled(local_context);
     auto storage_ptr = getInnerTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
     return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
@@ -450,7 +449,6 @@ void StorageWindowView::alter(
     ContextPtr local_context,
     AlterLockHolder &)
 {
-    throwIfWindowViewIsDisabled(local_context);
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
@@ -510,9 +508,8 @@ void StorageWindowView::alter(
     startup();
 }
 
-void StorageWindowView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+void StorageWindowView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
 {
-    throwIfWindowViewIsDisabled(local_context);
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
@@ -522,7 +519,6 @@ void StorageWindowView::checkAlterIsPossible(const AlterCommands & commands, Con
 
 std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 {
-    throwIfWindowViewIsDisabled();
     UInt32 w_start = addTime(watermark, window_kind, -window_num_units, *time_zone);
 
     auto inner_table = getInnerTable();
@@ -658,7 +654,6 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
 inline void StorageWindowView::fire(UInt32 watermark)
 {
-    throwIfWindowViewIsDisabled();
     LOG_TRACE(log, "Watch streams number: {}, target table: {}",
               watch_streams.size(),
               target_table_id.empty() ? "None" : target_table_id.getNameForLogs());
@@ -727,7 +722,6 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
 ASTPtr StorageWindowView::getSourceTableSelectQuery()
 {
-    throwIfWindowViewIsDisabled();
     auto query = select_query->clone();
     auto & modified_select = query->as<ASTSelectQuery &>();
 
@@ -953,7 +947,6 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 
 void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
 {
-    throwIfWindowViewIsDisabled();
     std::lock_guard lock(fire_signal_mutex);
     for (const auto & signal : signals)
         fire_signal.push_back(signal);
@@ -969,7 +962,6 @@ void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 
 void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 {
-    throwIfWindowViewIsDisabled();
     if (is_proctime)
     {
         max_watermark = watermark;
@@ -1022,7 +1014,6 @@ void StorageWindowView::cleanup()
 
 void StorageWindowView::threadFuncCleanup()
 {
-    throwIfWindowViewIsDisabled();
     if (shutdown_called)
         return;
 
@@ -1042,7 +1033,6 @@ void StorageWindowView::threadFuncCleanup()
 
 void StorageWindowView::threadFuncFireProc()
 {
-    throwIfWindowViewIsDisabled();
     if (shutdown_called)
         return;
 
@@ -1079,7 +1069,6 @@ void StorageWindowView::threadFuncFireProc()
 
 void StorageWindowView::threadFuncFireEvent()
 {
-    throwIfWindowViewIsDisabled();
     std::lock_guard lock(fire_signal_mutex);
 
     LOG_TRACE(log, "Fire events: {}", fire_signal.size());
@@ -1111,7 +1100,6 @@ void StorageWindowView::read(
     const size_t max_block_size,
     const size_t num_streams)
 {
-    throwIfWindowViewIsDisabled(local_context);
     if (target_table_id.empty())
         return;
 
@@ -1152,7 +1140,6 @@ Pipe StorageWindowView::watch(
     size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
-    throwIfWindowViewIsDisabled(local_context);
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
     bool has_limit = false;
@@ -1191,10 +1178,8 @@ StorageWindowView::StorageWindowView(
     , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
     if (context_->getSettingsRef().allow_experimental_analyzer)
-        disabled_due_to_analyzer = true;
-
-    if (mode <= LoadingStrictnessLevel::CREATE)
-        throwIfWindowViewIsDisabled();
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Experimental WINDOW VIEW feature is not supported with new infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -1257,9 +1242,6 @@ StorageWindowView::StorageWindowView(
             create_interpreter_.execute();
         }
     }
-
-    if (disabled_due_to_analyzer)
-        return;
 
     clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
@@ -1418,7 +1400,6 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
 void StorageWindowView::writeIntoWindowView(
     StorageWindowView & window_view, const Block & block, ContextPtr local_context)
 {
-    window_view.throwIfWindowViewIsDisabled(local_context);
     while (window_view.modifying_query)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -1608,9 +1589,6 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
-    if (disabled_due_to_analyzer)
-        return;
-
     DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
@@ -1624,8 +1602,6 @@ void StorageWindowView::startup()
 void StorageWindowView::shutdown(bool)
 {
     shutdown_called = true;
-    if (disabled_due_to_analyzer)
-        return;
 
     fire_condition.notify_all();
 
@@ -1681,7 +1657,6 @@ Block StorageWindowView::getInputHeader() const
 
 const Block & StorageWindowView::getOutputHeader() const
 {
-    throwIfWindowViewIsDisabled();
     std::lock_guard lock(sample_block_lock);
     if (!output_header)
     {
@@ -1704,13 +1679,6 @@ StoragePtr StorageWindowView::getInnerTable() const
 StoragePtr StorageWindowView::getTargetTable() const
 {
     return DatabaseCatalog::instance().getTable(target_table_id, getContext());
-}
-
-void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) const
-{
-    if (disabled_due_to_analyzer || (local_context && local_context->getSettingsRef().allow_experimental_analyzer))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Experimental WINDOW VIEW feature is not supported "
-                        "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 }
 
 void registerStorageWindowView(StorageFactory & factory)

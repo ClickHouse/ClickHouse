@@ -263,7 +263,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
             if (ParserIdentifier{}.parse(pos, ast, expected))

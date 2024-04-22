@@ -418,7 +418,7 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -440,7 +440,7 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
+    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
 
     /// Snapshot for MergeTree contains the current set of data parts
     /// at the moment of the start of query.
@@ -790,9 +790,6 @@ public:
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
-    /// Moves partition to specified Table
-    void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
-
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
@@ -993,11 +990,10 @@ public:
     static const Names virtuals_useful_for_filter;
 
     /// Construct a sample block of virtual columns.
-    Block getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const;
+    Block getHeaderWithVirtualsForFilter() const;
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
-    Block getBlockWithVirtualsForFilter(
-        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
+    Block getBlockWithVirtualsForFilter(const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name

@@ -409,13 +409,12 @@ MutationsInterpreter::MutationsInterpreter(
     , available_columns(std::move(available_columns_))
     , settings(std::move(settings_))
     , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
-    , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
     if (new_context->getSettingsRef().allow_experimental_analyzer)
     {
         new_context->setSetting("allow_experimental_analyzer", false);
-        LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
+        LOG_DEBUG(&Poco::Logger::get("MutationsInterpreter"), "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);
 
@@ -998,7 +997,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// Always rebuild broken projections.
         if (source.hasBrokenProjection(projection.name))
         {
-            LOG_DEBUG(logger, "Will rebuild broken projection {}", projection.name);
             materialized_projections.insert(projection.name);
             continue;
         }

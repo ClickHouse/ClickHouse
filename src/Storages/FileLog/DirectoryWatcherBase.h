@@ -2,7 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/PipeFDs.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <atomic>
 #include <memory>
