@@ -168,11 +168,17 @@ size_t NativeWriter::write(const Block & block)
             column.column = recursiveRemoveSparse(column.column);
         }
 
+        bool skip_writing = false;
         if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
-            serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+        {
+            if (column_lazy->getColumnLazyHelper())
+                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+            else
+                skip_writing = true;
+        }
 
         /// Data
-        if (rows)    /// Zero items of data is always represented as zero number of bytes.
+        if (!skip_writing && rows)    /// Zero items of data is always represented as zero number of bytes.
             writeData(*serialization, column.column, ostr, 0, 0);
 
         if (index)

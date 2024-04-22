@@ -203,19 +203,28 @@ Block NativeReader::read()
 
         /// Data
         ColumnPtr read_column = column.type->createColumn(*serialization);
+        bool skip_reading = false;
 
         if (const auto * tmp_header_column = header.findByName(column.name))
         {
             if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get()))
             {
-                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
-                const auto & tmp_columns = column_lazy->getColumns();
-                read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
+                if (column_lazy->getColumnLazyHelper())
+                {
+                    serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+                    const auto & tmp_columns = column_lazy->getColumns();
+                    read_column = ColumnTuple::create(tmp_columns);
+                }
+                else
+                {
+                    read_column = ColumnLazy::create(rows);
+                    skip_reading = true;
+                }
             }
         }
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
-        if (rows)    /// If no rows, nothing to read.
+        if (!skip_reading && rows)    /// If no rows, nothing to read.
             readData(*serialization, read_column, istr, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
@@ -230,14 +239,17 @@ Block NativeReader::read()
                 if (null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
 
-                if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(header_column.column.get()))
+                if (!skip_reading)
                 {
-                    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
-                        column.column = ColumnLazy::create(column_tuple->getColumns(), column_lazy->getColumnLazyHelper());
-                    else
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
-                                        column.name,
-                                        column.column->getDataType());
+                    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(header_column.column.get()))
+                    {
+                        if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
+                            column.column = ColumnLazy::create(column_tuple->getColumns(), column_lazy->getColumnLazyHelper());
+                        else
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
+                                            column.name,
+                                            column.column->getDataType());
+                    }
                 }
 
                 if (!header_column.type->equals(*column.type))

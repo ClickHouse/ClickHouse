@@ -162,7 +162,7 @@ void MergeTreeReaderCompact::readData(
                 {
                     serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, offset + rows_to_read, deserialize_settings,
                                                                             deserialize_binary_bulk_state_map[name], nullptr);
-                    if (!temp_column->empty())
+                    if (temp_column->size() >= offset)
                         temp_column = temp_column->cut(offset, temp_column->size() - offset);
                 }
             }
@@ -192,7 +192,7 @@ void MergeTreeReaderCompact::readData(
                 {
                     serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + rows_to_read, deserialize_settings,
                                                                             deserialize_binary_bulk_state_map[name], nullptr);
-                    if (!column->empty())
+                    if (column->size() >= offset)
                         column = column->cut(offset, column->size() - offset);
                 }
             }

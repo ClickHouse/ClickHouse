@@ -37,7 +37,7 @@ public:
 
     static Ptr create(const Columns & columns, ColumnLazyHelperPtr column_lazy_helper);
     static Ptr create(const CapturedColumns & columns, ColumnLazyHelperPtr column_lazy_helper);
-    static Ptr create(const size_t s = 0);
+    static Ptr create(size_t s = 0);
     static Ptr create(Columns && arg, ColumnLazyHelperPtr column_lazy_helper)
     {
         return create(arg, column_lazy_helper);
