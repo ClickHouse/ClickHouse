@@ -732,11 +732,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
-    {
-        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
-        if (source_access_type != AccessType::NONE)
-            getContext()->checkAccess(source_access_type);
-    }
+        getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
     TableProperties properties;
     TableLockHolder as_storage_lock;
@@ -1842,11 +1838,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, create.to_table_id.database_name, create.to_table_id.table_name);
 
     if (create.storage && create.storage->engine)
-    {
-        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
-        if (source_access_type != AccessType::NONE)
-            required_access.emplace_back(source_access_type);
-    }
+        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
     return required_access;
 }
