@@ -333,15 +333,13 @@ std::string LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(file_name);
     }
 
-    String data_format = backQuoteIfNeed(default_input_format);
-
     if (table_structure == "auto")
         table_structure = "";
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
-                       table_name, table_structure, data_format, table_file);
+    return fmt::format("CREATE TABLE {} {} ENGINE = File(auto, {});",
+                       table_name, table_structure, table_file);
 }
 
 
