@@ -18,6 +18,10 @@ void StreamSubscription::push(Block block)
 {
     {
         std::unique_lock guard(mutex);
+
+        if (is_disabled.load())
+            return;
+
         ready_blocks.emplace_back(std::move(block));
     }
     new_blocks_event.write(1);
@@ -41,7 +45,12 @@ std::optional<int> StreamSubscription::fd() const
 
 void StreamSubscription::disable()
 {
-    is_disabled.store(true);
+    {
+        std::unique_lock guard(mutex);
+        is_disabled.store(true);
+        ready_blocks.clear();
+    }
+
     new_blocks_event.write(1);
 }
 
@@ -50,6 +59,10 @@ void StreamSubscription::disable()
 void StreamSubscription::push(Block block)
 {
     std::unique_lock guard(mutex);
+
+    if (is_disabled.load())
+        return;
+
     ready_blocks.emplace_back(std::move(block));
     empty_blocks.notify_one();
 }
@@ -73,6 +86,7 @@ void StreamSubscription::disable()
 {
     std::unique_lock guard(mutex);
     is_disabled.store(true);
+    ready_blocks.clear();
     empty_blocks.notify_one();
 }
 
