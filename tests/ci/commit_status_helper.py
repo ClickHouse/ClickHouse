@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-# isort: off
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
@@ -17,8 +16,6 @@ from github.GithubException import GithubException
 from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
-
-# isort: on
 
 from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
