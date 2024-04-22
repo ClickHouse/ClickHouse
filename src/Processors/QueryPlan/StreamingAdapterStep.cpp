@@ -3,8 +3,8 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <Processors/QueryPlan/StreamingAdapterStep.h>
+#include <Processors/Streaming/StreamingAdapter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/StreamingAdapter.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -22,10 +22,11 @@ static Block checkHeaders(DataStream storage_stream, DataStream subscription_str
     return storage_stream.header;
 }
 
-StreamingAdapterStep::StreamingAdapterStep(DataStream storage_stream, DataStream subscription_stream)
-    : storage_header(checkHeaders(storage_stream, subscription_stream))
+StreamingAdapterStep::StreamingAdapterStep(
+    DataStream storage_stream_, DataStream subscription_stream_, SequencerPtr sequencer_, ReadingSourceOptions state_)
+    : storage_header(checkHeaders(storage_stream_, subscription_stream_)), sequencer{std::move(sequencer_)}, state{std::move(state_)}
 {
-    updateInputStreams({std::move(storage_stream), std::move(subscription_stream)});
+    updateInputStreams({std::move(storage_stream_), std::move(subscription_stream_)});
 }
 
 QueryPipelineBuilderPtr StreamingAdapterStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -37,7 +38,7 @@ QueryPipelineBuilderPtr StreamingAdapterStep::updatePipeline(QueryPipelineBuilde
     for (auto & cur_pipeline : pipelines)
         cur_pipeline->resize(1);
 
-    auto streaming_adapter = std::make_shared<StreamingAdapter>(storage_header);
+    auto streaming_adapter = std::make_shared<StreamingAdapter>(storage_header, std::move(sequencer), std::move(state));
 
     return QueryPipelineBuilder::mergePipelines(
         std::move(pipelines[0]), std::move(pipelines[1]), std::move(streaming_adapter), &processors);

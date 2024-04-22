@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CURSOR_LOOKUP;
+    extern const int LOGICAL_ERROR;
 }
 
 static void collapseTreeImpl(std::map<String, Int64> & collapsed_tree, std::vector<String> & path, CursorTreeNode * node)
@@ -187,7 +188,7 @@ CursorTreeNodePtr buildCursorTree(const ContextPtr & context, const std::optiona
 
     const auto & zk = context->getZooKeeper();
 
-    UNIMPLEMENTED();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper cursors unimplemented");
 }
 
 }

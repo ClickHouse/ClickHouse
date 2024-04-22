@@ -49,6 +49,7 @@
 #include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/StreamingAdapterStep.h>
+#include <Processors/Streaming/ConsumeOrderSequencer.h>
 #include <fmt/core.h>
 
 
@@ -310,7 +311,10 @@ void StorageMergeTree::streamingRead(
     /// Combination
 
     auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
-        storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
+        storage_query_plan->getCurrentDataStream(),
+        subscription_query_plan->getCurrentDataStream(),
+        std::make_shared<ConsumeOrderSequencer>(),
+        ReadingSourceOptions{ReadingSourceOption::Storage, ReadingSourceOption::Subscription});
 
     std::vector<QueryPlanPtr> plans;
     plans.push_back(std::move(storage_query_plan));
