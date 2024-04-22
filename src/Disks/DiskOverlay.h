@@ -11,8 +11,6 @@ namespace DB {
 class DiskOverlay : public IDisk
 {
 public:
-    void debugFunc();
-
     DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_overlay_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_);
     DiskOverlay(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
 
