@@ -11,7 +11,9 @@ namespace DB {
 class DiskOverlay : public IDisk
 {
 public:
-    // DiskOverlay(const String & name_, std::shared_ptr<IDisk> disk_base_, std::shared_ptr<IDisk> disk_overlay_);
+    void debugFunc();
+
+    DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_overlay_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_);
     DiskOverlay(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
 
     const String & getPath() const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO"); }
@@ -47,14 +49,6 @@ public:
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
-
-    void copyDirectoryContent(
-        const String &  /*from_dir*/,
-        const std::shared_ptr<IDisk> &  /*to_disk*/,
-        const String &  /*to_dir*/,
-        const ReadSettings &  /*read_settings*/,
-        const WriteSettings &  /*write_settings*/,
-        const std::function<void()> &  /*cancellation_hook*/) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO"); }
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
@@ -100,19 +94,22 @@ public:
 
 private:
     DiskPtr disk_base, disk_overlay;
-    MetadataStoragePtr metadata;
+    MetadataStoragePtr metadata, tracked_metadata;
 
+    // A tracked file is a file that exists on the overlay disk (possibly under another name)
+    // If a file is tracked, we don't need to list it from the base disk in calls to file listing functions
+public:
+    bool isTracked(const String& path) const;
+private:
+    void setTracked(const String& path);
 
     // Check if overlay overwrites data on base
     bool isReplaced(const String& path) const;
 
     void setReplaced(const String& path);
 
-    // Update overlay_info when moving path
-    void movePath(const String& path, const String& new_path);
-
     // Get path to file in base disk
-    String basePath(const String& path) const;
+    std::optional<String> basePath(const String& path) const;
 
     struct OverlayInfo {
         // In case of rewrite we need to disregard the original path in disk_base
