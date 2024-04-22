@@ -1,14 +1,18 @@
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Common/BitHelpers.h>
 #include <base/hex.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
@@ -319,10 +323,191 @@ public:
     }
 };
 
+
+class FunctionUUIDToNum : public IFunction
+{
+public:
+    static constexpr auto name = "UUIDToNum";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDToNum>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        checkArgumentCount(arguments, name);
+
+        if (!isUUID(arguments[0]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected UUID",
+                arguments[0]->getName(),
+                getName());
+        }
+
+        checkFormatArgument(arguments, name);
+
+        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const ColumnWithTypeAndName & col_type_name = arguments[0];
+        const ColumnPtr & column = col_type_name.column;
+
+        const bool defaultFormat = (parseVariant(arguments) == UUIDSerializer::Variant::Default);
+        if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
+        {
+            const auto & vec_in = col_in->getData();
+            const UUID * uuids = vec_in.data();
+            const size_t size = vec_in.size();
+
+            auto col_res = ColumnFixedString::create(uuid_bytes_length);
+
+            ColumnString::Chars & vec_res = col_res->getChars();
+            vec_res.resize(size * uuid_bytes_length);
+
+            size_t dst_offset = 0;
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
+                uint64_t loBytes = DB::UUIDHelpers::getLowBytes(uuids[i]);
+                unalignedStoreBigEndian<uint64_t>(&vec_res[dst_offset], hiBytes);
+                unalignedStoreBigEndian<uint64_t>(&vec_res[dst_offset + sizeof(hiBytes)], loBytes);
+                if (!defaultFormat)
+                {
+                    std::swap(vec_res[dst_offset], vec_res[dst_offset + 3]);
+                    std::swap(vec_res[dst_offset + 1], vec_res[dst_offset + 2]);
+                }
+                dst_offset += uuid_bytes_length;
+            }
+
+            return col_res;
+        }
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+    }
+};
+
+class FunctionUUIDv7ToDateTime : public IFunction
+{
+public:
+    static constexpr auto name = "UUIDv7ToDateTime";
+    static constexpr UInt32 DATETIME_SCALE = 3;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDv7ToDateTime>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: should be 1 or 2", getName());
+
+        if (!checkAndGetDataType<DataTypeUUID>(arguments[0].type.get()))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected UUID",
+                arguments[0].type->getName(),
+                getName());
+        }
+
+        String timezone;
+        if (arguments.size() == 2)
+        {
+            timezone = extractTimeZoneNameFromColumn(arguments[1].column.get(), arguments[1].name);
+
+            if (timezone.empty())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
+                    getName());
+        }
+
+        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE, timezone);
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const ColumnWithTypeAndName & col_type_name = arguments[0];
+        const ColumnPtr & column = col_type_name.column;
+
+        if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
+        {
+            const auto & vec_in = col_in->getData();
+            const UUID * uuids = vec_in.data();
+            const size_t size = vec_in.size();
+
+            auto col_res = ColumnDateTime64::create(size, DATETIME_SCALE);
+            auto & vec_res = col_res->getData();
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
+                if ((hiBytes & 0xf000) == 0x7000)
+                {
+                    uint64_t ms = hiBytes >> 16;
+                    vec_res[i] = DecimalUtils::decimalFromComponents<DateTime64>(
+                        ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
+                }
+            }
+
+            return col_res;
+        }
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+    }
+};
+
 REGISTER_FUNCTION(CodingUUID)
 {
     factory.registerFunction<FunctionUUIDNumToString>();
     factory.registerFunction<FunctionUUIDStringToNum>();
+    factory.registerFunction<FunctionUUIDToNum>(
+        FunctionDocumentation{
+            .description = R"(
+This function accepts a UUID and returns a FixedString(16) as its binary representation, with its format optionally specified by variant (Big-endian by default).
+)",
+            .examples{
+                {"uuid",
+                 "select toUUID(UUIDNumToString(toFixedString('a/<@];!~p{jTj={)', 16))) as uuid, UUIDToNum(uuid) as uuidNum, "
+                 "UUIDToNum(uuid, 2) as uuidMsNum",
+                 R"(
+┌─uuid─────────────────────────────────┬─uuidNum──────────┬─uuidMsNum────────┐
+│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │ @</a];!~p{jTj={) │
+└──────────────────────────────────────┴──────────────────┴──────────────────┘
+)"}},
+            .categories{"UUID"}},
+        FunctionFactory::CaseSensitive);
+
+    factory.registerFunction<FunctionUUIDv7ToDateTime>(
+        FunctionDocumentation{
+            .description = R"(
+This function extracts the timestamp from a UUID and returns it as a DateTime64(3) typed value.
+The function expects the UUID having version 7 to be provided as the first argument.
+An optional second argument can be passed to specify a timezone for the timestamp.
+)",
+            .examples{
+                {"uuid","select UUIDv7ToDateTime(generateUUIDv7())", ""},
+                {"uuid","select generateUUIDv7() as uuid, UUIDv7ToDateTime(uuid), UUIDv7ToDateTime(uuid, 'America/New_York')", ""}},
+            .categories{"UUID"}},
+        FunctionFactory::CaseSensitive);
 }
 
 }
