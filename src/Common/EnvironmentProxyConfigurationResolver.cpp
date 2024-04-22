@@ -1,4 +1,5 @@
 #include "EnvironmentProxyConfigurationResolver.h"
+#include <unordered_set>
 
 #include <Common/logger_useful.h>
 #include <Poco/URI.h>
@@ -33,6 +34,34 @@ namespace
             case ProxyConfiguration::Protocol::HTTPS:
                 return std::getenv(PROXY_HTTPS_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
         }
+    }
+
+    std::vector<Poco::URI> getNoProxyHosts()
+    {
+        std::vector<Poco::URI> result;
+
+        const char * no_proxy = std::getenv("NO_PROXY"); // NOLINT(concurrency-mt-unsafe)
+        if (!no_proxy)
+        {
+            return result;
+        }
+
+        std::string no_proxy_str(no_proxy);
+        std::istringstream no_proxy_stream(no_proxy_str);
+        std::string host;
+        while (std::getline(no_proxy_stream, host, ','))
+        {
+            try
+            {
+                result.emplace(host);
+            }
+            catch (const Poco::SyntaxException & e)
+            {
+                LOG_WARNING(getLogger("EnvironmentProxyConfigurationResolver"), "Failed to parse NO_PROXY host '{}': {}", host, e.displayText());
+            }
+        }
+
+        return result;
     }
 }
 
