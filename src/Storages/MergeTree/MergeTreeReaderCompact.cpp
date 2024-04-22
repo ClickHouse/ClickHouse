@@ -127,6 +127,7 @@ NameAndTypePair MergeTreeReaderCompact::getColumnConvertedToSubcolumnOfNested(co
 void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type,
     ColumnPtr & column,
+    size_t & rows_to_skip,
     size_t rows_to_read,
     size_t offset,
     const InputStreamGetter & getter)
@@ -156,6 +157,7 @@ void MergeTreeReaderCompact::readData(
                 {
                     serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings,
                                                                             deserialize_binary_bulk_state_map[name], nullptr);
+                    rows_to_skip += offset;
                     skip_data = true;
                 }
                 else
@@ -183,6 +185,7 @@ void MergeTreeReaderCompact::readData(
                 {
                     serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings,
                                                                             deserialize_binary_bulk_state_map[name], nullptr);
+                    rows_to_skip += offset;
                     skip_data = true;
                 }
                 else

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -17,6 +18,7 @@ class IMergeTreeReader : private boost::noncopyable
 public:
     using ValueSizeMap = std::map<std::string, double>;
     using VirtualFields = std::unordered_map<String, Field>;
+    using SkippedRowsArray = std::vector<size_t>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
@@ -61,6 +63,8 @@ public:
     size_t numColumnsInResult() const { return requested_columns.size(); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
+
+    const SkippedRowsArray & getSkippedRows() const { return skipped_rows; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
@@ -111,6 +115,9 @@ protected:
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
+
+    /// Number of skipped rows when read rows.
+    SkippedRowsArray skipped_rows;
 
 private:
     /// Columns that are requested to read.
