@@ -374,16 +374,6 @@ bool HTTPHandler::authenticateUser(
     std::string spnego_challenge;
     std::string certificate_common_name;
 
-    if (params.has("quota_key"))
-    {
-        if (!quota_key.empty())
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                            "Invalid authentication: it is not allowed "
-                            "to use quota key as HTTP header and quota key as parameter simultaneously");
-
-        quota_key = params.get("quota_key");
-    }
-
     if (has_auth_headers)
     {
         /// It is prohibited to mix different authorization schemes.
@@ -500,6 +490,16 @@ bool HTTPHandler::authenticateUser(
 
         basic_credentials->setUserName(user);
         basic_credentials->setPassword(password);
+    }
+
+    if (params.has("quota_key"))
+    {
+        if (!quota_key.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid authentication: it is not allowed "
+                            "to use quota key as HTTP header and as parameter simultaneously");
+
+        quota_key = params.get("quota_key");
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
