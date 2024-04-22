@@ -20,5 +20,5 @@ QUERY id: 0
           COLUMN id: 9, column_name: someCol, result_type: String, source_id: 8
           COLUMN id: 10, column_name: eventTime, result_type: DateTime, source_id: 8
       JOIN TREE
-        TABLE id: 8, alias: __table2, table_name: default.test, final: 1
+        TABLE id: 8, alias: __table2, table_name: default.t, final: 1
 1	first	2024-04-19 01:01:01
