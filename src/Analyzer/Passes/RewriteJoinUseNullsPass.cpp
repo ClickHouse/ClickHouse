@@ -20,7 +20,7 @@
 
 namespace DB
 {
-#if 1
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -180,96 +180,6 @@ private:
     }
 
 };
-
-/// After the nullability of columns are updated in RewriteJoinUseNullsTableExpressionVisitor, adjust nullability in other nodes.
-class RewriteJoinUseNullsNullabilityVisitor : public InDepthQueryTreeVisitorWithContext<RewriteJoinUseNullsNullabilityVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitorWithContext<RewriteJoinUseNullsNullabilityVisitor>;
-    using Base::Base;
-
-    void leaveImpl(VisitQueryTreeNodeType & node)
-    {
-        if (auto * function_node = node->as<FunctionNode>())
-        {
-            leaveFunctionNode(function_node);
-        }
-        else if (auto * query_node = node->as<QueryNode>())
-        {
-            leaveQueryNode(query_node);
-        }
-        else if (auto * column_node = node->as<ColumnNode>())
-        {
-            leaveColumnNode(column_node);
-        }
-    }
-
-    void leaveFunctionNode(FunctionNode * function_node)
-    {
-        auto function_name = function_node->getFunctionName();
-        if (function_node->isOrdinaryFunction())
-        {
-            auto function_resolver = FunctionFactory::instance().get(function_name, getContext());
-            function_node->resolveAsFunction(function_resolver);
-        }
-        else if (function_node->isAggregateFunction() || function_node->isWindowFunction())
-        {
-            AggregateFunctionProperties properties;
-            auto action = function_node->getNullsAction();
-            //const auto argument_types = function_node->getArgumentTypes();
-            DataTypes argument_types;
-            for (const auto & arg_node : function_node->getArguments().getNodes())
-            {
-                argument_types.push_back(arg_node->getResultType());
-            }
-            Array parameters;
-            for (const auto & parameter : function_node->getParameters().getNodes())
-            {
-                parameters.push_back(parameter->as<ConstantNode>()->getValue());
-            }
-            auto aggregate_function
-                = AggregateFunctionFactory::instance().get(function_name, action, argument_types, parameters, properties);
-            if (function_node->isAggregateFunction())
-                function_node->resolveAsAggregateFunction(aggregate_function);
-            else
-                function_node->resolveAsWindowFunction(aggregate_function);
-        }
-    }
-
-    void leaveColumnNode(ColumnNode * column_node)
-    {
-        auto column_source = column_node->getColumnSource();
-        if (auto * query_node = column_source->as<QueryNode>())
-        {
-            auto column_name = column_node->getColumnName();
-            for (const auto & projection_col   : query_node->getProjectionColumns())
-            {
-                if (projection_col.name == column_name)
-                {
-                    if (projection_col.type->isNullable())
-                        column_node->convertToNullable();
-                    break;
-                }
-            }
-        }
-    }
-
-    void leaveQueryNode(QueryNode * query_node)
-    {
-        const auto & oldProjectionColumns = query_node->getProjectionColumns();
-        const auto & oldProjectionNodes = query_node->getProjection().getNodes();
-        NamesAndTypes newProjectionColumns;
-        newProjectionColumns.reserve(oldProjectionColumns.size());
-        for (size_t i = 0; i < oldProjectionColumns.size(); ++i)
-        {
-            auto & old_column = oldProjectionColumns[i];
-            auto & old_node = oldProjectionNodes[i];
-            newProjectionColumns.emplace_back(old_column.name, old_node->getResultType());
-        }
-        query_node->resolveProjectionColumns(newProjectionColumns);
-    }
-};
-
 }
 
 /**
@@ -280,9 +190,10 @@ public:
   */
 void RewriteJoinUseNullsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    if (context->getSettingsRef().join_use_nulls)
+    bool flag = true;
+    if (context->getSettingsRef().join_use_nulls && flag)
     {
-        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "input query tree:\n{}", query_tree_node->dumpTree());
+        LOG_ERROR(getLogger("RewriteJoinUseNullsPass"), "input query tree:\n{}", query_tree_node->dumpTree());
         std::unordered_map<QueryTreeNodePtr, std::unordered_set<QueryTreeNodePtr>> result_requiredColumns;
         /// Collect required columns for each table expression
         CollectTableRequiredColumnsVisitor table_required_columns_visitor(result_requiredColumns, context);
@@ -290,12 +201,7 @@ void RewriteJoinUseNullsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
         /// Rewrite table expressions to add a projection of converting columns to nullable if needed.
         RewriteJoinUseNullsTableExpressionVisitor table_expression_visitor(result_requiredColumns, context);
         table_expression_visitor.visit(query_tree_node);
-        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsTableExpressionVisitor:\n{}", query_tree_node->dumpTree());
-        /// Update eache node's nullability via backpropagation
-        RewriteJoinUseNullsNullabilityVisitor nullability_visitor(context);
-        nullability_visitor.visit(query_tree_node);
-        LOG_TRACE(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsNullabilityVisitor:\n{}", query_tree_node->dumpTree());
+        LOG_ERROR(getLogger("RewriteJoinUseNullsPass"), "Query tree after RewriteJoinUseNullsTableExpressionVisitor:\n{}", query_tree_node->dumpTree());
     }
 }
-#endif
 }
