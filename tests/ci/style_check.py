@@ -198,7 +198,7 @@ def main():
         except subprocess.SubprocessError:
             # do not fail the whole script if the autofix didn't work out
             logging.error("Unable to push the autofix. Continue.")
-            autofix_description = ( "Failed to push autofix to the PR. " )
+            autofix_description = "Failed to push autofix to the PR. "
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
