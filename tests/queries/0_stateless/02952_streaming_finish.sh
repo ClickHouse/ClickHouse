@@ -23,6 +23,7 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT count(*) FROM (SELECT * FROM t_stream
 echo "=== Test Streaming cancel after output finished from subscription ==="
 
 # start stream
+# shellcheck disable=2034
 read -r fifo_1 pid_1 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT count(*) FROM (SELECT * FROM t_streaming_test STREAM LIMIT 10)")
 
 # open fifo for reading to extend it's lifetime
