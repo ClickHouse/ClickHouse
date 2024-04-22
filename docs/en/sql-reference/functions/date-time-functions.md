@@ -1052,7 +1052,7 @@ toStartOfWeek(t[, mode[, timezone]])
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `mode` - determines the first day of the week as described in the [toWeek()](date-time-functions#toweek) function
+- `mode` - determines the first day of the week as described in the [toWeek()](date-time-functions#toweek) function. Default: 0
 - `timezone` - Optional parameter, it behaves like any other conversion function
 
 **Returned value**
@@ -1413,7 +1413,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 ```
 
-## toStartOfInterval(date_or_date_with_time, INTERVAL x unit \[, time_zone\])
+## toStartOfInterval
 
 This function generalizes other `toStartOf*()` functions. For example,
 - `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
@@ -1439,6 +1439,8 @@ The calculation is performed relative to specific points in time:
 
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
     hour values between 1 and 23 are useful.
+
+If unit `week` was specified, `toStartOfInterval` assumes by default that weeks start on Monday. You can change this behavior with setting [`first_day_of_week`](../../operations/settings/settings.md/#first-day-of-week)
 
 **See Also**
 
@@ -1673,7 +1675,7 @@ Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../.
 Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 nanosecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
-For an alternative to `age`, see function `date\_diff`.
+For an alternative to `age`, see function `date_diff`.
 
 **Syntax**
 
@@ -1747,9 +1749,9 @@ Result:
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for unit `day` (see [toRelativeDayNum](#torelativedaynum)), 1 month for unit `month` (see [toRelativeMonthNum](#torelativemonthnum)) and 1 year for unit `year` (see [toRelativeYearNum](#torelativeyearnum)).
 
-If unit `week` was specified, `date\_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
+If unit `week` was specified, `date_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
 
-For an alternative to `date\_diff`, see function `age`.
+For an alternative to `date_diff`, see function `age`.
 
 **Syntax**
 
@@ -1836,6 +1838,9 @@ Alias: `dateTrunc`.
 - `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
     Possible values:
 
+    - `nanosecond` - Compatible only with DateTime64
+    - `microsecond` - Compatible only with DateTime64
+    - `milisecond` - Compatible only with DateTime64
     - `second`
     - `minute`
     - `hour`
@@ -2840,7 +2845,7 @@ Result:
 
 ## fromUnixTimestamp
 
-This function converts a Unix timestamp to a calendar date and a time of a day. 
+This function converts a Unix timestamp to a calendar date and a time of a day.
 
 It can be called in two ways:
 

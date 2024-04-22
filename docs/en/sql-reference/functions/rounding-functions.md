@@ -36,12 +36,12 @@ Alias: `truncate`.
 
 **Parameters**
 
-- `input`: A float type [Float](/docs/en/sql-reference/data-types/float.md).
-- `precision`: A decimal type [Decimal](/docs/en/sql-reference/data-types/decimal.md).
+- `input`: A numeric type ([Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md) or [Integer](/docs/en/sql-reference/data-types/int-uint.md)).
+- `precision`: An [Integer](/docs/en/sql-reference/data-types/int-uint.md) type.
 
 **Returned value**
 
-- A [Float64](/docs/en/sql-reference/data-types/float.md) value.
+- A data type of `input`.
 
 **Example**
 

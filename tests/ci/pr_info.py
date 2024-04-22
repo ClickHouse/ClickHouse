@@ -6,11 +6,7 @@ import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
-# isort: off
-# for some reason this line moves to the end
 from unidiff import PatchSet  # type: ignore
-
-# isort: on
 
 from build_download_helper import get_gh_api
 from env_helper import (
@@ -310,27 +306,34 @@ class PRInfo:
         if need_changed_files:
             self.fetch_changed_files()
 
+    @property
     def is_master(self) -> bool:
         return self.number == 0 and self.head_ref == "master"
 
+    @property
     def is_release(self) -> bool:
         return self.number == 0 and bool(
             re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
         )
 
+    @property
     def is_release_branch(self) -> bool:
         return self.number == 0
 
+    @property
     def is_pr(self):
         return self.event_type == EventType.PULL_REQUEST
 
-    def is_scheduled(self):
+    @property
+    def is_scheduled(self) -> bool:
         return self.event_type == EventType.SCHEDULE
 
-    def is_merge_queue(self):
+    @property
+    def is_merge_queue(self) -> bool:
         return self.event_type == EventType.MERGE_QUEUE
 
-    def is_dispatched(self):
+    @property
+    def is_dispatched(self) -> bool:
         return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:

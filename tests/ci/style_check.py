@@ -132,7 +132,7 @@ def main():
 
     pr_info = PRInfo()
 
-    if pr_info.is_merge_queue() and args.push:
+    if pr_info.is_merge_queue and args.push:
         print("Auto style fix will be disabled for Merge Queue workflow")
         args.push = False
 

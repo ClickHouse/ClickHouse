@@ -1839,6 +1839,11 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
     if (isQueryWithFinal())
         return false;
 
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With aggregation-by-partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return false;
+
     const auto & settings = context->getSettingsRef();
 
     const auto partitions_cnt = countPartitions(prepared_parts);
