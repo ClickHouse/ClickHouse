@@ -94,8 +94,8 @@ protected:
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
-    void processTextAsSingleQuery(const String & full_query);
-    void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
+    bool processTextAsSingleQuery(const String & full_query);
+    bool processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);

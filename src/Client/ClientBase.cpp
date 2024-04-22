@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int USER_EXPIRED;
 }
 
 }
@@ -909,7 +910,7 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
     return !settings.async_insert;
 }
 
-void ClientBase::processTextAsSingleQuery(const String & full_query)
+bool ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
@@ -921,7 +922,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         ignore_error);
 
     if (!parsed_query)
-        return;
+        return is_interactive;
 
     String query_to_execute;
 
@@ -945,9 +946,10 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     else
         query_to_execute = full_query;
 
+    bool continue_repl = is_interactive;
     try
     {
-        processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
+        continue_repl = processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {
@@ -958,6 +960,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
     if (have_error)
         processError(full_query);
+
+    return continue_repl;
 }
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
@@ -1852,7 +1856,7 @@ void ClientBase::cancelQuery()
     cancelled = true;
 }
 
-void ClientBase::processParsedSingleQuery(const String & full_query, const String & query_to_execute,
+bool ClientBase::processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
 {
     resetOutput();
@@ -2014,6 +2018,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             connection->setDefaultDatabase(new_database);
         }
     }
+    else
+    {
+        if (server_exception && server_exception->code() == ErrorCodes::USER_EXPIRED)
+        {
+            if (report_error)
+                processError(full_query);
+            return false;
+        }
+    }
 
     /// Always print last block (if it was not printed already)
     if (profile_events.last_block)
@@ -2048,6 +2061,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (have_error && report_error)
         processError(full_query);
+
+    return is_interactive;
 }
 
 
@@ -2247,14 +2262,15 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);
 
+                bool continue_repl = is_interactive;
                 try
                 {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
+                    continue_repl = processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
                 }
                 catch (...)
                 {
                     // Surprisingly, this is a client error. A server error would
-                    // have been reported without throwing (see onReceiveSeverException()).
+                    // have been reported without throwing (see onReceiveExceptionFromServer()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -2354,7 +2370,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Stop processing queries if needed.
                 if (have_error && !ignore_error)
-                    return is_interactive;
+                    return continue_repl;
 
                 this_query_begin = this_query_end;
                 break;
@@ -2384,9 +2400,7 @@ bool ClientBase::processQueryText(const String & text)
     if (!is_multiquery)
     {
         assert(!query_fuzzer_runs);
-        processTextAsSingleQuery(text);
-
-        return true;
+        return processTextAsSingleQuery(text);
     }
 
     if (query_fuzzer_runs)

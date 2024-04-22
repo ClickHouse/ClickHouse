@@ -54,26 +54,33 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 
     if (!config.has("ssh-key-file"))
     {
-        bool password_prompt = false;
-        if (config.getBool("ask-password", false))
+        if (config.has("jwt"))
         {
-            if (config.has("password"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
-            password_prompt = true;
+            jwt = config.getString("jwt");
         }
         else
         {
-            password = config.getString("password", "");
-            /// if the value of --password is omitted, the password will be set implicitly to "\n"
-            if (password == ASK_PASSWORD)
+            bool password_prompt = false;
+            if (config.getBool("ask-password", false))
+            {
+                if (config.has("password"))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
                 password_prompt = true;
-        }
-        if (password_prompt)
-        {
-            std::string prompt{"Password for user (" + user + "): "};
-            char buf[1000] = {};
-            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
-                password = result;
+            }
+            else
+            {
+                password = config.getString("password", "");
+                /// if the value of --password is omitted, the password will be set implicitly to "\n"
+                if (password == ASK_PASSWORD)
+                    password_prompt = true;
+            }
+            if (password_prompt)
+            {
+                std::string prompt{"Password for user (" + user + "): "};
+                char buf[1000] = {};
+                if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+                    password = result;
+            }
         }
     }
     else
