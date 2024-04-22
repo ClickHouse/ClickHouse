@@ -373,8 +373,6 @@ void MergeTreeReaderWide::readData(
             serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + max_rows_to_read, deserialize_settings, deserialize_state, &cache);
             // if (!column->empty() && !partially_read_columns.contains(name_and_type.name))
             //     column = column->cut(offset, column->size() - offset);
-            if (column->size() >= offset)
-                column = column->cut(offset, column->size() - offset);
         }
     }
     else

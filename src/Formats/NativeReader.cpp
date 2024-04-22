@@ -213,7 +213,7 @@ Block NativeReader::read()
                 {
                     serialization = column_lazy->getColumnLazyHelper()->getSerialization();
                     const auto & tmp_columns = column_lazy->getColumns();
-                    read_column = ColumnTuple::create(tmp_columns);
+                    read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
                 }
                 else
                 {

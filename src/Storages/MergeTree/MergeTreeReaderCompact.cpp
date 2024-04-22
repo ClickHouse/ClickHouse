@@ -139,6 +139,7 @@ void MergeTreeReaderCompact::readData(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = getter;
         deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
+        bool skip_data = false;
 
         if (name_and_type.isSubcolumn())
         {
@@ -147,7 +148,6 @@ void MergeTreeReaderCompact::readData(
 
             auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
             ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
-            bool skip_data = false;
 
             if (offset > 0)
             {
@@ -159,12 +159,8 @@ void MergeTreeReaderCompact::readData(
                     skip_data = true;
                 }
                 else
-                {
                     serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, offset + rows_to_read, deserialize_settings,
                                                                             deserialize_binary_bulk_state_map[name], nullptr);
-                    if (temp_column->size() >= offset)
-                        temp_column = temp_column->cut(offset, temp_column->size() - offset);
-                }
             }
             else
                 serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings,
@@ -172,12 +168,10 @@ void MergeTreeReaderCompact::readData(
             auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
             /// TODO: Avoid extra copying.
-            if (column->empty() && !skip_data)
+            if (column->empty())
                 column = subcolumn;
             else
-            {
-                column->assumeMutable()->insertRangeFrom(*subcolumn, offset, subcolumn->size() - offset);
-            }
+                column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
         else
         {
@@ -186,20 +180,22 @@ void MergeTreeReaderCompact::readData(
             {
                 if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings,
                                                                                     deserialize_binary_bulk_state_map[name]))
+                {
                     serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings,
                                                                             deserialize_binary_bulk_state_map[name], nullptr);
+                    skip_data = true;
+                }
                 else
-                {
                     serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + rows_to_read, deserialize_settings,
                                                                             deserialize_binary_bulk_state_map[name], nullptr);
-                    if (column->size() >= offset)
-                        column = column->cut(offset, column->size() - offset);
-                }
             }
             else
                 serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings,
                                                                         deserialize_binary_bulk_state_map[name], nullptr);
         }
+
+        if (!skip_data)
+            rows_to_read += offset;
 
         size_t read_rows_in_column = column->size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)
