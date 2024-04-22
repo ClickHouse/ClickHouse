@@ -5,8 +5,6 @@
 #include "Disks/ObjectStorages/IObjectStorage_fwd.h"
 #include "loadLocalDiskConfig.h"
 
-#include <iostream>
-
 namespace DB {
 
 namespace ErrorCodes
@@ -14,10 +12,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FILE_DOESNT_EXIST;
-}
-
-void DiskOverlay::debugFunc() {
-    std::cerr << "metadata: <" << metadata->readInlineDataToString("some/path") << ">\n";
 }
 
 DiskOverlay::DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_overlay_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_) : IDisk(name_),
@@ -183,12 +177,17 @@ class DiskOverlayDirectoryIterator final : public IDirectoryIterator
 {
 public:
     DiskOverlayDirectoryIterator() = default;
-    DiskOverlayDirectoryIterator(DirectoryIteratorPtr overlay_iter_, DirectoryIteratorPtr base_iter_, std::shared_ptr<DiskOverlay> base)
-    : done_overlay(false), overlay_iter(std::move(overlay_iter_)), base_iter(std::move(base_iter_)), base_ptr(base) {
+    DiskOverlayDirectoryIterator(DirectoryIteratorPtr overlay_iter_, DirectoryIteratorPtr base_iter_, MetadataStoragePtr tracked_metadata_)
+    : done_overlay(false), overlay_iter(std::move(overlay_iter_)), base_iter(std::move(base_iter_)), tracked_metadata(tracked_metadata_) {
         upd();
     }
 
     void next() override {
+        if (!done_overlay) {
+            overlay_iter->next();
+        } else {
+            base_iter->next();
+        }
     }
 
     bool isValid() const override {
@@ -207,25 +206,20 @@ private:
     bool done_overlay;
     DirectoryIteratorPtr overlay_iter;
     DirectoryIteratorPtr base_iter;
-    std::shared_ptr<DiskOverlay> base_ptr;
+    MetadataStoragePtr tracked_metadata;
 
     void upd() {
         if (!done_overlay && !isValid()) {
             done_overlay = true;
-            upd();
         }
-        while (done_overlay && isValid() && base_ptr->isTracked(path())) {
+        while (done_overlay && isValid() && tracked_metadata->exists(base_iter->path())) {
             next();
         }
     }
 };
 
-
 DirectoryIteratorPtr DiskOverlay::iterateDirectory(const String & path) const {
-    if (isReplaced(path)) {
-        return disk_overlay->iterateDirectory(path);
-    }
-    return disk_base->iterateDirectory(path); // TODO write new directory iterator
+    return std::make_unique<DiskOverlayDirectoryIterator>(disk_overlay->iterateDirectory(path), disk_base->iterateDirectory(path), tracked_metadata);
 }
 
 // TODO when we create a file on disk_overlay, we need to create the parent directories.
