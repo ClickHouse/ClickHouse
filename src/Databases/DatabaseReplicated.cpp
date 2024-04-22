@@ -1098,8 +1098,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
-    auto create_tables_runner = threadPoolCallbackRunner<void>(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
-    std::vector<std::future<void>> create_table_futures;
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
 
     for (const auto & tables_to_create : tables_to_create_by_level)
     {
@@ -1131,20 +1130,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             };
 
             if (allow_concurrent_table_creation)
-                create_table_futures.push_back(create_tables_runner(task, Priority{0}));
+                runner(std::move(task));
             else
                 task();
         }
 
-        /// First wait for all tasks to finish.
-        for (auto & future : create_table_futures)
-            future.wait();
-
-        /// Now rethrow the first exception if any.
-        for (auto & future : create_table_futures)
-            future.get();
-
-        create_table_futures.clear();
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
     LOG_INFO(log, "All tables are created successfully");
 
@@ -1717,9 +1708,18 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        zookeeper_path = args.context->getMacros()->expand(zookeeper_path);
-        shard_name = args.context->getMacros()->expand(shard_name);
-        replica_name = args.context->getMacros()->expand(replica_name);
+        /// Expand macros.
+        Macros::MacroExpansionInfo info;
+        info.table_id.database_name = args.database_name;
+        info.table_id.uuid = args.uuid;
+        zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
+
+        info.level = 0;
+        info.table_id.uuid = UUIDHelpers::Nil;
+        shard_name = args.context->getMacros()->expand(shard_name, info);
+
+        info.level = 0;
+        replica_name = args.context->getMacros()->expand(replica_name, info);
 
         DatabaseReplicatedSettings database_replicated_settings{};
         if (engine_define->settings)
