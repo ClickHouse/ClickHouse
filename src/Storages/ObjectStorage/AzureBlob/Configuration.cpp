@@ -77,6 +77,7 @@ void StorageAzureBlobConfiguration::check(ContextPtr context) const
         url_to_check = Poco::URI(connection_url);
 
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url_to_check);
+    StorageObjectStorageConfiguration::check(context);
 }
 
 StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureBlobConfiguration & other)

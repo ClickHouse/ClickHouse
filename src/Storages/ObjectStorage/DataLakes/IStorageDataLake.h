@@ -89,7 +89,7 @@ public:
         {
             ConfigurationPtr configuration = base_configuration->clone();
             configuration->getPaths() = metadata->getDataFiles();
-            return Storage::getTableStructureFromData(
+            return Storage::resolveSchemaFromData(
                 object_storage_, configuration, format_settings_, local_context);
         }
     }

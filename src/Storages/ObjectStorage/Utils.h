@@ -12,19 +12,17 @@ struct StorageObjectStorageSettings;
 
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorage::Configuration & configuration,
     const StorageObjectStorage::QuerySettings & settings,
     const std::string & key,
     size_t sequence_number);
 
-
-StorageInMemoryMetadata getStorageMetadata(
+void resolveSchemaAndFormat(
+    ColumnsDescription & columns,
+    std::string & format,
     ObjectStoragePtr object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
-    const ColumnsDescription & columns,
-    const ConstraintsDescription & constraints,
     std::optional<FormatSettings> format_settings,
-    const String & comment,
     const ContextPtr & context);
 
 }

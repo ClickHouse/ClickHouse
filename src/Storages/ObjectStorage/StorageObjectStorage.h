@@ -95,13 +95,19 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
-    static ColumnsDescription getTableStructureFromData(
+    static ColumnsDescription resolveSchemaFromData(
         const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
-    static void setFormatFromData(
+    static std::string resolveFormatFromData(
+        const ObjectStoragePtr & object_storage,
+        const ConfigurationPtr & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
+    static std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
         const ObjectStoragePtr & object_storage,
         const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,

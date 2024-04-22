@@ -38,10 +38,13 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
+    ColumnsDescription columns{columns_};
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, context_);
     configuration->check(context_);
-    auto metadata = getStorageMetadata(
-        object_storage, configuration, columns_, constraints_,
-        {}/* format_settings */, ""/* comment */, context_);
+
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(columns);
+    metadata.setConstraints(constraints_);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
     setInMemoryMetadata(std::move(metadata));

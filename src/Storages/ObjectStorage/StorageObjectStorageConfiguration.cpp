@@ -30,6 +30,11 @@ void StorageObjectStorageConfiguration::initialize(
     configuration.initialized = true;
 }
 
+void StorageObjectStorageConfiguration::check(ContextPtr) const
+{
+    FormatFactory::instance().checkFormatName(format);
+}
+
 StorageObjectStorageConfiguration::StorageObjectStorageConfiguration(const StorageObjectStorageConfiguration & other)
 {
     format = other.format;

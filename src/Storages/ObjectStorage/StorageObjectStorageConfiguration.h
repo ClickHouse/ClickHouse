@@ -50,7 +50,7 @@ public:
     bool isNamespaceWithGlobs() const;
     virtual std::string getPathWithoutGlob() const;
 
-    virtual void check(ContextPtr context) const = 0;
+    virtual void check(ContextPtr context) const;
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) = 0; /// NOLINT

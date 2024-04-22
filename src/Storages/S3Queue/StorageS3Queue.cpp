@@ -25,6 +25,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -141,24 +142,14 @@ StorageS3Queue::StorageS3Queue(
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
-    StorageInMemoryMetadata storage_metadata;
-    if (columns_.empty())
-    {
-        auto columns = StorageObjectStorage::getTableStructureFromData(object_storage, configuration, format_settings, context_);
-        storage_metadata.setColumns(columns);
-    }
-    else
-    {
-        if (configuration->format == "auto")
-        {
-            StorageObjectStorage::setFormatFromData(object_storage, configuration, format_settings, context_);
-        }
-        storage_metadata.setColumns(columns_);
-    }
+    ColumnsDescription columns{columns_};
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context_);
+    configuration->check(context_);
 
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    setInMemoryMetadata(storage_metadata);
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());

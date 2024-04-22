@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorage::Configuration & configuration,
     const StorageObjectStorage::QuerySettings & settings,
     const String & key,
     size_t sequence_number)
@@ -43,38 +43,33 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         configuration.getNamespace(), key);
 }
 
-StorageInMemoryMetadata getStorageMetadata(
+void resolveSchemaAndFormat(
+    ColumnsDescription & columns,
+    std::string & format,
     ObjectStoragePtr object_storage,
     const StorageObjectStorageConfigurationPtr & configuration,
-    const ColumnsDescription & columns,
-    const ConstraintsDescription & constraints,
     std::optional<FormatSettings> format_settings,
-    const String & comment,
     const ContextPtr & context)
 {
-    StorageInMemoryMetadata storage_metadata;
     if (columns.empty())
     {
-        auto fetched_columns = StorageObjectStorage::getTableStructureFromData(object_storage, configuration, format_settings, context);
-        storage_metadata.setColumns(fetched_columns);
+        if (format == "auto")
+            std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, context);
+        else
+            columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, context);
     }
-    else if (!columns.hasOnlyOrdinary())
+    else if (format == "auto")
+    {
+        format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, context);
+    }
+
+    if (!columns.hasOnlyOrdinary())
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Special columns are not supported for {} storage"
                         "like MATERIALIZED, ALIAS or EPHEMERAL", configuration->getTypeName());
     }
-    else
-    {
-        if (configuration->format == "auto")
-            StorageObjectStorage::setFormatFromData(object_storage, configuration, format_settings, context);
-
-        storage_metadata.setColumns(columns);
-    }
-    storage_metadata.setConstraints(constraints);
-    storage_metadata.setComment(comment);
-    return storage_metadata;
 }
 
 }

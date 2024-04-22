@@ -47,16 +47,18 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    FormatFactory::instance().checkFormatName(configuration->format);
+    ColumnsDescription columns{columns_};
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context);
     configuration->check(context);
+
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(columns);
+    metadata.setConstraints(constraints_);
+    metadata.setComment(comment);
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
         objects.emplace_back(key);
-
-    auto metadata = getStorageMetadata(
-        object_storage_, configuration_, columns_,
-        constraints_, format_settings_, comment, context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
     setInMemoryMetadata(std::move(metadata));
@@ -224,7 +226,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
 }
 
-ColumnsDescription StorageObjectStorage::getTableStructureFromData(
+ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
@@ -233,20 +235,11 @@ ColumnsDescription StorageObjectStorage::getTableStructureFromData(
     ObjectInfos read_keys;
     auto read_buffer_iterator = createReadBufferIterator(
         object_storage, configuration, format_settings, read_keys, context);
-
-    if (configuration->format == "auto")
-    {
-        auto [columns, format] = detectFormatAndReadSchema(format_settings, *read_buffer_iterator, context);
-        configuration->format = format;
-        return columns;
-    }
-    else
-    {
-        return readSchemaFromFormat(configuration->format, format_settings, *read_buffer_iterator, context);
-    }
+    return readSchemaFromFormat(
+        configuration->format, format_settings, *read_buffer_iterator, context);
 }
 
-void StorageObjectStorage::setFormatFromData(
+std::string StorageObjectStorage::resolveFormatFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
@@ -255,7 +248,23 @@ void StorageObjectStorage::setFormatFromData(
     ObjectInfos read_keys;
     auto read_buffer_iterator = createReadBufferIterator(
         object_storage, configuration, format_settings, read_keys, context);
-    configuration->format = detectFormatAndReadSchema(format_settings, *read_buffer_iterator, context).second;
+    return detectFormatAndReadSchema(
+        format_settings, *read_buffer_iterator, context).second;
+}
+
+std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
+    const ObjectStoragePtr & object_storage,
+    const ConfigurationPtr & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
+{
+    ObjectInfos read_keys;
+    auto read_buffer_iterator = createReadBufferIterator(
+        object_storage, configuration, format_settings, read_keys, context);
+
+    auto [columns, format] = detectFormatAndReadSchema(format_settings, *read_buffer_iterator, context);
+    configuration->format = format;
+    return std::pair(columns, format);
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context)

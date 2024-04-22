@@ -54,6 +54,7 @@ void StorageS3Configuration::check(ContextPtr context) const
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
+    StorageObjectStorageConfiguration::check(context);
 }
 
 void StorageS3Configuration::validateNamespace(const String & name) const

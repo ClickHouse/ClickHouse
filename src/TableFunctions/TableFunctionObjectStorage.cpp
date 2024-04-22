@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -98,7 +99,9 @@ ColumnsDescription TableFunctionObjectStorage<
     {
         context->checkAccess(getSourceAccessType());
         auto storage = getObjectStorage(context, !is_insert_query);
-        return StorageObjectStorage::getTableStructureFromData(storage, configuration, std::nullopt, context);
+        ColumnsDescription columns;
+        resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, context);
+        return columns;
     }
 
     return parseColumnsListFromString(configuration->structure, context);
