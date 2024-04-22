@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <rocksdb/options.h>
+#include <rocksdb/slice.h>
 #include <rocksdb/status.h>
 #include <rocksdb/utilities/db_ttl.h>
 #include <Common/SipHash.h>
@@ -54,20 +55,22 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
         return status;
 
     auto rows = perm.size();
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t idx = 0; idx < rows;)
     {
-        auto row = perm[i];
+        /// We will write the last row of the same key
+        size_t next_idx = idx + 1;
+        while (next_idx < rows && keys.compareAt(perm[idx], perm[next_idx], keys, 1) == 0)
+            ++next_idx;
 
+        auto row = perm[next_idx - 1];
         status = sst_file_writer.Put(keys.getDataAt(row).toView(), values.getDataAt(row).toView());
-
-        /// There could be duplicated keys in chunk, thus Put may give IsInvalidArgument. This is ok, as we're certain that
-        /// keys are sorted in ascending order.
-        if (!status.ok() && !status.IsInvalidArgument())
+        if (!status.ok())
             return status;
+
+        idx = next_idx;
     }
 
-    sst_file_writer.Finish();
-    return rocksdb::Status::OK();
+    return sst_file_writer.Finish();
 }
 
 EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
@@ -99,9 +102,9 @@ EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
         if (fs::exists(insert_directory_queue))
             fs::remove_all(insert_directory_queue);
     }
-    catch (...)
+    catch(...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Error while removing temporary directory {}:", insert_directory_queue));
     }
 }
 
@@ -204,7 +207,7 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     /// Ingest the SST file
-    rocksdb::IngestExternalFileOptions ingest_options;
+    static rocksdb::IngestExternalFileOptions ingest_options;
     ingest_options.move_files = true; /// The temporary file is on the same disk, so move (or hardlink) file will be faster than copy
     if (auto status = storage.rocksdb_ptr->IngestExternalFile({sst_file_path}, ingest_options); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
