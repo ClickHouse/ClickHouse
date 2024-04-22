@@ -575,7 +575,7 @@ tanh(x)
 
 - Values from the interval: `-1 < tanh(x) < 1`.
 
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float32](../../sql-reference/data-types/float.md#float32-float64).
 
 **Example**
 
