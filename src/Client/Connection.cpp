@@ -74,6 +74,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
     [[maybe_unused]] const SSHKey & ssh_private_key_,
+    const String & jwt_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
@@ -86,6 +87,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , ssh_private_key(ssh_private_key_)
 #endif
     , quota_key(quota_key_)
+    , jwt(jwt_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
@@ -341,6 +343,11 @@ void Connection::sendHello()
         performHandshakeForSSHAuth();
     }
 #endif
+    else if (!jwt.empty())
+    {
+        writeStringBinary(EncodedUserInfo::JWT_AUTHENTICAION_MARKER, *out);
+        writeStringBinary(jwt, *out);
+    }
     else
     {
         writeStringBinary(user, *out);
@@ -1310,6 +1317,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.user,
         parameters.password,
         parameters.ssh_private_key,
+        parameters.jwt,
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */

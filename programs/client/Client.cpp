@@ -944,6 +944,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
+        ("jwt", po::value<std::string>(), "Use JWT for authentication")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
@@ -1102,6 +1103,11 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
+    if (options.count("jwt"))
+    {
+        config().setString("jwt", options["jwt"].as<std::string>());
+        config().setString("user", "");
+    }
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
