@@ -364,15 +364,25 @@ bool HTTPHandler::authenticateUser(
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
     bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
+    bool has_auth_headers = !user.empty() || !password.empty() || has_ssl_certificate_auth;
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
     bool has_http_credentials = request.hasCredentials();
-    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
+    bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
     std::string certificate_common_name;
+
+    if (params.has("quota_key"))
+    {
+        if (!quota_key.empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: it is not allowed "
+                            "to use quota key as HTTP header and quota key as parameter simultaneously");
+
+        quota_key = params.get("quota_key");
+    }
 
     if (has_auth_headers)
     {
@@ -435,15 +445,12 @@ bool HTTPHandler::authenticateUser(
         {
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
-
-        quota_key = params.get("quota_key", "");
     }
     else
     {
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
-        quota_key = params.get("quota_key", "");
     }
 
     if (!certificate_common_name.empty())

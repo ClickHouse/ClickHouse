@@ -15,3 +15,4 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'X-ClickHouse-Database: system' -d
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'X-ClickHouse-Database: header_test' -d 'SHOW TABLES' | grep -o 'Code: 81'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'X-ClickHouse-Format: JSONCompactEachRow' -d 'SELECT 1' | grep -o '\[1\]'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'X-ClickHouse-Format: header_test' -d 'SELECT 1' | grep -o 'Code: 73'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&quota_key=pingpong" -H 'Authorization: Basic dHQ6cGFzc3dvcmQ=' -d 'SELECT 1' | grep -o 'Code: 516'
