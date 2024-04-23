@@ -39,7 +39,7 @@ Every month we get together with the community (users, contributors, customers, 
 
 ## Upcoming Events
 
-Keep an eye out for upcoming meetups and eventsaround the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
+Keep an eye out for upcoming meetups and events around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 * [ClickHouse Meetup in Bellevue](https://www.meetup.com/clickhouse-seattle-user-group/events/298650371/) - Mar 11
 * [ClickHouse Meetup at Ramp's Offices in NYC](https://www.meetup.com/clickhouse-new-york-user-group/events/298640542/) - Mar 19
