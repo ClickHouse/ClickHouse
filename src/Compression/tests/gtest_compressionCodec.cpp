@@ -1306,9 +1306,9 @@ TEST(LZ4Test, DecompressMalformedInput)
 
 TEST(FSSTTest, CompressDecompress)
 {
-    char in_str[2281337] = "Hello, World!\0";
+    char in_str[2281337] = "Hello, World!\0suka\0";
     char out_str[2281337];
-    auto string_length = strlen(in_str);
+    auto string_length = strlen(in_str) + 6;
     std::cerr << "in_str length: " << string_length << std::endl;
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
@@ -1320,7 +1320,7 @@ TEST(FSSTTest, CompressDecompress)
 
     fsst_codec->decompress(out_str, compressed_size, in_str);
 
-    std::cerr << "decompressed string: " << in_str << std::endl;
+    std::cerr << "decompressed string: " << in_str << " " << in_str + 14 << std::endl;
 }
 
 }
