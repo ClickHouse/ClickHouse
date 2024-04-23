@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexInverted.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-MergeTreeIndexGranuleInverted::MergeTreeIndexGranuleInverted(
+MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(
     const String & index_name_,
     size_t columns_number,
     const GinFilterParameters & params_)
@@ -45,7 +45,7 @@ MergeTreeIndexGranuleInverted::MergeTreeIndexGranuleInverted(
 {
 }
 
-void MergeTreeIndexGranuleInverted::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
@@ -61,7 +61,7 @@ void MergeTreeIndexGranuleInverted::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleInverted::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
@@ -85,7 +85,7 @@ void MergeTreeIndexGranuleInverted::deserializeBinary(ReadBuffer & istr, MergeTr
 }
 
 
-MergeTreeIndexAggregatorInverted::MergeTreeIndexAggregatorInverted(
+MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
     GinIndexStorePtr store_,
     const Names & index_columns_,
     const String & index_name_,
@@ -97,20 +97,20 @@ MergeTreeIndexAggregatorInverted::MergeTreeIndexAggregatorInverted(
     , params(params_)
     , token_extractor(token_extractor_)
     , granule(
-        std::make_shared<MergeTreeIndexGranuleInverted>(
+        std::make_shared<MergeTreeIndexGranuleFullText>(
             index_name, index_columns.size(), params))
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorInverted::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeIndexGranuleInverted>(
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleFullText>(
         index_name, index_columns.size(), params);
     new_granule.swap(granule);
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
+void MergeTreeIndexAggregatorFullText::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -120,7 +120,7 @@ void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char *
         gin_filter.add(data + token_start, token_len, rowID, store);
 }
 
-void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -184,7 +184,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
     *pos += rows_read;
 }
 
-MergeTreeConditionInverted::MergeTreeConditionInverted(
+MergeTreeConditionFullText::MergeTreeConditionFullText(
     const ActionsDAGPtr & filter_actions_dag,
     ContextPtr context_,
     const Block & index_sample_block,
@@ -210,7 +210,7 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
 }
 
 /// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
-bool MergeTreeConditionInverted::alwaysUnknownOrTrue() const
+bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
     std::vector<bool> rpn_stack;
@@ -258,10 +258,10 @@ bool MergeTreeConditionInverted::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
-bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
+bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleInverted> granule
-            = std::dynamic_pointer_cast<MergeTreeIndexGranuleInverted>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleFullText> granule
+            = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
@@ -367,7 +367,7 @@ bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeConditionFullText::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -455,7 +455,7 @@ bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node
     return false;
 }
 
-bool MergeTreeConditionInverted::traverseASTEquals(
+bool MergeTreeConditionFullText::traverseASTEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_ast,
     const DataTypePtr & value_type,
@@ -666,7 +666,7 @@ bool MergeTreeConditionInverted::traverseASTEquals(
     return false;
 }
 
-bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
+bool MergeTreeConditionFullText::tryPrepareSetGinFilter(
     const RPNBuilderTreeNode & lhs,
     const RPNBuilderTreeNode & rhs,
     RPNElement & out)
@@ -739,30 +739,30 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     return true;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexInverted::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleInverted>(index.name, index.column_names.size(), params);
+    return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     /// should not be called: createIndexAggregatorForPart should be used
     assert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorInverted>(store, index.column_names, index.name, params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorFullText>(store, index.column_names, index.name, params, token_extractor.get());
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexInverted::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
         const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionInverted>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionFullText>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
 };
 
-MergeTreeIndexPtr invertedIndexCreator(
+MergeTreeIndexPtr fullTextIndexCreator(
     const IndexDescription & index)
 {
     size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
@@ -773,16 +773,16 @@ MergeTreeIndexPtr invertedIndexCreator(
     if (n > 0)
     {
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-        return std::make_shared<MergeTreeIndexInverted>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
     }
     else
     {
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
-        return std::make_shared<MergeTreeIndexInverted>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
     }
 }
 
-void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
+void fullTextIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     for (const auto & index_data_type : index.data_types)
     {
@@ -800,21 +800,21 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Inverted index can be used only with `String`, `FixedString`,"
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Full text index can be used only with `String`, `FixedString`,"
                             "`LowCardinality(String)`, `LowCardinality(FixedString)` "
                             "column or Array with `String` or `FixedString` values column.");
     }
 
     if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Inverted index must have less than two arguments.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Full text index must have less than two arguments.");
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first Inverted index argument must be positive integer.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first full text index argument must be positive integer.");
 
     if (index.arguments.size() == 2)
     {
         if (index.arguments[1].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second Inverted index argument must be UInt64");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second full text index argument must be UInt64");
         if (index.arguments[1].get<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].get<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows per postings list must be no less than {}", MIN_ROWS_PER_POSTINGS_LIST);
     }
