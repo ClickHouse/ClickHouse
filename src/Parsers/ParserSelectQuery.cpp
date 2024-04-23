@@ -53,6 +53,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_qualify(Keyword::QUALIFY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
     ParserKeyword s_limit(Keyword::LIMIT);
+    ParserKeyword s_inrange(Keyword::INRANGE); // maybe IN_RANGE/IN RANGE/RANGE or even without this keyword?
+    ParserKeyword s_to(Keyword::TO);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_by(Keyword::BY);
     ParserKeyword s_rollup(Keyword::ROLLUP);
@@ -99,6 +101,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_length;
     ASTPtr top_length;
     ASTPtr settings;
+    ASTPtr limit_inrange_from_expression;
+    ASTPtr limit_inrange_to_expression;
 
     /// WITH expr_list
     {
@@ -313,6 +317,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    // if (s_limit.ignore(pos, expected) && s_inrange.ignore(pos, expected))
+
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occured = false;
 
@@ -322,61 +328,86 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
     {
-        ParserToken s_comma(TokenType::Comma);
-
-        if (!exp_elem.parse(pos, limit_length, expected))
-            return false;
-
-        if (s_comma.ignore(pos, expected))
+        /// LIMIT INRANGE FROM expr | LIMIT INRANGE TO expr | LIMIT INRANGE FROM expr TO expr
+        if (s_inrange.ignore(pos, expected))
         {
-            limit_offset = limit_length;
+            bool from_occured = false;
+            bool to_occured = false;
+
+            if (s_from.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_inrange_from_expression, expected))
+                    return false;
+                from_occured = true;
+            }
+
+            if (s_to.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_inrange_to_expression, expected))
+                    return false;
+                to_occured = true;
+            }
+
+            if (!from_occured && !to_occured)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "LIMIT INRANGE requires at least a FROM or TO expression");
+        } else
+        {
+            ParserToken s_comma(TokenType::Comma);
+
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
 
-            if (s_with_ties.ignore(pos, expected))
+            if (s_comma.ignore(pos, expected))
+            {
+                limit_offset = limit_length;
+                if (!exp_elem.parse(pos, limit_length, expected))
+                    return false;
+
+                if (s_with_ties.ignore(pos, expected))
+                {
+                    limit_with_ties_occured = true;
+                    select_query->limit_with_ties = true;
+                }
+            }
+            else if (s_offset.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_offset, expected))
+                    return false;
+
+                has_offset_clause = true;
+            }
+            else if (s_with_ties.ignore(pos, expected))
             {
                 limit_with_ties_occured = true;
                 select_query->limit_with_ties = true;
             }
-        }
-        else if (s_offset.ignore(pos, expected))
-        {
-            if (!exp_elem.parse(pos, limit_offset, expected))
-                return false;
 
-            has_offset_clause = true;
-        }
-        else if (s_with_ties.ignore(pos, expected))
-        {
-            limit_with_ties_occured = true;
-            select_query->limit_with_ties = true;
-        }
-
-        if (limit_with_ties_occured && distinct_on_expression_list)
-            throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
-
-        if (s_by.ignore(pos, expected))
-        {
-            /// WITH TIES was used alongside LIMIT BY
-            /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
-            /// So we have to ignore WITH TIES exactly in LIMIT BY state.
-            if (limit_with_ties_occured)
+            if (limit_with_ties_occured && distinct_on_expression_list)
                 throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
-            if (distinct_on_expression_list)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
+            if (s_by.ignore(pos, expected))
+            {
+                /// WITH TIES was used alongside LIMIT BY
+                /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
+                /// So we have to ignore WITH TIES exactly in LIMIT BY state.
+                if (limit_with_ties_occured)
+                    throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
-            limit_by_length = limit_length;
-            limit_by_offset = limit_offset;
-            limit_length = nullptr;
-            limit_offset = nullptr;
+                if (distinct_on_expression_list)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
 
-            if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                return false;
+                limit_by_length = limit_length;
+                limit_by_offset = limit_offset;
+                limit_length = nullptr;
+                limit_offset = nullptr;
+
+                if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                    return false;
+            }
+
+            if (top_length && limit_length)
+                throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
         }
-
-        if (top_length && limit_length)
-            throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
     }
     else if (s_offset.ignore(pos, expected))
     {
@@ -507,6 +538,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WINDOW, std::move(window_list));
     select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, std::move(qualify_expression));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_FROM, std::move(limit_inrange_from_expression));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_TO, std::move(limit_inrange_to_expression));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));

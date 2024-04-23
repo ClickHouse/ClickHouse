@@ -5467,6 +5467,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasInterpolate())
         visitor.visit(query_node_typed.getInterpolate());
 
+    if (query_node_typed.hasLimitInrangeFrom())
+        visitor.visit(query_node_typed.getLimitInrangeFrom());
+
+    if (query_node_typed.hasLimitInrangeTo())
+        visitor.visit(query_node_typed.getLimitInrangeTo());
+
     if (query_node_typed.hasLimitByLimit())
         visitor.visit(query_node_typed.getLimitByLimit());
 
@@ -5627,6 +5633,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasInterpolate())
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+
+    if (query_node_typed.hasLimitInrangeFrom())
+        resolveExpressionNode(query_node_typed.getLimitInrangeFrom(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (query_node_typed.hasLimitInrangeTo())
+        resolveExpressionNode(query_node_typed.getLimitInrangeTo(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasLimitByLimit())
     {

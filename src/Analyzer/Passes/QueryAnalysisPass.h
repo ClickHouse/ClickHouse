@@ -14,7 +14,7 @@ namespace DB
   * 3. All functions are resolved. Next passes can expect that for each FunctionNode its result type will be set, and it will be resolved
   * as aggregate or non aggregate function.
   * 4. All lambda expressions that are function arguments are resolved. Next passes can expect that LambaNode expression is resolved, and lambda has concrete arguments.
-  * 5. All standalone lambda expressions are resolved. Next passes can expect that there will be no standalone LambaNode expressions in query.
+  * 5. All standalone lambda expressions are resolved. Next passes can expect that there will be no standalone LambdaNode expressions in query.
   * 6. Constants are folded. Example: SELECT plus(1, 1).
   * Motivation for this, there are places in query tree that must contain constant:
   * Function parameters. Example: SELECT quantile(0.5)(x).
