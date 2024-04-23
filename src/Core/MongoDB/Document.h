@@ -143,7 +143,8 @@ public:
     /// An empty element will be returned when the element is not found.
 
     template <typename T>
-    T takeValue(const Key & name) {
+    T takeValue(const Key & name)
+    {
         Element::Ptr element = take(name);
         auto casted = element.cast<ConcreteElement<T>>();
         return casted->getValue();
@@ -205,10 +206,10 @@ inline Document & Document::addElement(Element::Ptr element)
     return *this;
 }
 
-inline Document & Document::addElements(const std::vector<Element::Ptr> & elements_) {
-    for (const auto& element : elements_) {
+inline Document & Document::addElements(const std::vector<Element::Ptr> & elements_)
+{
+    for (const auto & element : elements_)
         elements.push_back(element);
-    }
     return *this;
 }
 
@@ -264,8 +265,6 @@ inline std::size_t Document::size() const
 }
 
 
-
-
 // BSON Embedded Document
 // spec: document
 template <>
@@ -278,7 +277,8 @@ struct ElementTraits<Document::Ptr>
 
     static std::string toString(const Document::Ptr & value) { return value.isNull() ? "null" : value->toString(); }
 
-    static Document::Ptr fromString(const std::string& str) {
+    static Document::Ptr fromString(const std::string & str)
+    {
         throw Poco::NotImplementedException("Document from string is not implemented, str: {}", str);
         return nullptr;
     }
@@ -309,18 +309,16 @@ inline Int32 BSONWriter::getLength<Document::Ptr>(const Document::Ptr & t)
 template <>
 inline void BSONWriter::write<Document::Vector>(const Document::Vector & t)
 {
-    for (const auto& element : t) {
+    for (const auto & element : t)
         element->write(writer);
-    }
 }
 
 template <>
 inline Int32 BSONWriter::getLength<Document::Vector>(const Document::Vector & t)
 {
     Int32 length = 0;
-    for (const auto& element : t) {
+    for (const auto & element : t)
         length += element->getLength();
-    }
     return length;
 }
 

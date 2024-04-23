@@ -31,7 +31,6 @@ public:
 };
 
 
-
 // void RequestMessage::send(WriteBuffer& writer)
 // {
 // 	Int32 size = getLength();

@@ -76,9 +76,7 @@ public:
         return Document::isType<T>(Poco::NumberFormatter::format(pos));
     }
 
-    std::size_t size() const {
-        return Document::size();
-    }
+    std::size_t size() const { return Document::size(); }
 
     std::string toString() const override;
     /// Returns a string representation of the Array.
@@ -100,7 +98,8 @@ struct ElementTraits<Array::Ptr>
 
     static std::string toString(const Array::Ptr & value) { return value.isNull() ? "null" : value->toString(); }
 
-    static Array::Ptr fromString(const std::string& str) {
+    static Array::Ptr fromString(const std::string & str)
+    {
         throw Poco::NotImplementedException("Array from string is not implemented, str: {}", str);
         return nullptr;
     }

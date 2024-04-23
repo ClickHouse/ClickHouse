@@ -43,13 +43,13 @@ public:
     virtual int getType() const = 0;
     /// Returns the MongoDB type of the element.
 
-    static Element::Ptr fromTypeId(UInt8 type, const std::string& name);
-    static UInt8 typeIdFromString(const std::string& type);
-    static Element::Ptr createElementWithType(const std::string& type, const std::string& name, const std::string& value);
-    
+    static Element::Ptr fromTypeId(UInt8 type, const std::string & name);
+    static UInt8 typeIdFromString(const std::string & type);
+    static Element::Ptr createElementWithType(const std::string & type, const std::string & name, const std::string & value);
+
     virtual void read(ReadBuffer & reader) = 0;
     virtual void write(WriteBuffer & writer) const = 0;
-    virtual void valueFromString(const std::string& string) = 0;
+    virtual void valueFromString(const std::string & string) = 0;
 
     virtual Int32 getLength() const = 0;
 
@@ -69,7 +69,7 @@ using ElementSet = std::list<Element::Ptr>;
 template <typename T>
 struct ElementTraits
 {
-    static T fromString(const std::string& str);
+    static T fromString(const std::string & str);
 };
 
 template <typename T>
@@ -97,9 +97,7 @@ public:
         return length + BSONWriter::getLength<T>(value);
     }
 
-    void valueFromString(const std::string& str) override{
-        value = ElementTraits<T>::fromString(str);
-    }
+    void valueFromString(const std::string & str) override { value = ElementTraits<T>::fromString(str); }
 
     void write(WriteBuffer & writer) const override
     {
@@ -165,9 +163,7 @@ struct ElementTraits<std::string>
         return oss.str();
     }
 
-    static std::string fromString(const std::string& str) {
-        return str;
-    }
+    static std::string fromString(const std::string & str) { return str; }
 };
 
 
@@ -184,10 +180,7 @@ struct ElementTraits<double>
     static std::string toString(const double & value) { return Poco::NumberFormatter::format(value); }
 
 
-    static double fromString(const std::string& str) {
-        return std::stod(str);
-    }
-
+    static double fromString(const std::string & str) { return std::stod(str); }
 };
 template <>
 inline double BSONReader::read<double>()
@@ -204,7 +197,8 @@ inline void BSONWriter::write<double>(const double & t)
 }
 
 template <>
-inline Int32 BSONWriter::getLength<double>(const double & from) {
+inline Int32 BSONWriter::getLength<double>(const double & from)
+{
     return static_cast<Int32>(sizeof(from));
 }
 
@@ -251,12 +245,14 @@ struct ElementTraits<bool>
 
     static std::string toString(const bool & value) { return value ? "true" : "false"; }
 
-    static bool fromString(const std::string& str) {
-        if (str == "True") return 1;
-        else if (str == "False") return 0;
-        else {
+    static bool fromString(const std::string & str)
+    {
+        if (str == "True")
+            return 1;
+        else if (str == "False")
+            return 0;
+        else
             throw std::runtime_error(fmt::format("Cannot parse boolean from {}", str));
-        }
     }
 };
 
@@ -280,7 +276,8 @@ inline void BSONWriter::write<bool>(const bool & t)
 }
 
 template <>
-inline Int32 BSONWriter::getLength<bool>(const bool & from) {
+inline Int32 BSONWriter::getLength<bool>(const bool & from)
+{
     return static_cast<Int32>(sizeof(from));
 }
 
@@ -297,9 +294,7 @@ struct ElementTraits<Int32>
 
     static std::string toString(const Int32 & value) { return Poco::NumberFormatter::format(value); }
 
-    static Int32 fromString(const std::string& str) {
-        return std::stoi(str);
-    }
+    static Int32 fromString(const std::string & str) { return std::stoi(str); }
 };
 
 template <>
@@ -317,7 +312,8 @@ inline void BSONWriter::write<Int32>(const Int32 & t)
 }
 
 template <>
-inline Int32 BSONWriter::getLength<Int32>(const Int32 & from) {
+inline Int32 BSONWriter::getLength<Int32>(const Int32 & from)
+{
     return static_cast<Int32>(sizeof(from));
 }
 
@@ -333,9 +329,7 @@ struct ElementTraits<Int64>
 
     static std::string toString(const Int64 & value) { return Poco::NumberFormatter::format(value); }
 
-    static Int64 fromString(const std::string& str) {
-        return std::stoll(str);
-    }
+    static Int64 fromString(const std::string & str) { return std::stoll(str); }
 };
 
 template <>
@@ -354,7 +348,8 @@ inline void BSONWriter::write<Int64>(const Int64 & t)
 
 
 template <>
-inline Int32 BSONWriter::getLength<Int64>(const Int64 & from) {
+inline Int32 BSONWriter::getLength<Int64>(const Int64 & from)
+{
     return static_cast<Int32>(sizeof(from));
 }
 
@@ -378,7 +373,8 @@ struct ElementTraits<Poco::Timestamp>
         return result;
     }
 
-    static Poco::Timestamp fromString(const std::string& str) {
+    static Poco::Timestamp fromString(const std::string & str)
+    {
         int diff;
         return Poco::DateTimeParser::parse(str, diff).timestamp();
     }
@@ -403,11 +399,10 @@ inline void BSONWriter::write<Poco::Timestamp>(const Poco::Timestamp & t)
 }
 
 template <>
-inline Int32 BSONWriter::getLength<Poco::Timestamp>(const Poco::Timestamp & t) {
+inline Int32 BSONWriter::getLength<Poco::Timestamp>(const Poco::Timestamp & t)
+{
     return static_cast<Int32>(sizeof(t.epochMicroseconds() / 1000));
 }
-
-
 
 
 }

@@ -1,10 +1,10 @@
 #include "MongoDBHandler.h"
+#include <Core/MongoDB/Commands/Commands.h>
+#include <Core/MongoDB/Commands/FindCommand.h>
 #include <Core/MongoDB/Message.h>
 #include <Core/MongoDB/MessageHeader.h>
 #include <Core/MongoDB/MessageReader.h>
 #include <Core/MongoDB/MessageWriter.h>
-#include <Core/MongoDB/Commands/Commands.h>
-#include <Core/MongoDB/Commands/FindCommand.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -36,7 +36,8 @@ MongoDBHandler::MongoDBHandler(const Poco::Net::StreamSocket & socket_, IServer 
 }
 
 
-void MongoDBHandler::handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB::MessageWriter writer) {
+void MongoDBHandler::handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB::MessageWriter writer)
+{
     auto command = MongoDB::Command::parseCommand(message);
     BSON::Document::Ptr res;
 
@@ -44,7 +45,8 @@ void MongoDBHandler::handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB
     std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
     auto secret_key = dis(gen);
 
-    switch (command->getType()) {
+    switch (command->getType())
+    {
         case MongoDB::CommandTypes::IsMaster:
             res = MongoDB::handleIsMaster();
             writer.write_op_reply(res, message->getHeader().getRequestID());
@@ -67,15 +69,13 @@ void MongoDBHandler::handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB
         case MongoDB::CommandTypes::Aggregate:
             res = MongoDB::handleAggregate(command);
             break;
-        case MongoDB::CommandTypes::Find:
-            {
-
-                session->sessionContext()->setCurrentDatabase(command->getDBName());
-                auto context = session->makeQueryContext();
-                context->setCurrentQueryId(fmt::format("mongodb:{:d}:{:d}", connection_id, secret_key));
-                res = MongoDB::handleFind(command, context);
-            }
-            break;
+        case MongoDB::CommandTypes::Find: {
+            session->sessionContext()->setCurrentDatabase(command->getDBName());
+            auto context = session->makeQueryContext();
+            context->setCurrentQueryId(fmt::format("mongodb:{:d}:{:d}", connection_id, secret_key));
+            res = MongoDB::handleFind(command, context);
+        }
+        break;
         case MongoDB::CommandTypes::Unknown:
             LOG_ERROR(log, "Unknown MongoDB command");
             res = MongoDB::handleUnknownCommand(command);
@@ -108,30 +108,30 @@ void MongoDBHandler::run()
             if (!tcp_server.isOpen())
                 return;
         MongoDB::Message::Ptr message;
-        try {
+        try
+        {
             message = reader.read();
-        } catch(const DB::Exception & e) {
-            if (!tcp_server.isOpen()) {
+        }
+        catch (const DB::Exception & e)
+        {
+            if (!tcp_server.isOpen())
                 LOG_INFO(log, "Closing connection");
-            } else {
+            else
                 LOG_WARNING(log, "Read error {}, but tcp is open, closing", e.what());
-            }
             return;
         }
         MongoDB::MessageHeader::OpCode op_code = message->getHeader().getOpCode();
         LOG_INFO(log, "GOT OPCODE {}", static_cast<int>(op_code));
         switch (op_code)
         {
-            case MongoDB::MessageHeader::OP_QUERY: 
-            {
+            case MongoDB::MessageHeader::OP_QUERY: {
                 LOG_INFO(log, "Handling Hello message");
                 BSON::Document::Ptr response = MongoDB::handleIsMaster();
                 writer.write_op_reply(response, message->getHeader().getRequestID());
                 LOG_INFO(log, "Sent Hello message");
             }
             break;
-            case MongoDB::MessageHeader::OP_MSG:
-            {
+            case MongoDB::MessageHeader::OP_MSG: {
                 handleQuery(message.cast<MongoDB::OpMsgMessage>(), writer);
                 LOG_INFO(log, "QUERY HANDLED");
             }

@@ -1,8 +1,8 @@
+#include <IO/WriteBufferFromString.h>
+#include <Loggers/Loggers.h>
 #include <Poco/Exception.h>
 #include "Message.h"
 #include "QueryRequest.h"
-#include <Loggers/Loggers.h>
-#include <IO/WriteBufferFromString.h>
 
 
 namespace DB

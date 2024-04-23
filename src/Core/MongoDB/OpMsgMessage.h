@@ -1,10 +1,10 @@
 #pragma once
 
+#include <string>
+#include <IO/WriteBuffer.h>
 #include "Document.h"
 #include "Message.h"
 #include "RequestMessage.h"
-#include <IO/WriteBuffer.h>
-#include <string>
 
 namespace DB
 {
@@ -67,7 +67,7 @@ public:
         /// Client is prepared for multiple replies (using the moreToCome bit) to this request
     };
 
-    OpMsgMessage(const MessageHeader& header_);
+    OpMsgMessage(const MessageHeader & header_);
     /// Creates an OpMsgMessage for requests.
 
     ~OpMsgMessage() override;
@@ -147,7 +147,8 @@ private:
 };
 
 
-inline void OpMsgMessage::setBody(BSON::Document::Ptr body_) {
+inline void OpMsgMessage::setBody(BSON::Document::Ptr body_)
+{
     body = body_;
 }
 

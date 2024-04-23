@@ -1,8 +1,10 @@
 #include "OpReply.h"
 
-namespace DB {
+namespace DB
+{
 
-namespace MongoDB {
+namespace MongoDB
+{
 
 OpReply & OpReply::setResponseFlags(Int32 response_flags_)
 {
@@ -45,4 +47,5 @@ void OpReply::writeContent(WriteBuffer & writer)
     BSON::BSONWriter(writer).write(documents);
 }
 
-}} // namespace DB::MongoDB
+}
+} // namespace DB::MongoDB

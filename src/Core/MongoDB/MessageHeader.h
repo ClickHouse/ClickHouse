@@ -27,7 +27,7 @@ public:
         OP_UPDATE = 2001,
         OP_INSERT = 2002,
         OP_QUERY = 2004,
-        OP_GET_MORE = 2005, 
+        OP_GET_MORE = 2005,
         OP_DELETE = 2006,
         OP_KILL_CURSORS = 2007,
 
@@ -59,7 +59,7 @@ public:
     /// Returns the message length.
 
     Int32 getContentLength() const;
-    /// Returns the content length 
+    /// Returns the content length
 
     OpCode getOpCode() const;
     /// Returns the OpCode.
@@ -102,7 +102,8 @@ inline Int32 MessageHeader::getMessageLength() const
     return message_length;
 }
 
-inline Int32 MessageHeader::getContentLength() const {
+inline Int32 MessageHeader::getContentLength() const
+{
     return message_length - MSG_HEADER_SIZE;
 }
 
@@ -132,7 +133,6 @@ inline void MessageHeader::setResponseTo(Int32 response_to_)
 {
     response_to = response_to_;
 }
-
 
 
 }

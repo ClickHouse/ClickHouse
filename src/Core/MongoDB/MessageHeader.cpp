@@ -1,8 +1,8 @@
 #include "MessageHeader.h"
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <fmt/format.h>
 #include <Loggers/Loggers.h>
+#include <fmt/format.h>
 #include <Common/logger_useful.h>
 
 
@@ -40,14 +40,17 @@ MessageHeader::MessageHeader(OpCode op_code_) : message_length(0), request_id(0)
 }
 
 
-std::string MessageHeader::toString() const {
+std::string MessageHeader::toString() const
+{
     return fmt::format(
         "message_length: {}\n"
         "request_id : {}\n"
         "response_to: {}\n"
         "op_code: {}\n",
-        message_length, request_id, response_to, static_cast<Int32>(op_code)
-    );
+        message_length,
+        request_id,
+        response_to,
+        static_cast<Int32>(op_code));
 }
 
 }

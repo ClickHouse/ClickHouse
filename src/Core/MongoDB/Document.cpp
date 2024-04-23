@@ -95,9 +95,11 @@ const Element::Ptr Document::get(const Document::Key & name) const
 }
 
 
-Element::Ptr Document::take(const Key & name) {
+Element::Ptr Document::take(const Key & name)
+{
     ElementSet::const_iterator it = std::find_if(elements.begin(), elements.end(), ElementFindByName(name));
-    if (it != elements.end()) {
+    if (it != elements.end())
+    {
         Element::Ptr elem = *it;
         remove(name);
         return elem;
@@ -161,8 +163,6 @@ Document & Document::operator=(Document && other) noexcept
     swap(this->elements, other.elements);
     return *this;
 }
-
-
 
 
 }

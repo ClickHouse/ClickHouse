@@ -6,7 +6,5 @@ namespace MongoDB
 {
 
 
-
-
 }
 } // namespace DB::MongoDB

@@ -1,13 +1,13 @@
 #include "QueryRequest.h"
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Loggers/Loggers.h>
+#include <base/types.h>
+#include <fmt/format.h>
 #include "BSONReader.h"
 #include "BSONWriter.h"
 #include "Document.h"
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <base/types.h>
 #include "RequestMessage.h"
-#include <fmt/format.h>
-#include <Loggers/Loggers.h>
 
 
 namespace DB
@@ -91,20 +91,21 @@ void QueryRequest::read(ReadBuffer & reader)
     LOG_DEBUG(log, "number_to_skip: {}\n", number_to_skip);
     readIntBinary(number_to_return, reader);
     LOG_DEBUG(log, "number_to_return: {}\n", number_to_return);
-    message_length -= sizeof(flags_) + sizeof(number_to_skip) + sizeof(number_to_return)
-        + full_collection_name.length() + sizeof('\0');
+    message_length -= sizeof(flags_) + sizeof(number_to_skip) + sizeof(number_to_return) + full_collection_name.length() + sizeof('\0');
     selector = new BSON::Document();
     return_field_selector = new BSON::Document();
     message_length -= selector->read(reader);
     LOG_DEBUG(log, "selector: {}\n", selector->toString());
-    if (message_length > 0) {
+    if (message_length > 0)
+    {
         LOG_DEBUG(log, "return_field_selector: {}\n", return_field_selector->toString());
         return_field_selector->read(reader);
     }
 }
 
 
-std::string QueryRequest::toString() const {
+std::string QueryRequest::toString() const
+{
     return fmt::format(
         "flags: {}\n"
         "full_collection_name: {}\n"
@@ -117,8 +118,7 @@ std::string QueryRequest::toString() const {
         number_to_skip,
         number_to_return,
         selector->toString(),
-        return_field_selector->toString()
-    );
+        return_field_selector->toString());
 }
 
 }

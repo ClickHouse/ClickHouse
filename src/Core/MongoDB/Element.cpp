@@ -1,7 +1,7 @@
 #include "Element.h"
-#include "Document.h"
 #include "Array.h"
 #include "Binary.h"
+#include "Document.h"
 #include "ObjectId.h"
 
 
@@ -13,10 +13,11 @@ namespace BSON
 Element::~Element() = default;
 
 
-BSON::Element::Ptr Element::fromTypeId(UInt8 typeId, const std::string& name) {
+BSON::Element::Ptr Element::fromTypeId(UInt8 typeId, const std::string & name)
+{
     BSON::Element::Ptr element;
     switch (typeId)
-        {
+    {
         case ElementTraits<double>::TypeId:
             element = new ConcreteElement<double>(name, 0);
             break;
@@ -52,31 +53,31 @@ BSON::Element::Ptr Element::fromTypeId(UInt8 typeId, const std::string& name) {
             ss << "Element " << name << " contains an unsupported type 0x" << std::hex << static_cast<int>(typeId);
             throw Poco::NotImplementedException(ss.str());
         }
-        // TODO: everything else:)
+            // TODO: everything else:)
     }
     return element;
 }
 
 
-UInt8 Element::typeIdFromString(const std::string& type) {
+UInt8 Element::typeIdFromString(const std::string & type)
+{
     // TODO add other types
-    if (type == "Int32") {
+    if (type == "Int32")
         return ElementTraits<Int32>::TypeId;
-    } else if (type == "Int64") {
+    else if (type == "Int64")
         return ElementTraits<Int64>::TypeId;
-    } else if (type == "Float64") {
+    else if (type == "Float64")
         return ElementTraits<double>::TypeId;
-    } else if (type == "String") {
+    else if (type == "String")
         return ElementTraits<std::string>::TypeId;
-    } else if (type == "Boolean") {
+    else if (type == "Boolean")
         return ElementTraits<bool>::TypeId;
-    }
     throw Poco::NotImplementedException("Cannot get TypeId from type: {}", type);
 }
 
 
-
-BSON::Element::Ptr Element::createElementWithType(const std::string& type, const std::string& name, const std::string& value) {
+BSON::Element::Ptr Element::createElementWithType(const std::string & type, const std::string & name, const std::string & value)
+{
     auto typeId = Element::typeIdFromString(type);
     auto element = Element::fromTypeId(typeId, name);
     element->valueFromString(value);

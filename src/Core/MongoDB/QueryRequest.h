@@ -121,7 +121,6 @@ private:
 };
 
 
-
 // Int32 QueryRequest::getLength() const
 // {
 // 	// TODO add some kind of checks

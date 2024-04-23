@@ -1,9 +1,9 @@
 #include "OpMsgMessage.h"
-#include "Array.h"
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <fmt/format.h>
 #include <Loggers/Loggers.h>
+#include <fmt/format.h>
+#include "Array.h"
 
 namespace DB
 {
@@ -52,7 +52,7 @@ static const std::string keyCursor{"cursor"};
 static const std::string keyFirstBatch{"firstBatch"};
 static const std::string keyNextBatch{"nextBatch"};
 
-OpMsgMessage::OpMsgMessage(const MessageHeader& header_) : RequestMessage(header_)
+OpMsgMessage::OpMsgMessage(const MessageHeader & header_) : RequestMessage(header_)
 {
 }
 
@@ -191,7 +191,8 @@ void OpMsgMessage::clear()
     documents.clear();
 }
 
-void OpMsgMessage::send(WriteBuffer & writer) {
+void OpMsgMessage::send(WriteBuffer & writer)
+{
     Int32 size = getLength();
     setContentLength(size);
     header.write(writer);
@@ -199,13 +200,14 @@ void OpMsgMessage::send(WriteBuffer & writer) {
 }
 
 
-Int32 OpMsgMessage::getLength() {
+Int32 OpMsgMessage::getLength()
+{
     Int32 length = sizeof(flags) + sizeof(PAYLOAD_TYPE_0) + body->getLength();
-    if (!documents.empty()) {
+    if (!documents.empty())
+    {
         length += sizeof(Int32) + commandIdentifier(command_name).length() + sizeof('\0');
-        for (auto & doc : documents) {
+        for (auto & doc : documents)
             length += doc->getLength();
-        }
     }
     return length;
 }
@@ -226,16 +228,16 @@ void OpMsgMessage::writeContent(WriteBuffer & writer)
         Int32 documents_length = 0;
         for (auto & doc : documents)
             documents_length += doc->getLength();
-            //doc->write(wdoc);
+        //doc->write(wdoc);
         //wdoc.flush();
 
         const std::string & identifier = commandIdentifier(command_name);
         const Int32 size = Int32(sizeof(size) + identifier.size() + sizeof('\0') + documents_length);
-         writeChar(PAYLOAD_TYPE_1, writer);
-         writeIntBinary(size, writer);
-         writeNullTerminatedString(identifier, writer);
-         for (auto & doc : documents)
-             BSON::BSONWriter(writer).write(doc);
+        writeChar(PAYLOAD_TYPE_1, writer);
+        writeIntBinary(size, writer);
+        writeNullTerminatedString(identifier, writer);
+        for (auto & doc : documents)
+            BSON::BSONWriter(writer).write(doc);
         /*writer << PAYLOAD_TYPE_1;
         writer << size;
         writer.writeCString(identifier.c_str());*/
@@ -339,7 +341,8 @@ const std::string & commandIdentifier(const std::string & command)
 }
 
 
-std::string OpMsgMessage::toString() const {
+std::string OpMsgMessage::toString() const
+{
     auto res = fmt::format(
         "flags_bits: {}\n"
         "body: {}\n"
@@ -352,14 +355,10 @@ std::string OpMsgMessage::toString() const {
         database_name,
         collection_name,
         command_name,
-        static_cast<Int32>(acknowledged)
-    );
+        static_cast<Int32>(acknowledged));
     res += "documents: ";
-    for (size_t i = 0; i < documents.size(); i++) {
-        res += fmt::format(
-            "[i={}: {}]\n", i, documents[i]->toString()
-        );
-    }
+    for (size_t i = 0; i < documents.size(); i++)
+        res += fmt::format("[i={}: {}]\n", i, documents[i]->toString());
     return res;
 }
 
