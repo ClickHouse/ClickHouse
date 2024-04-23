@@ -5,7 +5,30 @@
 #include "Disks/ObjectStorages/IObjectStorage_fwd.h"
 #include "loadLocalDiskConfig.h"
 
+#include <iostream>
+
 namespace DB {
+
+String dataPath(String path) {
+    if (!path.empty() && path.back() == '/') {
+        path.pop_back();
+    }
+    path += ".data";
+    for (size_t i = 0; i < path.size(); ++i) {
+        if (path[i] == '/') {
+            path[i] = '_';
+        }
+    }
+    return path;
+}
+
+String mergePath(String parent, const String& child) {
+    if (!parent.empty() && parent.back() != '/') {
+        parent += '/';
+    }
+    parent += child;
+    return parent;
+}
 
 namespace ErrorCodes
 {
@@ -55,28 +78,12 @@ std::optional<UInt64> DiskOverlay::getUnreservedSpace() const
 }
 
 bool DiskOverlay::isTracked(const String& path) const {
-    return tracked_metadata->exists(path);
+    return tracked_metadata->exists(dataPath(path));
 }
 
 void DiskOverlay::setTracked(const String& path) {
     auto trans = tracked_metadata->createTransaction();
-    trans->writeInlineDataToFile(path, "");
-    trans->commit();
-}
-
-bool DiskOverlay::isReplaced(const String& path) const {
-    if (metadata->exists(path)) {
-        std::string data = metadata->readInlineDataToString(path);
-        if (!data.empty()) {
-            return data == "r";
-        }
-    }
-    return false;
-}
-
-void DiskOverlay::setReplaced(const String& path) {
-    auto trans = tracked_metadata->createTransaction();
-    trans->writeInlineDataToFile(path, "r");
+    trans->writeInlineDataToFile(dataPath(path), "");
     trans->commit();
 }
 
@@ -108,18 +115,31 @@ size_t DiskOverlay::getFileSize(const String & path) const {
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File doesn't exist in getFileSize");
 }
 
+void DiskOverlay::ensureHaveDirectories(const String& path) {
+    if (!disk_overlay->exists(path)) {
+        ensureHaveDirectories(parentPath(path));
+        disk_overlay->createDirectory(path);
+        if (disk_base->exists(path)) {
+            setTracked(path);
+        }
+    }
+}
+
 void DiskOverlay::createDirectory(const String & path) {
     if (exists(path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create directory: path already exists");
     }
-    disk_overlay->createDirectory(path);
+    if (!exists(parentPath(path))) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create directory: parent path doesn't exist");
+    }
+    ensureHaveDirectories(path);
 }
 
 void DiskOverlay::createDirectories(const String & path) {
     if (exists(path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create directories: path already exists");
     }
-    disk_overlay->createDirectories(path);
+    ensureHaveDirectories(path);
 }
 
 void DiskOverlay::clearDirectory(const String & path) {
@@ -137,10 +157,10 @@ void DiskOverlay::clearDirectory(const String & path) {
 
 // Find the file in the base disk if it exists
 std::optional<String> DiskOverlay::basePath(const String& path) const {
-    if (!metadata->exists(path)) {
+    if (!metadata->exists(dataPath(path))) {
         return {};
     }
-    String res = metadata->readInlineDataToString(path);
+    String res = metadata->readInlineDataToString(dataPath(path));
     if (res == "r") {
         return {};
     }
@@ -151,22 +171,26 @@ void DiskOverlay::moveDirectory(const String & from_path, const String & to_path
     if (!exists(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move directory: from_path doesn't exist");
     }
-    if (exists(to_path)) {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move directory: to_path already exists");
-    }
     if (!isDirectory(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move directory: from_path is not a directory");
     }
-    createDirectory(to_path);
+    if (exists(to_path)) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move directory: to_path already exists");
+    }
+    if (!exists(parentPath(to_path)) || !isDirectory(parentPath(to_path))) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move directory: parent path of to_path doesn't exist or is not a directory");
+    }
+    ensureHaveDirectories(to_path);
 
     std::vector<String> paths;
     listFiles(from_path, paths);
 
     for (const String& path : paths) {
+        String fullfrompath = mergePath(from_path, path), fulltopath = mergePath(to_path, path);
         if (isFile(path)) {
-            moveFile(path, to_path + fileName(path));
+            moveFile(fullfrompath, fulltopath);
         } else {
-            moveDirectory(path, to_path + fileName(path));
+            moveDirectory(fullfrompath, fulltopath);
         }
     }
 
@@ -212,7 +236,7 @@ private:
         if (!done_overlay && !isValid()) {
             done_overlay = true;
         }
-        while (done_overlay && isValid() && tracked_metadata->exists(base_iter->path())) {
+        while (done_overlay && isValid() && tracked_metadata->exists(dataPath(base_iter->path()))) {
             next();
         }
     }
@@ -222,13 +246,14 @@ DirectoryIteratorPtr DiskOverlay::iterateDirectory(const String & path) const {
     return std::make_unique<DiskOverlayDirectoryIterator>(disk_overlay->iterateDirectory(path), disk_base->iterateDirectory(path), tracked_metadata);
 }
 
-// TODO when we create a file on disk_overlay, we need to create the parent directories.
-// We ALSO need to update the trackedness for them
-
 void DiskOverlay::createFile(const String & path) {
     if (exists(path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create file: path already exists");
     }
+    if (!exists(parentPath(path))) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create file: parent path doesn't exist");
+    }
+    ensureHaveDirectories(parentPath(path));
     disk_overlay->createFile(path);
 }
 
@@ -236,40 +261,53 @@ void DiskOverlay::moveFile(const String & from_path, const String & to_path) {
     if (!exists(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move file: from_path doesn't exist");
     }
-    if (exists(to_path)) {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move file: to_path already exists");
-    }
     if (!isFile(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move file: from_path is not a file");
     }
+    if (exists(to_path)) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move file: to_path already exists");
+    }
+    if (!exists(parentPath(to_path))) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move file: parent of to_path doesn't exist");
+    }
+
+    ensureHaveDirectories(parentPath(to_path));
+
     if (disk_overlay->exists(from_path)) {
         // In this case we need to move file in overlay disk and move metadata if there is any
         disk_overlay->moveFile(from_path, to_path);
 
         auto transaction = metadata->createTransaction();
-        if (metadata->exists(from_path)) {
-            String data = metadata->readInlineDataToString(from_path);
-            transaction->writeInlineDataToFile(to_path, data);
-            transaction->unlinkFile(from_path);
+        if (metadata->exists(dataPath(from_path))) {
+            String data = metadata->readInlineDataToString(dataPath(from_path));
+            transaction->writeInlineDataToFile(dataPath(to_path), data);
+            transaction->unlinkFile(dataPath(from_path));
         }
+
         transaction->commit();
     } else {
         // In this case from_path exists on base disk. We want to create an empty file on overlay, set metadata
         // to show that it should be appended to from_path on base disk, and set that from_path is now tracked
         // by metadata
         disk_overlay->createFile(to_path);
+
         auto trans = metadata->createTransaction();
-        trans->writeInlineDataToFile(to_path, from_path);
+        trans->writeInlineDataToFile(dataPath(to_path), from_path);
         trans->commit();
+
         setTracked(from_path);
     }
-    disk_overlay->moveFile(from_path, to_path);
 }
 
 void DiskOverlay::replaceFile(const String & from_path, const String & to_path) {
     if (!exists(from_path) || !isFile(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot replace old file with new: new doesn't exist or is not a file");
     }
+    if (!exists(parentPath(to_path))) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot replace old file with new: parent path of old doesn't exist");
+    }
+    ensureHaveDirectories(parentPath(to_path));
+
     removeFileIfExists(to_path);
     moveFile(from_path, to_path);
 }
@@ -278,11 +316,12 @@ void DiskOverlay::listFiles(const String & path, std::vector<String> & file_name
     std::vector<String> files;
     disk_base->listFiles(path, files);
     for (const String& file : files) {
-        if (!isTracked(file)) {
+        if (!isTracked(mergePath(path, file))) {
             file_names.push_back(file);
         }
     }
-    disk_overlay->listFiles(path, file_names);
+    disk_overlay->listFiles(path, files);
+    file_names.insert(file_names.end(), files.begin(), files.end());
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskOverlay::readFile(
@@ -291,7 +330,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskOverlay::readFile(
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const {
 
-    if (!isReplaced(path)) {
+    if (disk_base->exists(path)) {
         return disk_base->readFile(path, settings, read_hint, file_size);
     }
     return disk_overlay->readFile(path, settings, read_hint, file_size);
@@ -304,14 +343,19 @@ std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
         WriteMode mode,
         const WriteSettings & settings) {
 
+    if (!exists(parentPath(path)) || !isDirectory(parentPath(path))) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't write to file: parent path doesn't exist or is not a folder");
+    }
+    ensureHaveDirectories(parentPath(path));
+
     auto transaction = metadata->createTransaction();
     if (mode == WriteMode::Rewrite) {
         // This means that we don't need to look for this file on disk_base
-        transaction->writeInlineDataToFile(path, "r");
+        transaction->writeInlineDataToFile(dataPath(path), "r");
     } else {
         if (!disk_overlay->exists(path)) {
             // This means that the beginning of the file is on disk_base at the same path
-            transaction->writeInlineDataToFile(path, path);
+            transaction->writeInlineDataToFile(dataPath(path), path);
         }
     }
     if (disk_base->exists(path)) {
@@ -333,8 +377,8 @@ void DiskOverlay::removeFileIfExists(const String & path) {
     disk_overlay->removeFileIfExists(path);
 
     auto transaction = metadata->createTransaction();
-    if (metadata->exists(path)) {
-        transaction->unlinkFile(path);
+    if (metadata->exists(dataPath(path))) {
+        transaction->unlinkFile(dataPath(path));
     } else {
         if (disk_base->exists(path)) {
             setTracked(path); // This will ensure that this file will not appear in listing operations
@@ -344,13 +388,15 @@ void DiskOverlay::removeFileIfExists(const String & path) {
 }
 
 void DiskOverlay::removeDirectory(const String & path) {
-    if (!isDirectoryEmpty(path)) {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove directory as path is not an empty directory");
+    if (!exists(path) || !isDirectoryEmpty(path)) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove directory as path doesn't exist or is not an empty directory");
     }
     if (disk_base->exists(path)) {
         setTracked(path);
     }
-    disk_overlay->removeDirectory(path);
+    if (disk_overlay->exists(path)) {
+        disk_overlay->removeDirectory(path);
+    }
 }
 
 void DiskOverlay::removeRecursive(const String & dirpath) {
@@ -362,10 +408,11 @@ void DiskOverlay::removeRecursive(const String & dirpath) {
     listFiles(dirpath, paths);
 
     for (const String& path : paths) {
-        if (isFile(path)) {
-            removeFile(path);
+        String full_path = mergePath(dirpath, path);
+        if (isFile(full_path)) {
+            removeFile(full_path);
         } else {
-            removeRecursive(path);
+            removeRecursive(full_path);
         }
     }
     removeDirectory(dirpath);
