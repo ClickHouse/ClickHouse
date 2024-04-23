@@ -1008,7 +1008,9 @@ URLPathHierarchy
 USearch
 UUIDNumToString
 UUIDStringToNum
+UUIDToNum
 UUIDs
+UUIDv
 UUid
 Uber
 Uint
@@ -1043,6 +1045,8 @@ Wether
 WikiStat
 WindowView
 Winkler
+WithCounter
+WithFastCounter
 WithNames
 WithNamesAndTypes
 WordNet
