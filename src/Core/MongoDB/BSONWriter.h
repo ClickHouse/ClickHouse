@@ -26,11 +26,7 @@ public:
     }
 
     template <typename T>
-    static Int32 getLength(const T & t)
-    {
-        // default
-        return sizeof(t);
-    }
+    static Int32 getLength(const T & t);
 
 private:
     WriteBuffer & writer;

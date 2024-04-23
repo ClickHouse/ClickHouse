@@ -1,12 +1,13 @@
 #pragma once
 
 #include "Common/ProfileEvents.h"
+#include <Core/MongoDB/OpMsgMessage.h>
 #include <Common/CurrentMetrics.h>
 #include "IO/WriteBuffer.h"
 #include "config.h"
-// #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include "IServer.h"
+#include <Core/MongoDB/MessageWriter.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -24,7 +25,7 @@ class Session;
 class TCPServer;
 
 /** MongoDB wire protocol implementation.
- * For more info see https://www.postgresql.org/docs/current/protocol.html // FIXME
+ * For more info see https://www.mongodb.com/docs/manual/reference/mongodb-wire-protocol
  */
 class MongoDBHandler : public Poco::Net::TCPServerConnection
 {
@@ -34,6 +35,8 @@ public:
     void run() final;
 
     void handleInput();
+
+    void handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB::MessageWriter writer);
 
 private:
     constexpr static const auto handler_name = "MongoDBHandler";
@@ -46,7 +49,6 @@ private:
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
-    // std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
 
 #if USE_SSL
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;

@@ -1,19 +1,22 @@
 #pragma once
 
-#include <string>
-#include <base/types.h>
-#include <Common/BSONParser/Document.h>
+#include "Document.h"
 #include "Message.h"
+#include "RequestMessage.h"
+#include <IO/WriteBuffer.h>
+#include <string>
 
 namespace DB
 {
 namespace MongoDB
 {
 
-class OpMsgMessage : public Message
+class OpMsgMessage : public RequestMessage
 /// This class represents a request/response (OP_MSG) to send requests and receive responses to/from MongoDB.
 {
 public:
+    using Ptr = Poco::SharedPtr<OpMsgMessage>;
+
     // Constants for most often used MongoDB commands that can be sent using OP_MSG
     // For complete list see: https://www.mongodb.com/docs/manual/reference/command/
 
@@ -64,10 +67,7 @@ public:
         /// Client is prepared for multiple replies (using the moreToCome bit) to this request
     };
 
-    OpMsgMessage();
-    /// Creates an OpMsgMessage for response.
-
-    OpMsgMessage(const std::string & databaseName, const std::string & collectionName, UInt32 flags = MSG_FLAGS_DEFAULT);
+    OpMsgMessage(const MessageHeader& header_);
     /// Creates an OpMsgMessage for requests.
 
     ~OpMsgMessage() override;
@@ -79,7 +79,7 @@ public:
     void setCommandName(const std::string & command);
     /// Sets the command name and clears the command document
 
-    void setCursor(Poco::Int64 cursorID, Poco::Int32 batchSize = -1);
+    void setCursor(Int64 cursorID, Int32 batchSize = -1);
     /// Sets the command "getMore" for the cursor id with batch size (if it is not negative).
 
     const std::string & getCommandName() const;
@@ -94,16 +94,18 @@ public:
 
     UInt32 getFlags() const;
 
-    Document & getBody();
+    BSON::Document::Ptr getBody();
     /// Access to body document.
     /// Additional query arguments shall be added after setting the command name.
 
-    const Document & getBody() const;
+    const BSON::Document::Ptr getBody() const;
 
-    Document::Vector & getDocuments();
+    void setBody(BSON::Document::Ptr);
+
+    BSON::Document::Vector & getDocuments();
     /// Documents prepared for request or retrieved in response.
 
-    const Document::Vector & getDocuments() const;
+    const BSON::Document::Vector & getDocuments() const;
     /// Documents prepared for request or retrieved in response.
 
     bool responseOk() const;
@@ -112,11 +114,20 @@ public:
     void clear();
     /// Clears the message.
 
-    void send(std::ostream & ostr);
+    Int32 getLength();
+    /// Get length of bytes when message is written
+
+    void writeContent(WriteBuffer & writer);
+    /// Writes content of OpMsg to stream
+
+    void send(WriteBuffer & writer);
     /// Writes the request to stream.
 
-    void read(std::istream & istr) override;
+    void read(ReadBuffer & reader) override;
     /// Reads the response from the stream.
+
+    std::string toString() const override;
+    /// Returns message in text format
 
 private:
     enum PayloadType : UInt8
@@ -131,10 +142,14 @@ private:
     std::string command_name;
     bool acknowledged{true};
 
-    Document body;
-    Document::Vector documents;
+    BSON::Document::Ptr body;
+    BSON::Document::Vector documents;
 };
 
+
+inline void OpMsgMessage::setBody(BSON::Document::Ptr body_) {
+    body = body_;
+}
 
 }
 } // namespace DB::MongoDB

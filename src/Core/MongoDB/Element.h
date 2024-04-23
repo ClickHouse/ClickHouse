@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/DateTimeFormatter.h>
+#include <Poco/DateTimeParser.h>
 #include <Poco/NumberFormatter.h>
 #include <Poco/SharedPtr.h>
 #include <Common/logger_useful.h>
@@ -39,11 +40,16 @@ public:
     virtual std::string toString() const = 0;
     /// Returns a string representation of the element.
 
-    virtual int type() const = 0;
+    virtual int getType() const = 0;
     /// Returns the MongoDB type of the element.
 
+    static Element::Ptr fromTypeId(UInt8 type, const std::string& name);
+    static UInt8 typeIdFromString(const std::string& type);
+    static Element::Ptr createElementWithType(const std::string& type, const std::string& name, const std::string& value);
+    
     virtual void read(ReadBuffer & reader) = 0;
     virtual void write(WriteBuffer & writer) const = 0;
+    virtual void valueFromString(const std::string& string) = 0;
 
     virtual Int32 getLength() const = 0;
 
@@ -51,14 +57,11 @@ protected:
     Key name;
 };
 
-Element::~Element() = default;
-
 
 inline const Element::Key & Element::getName() const
 {
     return this->name;
 }
-
 
 using ElementSet = std::list<Element::Ptr>;
 
@@ -66,6 +69,7 @@ using ElementSet = std::list<Element::Ptr>;
 template <typename T>
 struct ElementTraits
 {
+    static T fromString(const std::string& str);
 };
 
 template <typename T>
@@ -82,7 +86,7 @@ public:
 
     std::string toString() const override { return ElementTraits<T>::toString(value); }
 
-    int type() const override { return ElementTraits<T>::TypeId; }
+    int getType() const override { return ElementTraits<T>::TypeId; }
 
     void read(ReadBuffer & reader) override { value = BSONReader(reader).read<T>(); }
 
@@ -93,9 +97,13 @@ public:
         return length + BSONWriter::getLength<T>(value);
     }
 
+    void valueFromString(const std::string& str) override{
+        value = ElementTraits<T>::fromString(str);
+    }
+
     void write(WriteBuffer & writer) const override
     {
-        writer.write(static_cast<unsigned char>(this->type()));
+        writer.write(static_cast<unsigned char>(this->getType()));
         writeNullTerminatedString(this->name, writer);
         BSONWriter(writer).write<T>(value);
     }
@@ -104,37 +112,7 @@ private:
     T value;
 };
 
-// BSON Floating point
-// spec: double
-template <>
-struct ElementTraits<double>
-{
-    enum
-    {
-        TypeId = 0x01
-    };
 
-    static std::string toString(const double & value) { return Poco::NumberFormatter::format(value); }
-};
-
-template <>
-double BSONReader::read<double>()
-{
-    double value;
-    readFloatBinary(value, reader);
-    return value;
-}
-
-
-template <>
-void BSONWriter::write<double>(const double & t)
-{
-    writeFloatBinary(t, writer);
-}
-
-// BSON UTF-8 string
-// spec: int32 (byte*) "\x00"
-// int32 is the number bytes in byte* + 1 (for trailing "\x00")
 template <>
 struct ElementTraits<std::string>
 {
@@ -186,7 +164,55 @@ struct ElementTraits<std::string>
         oss << '"';
         return oss.str();
     }
+
+    static std::string fromString(const std::string& str) {
+        return str;
+    }
 };
+
+
+// BSON Floating point
+// spec: double
+template <>
+struct ElementTraits<double>
+{
+    enum
+    {
+        TypeId = 0x01
+    };
+
+    static std::string toString(const double & value) { return Poco::NumberFormatter::format(value); }
+
+
+    static double fromString(const std::string& str) {
+        return std::stod(str);
+    }
+
+};
+template <>
+inline double BSONReader::read<double>()
+{
+    double value;
+    readFloatBinary(value, reader);
+    return value;
+}
+
+template <>
+inline void BSONWriter::write<double>(const double & t)
+{
+    writeFloatBinary(t, writer);
+}
+
+template <>
+inline Int32 BSONWriter::getLength<double>(const double & from) {
+    return static_cast<Int32>(sizeof(from));
+}
+
+
+// BSON UTF-8 string
+// spec: int32 (byte*) "\x00"
+// int32 is the number bytes in byte* + 1 (for trailing "\x00")
+
 
 template <>
 inline std::string BSONReader::read<std::string>()
@@ -207,7 +233,7 @@ inline void BSONWriter::write<std::string>(const std::string & t)
 }
 
 template <>
-Int32 BSONWriter::getLength<std::string>(const std::string & t)
+inline Int32 BSONWriter::getLength<std::string>(const std::string & t)
 {
     return static_cast<Int32>(sizeof(Int32) + t.length() + sizeof('\0'));
 }
@@ -224,6 +250,14 @@ struct ElementTraits<bool>
     };
 
     static std::string toString(const bool & value) { return value ? "true" : "false"; }
+
+    static bool fromString(const std::string& str) {
+        if (str == "True") return 1;
+        else if (str == "False") return 0;
+        else {
+            throw std::runtime_error(fmt::format("Cannot parse boolean from {}", str));
+        }
+    }
 };
 
 
@@ -245,6 +279,11 @@ inline void BSONWriter::write<bool>(const bool & t)
     writer.write(b);
 }
 
+template <>
+inline Int32 BSONWriter::getLength<bool>(const bool & from) {
+    return static_cast<Int32>(sizeof(from));
+}
+
 // BSON 32-bit integer
 // spec: int32
 template <>
@@ -257,6 +296,10 @@ struct ElementTraits<Int32>
 
 
     static std::string toString(const Int32 & value) { return Poco::NumberFormatter::format(value); }
+
+    static Int32 fromString(const std::string& str) {
+        return std::stoi(str);
+    }
 };
 
 template <>
@@ -273,6 +316,11 @@ inline void BSONWriter::write<Int32>(const Int32 & t)
     writeIntBinary(t, writer);
 }
 
+template <>
+inline Int32 BSONWriter::getLength<Int32>(const Int32 & from) {
+    return static_cast<Int32>(sizeof(from));
+}
+
 // BSON 64-bit integer
 // spec: int64
 template <>
@@ -284,6 +332,10 @@ struct ElementTraits<Int64>
     };
 
     static std::string toString(const Int64 & value) { return Poco::NumberFormatter::format(value); }
+
+    static Int64 fromString(const std::string& str) {
+        return std::stoll(str);
+    }
 };
 
 template <>
@@ -298,6 +350,12 @@ template <>
 inline void BSONWriter::write<Int64>(const Int64 & t)
 {
     writeIntBinary(t, writer);
+}
+
+
+template <>
+inline Int32 BSONWriter::getLength<Int64>(const Int64 & from) {
+    return static_cast<Int32>(sizeof(from));
 }
 
 
@@ -319,6 +377,11 @@ struct ElementTraits<Poco::Timestamp>
         result.append(1, '"');
         return result;
     }
+
+    static Poco::Timestamp fromString(const std::string& str) {
+        int diff;
+        return Poco::DateTimeParser::parse(str, diff).timestamp();
+    }
 };
 
 
@@ -338,6 +401,13 @@ inline void BSONWriter::write<Poco::Timestamp>(const Poco::Timestamp & t)
 {
     writeIntBinary(t.epochMicroseconds() / 1000, writer);
 }
+
+template <>
+inline Int32 BSONWriter::getLength<Poco::Timestamp>(const Poco::Timestamp & t) {
+    return static_cast<Int32>(sizeof(t.epochMicroseconds() / 1000));
+}
+
+
 
 
 }

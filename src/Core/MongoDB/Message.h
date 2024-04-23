@@ -38,9 +38,6 @@ protected:
 };
 
 
-Message::~Message()
-{
-}
 //
 // inlines
 //
@@ -60,11 +57,6 @@ inline void Message::setContentLength(Int32 length)
     poco_assert(length > 0);
     header.setContentLength(length);
 }
-
-Message::Message(MessageHeader::OpCode opcode) : header(opcode)
-{
-}
-
 
 }
 } // namespace DB::MongoDB

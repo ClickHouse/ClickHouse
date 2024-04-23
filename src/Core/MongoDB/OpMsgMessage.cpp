@@ -1,10 +1,11 @@
 #include "OpMsgMessage.h"
-#include "Poco/Logger.h"
-#include "Poco/MongoDB/Array.h"
-#include "Poco/StreamCopier.h"
-#include "MessageHeader.h"
+#include "Array.h"
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <fmt/format.h>
+#include <Loggers/Loggers.h>
 
-namespace Poco
+namespace DB
 {
 namespace MongoDB
 {
@@ -51,93 +52,86 @@ static const std::string keyCursor{"cursor"};
 static const std::string keyFirstBatch{"firstBatch"};
 static const std::string keyNextBatch{"nextBatch"};
 
-
-OpMsgMessage::OpMsgMessage() : Message(MessageHeader::OP_MSG)
-{
-}
-
-
-OpMsgMessage::OpMsgMessage(const std::string & databaseName, const std::string & collectionName, UInt32 flags)
-    : Message(MessageHeader::OP_MSG), _databaseName(databaseName), _collectionName(collectionName), _flags(flags)
+OpMsgMessage::OpMsgMessage(const MessageHeader& header_) : RequestMessage(header_)
 {
 }
 
 
 OpMsgMessage::~OpMsgMessage() = default;
 
-const std::string & OpMsgMessage::databaseName() const
+const std::string & OpMsgMessage::getDatabaseName() const
 {
-    return _databaseName;
+    return database_name;
 }
 
 
-const std::string & OpMsgMessage::collectionName() const
+const std::string & OpMsgMessage::getCollectionName() const
 {
-    return _collectionName;
+    return collection_name;
 }
 
 
 void OpMsgMessage::setCommandName(const std::string & command)
 {
-    _commandName = command;
-    _body.clear();
+    command_name = command;
+    body->clear();
 
     // IMPORTANT: Command name must be first
-    if (_collectionName.empty())
+    if (collection_name.empty())
     {
         // Collection is not specified. It is assumed that this particular command does
         // not need it.
-        _body.add(_commandName, Int32(1));
+        body->add(command_name, Int32(1));
     }
     else
     {
-        _body.add(_commandName, _collectionName);
+        body->add(command_name, collection_name);
     }
-    _body.add("$db", _databaseName);
+    body->add("$db", database_name);
 }
 
 
-void OpMsgMessage::setCursor(Poco::Int64 cursorID, Poco::Int32 batchSize)
+void OpMsgMessage::setCursor(Int64 cursorID, Int32 batchSize)
 {
-    _commandName = OpMsgMessage::CMD_GET_MORE;
-    _body.clear();
+    command_name = OpMsgMessage::CMD_GET_MORE;
+    body->clear();
 
     // IMPORTANT: Command name must be first
-    _body.add(_commandName, cursorID);
-    _body.add("$db", _databaseName);
-    _body.add("collection", _collectionName);
+    body->add(command_name, cursorID);
+    body->add("$db", database_name);
+    body->add("collection", collection_name);
     if (batchSize > 0)
-        _body.add("batchSize", batchSize);
+        body->add("batchSize", batchSize);
 }
 
 
-const std::string & OpMsgMessage::commandName() const
+const std::string & OpMsgMessage::getCommandName() const
 {
-    return _commandName;
+    return command_name;
 }
 
 
 void OpMsgMessage::setAcknowledgedRequest(bool ack)
 {
-    const auto & id = commandIdentifier(_commandName);
+    const auto & id = commandIdentifier(command_name);
     if (id.empty())
         return;
 
-    _acknowledged = ack;
+    acknowledged = ack;
 
-    auto writeConcern = _body.get<Document::Ptr>("writeConcern", nullptr);
+    auto writeConcern = body->get<BSON::Document::Ptr>("writeConcern", nullptr);
     if (writeConcern)
         writeConcern->remove("w");
 
     if (ack)
     {
-        _flags = _flags & (~MSG_MORE_TO_COME);
+        flags = flags & (~MSG_MORE_TO_COME);
     }
     else
     {
-        _flags = _flags | MSG_MORE_TO_COME;
+        flags = flags | MSG_MORE_TO_COME;
         if (!writeConcern)
-            _body.addNewDocument("writeConcern").add("w", 0);
+            body->addNewDocument("writeConcern").add("w", 0);
         else
             writeConcern->add("w", 0);
     }
@@ -146,202 +140,178 @@ void OpMsgMessage::setAcknowledgedRequest(bool ack)
 
 bool OpMsgMessage::acknowledgedRequest() const
 {
-    return _acknowledged;
+    return acknowledged;
 }
 
 
-UInt32 OpMsgMessage::flags() const
+UInt32 OpMsgMessage::getFlags() const
 {
-    return _flags;
+    return flags;
 }
 
 
-Document & OpMsgMessage::body()
+BSON::Document::Ptr OpMsgMessage::getBody()
 {
-    return _body;
+    return body;
 }
 
 
-const Document & OpMsgMessage::body() const
+const BSON::Document::Ptr OpMsgMessage::getBody() const
 {
-    return _body;
+    return body;
 }
 
 
-Document::Vector & OpMsgMessage::documents()
+BSON::Document::Vector & OpMsgMessage::getDocuments()
 {
-    return _documents;
+    return documents;
 }
 
 
-const Document::Vector & OpMsgMessage::documents() const
+const BSON::Document::Vector & OpMsgMessage::getDocuments() const
 {
-    return _documents;
+    return documents;
 }
 
 
 bool OpMsgMessage::responseOk() const
 {
-    Poco::Int64 ok{false};
-    if (_body.exists("ok"))
-        ok = _body.getInteger("ok");
+    Int64 ok{false};
+    if (body->exists("ok"))
+        ok = body->getInteger("ok");
     return (ok != 0);
 }
 
 
 void OpMsgMessage::clear()
 {
-    _flags = MSG_FLAGS_DEFAULT;
-    _commandName.clear();
-    _body.clear();
-    _documents.clear();
+    flags = MSG_FLAGS_DEFAULT;
+    command_name.clear();
+    body->clear();
+    documents.clear();
+}
+
+void OpMsgMessage::send(WriteBuffer & writer) {
+    Int32 size = getLength();
+    setContentLength(size);
+    header.write(writer);
+    writeContent(writer);
 }
 
 
-void OpMsgMessage::send(std::ostream & ostr)
+Int32 OpMsgMessage::getLength() {
+    Int32 length = sizeof(flags) + sizeof(PAYLOAD_TYPE_0) + body->getLength();
+    if (!documents.empty()) {
+        length += sizeof(Int32) + commandIdentifier(command_name).length() + sizeof('\0');
+        for (auto & doc : documents) {
+            length += doc->getLength();
+        }
+    }
+    return length;
+}
+
+void OpMsgMessage::writeContent(WriteBuffer & writer)
 {
-    BinaryWriter socketWriter(ostr, BinaryWriter::LITTLE_ENDIAN_BYTE_ORDER);
+    writeIntBinary(flags, writer);
+    // writer << _flags;
 
-    // Serialise the body
-    std::stringstream ss;
-    BinaryWriter writer(ss, BinaryWriter::LITTLE_ENDIAN_BYTE_ORDER);
-    writer << _flags;
+    writeChar(PAYLOAD_TYPE_0, writer);
+    // writer << PAYLOAD_TYPE_0
+    // _body.write(writer);
+    BSON::BSONWriter(writer).write(body);
 
-    writer << PAYLOAD_TYPE_0;
-    _body.write(writer);
-
-    if (!_documents.empty())
+    if (!documents.empty())
     {
         // Serialise attached documents
+        Int32 documents_length = 0;
+        for (auto & doc : documents)
+            documents_length += doc->getLength();
+            //doc->write(wdoc);
+        //wdoc.flush();
 
-        std::stringstream ssdoc;
-        BinaryWriter wdoc(ssdoc, BinaryWriter::LITTLE_ENDIAN_BYTE_ORDER);
-        for (auto & doc : _documents)
-            doc->write(wdoc);
-        wdoc.flush();
-
-        const std::string & identifier = commandIdentifier(_commandName);
-        const Poco::Int32 size = static_cast<Poco::Int32>(sizeof(size) + identifier.size() + 1 + ssdoc.tellp());
-        writer << PAYLOAD_TYPE_1;
+        const std::string & identifier = commandIdentifier(command_name);
+        const Int32 size = Int32(sizeof(size) + identifier.size() + sizeof('\0') + documents_length);
+         writeChar(PAYLOAD_TYPE_1, writer);
+         writeIntBinary(size, writer);
+         writeNullTerminatedString(identifier, writer);
+         for (auto & doc : documents)
+             BSON::BSONWriter(writer).write(doc);
+        /*writer << PAYLOAD_TYPE_1;
         writer << size;
-        writer.writeCString(identifier.c_str());
-        StreamCopier::copyStream(ssdoc, ss);
+        writer.writeCString(identifier.c_str());*/
     }
-    writer.flush();
-
-#if POCO_MONGODB_DUMP
-    const std::string section = ss.str();
-    std::string dump;
-    Logger::formatDump(dump, section.data(), section.length());
-    std::cout << dump << std::endl;
-#endif
-
-    messageLength(static_cast<Poco::Int32>(ss.tellp()));
-
-    _header.write(socketWriter);
-    StreamCopier::copyStream(ss, ostr);
-
-    ostr.flush();
 }
 
 
-void OpMsgMessage::read(std::istream & istr)
+void OpMsgMessage::read(ReadBuffer & reader)
 {
-    std::string message;
-    {
-        BinaryReader reader(istr, BinaryReader::LITTLE_ENDIAN_BYTE_ORDER);
-        _header.read(reader);
+    LoggerPtr log = getLogger("OpMsgMessage::read");
+    Int32 remaining_size = header.getContentLength();
+    LOG_DEBUG(log, "remaining_size: {}", remaining_size);
+    UInt8 payload_type{0xFF};
 
-        poco_assert_dbg(_header.opCode() == _header.OP_MSG);
+    readIntBinary(flags, reader);
+    LOG_DEBUG(log, "flags: {}", flags);
+    // reader >> _flags;
+    // reader >> payloadType;
+    readIntBinary(payload_type, reader);
+    LOG_DEBUG(log, "payload_type: {}", static_cast<Int32>(payload_type));
+    assert(payload_type == PAYLOAD_TYPE_0);
+    body = BSON::BSONReader(reader).read<BSON::Document::Ptr>();
+    LOG_DEBUG(log, "body: {}", body->toString());
+    // body.read(reader);
 
-        const std::streamsize remainingSize{_header.getMessageLength() - _header.MSG_HEADER_SIZE};
-        message.reserve(remainingSize);
-
-#if POCO_MONGODB_DUMP
-        std::cout << "Message hdr: " << _header.getMessageLength() << " " << remainingSize << " " << _header.opCode() << " "
-                  << _header.getRequestID() << " " << _header.responseTo() << std::endl;
-#endif
-
-        reader.readRaw(remainingSize, message);
-
-#if POCO_MONGODB_DUMP
-        std::string dump;
-        Logger::formatDump(dump, message.data(), message.length());
-        std::cout << dump << std::endl;
-#endif
-    }
-    // Read complete message and then interpret it.
-
-    std::istringstream msgss(message);
-    BinaryReader reader(msgss, BinaryReader::LITTLE_ENDIAN_BYTE_ORDER);
-
-    Poco::UInt8 payloadType{0xFF};
-
-    reader >> _flags;
-    reader >> payloadType;
-    poco_assert_dbg(payloadType == PAYLOAD_TYPE_0);
-
-    _body.read(reader);
-
-    // Read next sections from the buffer
-    while (msgss.good())
+    remaining_size -= sizeof(flags) + sizeof(payload_type) + body->getLength(); // read and write of the same size ?
+    LOG_DEBUG(log, "remaining size {}", remaining_size);
+    while (remaining_size > 0)
     {
         // NOTE: Not tested yet with database, because it returns everything in the body.
         // Does MongoDB ever return documents as Payload type 1?
-        reader >> payloadType;
-        if (!msgss.good())
+        readIntBinary(payload_type, reader);
+        LOG_DEBUG(log, "payload_type: {}", static_cast<Int32>(payload_type));
+        remaining_size -= sizeof(payload_type);
+        // reader >> payload_type;
+        if (remaining_size == 0)
             break;
-        poco_assert_dbg(payloadType == PAYLOAD_TYPE_1);
-#if POCO_MONGODB_DUMP
-        std::cout << "section payload: " << payloadType << std::endl;
-#endif
+        LOG_DEBUG(log, "Has Kind1 body");
+        assert(payload_type == PAYLOAD_TYPE_1);
 
-        Poco::Int32 sectionSize{0};
-        reader >> sectionSize;
-        poco_assert_dbg(sectionSize > 0);
-
-#if POCO_MONGODB_DUMP
-        std::cout << "section size: " << sectionSize << std::endl;
-#endif
-        std::streamoff offset = sectionSize - sizeof(sectionSize);
-        std::streampos endOfSection = msgss.tellg() + offset;
-
-        std::string identifier;
-        reader.readCString(identifier);
-#if POCO_MONGODB_DUMP
-        std::cout << "section identifier: " << identifier << std::endl;
-#endif
+        Int32 section_size{0};
+        readIntBinary(section_size, reader);
+        remaining_size -= section_size;
+        LOG_DEBUG(log, "sections_size: {}", section_size);
+        // reader >> sectionSize;
+        assert(section_size > 0);
+        readNullTerminated(command_name, reader);
+        LOG_DEBUG(log, "command_name: {}", command_name);
+        //reader.readCString(identifier);
 
         // Loop to read documents from this section.
-        while (msgss.tellg() < endOfSection)
+        while (section_size > 0)
         {
-#if POCO_MONGODB_DUMP
-            std::cout << "section doc: " << msgss.tellg() << " " << endOfSection << std::endl;
-#endif
-            Document::Ptr doc = new Document();
-            doc->read(reader);
-            _documents.push_back(doc);
-            if (msgss.tellg() < 0)
-                break;
+            BSON::Document::Ptr doc = BSON::BSONReader(reader).read<BSON::Document::Ptr>();
+            LOG_DEBUG(log, "new doc: {}", doc->toString());
+            documents.push_back(doc);
+            section_size -= doc->getLength();
         }
     }
 
     // Extract documents from the cursor batch if they are there.
-    MongoDB::Array::Ptr batch;
-    auto curDoc = _body.get<MongoDB::Document::Ptr>(keyCursor, nullptr);
+    BSON::Array::Ptr batch;
+    auto curDoc = body->get<BSON::Document::Ptr>(keyCursor, nullptr);
     if (curDoc)
     {
-        batch = curDoc->get<MongoDB::Array::Ptr>(keyFirstBatch, nullptr);
+        batch = curDoc->get<BSON::Array::Ptr>(keyFirstBatch, nullptr);
         if (!batch)
-            batch = curDoc->get<MongoDB::Array::Ptr>(keyNextBatch, nullptr);
+            batch = curDoc->get<BSON::Array::Ptr>(keyNextBatch, nullptr);
     }
     if (batch)
     {
-        for (std::size_t i = 0; i < batch->size(); i++)
+        for (size_t i = 0; i < batch->size(); i++)
         {
-            const auto & d = batch->get<MongoDB::Document::Ptr>(i, nullptr);
+            const auto & d = batch->get<BSON::Document::Ptr>(i, nullptr);
             if (d)
-                _documents.push_back(d);
+                documents.push_back(d);
         }
     }
 }
@@ -368,6 +338,30 @@ const std::string & commandIdentifier(const std::string & command)
     return emptyIdentifier;
 }
 
+
+std::string OpMsgMessage::toString() const {
+    auto res = fmt::format(
+        "flags_bits: {}\n"
+        "body: {}\n"
+        "database_name: {}\n"
+        "collection_name: {}\n"
+        "command_name: {}\n"
+        "acknowledged: {}\n",
+        static_cast<Int32>(flags),
+        body->toString(),
+        database_name,
+        collection_name,
+        command_name,
+        static_cast<Int32>(acknowledged)
+    );
+    res += "documents: ";
+    for (size_t i = 0; i < documents.size(); i++) {
+        res += fmt::format(
+            "[i={}: {}]\n", i, documents[i]->toString()
+        );
+    }
+    return res;
+}
 
 }
 } // namespace Poco::MongoDB

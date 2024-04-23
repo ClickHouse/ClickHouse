@@ -45,6 +45,8 @@ public:
     ///
     /// The active document is returned to allow chaining of the add methods.
 
+    Document & addElements(const std::vector<Element::Ptr> & elements);
+
     template <typename T>
     Document & add(const Key & name, T value)
     /// Creates an element with the given name and value and
@@ -83,7 +85,7 @@ public:
     void clear();
     /// Removes all elements from the document.
 
-    void elementNames(Keys & keys) const;
+    Keys elementNames() const;
     /// Puts all element names into std::vector.
 
     bool empty() const;
@@ -106,11 +108,11 @@ public:
         }
         else
         {
-            if (ElementTraits<T>::TypeId == element->type())
+            if (ElementTraits<T>::TypeId == element->getType())
             {
                 ConcreteElement<T> * concrete = dynamic_cast<ConcreteElement<T> *>(element.get());
-                if (concrete != 0)
-                    return concrete->value();
+                if (concrete != nullptr)
+                    return concrete->getValue();
             }
             throw Poco::BadCastException("Invalid type mismatch!");
         }
@@ -126,19 +128,29 @@ public:
         if (element.isNull())
             return def;
 
-        if (ElementTraits<T>::TypeId == element->type())
+        if (ElementTraits<T>::TypeId == element->getType())
         {
             ConcreteElement<T> * concrete = dynamic_cast<ConcreteElement<T> *>(element.get());
-            if (concrete != 0)
-                return concrete->value();
+            if (concrete != nullptr)
+                return concrete->getValue();
         }
 
         return def;
     }
 
-    Element::Ptr get(const Key & name) const;
+    const Element::Ptr get(const Key & name) const;
     /// Returns the element with the given name.
     /// An empty element will be returned when the element is not found.
+
+    template <typename T>
+    T takeValue(const Key & name) {
+        Element::Ptr element = take(name);
+        auto casted = element.cast<ConcreteElement<T>>();
+        return casted->getValue();
+    }
+    /// Returns Element and removes it from document
+
+    Element::Ptr take(const Key & name);
 
     Int64 getInteger(const Key & name) const;
     /// Returns an integer. Useful when MongoDB returns Int32, Int64
@@ -157,7 +169,7 @@ public:
         if (element.isNull())
             return false;
 
-        return ElementTraits<T>::TypeId == element->type();
+        return ElementTraits<T>::TypeId == element->getType();
     }
 
     Int32 read(ReadBuffer & reader);
@@ -183,7 +195,6 @@ protected:
     ElementSet elements;
 };
 
-Document::~Document() = default;
 
 //
 // inlines
@@ -191,6 +202,13 @@ Document::~Document() = default;
 inline Document & Document::addElement(Element::Ptr element)
 {
     elements.push_back(element);
+    return *this;
+}
+
+inline Document & Document::addElements(const std::vector<Element::Ptr> & elements_) {
+    for (const auto& element : elements_) {
+        elements.push_back(element);
+    }
     return *this;
 }
 
@@ -215,10 +233,12 @@ inline bool Document::empty() const
 }
 
 
-inline void Document::elementNames(Document::Keys & keys) const
+inline Document::Keys Document::elementNames() const
 {
+    Keys names;
     for (const auto & element : elements)
-        keys.push_back(element->getName());
+        names.push_back(element->getName());
+    return names;
 }
 
 
@@ -233,7 +253,6 @@ inline bool Document::remove(const Document::Key & name)
     auto it = std::find_if(elements.begin(), elements.end(), ElementFindByName(name));
     if (it == elements.end())
         return false;
-
     elements.erase(it);
     return true;
 }
@@ -245,31 +264,6 @@ inline std::size_t Document::size() const
 }
 
 
-void Document::write(WriteBuffer & writer) const
-{
-    if (elements.empty())
-    {
-        Int32 magic = sizeof(Int32) + sizeof('\0');
-        writeIntBinary(magic, writer);
-        writer.write('\0');
-        return;
-    }
-    Int32 doc_size = this->getLength();
-    writeIntBinary(doc_size, writer);
-    for (const auto & element : elements)
-        element->write(writer);
-    writer.write('\0');
-}
-
-Int32 Document::getLength() const
-{
-    if (elements.empty())
-        return sizeof(Int32) + sizeof('\0');
-    Int32 length = sizeof(Int32);
-    for (const auto & element : elements)
-        length += element->getLength();
-    return length + sizeof('\0');
-}
 
 
 // BSON Embedded Document
@@ -283,6 +277,11 @@ struct ElementTraits<Document::Ptr>
     };
 
     static std::string toString(const Document::Ptr & value) { return value.isNull() ? "null" : value->toString(); }
+
+    static Document::Ptr fromString(const std::string& str) {
+        throw Poco::NotImplementedException("Document from string is not implemented, str: {}", str);
+        return nullptr;
+    }
 };
 
 
@@ -307,72 +306,22 @@ inline Int32 BSONWriter::getLength<Document::Ptr>(const Document::Ptr & t)
     return t->getLength();
 }
 
-Element::Ptr Document::get(const Document::Key & name) const
+template <>
+inline void BSONWriter::write<Document::Vector>(const Document::Vector & t)
 {
-    Element::Ptr element;
-
-    ElementSet::const_iterator it = std::find_if(elements.begin(), elements.end(), ElementFindByName(name));
-    if (it != elements.end())
-        return *it;
-
-    return element;
+    for (const auto& element : t) {
+        element->write(writer);
+    }
 }
 
-
-Int64 Document::getInteger(const Document::Key & name) const
+template <>
+inline Int32 BSONWriter::getLength<Document::Vector>(const Document::Vector & t)
 {
-    Element::Ptr element = get(name);
-    if (element.isNull())
-        throw Poco::NotFoundException(name);
-
-    if (ElementTraits<double>::TypeId == element->type())
-    {
-        ConcreteElement<double> * concrete = dynamic_cast<ConcreteElement<double> *>(element.get());
-        if (concrete)
-            return static_cast<Int64>(concrete->getValue());
+    Int32 length = 0;
+    for (const auto& element : t) {
+        length += element->getLength();
     }
-    else if (ElementTraits<Int32>::TypeId == element->type())
-    {
-        ConcreteElement<Int32> * concrete = dynamic_cast<ConcreteElement<Int32> *>(element.get());
-        if (concrete)
-            return concrete->getValue();
-    }
-    else if (ElementTraits<Int64>::TypeId == element->type())
-    {
-        ConcreteElement<Int64> * concrete = dynamic_cast<ConcreteElement<Int64> *>(element.get());
-        if (concrete)
-            return concrete->getValue();
-    }
-    throw Poco::BadCastException("Invalid type mismatch!");
-}
-
-
-std::string Document::toString() const
-{
-    std::ostringstream oss;
-    oss << '{';
-    for (ElementSet::const_iterator it = elements.begin(); it != elements.end(); ++it)
-    {
-        if (it != elements.begin())
-            oss << ',';
-
-        oss << '"' << (*it)->getName() << '"';
-
-        oss << (*it)->toString();
-    }
-    oss << '}';
-    return oss.str();
-}
-
-Document::Document(Document && other) noexcept
-{
-    this->elements = other.elements;
-}
-
-Document & Document::operator=(Document && other) noexcept
-{
-    swap(this->elements, other.elements);
-    return *this;
+    return length;
 }
 
 

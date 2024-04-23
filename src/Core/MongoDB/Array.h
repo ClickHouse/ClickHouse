@@ -24,6 +24,7 @@ public:
     // Document template functions available for backward compatibility
     using Document::add;
     using Document::get;
+    using Document::size;
 
     template <typename T>
     Document & add(T value)
@@ -75,6 +76,10 @@ public:
         return Document::isType<T>(Poco::NumberFormatter::format(pos));
     }
 
+    std::size_t size() const {
+        return Document::size();
+    }
+
     std::string toString() const override;
     /// Returns a string representation of the Array.
 
@@ -94,6 +99,11 @@ struct ElementTraits<Array::Ptr>
     };
 
     static std::string toString(const Array::Ptr & value) { return value.isNull() ? "null" : value->toString(); }
+
+    static Array::Ptr fromString(const std::string& str) {
+        throw Poco::NotImplementedException("Array from string is not implemented, str: {}", str);
+        return nullptr;
+    }
 };
 
 
@@ -117,35 +127,5 @@ inline Int32 BSONWriter::getLength<Array::Ptr>(const Array::Ptr & t)
 {
     return t->getLength();
 }
-
-Array::Array() = default;
-
-
-Array::~Array()
-{
-}
-
-
-Element::Ptr Array::get(std::size_t pos) const
-{
-    std::string name = Poco::NumberFormatter::format(pos);
-    return Document::get(name);
-}
-
-
-std::string Array::toString() const
-{
-    std::ostringstream oss;
-    oss << "[";
-    for (ElementSet::const_iterator it = elements.begin(); it != elements.end(); ++it)
-    {
-        if (it != elements.begin())
-            oss << ",";
-        oss << (*it)->toString();
-    }
-    oss << "]";
-    return oss.str();
-}
-
 }
 } // namespace DB::BSON

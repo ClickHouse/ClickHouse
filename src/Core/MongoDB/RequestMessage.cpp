@@ -7,6 +7,9 @@ namespace DB
 namespace MongoDB
 {
 
+RequestMessage::~RequestMessage()
+{
+}
 
 }
 } // namespace DB::MongoDB

@@ -1,9 +1,10 @@
 #include "MongoDBHandler.h"
-#include <Core/MongoDB/Commands/MessageHandler.h>
 #include <Core/MongoDB/Message.h>
 #include <Core/MongoDB/MessageHeader.h>
 #include <Core/MongoDB/MessageReader.h>
 #include <Core/MongoDB/MessageWriter.h>
+#include <Core/MongoDB/Commands/Commands.h>
+#include <Core/MongoDB/Commands/FindCommand.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -19,99 +20,68 @@
 #include <fmt/format.h>
 #include <pcg_random.hpp>
 #include <Poco/Exception.h>
-#include <Common/BSONParser/Array.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 
 #include <memory>
 
-#if USE_SSL
-#    include <Poco/Net/SSLManager.h>
-#    include <Poco/Net/SecureStreamSocket.h>
-#endif
-
 namespace DB
 {
-
-namespace BSON
-{
-
-Int32 Document::read(ReadBuffer & reader)
-{
-    Int32 size;
-    try
-    {
-        readIntBinary(size, reader);
-    }
-    catch (const std::exception &)
-    {
-        return 0;
-    }
-
-    char type;
-    if (!reader.read(type))
-        throw std::exception(); // FIXME
-
-
-    while (type != '\0')
-    {
-        Element::Ptr element;
-
-        std::string name;
-        readNullTerminated(name, reader);
-
-        switch (type)
-        {
-            case ElementTraits<double>::TypeId:
-                element = new ConcreteElement<double>(name, 0);
-                break;
-            case ElementTraits<Int32>::TypeId:
-                element = new ConcreteElement<Int32>(name, 0);
-                break;
-            case ElementTraits<std::string>::TypeId:
-                element = new ConcreteElement<std::string>(name, "");
-                break;
-            case ElementTraits<Document::Ptr>::TypeId:
-                element = new ConcreteElement<Document::Ptr>(name, new Document);
-                break;
-            case ElementTraits<bool>::TypeId:
-                element = new ConcreteElement<bool>(name, false);
-                break;
-            case ElementTraits<Int64>::TypeId:
-                element = new ConcreteElement<Int64>(name, 0);
-                break;
-            case ElementTraits<Array::Ptr>::TypeId:
-                element = new ConcreteElement<Array::Ptr>(name, new Array);
-                break;
-            default: {
-                std::stringstream ss;
-                ss << "Element " << name << " contains an unsupported type 0x" << std::hex << static_cast<int>(type);
-                throw Poco::NotImplementedException(ss.str());
-            }
-                // TODO: everything else:)
-        }
-        element->read(reader);
-        elements.push_back(element);
-
-        if (!reader.read(type))
-            throw std::exception(); // FIXME
-    }
-    return size;
-}
-
-Array & Document::addNewArray(const std::string & name)
-{
-    Array::Ptr new_array = new Array();
-    add(name, new_array);
-    return *new_array;
-}
-}
 
 
 MongoDBHandler::MongoDBHandler(const Poco::Net::StreamSocket & socket_, IServer & server_, TCPServer & tcp_server_, Int32 connection_id_)
     : Poco::Net::TCPServerConnection(socket_), server(server_), tcp_server(tcp_server_), connection_id(connection_id_)
 {
+}
+
+
+void MongoDBHandler::handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB::MessageWriter writer) {
+    auto command = MongoDB::Command::parseCommand(message);
+    BSON::Document::Ptr res;
+
+    pcg64_fast gen{randomSeed()};
+    std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
+    auto secret_key = dis(gen);
+
+    switch (command->getType()) {
+        case MongoDB::CommandTypes::IsMaster:
+            res = MongoDB::handleIsMaster();
+            writer.write_op_reply(res, message->getHeader().getRequestID());
+            return;
+        case MongoDB::CommandTypes::Hello:
+            res = MongoDB::handleIsMaster();
+            break;
+        case MongoDB::CommandTypes::BuildInfo:
+            res = MongoDB::handleBuildInfo();
+            break;
+        case MongoDB::CommandTypes::GetParameter:
+            res = MongoDB::handleGetParameter(command);
+            break;
+        case MongoDB::CommandTypes::Ping:
+            res = MongoDB::handlePing();
+            break;
+        case MongoDB::CommandTypes::GetLog:
+            res = MongoDB::handleGetLog(command);
+            break;
+        case MongoDB::CommandTypes::Aggregate:
+            res = MongoDB::handleAggregate(command);
+            break;
+        case MongoDB::CommandTypes::Find:
+            {
+
+                session->sessionContext()->setCurrentDatabase(command->getDBName());
+                auto context = session->makeQueryContext();
+                context->setCurrentQueryId(fmt::format("mongodb:{:d}:{:d}", connection_id, secret_key));
+                res = MongoDB::handleFind(command, context);
+            }
+            break;
+        case MongoDB::CommandTypes::Unknown:
+            LOG_ERROR(log, "Unknown MongoDB command");
+            res = MongoDB::handleUnknownCommand(command);
+            break;
+    }
+    writer.write(res, message->getHeader().getRequestID());
 }
 
 void MongoDBHandler::run()
@@ -121,6 +91,9 @@ void MongoDBHandler::run()
     ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MONGODB);
+
+    session->authenticate("default", "", socket().peerAddress()); // TODO make authentication
+    session->makeSessionContext();
     SCOPE_EXIT({ session.reset(); });
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -128,26 +101,45 @@ void MongoDBHandler::run()
     session->setClientConnectionId(connection_id);
     DB::MongoDB::MessageReader reader(*in);
     DB::MongoDB::MessageWriter writer(*out);
-    { // HELLO
-        MongoDB::Message::Ptr message = reader.read();
-        MongoDB::MessageHeader::OpCode op_code = message->getHeader().getOpCode();
-        LOG_INFO(log, "GOT OPCODE {}", static_cast<int>(op_code));
-        switch (op_code)
-        {
-            case MongoDB::MessageHeader::OP_QUERY: {
-                BSON::Document::Ptr response = MongoDB::MessageHandler::handleIsMaster();
-                writer.writeHelloCmd(response, message->getHeader().getRequestID());
-            }
-            break;
-            default:
-                throw Poco::NotImplementedException();
-        }
-    }
+
     while (tcp_server.isOpen())
     {
         while (!in->poll(1'000'000))
             if (!tcp_server.isOpen())
                 return;
+        MongoDB::Message::Ptr message;
+        try {
+            message = reader.read();
+        } catch(const DB::Exception & e) {
+            if (!tcp_server.isOpen()) {
+                LOG_INFO(log, "Closing connection");
+            } else {
+                LOG_WARNING(log, "Read error {}, but tcp is open, closing", e.what());
+            }
+            return;
+        }
+        MongoDB::MessageHeader::OpCode op_code = message->getHeader().getOpCode();
+        LOG_INFO(log, "GOT OPCODE {}", static_cast<int>(op_code));
+        switch (op_code)
+        {
+            case MongoDB::MessageHeader::OP_QUERY: 
+            {
+                LOG_INFO(log, "Handling Hello message");
+                BSON::Document::Ptr response = MongoDB::handleIsMaster();
+                writer.write_op_reply(response, message->getHeader().getRequestID());
+                LOG_INFO(log, "Sent Hello message");
+            }
+            break;
+            case MongoDB::MessageHeader::OP_MSG:
+            {
+                handleQuery(message.cast<MongoDB::OpMsgMessage>(), writer);
+                LOG_INFO(log, "QUERY HANDLED");
+            }
+            break;
+            default:
+                throw Poco::NotImplementedException();
+        }
+        in->next();
     }
     out->finalize();
 }

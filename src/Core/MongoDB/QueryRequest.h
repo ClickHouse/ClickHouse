@@ -3,8 +3,9 @@
 #include <IO/ReadBuffer.h>
 #include <base/types.h>
 #include <Poco/SharedPtr.h>
-#include <Common/BSONParser/Array.h>
 #include <Common/logger_useful.h>
+#include "Array.h"
+#include "Document.h"
 #include "RequestMessage.h"
 
 namespace DB
@@ -104,6 +105,8 @@ public:
 
     void read(ReadBuffer & reader) override;
 
+    std::string toString() const override;
+
     // protected:
     //     Int32 getLength() const override;
     //     void writeContent(WriteBuffer & write_buffer ) const override;
@@ -117,86 +120,6 @@ private:
     BSON::Document::Ptr return_field_selector;
 };
 
-QueryRequest::~QueryRequest()
-{
-}
-
-//
-// inlines
-//
-inline QueryRequest::Flags QueryRequest::getFlags() const
-{
-    return flags;
-}
-
-
-inline void QueryRequest::setFlags(QueryRequest::Flags flags_)
-{
-    flags = flags_;
-}
-
-
-inline std::string QueryRequest::getFullCollectionName() const
-{
-    return full_collection_name;
-}
-
-
-inline BSON::Document::Ptr QueryRequest::getSelector()
-{
-    return selector;
-}
-
-
-inline BSON::Document::Ptr QueryRequest::getFieldSelector()
-{
-    return return_field_selector;
-}
-
-
-inline Int32 QueryRequest::getNumberToSkip() const
-{
-    return number_to_skip;
-}
-
-
-inline void QueryRequest::setNumberToSkip(Int32 n)
-{
-    number_to_skip = n;
-}
-
-
-inline Int32 QueryRequest::getNumberToReturn() const
-{
-    return number_to_return;
-}
-
-
-inline void QueryRequest::setNumberToReturn(Int32 n)
-{
-    number_to_return = n;
-}
-
-
-void QueryRequest::read(ReadBuffer & reader)
-{
-    QueryRequest query(header);
-    Int32 message_length = header.getMessageLength();
-    Int32 flags_;
-    readIntBinary(flags_, reader);
-    query.flags = static_cast<Flags>(flags_);
-    readNullTerminated(full_collection_name, reader);
-    readIntBinary(number_to_skip, reader);
-    readIntBinary(number_to_return, reader);
-
-    message_length -= MessageHeader::MSG_HEADER_SIZE + sizeof(flags_) + sizeof(number_to_skip) + sizeof(number_to_return)
-        + full_collection_name.length() + sizeof('\0');
-    query.selector = new BSON::Document();
-    query.return_field_selector = new BSON::Document();
-    message_length -= query.selector->read(reader);
-    if (message_length != 0)
-        query.return_field_selector->read(reader);
-}
 
 
 // Int32 QueryRequest::getLength() const

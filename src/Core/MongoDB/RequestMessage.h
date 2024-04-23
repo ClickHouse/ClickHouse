@@ -23,14 +23,13 @@ public:
 
     virtual void read(ReadBuffer & reader) = 0;
 
+    virtual std::string toString() const = 0;
+
     // protected:
     //     virtual Int32 getLength() const = 0;
     //     virtual void writeContent(WriteBuffer& writer) const = 0;
 };
 
-RequestMessage::~RequestMessage()
-{
-}
 
 
 // void RequestMessage::send(WriteBuffer& writer)
