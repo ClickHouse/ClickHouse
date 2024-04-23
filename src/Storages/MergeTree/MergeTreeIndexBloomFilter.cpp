@@ -921,7 +921,7 @@ static void assertIndexColumnsType(const Block & header)
     }
 }
 
-MergeTreeIndexPtr bloomFilterIndexCreatorNew(
+MergeTreeIndexPtr bloomFilterIndexCreator(
     const IndexDescription & index)
 {
     double max_conflict_probability = 0.025;
@@ -938,7 +938,7 @@ MergeTreeIndexPtr bloomFilterIndexCreatorNew(
         index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
 }
 
-void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach)
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
 {
     assertIndexColumnsType(index.sample_block);
 

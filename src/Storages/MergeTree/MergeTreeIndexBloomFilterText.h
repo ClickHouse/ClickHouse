@@ -11,14 +11,14 @@
 namespace DB
 {
 
-struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeIndexGranuleFullText(
+    explicit MergeTreeIndexGranuleBloomFilterText(
         const String & index_name_,
         size_t columns_number,
         const BloomFilterParameters & params_);
 
-    ~MergeTreeIndexGranuleFullText() override = default;
+    ~MergeTreeIndexGranuleBloomFilterText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -32,17 +32,17 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
     bool has_elems;
 };
 
-using MergeTreeIndexGranuleFullTextPtr = std::shared_ptr<MergeTreeIndexGranuleFullText>;
+using MergeTreeIndexGranuleBloomFilterTextPtr = std::shared_ptr<MergeTreeIndexGranuleBloomFilterText>;
 
-struct MergeTreeIndexAggregatorFullText final : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 {
-    explicit MergeTreeIndexAggregatorFullText(
+    explicit MergeTreeIndexAggregatorBloomFilterText(
         const Names & index_columns_,
         const String & index_name_,
         const BloomFilterParameters & params_,
         TokenExtractorPtr token_extractor_);
 
-    ~MergeTreeIndexAggregatorFullText() override = default;
+    ~MergeTreeIndexAggregatorBloomFilterText() override = default;
 
     bool empty() const override { return !granule || granule->empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
@@ -54,21 +54,21 @@ struct MergeTreeIndexAggregatorFullText final : IMergeTreeIndexAggregator
     BloomFilterParameters params;
     TokenExtractorPtr token_extractor;
 
-    MergeTreeIndexGranuleFullTextPtr granule;
+    MergeTreeIndexGranuleBloomFilterTextPtr granule;
 };
 
 
-class MergeTreeConditionFullText final : public IMergeTreeIndexCondition
+class MergeTreeConditionBloomFilterText final : public IMergeTreeIndexCondition
 {
 public:
-    MergeTreeConditionFullText(
+    MergeTreeConditionBloomFilterText(
             const ActionsDAGPtr & filter_actions_dag,
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenExtractorPtr token_extactor_);
 
-    ~MergeTreeConditionFullText() override = default;
+    ~MergeTreeConditionBloomFilterText() override = default;
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
@@ -146,10 +146,10 @@ private:
     RPN rpn;
 };
 
-class MergeTreeIndexFullText final : public IMergeTreeIndex
+class MergeTreeIndexBloomFilterText final : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexFullText(
+    MergeTreeIndexBloomFilterText(
         const IndexDescription & index_,
         const BloomFilterParameters & params_,
         std::unique_ptr<ITokenExtractor> && token_extractor_)
@@ -157,7 +157,7 @@ public:
         , params(params_)
         , token_extractor(std::move(token_extractor_)) {}
 
-    ~MergeTreeIndexFullText() override = default;
+    ~MergeTreeIndexBloomFilterText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;

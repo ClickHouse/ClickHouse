@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(
+MergeTreeIndexGranuleBloomFilterText::MergeTreeIndexGranuleBloomFilterText(
     const String & index_name_,
     size_t columns_number,
     const BloomFilterParameters & params_)
@@ -44,7 +44,7 @@ MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(
 {
 }
 
-void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleBloomFilterText::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
@@ -53,7 +53,7 @@ void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), params.filter_size);
 }
 
-void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
@@ -66,7 +66,7 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
 }
 
 
-MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
+MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText(
     const Names & index_columns_,
     const String & index_name_,
     const BloomFilterParameters & params_,
@@ -76,20 +76,20 @@ MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
     , params(params_)
     , token_extractor(token_extractor_)
     , granule(
-        std::make_shared<MergeTreeIndexGranuleFullText>(
+        std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
             index_name, index_columns.size(), params))
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeIndexGranuleFullText>(
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
         index_name, index_columns.size(), params);
     new_granule.swap(granule);
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -137,7 +137,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
     *pos += rows_read;
 }
 
-MergeTreeConditionFullText::MergeTreeConditionFullText(
+MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const ActionsDAGPtr & filter_actions_dag,
     ContextPtr context,
     const Block & index_sample_block,
@@ -162,7 +162,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
 }
 
 /// Keep in-sync with MergeTreeConditionGinFilter::alwaysUnknownOrTrue
-bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
+bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
     std::vector<bool> rpn_stack;
@@ -212,10 +212,10 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 }
 
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
-bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleFullText> granule
-            = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleBloomFilterText> granule
+            = std::dynamic_pointer_cast<MergeTreeIndexGranuleBloomFilterText>(idx_granule);
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BloomFilter index condition got a granule with the wrong type.");
 
@@ -323,13 +323,13 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     return rpn_stack[0].can_be_true;
 }
 
-std::optional<size_t> MergeTreeConditionFullText::getKeyIndex(const std::string & key_column_name)
+std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndex(const std::string & key_column_name)
 {
     const auto it = std::ranges::find(index_columns, key_column_name);
     return it == index_columns.end() ? std::nullopt : std::make_optional<size_t>(std::ranges::distance(index_columns.cbegin(), it));
 }
 
-bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -419,7 +419,7 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
     return false;
 }
 
-bool MergeTreeConditionFullText::traverseTreeEquals(
+bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
@@ -638,7 +638,7 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
     return false;
 }
 
-bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
+bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
     const RPNBuilderTreeNode & left_argument,
     const RPNBuilderTreeNode & right_argument,
     RPNElement & out)
@@ -714,23 +714,23 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     return true;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexBloomFilterText::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
+    return std::make_shared<MergeTreeIndexGranuleBloomFilterText>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorFullText>(index.column_names, index.name, params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorBloomFilterText>(index.column_names, index.name, params, token_extractor.get());
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAGPtr & filter_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionFullText>(filter_dag, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(filter_dag, context, index.sample_block, params, token_extractor.get());
 }
 
-MergeTreeIndexPtr bloomFilterIndexCreator(
+MergeTreeIndexPtr bloomFilterIndexTextCreator(
     const IndexDescription & index)
 {
     if (index.type == NgramTokenExtractor::getName())
@@ -743,7 +743,7 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
 
-        return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
     else if (index.type == SplitTokenExtractor::getName())
     {
@@ -754,7 +754,7 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
 
-        return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
     else
     {
@@ -762,7 +762,7 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     }
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/)
 {
     for (const auto & index_data_type : index.data_types)
     {

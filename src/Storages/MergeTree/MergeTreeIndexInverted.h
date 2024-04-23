@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
-#include <atomic>
 #include <memory>
 
 namespace DB

@@ -7,7 +7,7 @@
 #include <Disks/DiskLocal.h>
 #include <Interpreters/GinFilter.h>
 #include <Storages/MergeTree/GinIndexStore.h>
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <string>
 #include <algorithm>
