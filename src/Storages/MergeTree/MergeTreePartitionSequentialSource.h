@@ -33,6 +33,7 @@ private:
     RangesInDataPart part_ranges;
 
     MergeTreeReaderPtr reader;
+    size_t initial_mark = 0;
     size_t current_mark = 0;
     size_t current_row = 0;
 };

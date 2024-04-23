@@ -39,6 +39,12 @@ MergeTreePartSequentialReader::MergeTreePartSequentialReader(
     , columns_to_read{std::move(columns_to_read_)}
     , part_ranges(std::move(part_ranges_))
 {
+    chassert(part_ranges.ranges.size() == 1);
+
+    initial_mark = part_ranges.ranges.front().begin;
+    current_mark = part_ranges.ranges.front().begin;
+    current_row = part_ranges.data_part->index_granularity.getMarkStartingRow(current_mark);
+
     /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(
         LoadedMergeTreeDataPartInfoForReader(part_ranges.data_part, part_ranges.alter_conversions),
@@ -88,7 +94,7 @@ bool MergeTreePartSequentialReader::isEmpty() const
 Chunk MergeTreePartSequentialReader::readNext()
 {
     size_t rows_to_read = part_ranges.data_part->index_granularity.getMarkRows(current_mark);
-    bool continue_reading = (current_mark != 0);
+    bool continue_reading = (current_mark != initial_mark);
 
     const auto & sample = reader->getColumns();
     Columns columns(sample.size());
@@ -146,13 +152,9 @@ MergeTreePartitionSequentialSource::MergeTreePartitionSequentialSource(
         return lhs.data_part->info.min_block < rhs.data_part->info.min_block;
     });
 
-    for (auto & part : parts_with_ranges)
-    {
-        addTotalRowsApprox(part.data_part->rows_count);
-        std::ranges::sort(part.ranges, [](const MarkRange & lhs, const MarkRange & rhs) {
-            return lhs < rhs;
-        });
-    }
+    for (const auto & part : parts_with_ranges)
+        for (const auto & range : part.ranges)
+            addTotalRowsApprox(part.data_part->index_granularity.getRowsCountInRange(range));
 
     initNextReader();
 }
