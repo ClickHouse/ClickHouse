@@ -33,22 +33,18 @@ size_t CBORReader::extractBytesCountFromMinorType(unsigned char minor_type)
         return 0;
     else if (minor_type == 24)
     {
-        cbor_reader.get_byte();
         return sizeof(unsigned char);
     }
     else if (minor_type == 25)
     {
-        cbor_reader.get_short();
         return sizeof(unsigned short);
     }
     else if (minor_type == 26)
     {
-        cbor_reader.get_int();
         return sizeof(unsigned int);
     }
     else if (minor_type == 27)
     {
-        cbor_reader.get_long();
         return sizeof(unsigned long long);
     }
     else
@@ -61,13 +57,13 @@ uint64_t CBORReader::extractValueFromMinorType(unsigned char minor_type)
     if (minor_type < 24)
         return minor_type;
     else if (minor_type == 24)
-        return cbor_reader.get_byte() + sizeof(unsigned char);
+        return cbor_reader.get_byte();
     else if (minor_type == 25)
-        return cbor_reader.get_short() + sizeof(unsigned short);
+        return cbor_reader.get_short();
     else if (minor_type == 26)
-        return cbor_reader.get_int() + sizeof(unsigned int);
+        return cbor_reader.get_int();
     else if (minor_type == 27)
-        return cbor_reader.get_long() + sizeof(unsigned long long);
+        return cbor_reader.get_long();
     else
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid minor type");
 }
@@ -94,6 +90,7 @@ size_t CBORReader::getIntegerBytesCount(unsigned char minor_type)
 {
     if (minor_type > 27)
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid integer type");
+    extractValueFromMinorType(minor_type);
     return extractBytesCountFromMinorType(minor_type);
 }
 
@@ -108,7 +105,7 @@ size_t CBORReader::getByteStringBytesCount(unsigned char minor_type)
     for (size_t i = 0; i < bytes_count; ++i)
         std::cout << fmt::format("{:#x}", cbor_reader.get_byte()) << " ";
     std::cout << std::endl;
-    return bytes_count;
+    return bytes_count + extractBytesCountFromMinorType(minor_type);
 }
 
 size_t CBORReader::getStringBytesCount(unsigned char minor_type)
@@ -118,9 +115,11 @@ size_t CBORReader::getStringBytesCount(unsigned char minor_type)
     if (minor_type > 27)
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid string type");
     size_t bytes_count = extractValueFromMinorType(minor_type);
+    std::cout << "getStringBytesCount: " << bytes_count << ": ";
     for (size_t i = 0; i < bytes_count; ++i)
-        cbor_reader.get_byte();
-    return bytes_count;
+        std::cout << fmt::format("{:#x}", cbor_reader.get_byte()) << " ";
+    std::cout << std::endl;
+    return bytes_count + extractBytesCountFromMinorType(minor_type);
 }
 
 size_t CBORReader::getArrayBytesCount(unsigned char minor_type)
@@ -133,7 +132,7 @@ size_t CBORReader::getArrayBytesCount(unsigned char minor_type)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Not supported CBOR data schema.");
         bytes_count += getTypeBytesCount(cbor_reader.get_byte());
     }
-    return bytes_count;
+    return bytes_count + extractBytesCountFromMinorType(minor_type);
 }
 
 size_t CBORReader::getMapBytesCount(unsigned char minor_type)
@@ -149,13 +148,14 @@ size_t CBORReader::getMapBytesCount(unsigned char minor_type)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Not supported CBOR data schema.");
         bytes_count += getTypeBytesCount(cbor_reader.get_byte());
     }
-    return bytes_count;
+    return bytes_count + extractBytesCountFromMinorType(minor_type);
 }
 
 size_t CBORReader::getTagBytesCount(unsigned char minor_type)
 {
     if (minor_type > 27)
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid tag type");
+    extractValueFromMinorType(minor_type);
     size_t bytes_count = extractBytesCountFromMinorType(minor_type);
     bytes_count += getTypeBytesCount(cbor_reader.get_byte());
     return bytes_count;
@@ -165,6 +165,7 @@ size_t CBORReader::getSpecialBytesCount(unsigned char minor_type)
 {
     if (minor_type > 27)
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid special type");
+    extractValueFromMinorType(minor_type);
     return extractBytesCountFromMinorType(minor_type);
 }
 
@@ -212,7 +213,7 @@ void CBORReader::readAndCheckPrefix()
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not supported CBOR data schema.");
     unsigned char byte = cbor_reader.get_byte();
     ++buf.position();
-    if (byte != 0x9f)
+    if (byte != 0x9F)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not supported CBOR data schema.");
     std::cout << "Successfully readAndCheckPrefix\n";
 }

@@ -144,63 +144,78 @@ static void insertBool(IColumn & column, DataTypePtr type, bool value)
 }
 
 template <typename ColumnType>
-static void insertFromBinaryRepresentation(IColumn & column, DataTypePtr type, const char * value, size_t size)
+static void
+insertFromBinaryRepresentation(IColumn & column, DataTypePtr type, [[maybe_unused]] const char * value, size_t size, bool is_negative)
 {
     constexpr size_t column_type_size = sizeof(typename ColumnType::ValueType);
     if (size > column_type_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of {} value: {}", type->getName(), size);
-
-    char data[column_type_size] = {0};
-    //    size_t init_index = column_type_size - size;
-    for (size_t i = 0; i < size; ++i)
-        data[i] = value[i];
-    assert_cast<ColumnType &>(column).insertData(data, column_type_size);
+    if (is_negative)
+    {
+        char data[column_type_size] = {0};
+        for (size_t i = 0; i < size; ++i)
+            data[i] = ~value[size - i - 1];
+        for (size_t i = size; i < column_type_size; ++i)
+            data[i] = ~data[i];
+        assert_cast<ColumnType &>(column).insertData(data, size);
+    }
+    else
+    {
+        char data[size];
+        for (size_t i = 0; i < size; ++i)
+            data[i] = value[size - i - 1];
+        assert_cast<ColumnType &>(column).insertData(data, size);
+    }
 }
 
-static void insertBigUnsignedInteger(IColumn & column, DataTypePtr type, const char * data, int size)
+static void insertPositiveBigInteger(IColumn & column, DataTypePtr type, const char * data, size_t size)
 {
     switch (type->getTypeId())
     {
         case TypeIndex::IPv6:
-            insertFromBinaryRepresentation<ColumnIPv6>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnIPv6>(column, type, data, size, false);
+            return;
+        case TypeIndex::Int128:
+            insertFromBinaryRepresentation<ColumnInt128>(column, type, data, size, false);
+            return;
+        case TypeIndex::Int256:
+            insertFromBinaryRepresentation<ColumnInt256>(column, type, data, size, false);
             return;
         case TypeIndex::UInt128:
-            insertFromBinaryRepresentation<ColumnUInt128>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnUInt128>(column, type, data, size, false);
             return;
         case TypeIndex::UInt256:
-            insertFromBinaryRepresentation<ColumnUInt256>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnUInt256>(column, type, data, size, false);
             return;
         case TypeIndex::Decimal128:
-            insertFromBinaryRepresentation<ColumnDecimal<Decimal128>>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnDecimal<Decimal128>>(column, type, data, size, false);
             return;
         case TypeIndex::Decimal256:
-            insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, data, size, false);
             return;
         default:
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR big unsigned integer into column with type {}.", type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR big integer into column with type {}.", type->getName());
     }
 }
 
-static void insertBigNegativeInteger(IColumn & column, DataTypePtr type, const char * data, int size)
+static void insertNegativeBigInteger(IColumn & column, DataTypePtr type, const char * data, size_t size)
 {
     switch (type->getTypeId())
     {
         case TypeIndex::Int128:
-            insertFromBinaryRepresentation<ColumnInt128>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnInt128>(column, type, data, size, true);
             return;
         case TypeIndex::Int256:
-            insertFromBinaryRepresentation<ColumnInt256>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnInt256>(column, type, data, size, true);
             return;
         case TypeIndex::Decimal128:
-            insertFromBinaryRepresentation<ColumnDecimal<Decimal128>>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnDecimal<Decimal128>>(column, type, data, size, true);
             return;
         case TypeIndex::Decimal256:
-            insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, data, size);
+            insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, data, size, true);
             return;
         default:
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR big unsigned integer into column with type {}.", type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR big integer into column with type {}.", type->getName());
     }
 }
 
@@ -303,11 +318,11 @@ void WriteToDBListener::on_bytes(unsigned char * data, int size)
     switch (current_tag)
     {
         case CBORTagTypes::UNSIGNED_BIGNUM: {
-            insertBigUnsignedInteger(column, type, const_cast<const char *>(reinterpret_cast<char *>(data)), size);
+            insertPositiveBigInteger(column, type, const_cast<const char *>(reinterpret_cast<char *>(data)), size);
             break;
         }
         case CBORTagTypes::NEGATIVE_BIGNUM: {
-            insertBigNegativeInteger(column, type, const_cast<const char *>(reinterpret_cast<char *>(data)), size);
+            insertNegativeBigInteger(column, type, const_cast<const char *>(reinterpret_cast<char *>(data)), size);
             break;
         }
         default:
