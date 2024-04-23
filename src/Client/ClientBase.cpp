@@ -929,7 +929,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         ignore_error);
 
     if (!parsed_query)
-        return is_interactive;
+        return ignore_error;
 
     String query_to_execute;
 
@@ -953,7 +953,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     else
         query_to_execute = full_query;
 
-    bool continue_repl = is_interactive;
+    bool continue_repl = true;
     try
     {
         continue_repl = processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
@@ -2078,7 +2078,7 @@ bool ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     if (have_error && report_error)
         processError(full_query);
 
-    return is_interactive;
+    return true;
 }
 
 
