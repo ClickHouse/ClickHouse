@@ -1306,9 +1306,26 @@ TEST(LZ4Test, DecompressMalformedInput)
 
 TEST(FSSTTest, CompressDecompress)
 {
-    char in_str[2281337] = "Hello, World!\0suka\0";
+    std::vector<std::string> strs;
+    strs.push_back("Hello, World!");
+    strs.push_back("sooqa");
+    strs.push_back("aboba");
+    strs.push_back("amogus");
+
+    char in_str[2281337];
+    size_t iter = 0;
+    for (auto u: strs) {
+        std::memcpy(in_str + iter, u.data(), u.size());
+        iter += u.size();
+        in_str[iter++] = '\0';
+    }
+    for (size_t i = 0; i < iter; ++i) {
+        std::cerr << in_str[i];
+    }
+    std::cerr << std::endl;
+
     char out_str[2281337];
-    auto string_length = strlen(in_str) + 6;
+    auto string_length = iter;
     std::cerr << "in_str length: " << string_length << std::endl;
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
@@ -1320,7 +1337,16 @@ TEST(FSSTTest, CompressDecompress)
 
     fsst_codec->decompress(out_str, compressed_size, in_str);
 
-    std::cerr << "decompressed string: " << in_str << " " << in_str + 14 << std::endl;
+    std::cerr << "decompressed strings: " << std::endl;
+    for (size_t i = 0; i < string_length; ++i) {
+        std::cerr << in_str[i];
+    }
+    std::cerr << std::endl;
+    size_t out_iter = 0;
+    for (auto str: strs) {
+        EXPECT_EQ(std::memcmp(in_str + out_iter, str.data(), str.size()), 0);
+        out_iter += str.size() + 1;
+    }
 }
 
 }
