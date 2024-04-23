@@ -115,9 +115,6 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// Checks that node has only one source and returns it
 QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
 
-/// Build subquery which we execute for `IN table` function.
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr table_node, const ContextPtr & context);
-
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 
@@ -148,5 +145,11 @@ QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes 
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
     const QueryTreeNodePtr & table_expression,
     const ContextPtr & context);
+
+/** Build subquery to read all columns from table expression.
+  * Specified context will be copied and used as query context.
+  */
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
+
 
 }

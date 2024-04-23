@@ -841,28 +841,6 @@ QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node)
     return source;
 }
 
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr table_node, const ContextPtr & context)
-{
-    const auto & storage_snapshot = table_node->as<TableNode>()->getStorageSnapshot();
-    auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
-    size_t columns_to_select_size = columns_to_select.size();
-    auto column_nodes_to_select = std::make_shared<ListNode>();
-    column_nodes_to_select->getNodes().reserve(columns_to_select_size);
-    NamesAndTypes projection_columns;
-    projection_columns.reserve(columns_to_select_size);
-    for (auto & column : columns_to_select)
-    {
-        column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, table_node));
-        projection_columns.emplace_back(column.name, column.type);
-    }
-    auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(context));
-    subquery_for_table->setIsSubquery(true);
-    subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
-    subquery_for_table->getJoinTree() = std::move(table_node);
-    subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
-    return subquery_for_table;
-}
-
 /** There are no limits on the maximum size of the result for the subquery.
   * Since the result of the query is not the result of the entire query.
   */
@@ -936,6 +914,14 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 {
     auto context_copy = Context::createCopy(context);
     return buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, context_copy);
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context)
+{
+    const auto & storage_snapshot = table_node->as<TableNode>()->getStorageSnapshot();
+    auto columns_to_select_list = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+    NamesAndTypes columns_to_select(columns_to_select_list.begin(), columns_to_select_list.end());
+    return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
 }
 
 }

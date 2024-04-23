@@ -15,6 +15,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/TableNode.h>
 
 namespace DB
 {
@@ -135,6 +136,7 @@ public:
             if (read_rows_during_recursive_step == 0)
             {
                 finished = true;
+                truncateTemporaryTable(intermediate_temporary_table_storage);
                 continue;
             }
 
@@ -143,12 +145,7 @@ public:
             for (auto & recursive_table_node : recursive_table_nodes)
                 recursive_table_node->updateStorage(intermediate_temporary_table_storage, recursive_query_context);
 
-            /// TODO: Support proper locking
-            TableExclusiveLockHolder table_exclusive_lock;
-            working_temporary_table_storage->truncate({},
-                working_temporary_table_storage->getInMemoryMetadataPtr(),
-                recursive_query_context,
-                table_exclusive_lock);
+            truncateTemporaryTable(working_temporary_table_storage);
 
             std::swap(intermediate_temporary_table_storage, working_temporary_table_storage);
         }
@@ -193,11 +190,7 @@ private:
             return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
         });
 
-        auto squashing_transform = std::make_shared<SimpleSquashingChunksTransform>(pipeline_builder.getHeader(),
-            recursive_subquery_settings.min_external_table_block_size_rows,
-            recursive_subquery_settings.min_external_table_block_size_bytes);
-        pipeline_builder.resize(1);
-        pipeline_builder.addTransform(std::move(squashing_transform));
+        /// TODO: Support squashing transform
 
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
             {},
@@ -212,6 +205,16 @@ private:
         pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
 
         executor.emplace(pipeline);
+    }
+
+    void truncateTemporaryTable(StoragePtr & temporary_table)
+    {
+        /// TODO: Support proper locking
+        TableExclusiveLockHolder table_exclusive_lock;
+        temporary_table->truncate({},
+            temporary_table->getInMemoryMetadataPtr(),
+            recursive_query_context,
+            table_exclusive_lock);
     }
 
     Block header;
