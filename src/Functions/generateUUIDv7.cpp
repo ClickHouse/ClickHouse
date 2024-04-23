@@ -60,7 +60,7 @@ DECLARE_SEVERAL_IMPLEMENTATIONS(
         struct UUIDv7Base
         {
             UUIDAsArray & uuid;
-            UUIDv7Base(UUIDAsArray & u) : uuid(u) { }
+            explicit UUIDv7Base(UUIDAsArray & u) : uuid(u) { }
         };
 
         struct RandomData
@@ -83,7 +83,7 @@ DECLARE_SEVERAL_IMPLEMENTATIONS(
 
         struct CounterDataCommon : UUIDv7Base
         {
-            CounterDataCommon(UUIDAsArray & u) : UUIDv7Base(u) { }
+            explicit CounterDataCommon(UUIDAsArray & u) : UUIDv7Base(u) { }
 
             uint64_t getCounter()
             {
