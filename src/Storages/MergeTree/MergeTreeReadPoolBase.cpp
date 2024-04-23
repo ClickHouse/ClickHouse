@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include "Common/Logger.h"
 
 
 namespace DB

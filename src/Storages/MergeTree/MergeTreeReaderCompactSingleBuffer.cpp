@@ -25,6 +25,8 @@ try
     createColumnsForReading(res_columns);
 
     size_t rows_to_skip = 0;
+    bool is_skipping = true;
+    bool need_skipping = offset > 0;
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
@@ -69,13 +71,14 @@ try
 
             readPrefix(columns_to_read[pos], buffer_getter, buffer_getter_for_prefix, columns_for_offsets[pos]);
             readData(columns_to_read[pos], column, cur_rows_to_skip, rows_to_read, offset, buffer_getter);
-            if (offset > 0)
+            if (is_skipping && need_skipping)
                 skipped_rows.emplace_back(cur_rows_to_skip);
         }
 
         ++from_mark;
         read_rows += rows_to_read;
         offset = 0;
+        is_skipping = false;
     }
 
     next_mark = from_mark;

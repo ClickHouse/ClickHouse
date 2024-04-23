@@ -239,6 +239,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
     auto * reading_step = findReadingStep(*frame.node->children.front(), steps_to_update);
     if (!reading_step)
         return;
+
     if (!canUseLazyMaterializationForReadingStep(reading_step))
         return;
 

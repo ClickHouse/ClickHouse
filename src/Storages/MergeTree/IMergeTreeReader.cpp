@@ -41,7 +41,6 @@ IMergeTreeReader::IMergeTreeReader(
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
-    , skipped_rows()
     /// For wide parts convert plain arrays of Nested to subcolumns
     /// to allow to use shared offset column from cache.
     , requested_columns(data_part_info_for_read->isWidePart()
@@ -97,7 +96,8 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         }
 
         if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
+            continue;
+        //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
 
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())

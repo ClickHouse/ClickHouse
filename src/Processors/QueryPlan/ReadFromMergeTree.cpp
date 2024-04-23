@@ -793,18 +793,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
             column_names_set.insert(column_name);
         }
 
-        if (lazily_read_info)
-        {
-            for (const auto & lazily_read_name : lazily_read_info->lazily_read_columns_names)
-            {
-                if (column_names_set.contains(lazily_read_name))
-                    tmp_column_names.push_back(lazily_read_name);
-            }
-            std::erase_if(lazily_read_info->lazily_read_columns_names, [&column_names_set] (const String & column_name)
-            {
-                return column_names_set.contains(column_name);
-            });
-        }
+        // if (lazily_read_info)
+        // {
+        //     for (const auto & lazily_read_name : lazily_read_info->lazily_read_columns_names)
+        //     {
+        //         if (column_names_set.contains(lazily_read_name))
+        //             tmp_column_names.push_back(lazily_read_name);
+        //     }
+        //     std::erase_if(lazily_read_info->lazily_read_columns_names, [&column_names_set] (const String & column_name)
+        //     {
+        //         return column_names_set.contains(column_name);
+        //     });
+        // }
 
         auto in_order_reading_step_getter = [this, &in_order_column_names_to_read, &info](auto parts)
         {
