@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <limits>
+#include <optional>
 
 
 namespace DB
@@ -41,23 +42,43 @@ public:
 };
 
 template <>
+class HilbertEncodeLookupTable<2>
+{
+public:
+    constexpr static UInt8 LOOKUP_TABLE[64] = {
+        0, 51, 20, 5, 17, 18, 39, 6,
+    46, 45, 24, 9, 15, 60, 43, 10,
+    16, 1, 62, 31, 35, 2, 61, 44,
+    4, 55, 8, 59, 21, 22, 25, 26,
+    42, 41, 38, 37, 11, 56, 7, 52,
+    28, 13, 50, 19, 47, 14, 49, 32,
+    58, 27, 12, 63, 57, 40, 29, 30,
+    54, 23, 34, 33, 53, 36, 3, 48
+    };
+};
+
+
+template <>
 class HilbertEncodeLookupTable<3>
 {
 public:
     constexpr static UInt8 LOOKUP_TABLE[256] = {
-        64, 1, 206, 79, 16, 211, 84, 21, 131, 2, 205, 140, 81, 82, 151, 22, 4, 199, 8, 203, 158,
-        157, 88, 25, 69, 70, 73, 74, 31, 220, 155, 26, 186, 185, 182, 181, 32, 227, 100, 37, 59,
-        248, 55, 244, 97, 98, 167, 38, 124, 61, 242, 115, 174, 173, 104, 41, 191, 62, 241, 176, 47,
-        236, 171, 42, 0, 195, 68, 5, 250, 123, 60, 255, 65, 66, 135, 6, 249, 184, 125, 126, 142,
-        141, 72, 9, 246, 119, 178, 177, 15, 204, 139, 10, 245, 180, 51, 240, 80, 17, 222, 95, 96,
-        33, 238, 111, 147, 18, 221, 156, 163, 34, 237, 172, 20, 215, 24, 219, 36, 231, 40, 235, 85,
-        86, 89, 90, 101, 102, 105, 106, 170, 169, 166, 165, 154, 153, 150, 149, 43, 232, 39, 228,
-        27, 216, 23, 212, 108, 45, 226, 99, 92, 29, 210, 83, 175, 46, 225, 160, 159, 30, 209, 144,
-        48, 243, 116, 53, 202, 75, 12, 207, 113, 114, 183, 54, 201, 136, 77, 78, 190, 189, 120, 57,
-        198, 71, 130, 129, 63, 252, 187, 58, 197, 132, 3, 192, 234, 107, 44, 239, 112, 49, 254,
-        127, 233, 168, 109, 110, 179, 50, 253, 188, 230, 103, 162, 161, 52, 247, 56, 251, 229, 164,
-        35, 224, 117, 118, 121, 122, 218, 91, 28, 223, 138, 137, 134, 133, 217, 152, 93, 94, 11,
-        200, 7, 196, 214, 87, 146, 145, 76, 13, 194, 67, 213, 148, 19, 208, 143, 14, 193, 128,
+        64, 1, 206, 79, 16, 211, 84, 21, 131, 2, 205, 140, 81, 82, 151, 22, 4,
+        199, 8, 203, 158, 157, 88, 25, 69, 70, 73, 74, 31, 220, 155, 26, 186,
+        185, 182, 181, 32, 227, 100, 37, 59, 248, 55, 244, 97, 98, 167, 38, 124,
+        61, 242, 115, 174, 173, 104, 41, 191, 62, 241, 176, 47, 236, 171, 42, 0,
+        195, 68, 5, 250, 123, 60, 255, 65, 66, 135, 6, 249, 184, 125, 126, 142,
+        141, 72, 9, 246, 119, 178, 177, 15, 204, 139, 10, 245, 180, 51, 240, 80,
+        17, 222, 95, 96, 33, 238, 111, 147, 18, 221, 156, 163, 34, 237, 172, 20,
+        215, 24, 219, 36, 231, 40, 235, 85, 86, 89, 90, 101, 102, 105, 106, 170,
+        169, 166, 165, 154, 153, 150, 149, 43, 232, 39, 228, 27, 216, 23, 212, 108,
+        45, 226, 99, 92, 29, 210, 83, 175, 46, 225, 160, 159, 30, 209, 144, 48,
+        243, 116, 53, 202, 75, 12, 207, 113, 114, 183, 54, 201, 136, 77, 78, 190,
+        189, 120, 57, 198, 71, 130, 129, 63, 252, 187, 58, 197, 132, 3, 192, 234,
+        107, 44, 239, 112, 49, 254, 127, 233, 168, 109, 110, 179, 50, 253, 188, 230,
+        103, 162, 161, 52, 247, 56, 251, 229, 164, 35, 224, 117, 118, 121, 122, 218,
+        91, 28, 223, 138, 137, 134, 133, 217, 152, 93, 94, 11, 200, 7, 196, 214,
+        87, 146, 145, 76, 13, 194, 67, 213, 148, 19, 208, 143, 14, 193, 128,
     };
 };
 
@@ -71,22 +92,38 @@ class FunctionHilbertEncode2DWIthLookupTableImpl
 public:
     static UInt64 encode(UInt64 x, UInt64 y)
     {
+        return encodeImpl(x, y, std::nullopt).hilbert_code;
+    }
+
+
+    struct EncodeResult
+    {
         UInt64 hilbert_code = 0;
+        UInt64 state = 0;
+    };
+
+    static EncodeResult encodeImpl(UInt64 x, UInt64 y, std::optional<UInt8> start_state)
+    {
+        EncodeResult encode_result;
         const auto leading_zeros_count = getLeadingZeroBits(x | y);
         const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
 
         auto [current_shift, state] = getInitialShiftAndState(used_bits);
+        if (start_state.has_value()) {
+            state = *start_state;
+        }
 
         while (current_shift >= 0)
         {
             const UInt8 x_bits = (x >> current_shift) & STEP_MASK;
             const UInt8 y_bits = (y >> current_shift) & STEP_MASK;
             const auto hilbert_bits = getCodeAndUpdateState(x_bits, y_bits, state);
-            hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
+            encode_result.hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
             current_shift -= bit_step;
         }
 
-        return hilbert_code;
+        encode_result.state = state;
+        return encode_result;
     }
 
 private:
@@ -120,13 +157,16 @@ private:
         {
             initial_shift -= bit_step;
         }
-        UInt8 state = iterations % 2 == 0 ? 0b01 << getHilbertShift(bit_step) : 0;
+        UInt8 state = iterations % 2 == 0 ? LEFT_STATE : DEFAULT_STATE;
         return {initial_shift, state};
     }
 
     constexpr static UInt8 STEP_MASK = (1 << bit_step) - 1;
-    constexpr static UInt8 HILBERT_MASK = (1 << getHilbertShift(bit_step)) - 1;
-    constexpr static UInt8 STATE_MASK = 0b11 << getHilbertShift(bit_step);
+    constexpr static UInt8 HILBERT_SHIFT = getHilbertShift(bit_step);
+    constexpr static UInt8 HILBERT_MASK = (1 << HILBERT_SHIFT) - 1;
+    constexpr static UInt8 STATE_MASK = 0b11 << HILBERT_SHIFT;
+    constexpr static UInt8 LEFT_STATE = 0b01 << HILBERT_SHIFT;
+    constexpr static UInt8 DEFAULT_STATE = bit_step % 2 == 0 ? LEFT_STATE : 0;
 };
 
 
