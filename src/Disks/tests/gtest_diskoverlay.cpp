@@ -74,7 +74,6 @@ TEST_F(OverlayTest, listFiles)
     EXPECT_EQ(paths, corr);
 
     over->writeFile("folder/file1.txt", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append);
-    paths.clear();
     over->listFiles("folder", paths);
 
     std::sort(paths.begin(), paths.end());
@@ -93,10 +92,49 @@ TEST_F(OverlayTest, moveFile)
     EXPECT_EQ(paths, corr);
 
     over->createFile("file1.txt");
-    paths.clear();
     corr = {"file1.txt", "file2.txt"};
     over->listFiles("", paths);
 
     std::sort(paths.begin(), paths.end());
+    EXPECT_EQ(paths, corr);
+}
+
+TEST_F(OverlayTest, directoryIterator)
+{
+    base->createDirectory("folder");
+    base->createFile("folder/file2.txt");
+    base->createDirectory("folder/folder");
+
+    over->createFile("folder/file1.txt");
+
+    std::vector<String> paths, corr({"folder/file1.txt", "folder/file2.txt", "folder/folder/"});
+
+    for (auto iter = over->iterateDirectory("folder"); iter->isValid(); iter->next()) {
+        paths.push_back(iter->path());
+    }
+    std::sort(paths.begin(), paths.end());
+
+    EXPECT_EQ(paths, corr);
+}
+
+TEST_F(OverlayTest, moveDirectory)
+{
+    base->createDirectory("folder1");
+    base->createDirectory("folder2");
+    base->createFile("folder1/file1.txt");
+    base->createDirectory("folder1/inner");
+
+    over->createFile("folder1/file2.txt");
+    over->createFile("folder1/inner/file0.txt");
+
+    over->moveDirectory("folder1", "folder2/folder1");
+
+    std::vector<String> paths, corr({"file1.txt", "file2.txt", "inner"});
+    over->listFiles("folder2/folder1", paths);
+    std::sort(paths.begin(), paths.end());
+    EXPECT_EQ(paths, corr);
+
+    corr = {"file0.txt"};
+    over->listFiles("folder2/folder1/inner", paths);
     EXPECT_EQ(paths, corr);
 }
