@@ -168,6 +168,7 @@ std::optional<String> DiskOverlay::basePath(const String& path) const {
 }
 
 void DiskOverlay::moveDirectory(const String & from_path, const String & to_path) {
+    std::cout << "trying to move directory: " << from_path << " -> " << to_path << std::endl;
     if (!exists(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move directory: from_path doesn't exist");
     }
@@ -187,14 +188,16 @@ void DiskOverlay::moveDirectory(const String & from_path, const String & to_path
 
     for (const String& path : paths) {
         String fullfrompath = mergePath(from_path, path), fulltopath = mergePath(to_path, path);
-        if (isFile(path)) {
+        if (isFile(fullfrompath)) {
             moveFile(fullfrompath, fulltopath);
         } else {
             moveDirectory(fullfrompath, fulltopath);
         }
     }
 
+    std::cout << "start removing" << std::endl;
     removeDirectory(from_path);
+    std::cout << "done removing" << std::endl;
 }
 
 class DiskOverlayDirectoryIterator final : public IDirectoryIterator
@@ -212,10 +215,11 @@ public:
         } else {
             base_iter->next();
         }
+        upd();
     }
 
     bool isValid() const override {
-        return done_overlay ? base_iter->isValid() : overlay_iter->isValid();
+        return done_overlay ? base_iter->isValid() : true;
     }
 
     String path() const override {
@@ -233,10 +237,10 @@ private:
     MetadataStoragePtr tracked_metadata;
 
     void upd() {
-        if (!done_overlay && !isValid()) {
+        if (!done_overlay && !overlay_iter->isValid()) {
             done_overlay = true;
         }
-        while (done_overlay && isValid() && tracked_metadata->exists(dataPath(base_iter->path()))) {
+        while (done_overlay && base_iter->isValid() && tracked_metadata->exists(dataPath(base_iter->path()))) {
             next();
         }
     }
@@ -258,6 +262,7 @@ void DiskOverlay::createFile(const String & path) {
 }
 
 void DiskOverlay::moveFile(const String & from_path, const String & to_path) {
+    std::cout << "Trying to move file: " << from_path << " -> " << to_path << std::endl;
     if (!exists(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move file: from_path doesn't exist");
     }
@@ -313,15 +318,26 @@ void DiskOverlay::replaceFile(const String & from_path, const String & to_path) 
 }
 
 void DiskOverlay::listFiles(const String & path, std::vector<String> & file_names) const {
+    if (!exists(path) || !isDirectory(path)) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't list files: path doesn't exist or isn't a directory");
+    }
+
+    file_names.clear();
     std::vector<String> files;
-    disk_base->listFiles(path, files);
-    for (const String& file : files) {
-        if (!isTracked(mergePath(path, file))) {
-            file_names.push_back(file);
+
+    if (disk_base->exists(path) && disk_base->isDirectory(path)) {
+        disk_base->listFiles(path, files);
+        for (const String& file : files) {
+            if (!isTracked(mergePath(path, file))) {
+                file_names.push_back(file);
+            }
         }
     }
-    disk_overlay->listFiles(path, files);
-    file_names.insert(file_names.end(), files.begin(), files.end());
+
+    if (disk_overlay->exists(path)) {
+        disk_overlay->listFiles(path, files);
+        file_names.insert(file_names.end(), files.begin(), files.end());
+    }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskOverlay::readFile(
