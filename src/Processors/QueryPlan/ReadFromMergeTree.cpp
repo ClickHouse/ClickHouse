@@ -778,7 +778,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         fault(thread_local_rng) &&
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
-        !prewhere_info)
+        !prewhere_info &&
+        !lazily_read_info)
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);

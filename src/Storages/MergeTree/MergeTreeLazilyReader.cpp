@@ -116,7 +116,10 @@ void MergeTreeLazilyReader::transformLazyColumns(
             size_t skipped_rows = 0;
             if (current_offset)
                 skipped_rows = reader->getSkippedRows()[i];
-            lazily_read_columns[i]->insert((*columns_to_read[i])[current_offset - skipped_rows]);
+            if (columns_to_read[i]->size() <= (current_offset - skipped_rows))
+                lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
+            else
+                lazily_read_columns[i]->insert((*columns_to_read[i])[current_offset - skipped_rows]);
         }
     }
 
