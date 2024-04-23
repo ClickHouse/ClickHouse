@@ -15,7 +15,10 @@ RUN curl -o krb5-libs-1.10.3-65.el6.x86_64.rpm ftp://ftp.pbone.net/mirror/vault.
     rm -fr *.rpm
 
 RUN cd /tmp && \
-    curl http://archive.apache.org/dist/commons/daemon/source/commons-daemon-1.0.15-src.tar.gz -o commons-daemon-1.0.15-src.tar.gz && \
+    curl -o wget.rpm ftp://ftp.pbone.net/mirror/vault.centos.org/6.9/os/x86_64/Packages/wget-1.12-10.el6.x86_64.rpm && \
+    rpm -i wget.rpm && \
+    rm -fr *.rpm && \
+    wget --no-check-certificate https://archive.apache.org/dist/commons/daemon/source/commons-daemon-1.0.15-src.tar.gz && \
     tar xzf commons-daemon-1.0.15-src.tar.gz && \
     cd commons-daemon-1.0.15-src/src/native/unix && \
     ./configure && \
