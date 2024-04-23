@@ -87,7 +87,7 @@ TEST_F(OverlayTest, moveFile)
     over->moveFile("file1.txt", "file2.txt");
 
     std::vector<String> paths, corr({"file2.txt"});
-    over->listFiles("folder", paths);
+    over->listFiles("", paths);
 
     std::sort(paths.begin(), paths.end());
     EXPECT_EQ(paths, corr);
@@ -95,7 +95,7 @@ TEST_F(OverlayTest, moveFile)
     over->createFile("file1.txt");
     paths.clear();
     corr = {"file1.txt", "file2.txt"};
-    over->listFiles("folder", paths);
+    over->listFiles("", paths);
 
     std::sort(paths.begin(), paths.end());
     EXPECT_EQ(paths, corr);

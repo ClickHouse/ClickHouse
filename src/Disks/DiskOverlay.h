@@ -101,10 +101,9 @@ public:
 private:
     void setTracked(const String& path);
 
-    // Check if overlay overwrites data on base
-    bool isReplaced(const String& path) const;
-
-    void setReplaced(const String& path);
+    // When a file needs to be created on disk_overlay, we might be missing some parent directories that are
+    // present on disk_base
+    void ensureHaveDirectories(const String& path);
 
     // Get path to file in base disk
     std::optional<String> basePath(const String& path) const;
