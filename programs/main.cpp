@@ -22,6 +22,9 @@
 #include <base/phdr_cache.h>
 #include <base/coverage.h>
 
+#ifdef USE_LFMALLOC
+#include <../../contrib/catboost/library/cpp/lfalloc/lf_allocX64.h>
+#endif
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseServer(int argc, char ** argv);
@@ -456,6 +459,10 @@ int main(int argc_, char ** argv_)
     ///  will work only after additional call of this function.
     /// Note: we forbid dlopen in our code.
     updatePHDRCache();
+
+#ifdef USE_LFMALLOC
+    LFAlloc_SetParam("TransparentHugePages", "true");
+#endif
 
 #if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
