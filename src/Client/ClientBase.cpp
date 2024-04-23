@@ -922,7 +922,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         ignore_error);
 
     if (!parsed_query)
-        return ignore_error;
+        return true;
 
     String query_to_execute;
 
