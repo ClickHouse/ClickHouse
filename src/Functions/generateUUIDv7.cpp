@@ -46,7 +46,8 @@ inline void fillTimestamp(UUIDAsArray & uuid, uint64_t timestamp)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
-    namespace UUIDv7Impl {
+    namespace UUIDv7Impl
+    {
         inline void store(UUID & new_uuid, UUIDAsArray & uuid)
         {
             uuid[6] = (uuid[6] & 0x0f) | 0x70; // version 7
