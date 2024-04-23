@@ -1990,6 +1990,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
                 [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
 
             RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
+            begin = end;
 
             single_stream_partitions.push_back(
                 createMergeTreePartitionSequentialSource(data, storage_snapshot, std::move(partition_parts), result.column_names_to_read));
