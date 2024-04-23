@@ -172,8 +172,7 @@ DECLARE_SEVERAL_IMPLEMENTATIONS(
                 Data() : std::lock_guard<std::mutex>(mtx), CounterDataCommon(uuid_data) { }
             };
         };
-    } // namespace UUIDv7Impl
-
+    }
 
     template <typename FillPolicy>
     class FunctionGenerateUUIDv7Base
