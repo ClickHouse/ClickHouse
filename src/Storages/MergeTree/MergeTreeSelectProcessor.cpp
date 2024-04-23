@@ -150,13 +150,17 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             for (size_t i = 0, j = 0; i < result_header.columns(); ++i)
             {
                 const ColumnWithTypeAndName & type_and_name = result_header.getByPosition(i);
+                ColumnPtr current_column = type_and_name.type->createColumn();
+
                 if (j < index.size() && type_and_name.name == primary_key.column_names[j] && type_and_name.type == primary_key.data_types[j])
                 {
-                    ordered_columns.push_back(index[j]->cloneResized(1)); // TODO: use the first range pk whose range might contain results
+                    auto column = current_column->cloneEmpty();
+                    column->insert((*index[j])[0]);  // TODO: use the first range pk whose range might contain results
+                    ordered_columns.push_back(std::move(column));
                     ++j;
                 }
                 else
-                    ordered_columns.push_back(type_and_name.type->createColumn()->cloneResized(1));
+                    ordered_columns.push_back(current_column->cloneResized(1));
             }
 
             return ChunkAndProgress{
