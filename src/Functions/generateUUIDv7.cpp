@@ -165,7 +165,7 @@ DECLARE_SEVERAL_IMPLEMENTATIONS(
             static constexpr auto name = "generateUUIDv7WithCounter";
             struct Data : std::lock_guard<std::mutex>, CounterDataCommon
             {
-                // Implement counter monotony whithin one timestamp accross all threads generating UUIDv7 with counter simultaneously
+                // Implement counter monotony within one timestamp across all threads generating UUIDv7 with counter simultaneously
                 static inline UUIDAsArray uuid_data;
                 static inline std::mutex mtx;
                 Data() : std::lock_guard<std::mutex>(mtx), CounterDataCommon(uuid_data) { }
@@ -360,7 +360,7 @@ The function returns a value of type UUID.
             .description = R"(
 Generates a UUID of version 7 with current Unix time having milliseconds precision, a monotonic counter within the same timestamp and the same request starting from the random value, and followed by 4 random bytes.
 This function takes an optional argument, the value of which is discarded to generate different values in case the function is called multiple times.
-This function is a little bit faster version of the function GenerateUUIDv7WithCounter. It doesn't guarantee the counter monotony withing the same timestamp accross different requests.
+This function is a little bit faster version of the function GenerateUUIDv7WithCounter. It doesn't guarantee the counter monotony within the same timestamp across different requests.
 The function returns a value of type UUID.
 )",
             .examples{
