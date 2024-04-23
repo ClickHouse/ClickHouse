@@ -126,7 +126,7 @@ protected:
                 OUT_SIZE, /* дичь какая-то */
                 reinterpret_cast<unsigned char *>(dest + shift)
             );
-            shift += lens[i];
+            shift += decompressed_size + 1;
             std::cout << "decompressed size: " << decompressed_size << std::endl;
         }
     }
@@ -153,7 +153,7 @@ private:
         UInt32 ptr = 0;
         rows[ptr] = data;
 
-        for (UInt32 i = 0; i < size; ++i) {
+        for (UInt32 i = 0; i < size - 1; ++i) {
             if (data[i] == '\0') {
                 ++ptr;
                 rows[ptr] = data + i + 1;
