@@ -625,7 +625,12 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    pipeline.addTransform(std::make_shared<SquashingChunksTransform>(
+    pipeline.addTransform(std::make_shared<BalancingChunksTransform>(
+        pipeline.getHeader(),
+        context->getSettingsRef().min_insert_block_size_rows,
+        context->getSettingsRef().min_insert_block_size_bytes,
+        true));
+    pipeline.addTransform(std::make_shared<SquashingChunksTransformForBalancing>(
         pipeline.getHeader(),
         context->getSettingsRef().min_insert_block_size_rows,
         context->getSettingsRef().min_insert_block_size_bytes));
