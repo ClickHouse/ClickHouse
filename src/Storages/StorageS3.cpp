@@ -229,6 +229,14 @@ public:
         return buffer.size();
     }
 
+    bool hasMore()
+    {
+        if (!buffer.size())
+            return !(expanded_keys_iter == expanded_keys.end() && is_finished_for_key);
+        else
+            return true;
+    }
+
     ~Impl()
     {
         list_objects_pool.wait();
@@ -479,6 +487,11 @@ StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next(siz
 size_t StorageS3Source::DisclosedGlobIterator::estimatedKeysCount()
 {
     return pimpl->objectsCount();
+}
+
+bool StorageS3Source::DisclosedGlobIterator::hasMore()
+{
+    return pimpl->hasMore();
 }
 
 class StorageS3Source::KeysIterator::Impl
@@ -1243,8 +1256,16 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
     if (estimated_keys_count > 1)
         num_streams = std::min(num_streams, estimated_keys_count);
     else
-        /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
-        num_streams = 1;
+    {
+        const auto glob_iter = std::dynamic_pointer_cast<StorageS3Source::DisclosedGlobIterator>(iterator_wrapper);
+        if (!(glob_iter && glob_iter->hasMore()))
+        {
+            /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
+            num_streams = 1;
+        }
+        /// Otherwise, 1000 files were already listed, but none of them is actually what we are looking for.
+        /// We cannot estimate _how many_ there are left, but if there are more files to list, it's faster to do it in many streams.
+    }
 
     const size_t max_threads = context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
