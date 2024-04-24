@@ -76,7 +76,7 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
         - [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 - AutoML
     - [MindsDB](https://mindsdb.com/)
-        - [MindsDB](https://github.com/mindsdb/mindsdb) - Predictive AI layer for ClickHouse database.
+        - [MindsDB](https://github.com/mindsdb/mindsdb) - The platform for customizing AI from enterprise data.
 
 ## Programming Language Ecosystems {#programming-language-ecosystems}
 
