@@ -15,6 +15,7 @@ from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
@@ -27,6 +28,8 @@ def get_additional_envs(
     check_name: str, run_by_hash_num: int, run_by_hash_total: int
 ) -> List[str]:
     result = []
+    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
+    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     if "DatabaseReplicated" in check_name:
         result.append("USE_DATABASE_REPLICATED=1")
     if "DatabaseOrdinary" in check_name:
