@@ -18,6 +18,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsDateTime.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -101,6 +102,7 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
             encoder.write_int(static_cast<unsigned int>(assert_cast<const ColumnUInt16 &>(column).getElement(row_num)));
             return;
         }
+        case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
         {
             encoder.write_int(static_cast<unsigned int>(assert_cast<const ColumnUInt32 &>(column).getElement(row_num)));
@@ -135,6 +137,7 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
             encoder.write_int(static_cast<int>(assert_cast<const ColumnInt16 &>(column).getElement(row_num)));
             return;
         }
+        case TypeIndex::DateTime64: [[fallthrough]];
         case TypeIndex::Int32:
         {
             encoder.write_int(static_cast<int>(assert_cast<const ColumnInt32 &>(column).getElement(row_num)));
@@ -175,6 +178,20 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
             }
 
             encoder.write_bytes(reinterpret_cast<const unsigned char*>(&num), sizeof(Int256));
+            return;
+        }
+        case TypeIndex::Date:
+        {
+            uint16_t days = assert_cast<const ColumnDate &>(column).getElement(row_num);
+            encoder.write_tag(100);
+            encoder.write_int(static_cast<unsigned>(days));
+            return;
+        }
+        case TypeIndex::Date32:
+        {
+            int days = assert_cast<const ColumnDate32 &>(column).getElement(row_num);
+            encoder.write_tag(100);
+            encoder.write_int(days);
             return;
         }
         case TypeIndex::Float32:
