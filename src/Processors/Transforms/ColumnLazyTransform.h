@@ -7,7 +7,7 @@ namespace DB
 class ColumnLazyTransform : public ISimpleTransform
 {
 public:
-    ColumnLazyTransform(const Block & header_);
+    explicit ColumnLazyTransform(const Block & header_);
 
     static Block transformHeader(Block header);
 

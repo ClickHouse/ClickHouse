@@ -177,32 +177,27 @@ Block NativeReader::read()
 
         SerializationPtr serialization;
         ColumnPtr read_column;
+        const ColumnLazy * column_lazy = nullptr;
         bool skip_reading = false;
-        bool is_lazy_column = false;
 
         if (const auto * tmp_header_column = header.findByName(column.name))
+            column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get());
+
+        if (column_lazy)
         {
-            if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get()))
+            if (column_lazy->getColumnLazyHelper())
             {
-                if (column_lazy->getColumnLazyHelper())
-                {
-                    serialization = column_lazy->getColumnLazyHelper()->getSerialization();
-                    const auto & tmp_columns = column_lazy->getColumns();
-                    read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
-                }
-                else
-                {
-                    read_column = ColumnLazy::create(rows);
-                    skip_reading = true;
-                }
-                is_lazy_column = true;
+                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+                const auto & tmp_columns = column_lazy->getColumns();
+                read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
+            }
+            else
+            {
+                read_column = ColumnLazy::create(rows);
+                skip_reading = true;
             }
         }
-
-        if (is_lazy_column)
-        {
-        }
-        else if (is_lazy_column && server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        else if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->createSerializationInfo({});
 
@@ -247,7 +242,7 @@ Block NativeReader::read()
 
                 if (!skip_reading)
                 {
-                    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(header_column.column.get()))
+                    if (column_lazy)
                     {
                         if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
                             column.column = ColumnLazy::create(column_tuple->getColumns(), column_lazy->getColumnLazyHelper());
