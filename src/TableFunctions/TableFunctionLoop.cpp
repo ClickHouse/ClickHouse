@@ -1,19 +1,16 @@
 #include "config.h"
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/Exception.h>
-#include <Common/parseAddress.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/quoteString.h>
-#include <Parsers/ASTLiteral.h>
+#include <Storages/StorageLoop.h>
 #include "registerTableFunctions.h"
-
-#include <Common/parseRemoteDescription.h>
 
 namespace DB
 {
@@ -55,30 +52,45 @@ void TableFunctionLoop::parseArguments(const ASTPtr & ast_function, ContextPtr c
     if (args.empty())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No arguments provided for table function 'loop'");
 
+    if (args.size() == 1)
+    {
+        if (const auto * id = args[0]->as<ASTIdentifier>())
+        {
+            String id_name = id->name();
+
+            size_t dot_pos = id_name.find('.');
+            if (dot_pos != String::npos)
+            {
+                database_name_ = id_name.substr(0, dot_pos);
+                table_name_ = id_name.substr(dot_pos + 1);
+            }
+            else
+            {
+                table_name_ = id_name;
+            }
+        }
+        else if (const auto * func = args[0]->as<ASTFunction>())
+        {
+            inner_table_function_ast = args[0];
+        }
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected identifier or function for argument 1 of function 'loop', got {}", args[0]->getID());
+        }
+    }
     // loop(database, table)
-    if (args.size() == 2)
+    else if (args.size() == 2)
     {
         args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
         args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
 
         database_name_ = checkAndGetLiteralArgument<String>(args[0], "database");
         table_name_ = checkAndGetLiteralArgument<String>(args[1], "table");
-        /*if (const auto * lit = args[0]->as<ASTLiteral>())
-            database_name_ = lit->value.safeGet<String>();
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected literal for argument 1 of function 'loop', got {}", args[0]->getID());
-
-        if (const auto * lit = args[1]->as<ASTLiteral>())
-            table_name_ = lit->value.safeGet<String>();
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected literal for argument 2 of function 'loop', got {}", args[1]->getID());*/
     }
-    // loop(other_table_function(...))
-    else if (args.size() == 1)
-        inner_table_function_ast = args[0];
-
     else
+    {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function 'loop' must have 1 or 2 arguments.");
+    }
 }
 
 ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const
@@ -97,13 +109,18 @@ StoragePtr TableFunctionLoop::executeImpl(
     bool is_insert_query) const
 {
     StoragePtr storage;
-    if (!database_name_.empty() && !table_name_.empty())
+    if (!table_name_.empty())
     {
-        auto database = DatabaseCatalog::instance().getDatabase(database_name_);
+        String database_name = database_name_;
+        if (database_name.empty())
+            database_name = context->getCurrentDatabase();
+
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
         storage = database->tryGetTable(table_name_ ,context);
         if (!storage)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", table_name_, database_name_);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", table_name_, database_name);
     }
+
     else
     {
         auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
@@ -114,8 +131,13 @@ StoragePtr TableFunctionLoop::executeImpl(
             std::move(cached_columns),
             is_insert_query);
     }
-
-    return storage;
+    auto res = std::make_shared<StorageLoop>(
+        StorageID(getDatabaseName(), table_name),
+        storage
+        );
+    res->startup();
+    return res;
+    // return storage;
 }
 
 void registerTableFunctionLoop(TableFunctionFactory & factory)
