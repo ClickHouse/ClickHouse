@@ -508,6 +508,7 @@ namespace DB
     MR_MACROS(WHEN, "WHEN") \
     MR_MACROS(WHERE, "WHERE") \
     MR_MACROS(WINDOW, "WINDOW") \
+    MR_MACROS(QUALIFY, "QUALIFY") \
     MR_MACROS(WITH_ADMIN_OPTION, "WITH ADMIN OPTION") \
     MR_MACROS(WITH_CHECK, "WITH CHECK") \
     MR_MACROS(WITH_FILL, "WITH FILL") \
@@ -601,6 +602,8 @@ public:
     explicit ParserKeyword(Keyword keyword);
 
     constexpr const char * getName() const override { return s.data(); }
+
+    Highlight highlight() const override { return Highlight::keyword; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

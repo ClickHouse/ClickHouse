@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, CIStages, Labels, JobNames
+from ci_config import CI_CONFIG, Build, CIStages, JobNames, Labels
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -49,7 +49,7 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
-from github import Github
+from github_helper import GitHub
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
@@ -318,7 +318,7 @@ class CiCache:
             self.update()
 
         if self.cache_data_fetched:
-            # there are no record w/o underling data - no need to fetch
+            # there are no records without fetched data - no need to fetch
             return self
 
         # clean up
@@ -770,9 +770,10 @@ class CiOptions:
         res = CiOptions()
         pr_info = PRInfo()
         if (
-            not pr_info.is_pr() and not debug_message
+            not pr_info.is_pr and not debug_message
         ):  # if commit_message is provided it's test/debug scenario - do not return
             # CI options can be configured in PRs only
+            # if debug_message is provided - it's a test
             return res
         message = debug_message or GitRunner(set_cwd_to_git_root=True).run(
             f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
@@ -790,9 +791,9 @@ class CiOptions:
             print(f"CI tags from PR body: [{matches_pr}]")
             matches = list(set(matches + matches_pr))
 
-        if "do not test" in pr_info.labels:
-            # do_not_test could be set in GH labels
-            res.do_not_test = True
+            if "do not test" in pr_info.labels:
+                # do_not_test could be set in GH labels
+                res.do_not_test = True
 
         for match in matches:
             if match.startswith("job_"):
@@ -1217,19 +1218,19 @@ def _mark_success_action(
     if job_config.run_always or job_config.run_by_label:
         print(f"Job [{job}] runs always or by label in CI - do not cache")
     else:
-        if pr_info.is_master():
+        if pr_info.is_master:
             pass
             # delete method is disabled for ci_cache. need it?
             # pending enabled for master branch jobs only
             # ci_cache.delete_pending(job, batch, num_batches, release_branch=True)
         if job_status and job_status.is_ok():
             ci_cache.push_successful(
-                job, batch, num_batches, job_status, pr_info.is_release_branch()
+                job, batch, num_batches, job_status, pr_info.is_release_branch
             )
             print(f"Job [{job}] is ok")
         elif job_status and not job_status.is_ok():
             ci_cache.push_failed(
-                job, batch, num_batches, job_status, pr_info.is_release_branch()
+                job, batch, num_batches, job_status, pr_info.is_release_branch
             )
             print(f"Job [{job}] is failed with status [{job_status.status}]")
         else:
@@ -1237,7 +1238,7 @@ def _mark_success_action(
                 description="dummy description", status=ERROR, report_url="dummy url"
             )
             ci_cache.push_failed(
-                job, batch, num_batches, job_status, pr_info.is_release_branch()
+                job, batch, num_batches, job_status, pr_info.is_release_branch
             )
             print(f"No CommitStatusData for [{job}], push dummy failure to ci_cache")
 
@@ -1353,9 +1354,9 @@ def _configure_jobs(
         batches_to_do: List[int] = []
         add_to_skip = False
 
-        if job_config.pr_only and pr_info.is_release_branch():
+        if job_config.pr_only and pr_info.is_release_branch:
             continue
-        if job_config.release_only and not pr_info.is_release_branch():
+        if job_config.release_only and not pr_info.is_release_branch:
             continue
 
         # fill job randomization buckets (for jobs with configured @random_bucket property))
@@ -1378,7 +1379,7 @@ def _configure_jobs(
                 job,
                 batch,
                 num_batches,
-                release_branch=pr_info.is_release_branch()
+                release_branch=pr_info.is_release_branch
                 and job_config.required_on_release_branch,
             ):
                 # ci cache is enabled and job is not in the cache - add
@@ -1389,7 +1390,7 @@ def _configure_jobs(
                     job,
                     batch,
                     num_batches,
-                    release_branch=pr_info.is_release_branch()
+                    release_branch=pr_info.is_release_branch
                     and job_config.required_on_release_branch,
                 ):
                     if job in jobs_to_wait:
@@ -1412,7 +1413,7 @@ def _configure_jobs(
             # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
 
-    if not pr_info.is_release_branch():
+    if not pr_info.is_release_branch:
         # randomization bucket filtering (pick one random job from each bucket, for jobs with configured random_bucket property)
         for _, jobs in randomization_buckets.items():
             jobs_to_remove_randomization = set()
@@ -1434,7 +1435,7 @@ def _configure_jobs(
         jobs_to_do, jobs_to_skip, jobs_params
     )
 
-    if pr_info.is_merge_queue():
+    if pr_info.is_merge_queue:
         # FIXME: Quick support for MQ workflow which is only StyleCheck for now
         jobs_to_do = [JobNames.STYLE_CHECK]
         jobs_to_skip = []
@@ -1503,7 +1504,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 
     # create GH status
     pr_info = PRInfo()
-    commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
+    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
 
     def _concurrent_create_status(job: str, batch: int, num_batches: int) -> None:
         job_status = ci_cache.get_successful(job, batch, num_batches)
@@ -1550,7 +1551,7 @@ def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
     ]
     print(f"CI modifyers from commit message: [{res}]")
     res_2 = []
-    if pr_info.is_pr():
+    if pr_info.is_pr:
         matches = [match[-1] for match in re.findall(pattern, pr_info.body)]
         res_2 = [
             match
@@ -1625,7 +1626,7 @@ def _upload_build_artifacts(
 
     # Upload head master binaries
     static_bin_name = CI_CONFIG.build_config[build_name].static_binary_name
-    if pr_info.is_master() and static_bin_name:
+    if pr_info.is_master and static_bin_name:
         # Full binary with debug info:
         s3_path_full = "/".join((pr_info.base_ref, static_bin_name, "clickhouse-full"))
         binary_full = Path(job_report.build_dir_for_upload) / "clickhouse"
@@ -1756,6 +1757,32 @@ def _upload_build_profile_data(
             logging.error("Failed to insert binary_size_file for the build, continue")
 
 
+def _add_build_to_version_history(
+    pr_info: PRInfo,
+    job_report: JobReport,
+    version: str,
+    docker_tag: str,
+    ch_helper: ClickHouseHelper,
+) -> None:
+    # with some probability we will not silently break this logic
+    assert pr_info.sha and pr_info.commit_html_url and pr_info.head_ref and version
+
+    data = {
+        "check_start_time": job_report.start_time,
+        "pull_request_number": pr_info.number,
+        "pull_request_url": pr_info.pr_html_url,
+        "commit_sha": pr_info.sha,
+        "commit_url": pr_info.commit_html_url,
+        "version": version,
+        "docker_tag": docker_tag,
+        "git_ref": pr_info.head_ref,
+    }
+
+    print(f"::notice ::Log Adding record to versions history: {data}")
+
+    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+
+
 def _run_test(job_name: str, run_command: str) -> int:
     assert (
         run_command or CI_CONFIG.get_job_config(job_name).run_command
@@ -1881,11 +1908,11 @@ def main() -> int:
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if pr_info.is_master():
+            if pr_info.is_master:
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(
-                    jobs_data.get("jobs_to_wait", {}), pr_info.is_release_branch()
+                    jobs_data.get("jobs_to_wait", {}), pr_info.is_release_branch
                 )
                 jobs_to_do = jobs_data["jobs_to_do"]
                 jobs_to_skip = jobs_data["jobs_to_skip"]
@@ -1902,7 +1929,7 @@ def main() -> int:
                         del jobs_params[job]
 
             # set planned jobs as pending in the CI cache if on the master
-            if pr_info.is_master():
+            if pr_info.is_master:
                 for job in jobs_data["jobs_to_do"]:
                     config = CI_CONFIG.get_job_config(job)
                     if config.run_always or config.run_by_label:
@@ -1912,7 +1939,7 @@ def main() -> int:
                         job,
                         job_params["batches"],
                         config.num_batches,
-                        release_branch=pr_info.is_release_branch(),
+                        release_branch=pr_info.is_release_branch,
                     )
 
             if "jobs_to_wait" in jobs_data:
@@ -1967,7 +1994,7 @@ def main() -> int:
         else:
             # this is a test job - check if GH commit status or cache record is present
             commit = get_commit(
-                Github(get_best_robot_token(), per_page=100), pr_info.sha
+                GitHub(get_best_robot_token(), per_page=100), pr_info.sha
             )
 
             # rerun helper check
@@ -2083,7 +2110,7 @@ def main() -> int:
                         additional_urls=additional_urls or None,
                     )
                 commit = get_commit(
-                    Github(get_best_robot_token(), per_page=100), pr_info.sha
+                    GitHub(get_best_robot_token(), per_page=100), pr_info.sha
                 )
                 post_commit_status(
                     commit,
@@ -2094,11 +2121,13 @@ def main() -> int:
                     pr_info,
                     dump_to_file=True,
                 )
-                update_mergeable_check(
-                    commit,
-                    pr_info,
-                    job_report.check_name or _get_ext_check_name(args.job_name),
-                )
+                if not pr_info.is_merge_queue:
+                    # in the merge queue mergeable status must be set only in FinishCheck (last job in wf)
+                    update_mergeable_check(
+                        commit,
+                        pr_info,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
+                    )
 
             print(f"Job report url: [{check_url}]")
             prepared_events = prepare_tests_results_for_clickhouse(
@@ -2113,6 +2142,15 @@ def main() -> int:
             ch_helper.insert_events_into(
                 db="default", table="checks", events=prepared_events
             )
+
+            if "DockerServerImage" in args.job_name and indata is not None:
+                _add_build_to_version_history(
+                    pr_info,
+                    job_report,
+                    indata["version"],
+                    indata["build"],
+                    ch_helper,
+                )
         else:
             # no job report
             print(f"No job report for {[args.job_name]} - do nothing")
