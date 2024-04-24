@@ -14,14 +14,14 @@ RUN curl -o krb5-libs-1.10.3-65.el6.x86_64.rpm ftp://ftp.pbone.net/mirror/vault.
     rpm -Uvh libkadm5-1.10.3-65.el6.x86_64.rpm libss-1.41.12-24.el6.x86_64.rpm krb5-libs-1.10.3-65.el6.x86_64.rpm krb5-workstation-1.10.3-65.el6.x86_64.rpm libcom_err-1.41.12-24.el6.x86_64.rpm && \
     rm -fr *.rpm
 
+ADD https://archive.apache.org/dist/commons/daemon/source/commons-daemon-1.0.15-src.tar.gz /tmp/commons-daemon-1.0.15-src.tar.gz
+
 RUN cd /tmp && \
-    curl -o wget.rpm ftp://ftp.pbone.net/mirror/vault.centos.org/6.9/os/x86_64/Packages/wget-1.12-10.el6.x86_64.rpm && \
-    rpm -i wget.rpm && \
-    rm -fr *.rpm && \
-    wget --no-check-certificate https://archive.apache.org/dist/commons/daemon/source/commons-daemon-1.0.15-src.tar.gz && \
     tar xzf commons-daemon-1.0.15-src.tar.gz && \
     cd commons-daemon-1.0.15-src/src/native/unix && \
     ./configure && \
     make && \
     cp ./jsvc /usr/local/hadoop-2.7.0/sbin && \
-    [ -e /usr/local/hadoop ] || ln -s ./hadoop-2.7.0 /usr/local/hadoop
+    cd /tmp && \
+    rm -rf commons-daemon-1.0.15-src* && \
+    { [ -e /usr/local/hadoop ] || ln -s ./hadoop-2.7.0 /usr/local/hadoop; }
