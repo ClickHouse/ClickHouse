@@ -4679,7 +4679,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
 
             /// Move parts are non replicated operations, so we take lock here.
             /// All other locks are taken in StorageReplicatedMergeTree
-            lockSharedData(*part_copy);
+            lockSharedData(*part_copy, /* replace_existing_lock */ true);
 
             return;
         }

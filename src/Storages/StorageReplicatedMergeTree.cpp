@@ -2527,7 +2527,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             renameTempPartAndReplace(part_desc->res_part, transaction);
             getCommitPartOps(ops, part_desc->res_part);
 
-            lockSharedData(*part_desc->res_part, false, part_desc->hardlinked_files);
+            lockSharedData(*part_desc->res_part, /* replace_existing_lock */ true, part_desc->hardlinked_files);
         }
 
 
@@ -9724,6 +9724,15 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
 
+    auto is_ephemeral = [&](const String & node_path) -> bool
+    {
+        String dummy_res;
+        Coordination::Stat node_stat;
+        if (zookeeper->tryGet(node_path, dummy_res, &node_stat))
+            return node_stat.ephemeralOwner;
+        return false;
+    };
+
     bool created = false;
     for (int attempts = 5; attempts > 0; --attempts)
     {
@@ -9743,6 +9752,9 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
 
             if (error == Coordination::Error::ZNODEEXISTS)
             {
+                if (is_ephemeral(zookeeper_node))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} already exists, but it is ephemeral", zookeeper_node);
+
                 size_t failed_op = zkutil::getFailedOpIndex(error, responses);
                 /// Part was locked before, unfortunately it's possible during moves
                 if (ops[failed_op]->getPath() == zookeeper_node)
