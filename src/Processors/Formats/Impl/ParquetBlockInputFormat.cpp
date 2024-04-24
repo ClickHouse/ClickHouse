@@ -260,8 +260,6 @@ static auto bloomFilterMaybeContains(
         return true;
     }
 
-    ParquetBloomFilterCondition pbfc(filter_dag, context, header);
-
     ParquetBloomFilterCondition::IndexToColumnBF index_to_column_bf;
 
     auto get_header_index_by_column_name = [&](const std::string & column_name) -> std::size_t
@@ -290,7 +288,7 @@ static auto bloomFilterMaybeContains(
         index_to_column_bf[get_header_index_by_column_name(column_name)] = std::move(bf);
     }
 
-    return pbfc.mayBeTrueOnRowGroup(index_to_column_bf);
+    return ParquetBloomFilterCondition(filter_dag, context, header).mayBeTrueOnRowGroup(index_to_column_bf);
 }
 
 //static auto bloomFilterMaybeContains(int row_group, std::unordered_map<std::size_t, std::vector<Field>> column_indice_to_values, auto arrow_file, auto metadata)
@@ -530,6 +528,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (skip_row_groups.contains(row_group))
             continue;
 
+        // this has to be checked every loop, but the dag evaluation should not afaik. hmm that's tricky
+        // two options: 1. make it happen everytime. 2. store raw columns and hash only at the end
         if (format_settings.parquet.bloom_filter_push_down
             && !bloomFilterMaybeContains(row_group, filter_dag, getPort().getHeader(), column_name_to_index, arrow_file, metadata, ctx))
         {

@@ -16,35 +16,40 @@ namespace DB
 namespace
 {
 
-ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
+std::vector<char> toByteArray(std::string_view data)
 {
-    if (prepared_set->getDataTypes().size() == 1)
-        return {prepared_set->getSetElements()[0], prepared_set->getElementsTypes()[0], "dummy"};
-
-    Columns set_elements;
-    for (auto & set_element : prepared_set->getSetElements())
-
-        set_elements.emplace_back(set_element->convertToFullColumnIfConst());
-
-    return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
+    auto size = std::max(data.size(), sizeof(uint32_t));
+    std::vector<char> result(size);
+    std::copy(data.begin(), data.end(), result.begin());
+    return result;
 }
 
 bool maybeTrueOnBloomFilter(const IColumn * data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
 {
     for (size_t i = 0; i < data_column->size(); ++i) {
-        const auto data = data_column->getDataAt(i);
-        parquet::ByteArray ba {data.toView()};
-        char xyz[4] = {0, 0, 0, 4};
-        [[maybe_unused]] std::string_view second = {xyz, sizeof(xyz)};
-        [[maybe_unused]] parquet::ByteArray second_ba {second};
-        // todo arthur this doesn't quite work, hashing works differently for different data types. but that's awkard
-        // it is probably hashing 32bits instead of 1
-        bool found = bloom_filter->FindHash(bloom_filter->Hash(&ba));
+        const auto data_view = data_column->getDataAt(i).toView();
+        if (isStringOrFixedString(data_column->getDataType()))
+        {
+            parquet::ByteArray ba = data_view;
+            bool found = bloom_filter->FindHash(bloom_filter->Hash(&ba));
 
-        if (match_all && !found)
-            return false;
-        if (!match_all && found)
-            return true;
+            if (match_all && !found)
+                return false;
+            if (!match_all && found)
+                return true;
+        }
+        else
+        {
+            parquet::ByteArray ba;
+            const auto normalized_vector = toByteArray(data_view);
+            ba = std::string_view {normalized_vector.data(), normalized_vector.size()};
+            bool found = bloom_filter->FindHash(bloom_filter->Hash(&ba));
+
+            if (match_all && !found)
+                return false;
+            if (!match_all && found)
+                return true;
+        }
     }
 
     return match_all;
@@ -98,13 +103,8 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
         {
             rpn_stack.emplace_back(true, true);
         }
-        else if (element.function == RPNElement::FUNCTION_IN
-                 || element.function == RPNElement::FUNCTION_NOT_IN
-                 || element.function == RPNElement::FUNCTION_EQUALS
-                 || element.function == RPNElement::FUNCTION_NOT_EQUALS
-                 || element.function == RPNElement::FUNCTION_HAS
-                 || element.function == RPNElement::FUNCTION_HAS_ANY
-                 || element.function == RPNElement::FUNCTION_HAS_ALL)
+        else if (element.function == RPNElement::FUNCTION_EQUALS
+                 || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
             bool match_rows = true;
             bool match_all = element.function == RPNElement::FUNCTION_HAS_ALL;
@@ -219,28 +219,7 @@ bool ParquetBloomFilterCondition::traverseFunction(
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if (functionIsInOrGlobalInOperator(function_name))
-        {
-            if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
-            {
-                if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
-                {
-                    if (prepared_set->hasExplicitSetElements())
-                    {
-                        const auto prepared_info = getPreparedSetInfo(prepared_set);
-                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
-                            maybe_useful = true;
-                    }
-                }
-            }
-        }
-        else if (function_name == "equals" ||
-                 function_name == "notEquals" ||
-                 function_name == "has" ||
-                 function_name == "mapContains" ||
-                 function_name == "indexOf" ||
-                 function_name == "hasAny" ||
-                 function_name == "hasAll")
+        if (function_name == "equals" || function_name == "notEquals")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -261,138 +240,6 @@ bool ParquetBloomFilterCondition::traverseFunction(
     return maybe_useful;
 }
 
-bool ParquetBloomFilterCondition::traverseTreeIn(
-    const String & function_name,
-    const RPNBuilderTreeNode & key_node,
-    const ConstSetPtr & prepared_set,
-    const DataTypePtr & type,
-    const ColumnPtr & column,
-    ParquetBloomFilterCondition::RPNElement & out)
-{
-    auto key_node_column_name = key_node.getColumnName();
-
-    if (header.has(key_node_column_name))
-    {
-//        size_t row_size = column->size();
-        size_t position = header.getPositionByName(key_node_column_name);
-//        const DataTypePtr & index_type = header.getByPosition(position).type;
-//        const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
-        out.predicate.emplace_back(std::make_pair(position, column));
-
-        if (function_name == "in"  || function_name == "globalIn")
-            out.function = RPNElement::FUNCTION_IN;
-
-        if (function_name == "notIn"  || function_name == "globalNotIn")
-            out.function = RPNElement::FUNCTION_NOT_IN;
-
-        return true;
-    }
-
-    if (key_node.isFunction())
-    {
-        auto key_node_function = key_node.toFunctionNode();
-        auto key_node_function_name = key_node_function.getFunctionName();
-        size_t key_node_function_arguments_size = key_node_function.getArgumentsSize();
-
-        WhichDataType which(type);
-
-        if (which.isTuple() && key_node_function_name == "tuple")
-        {
-            const auto & tuple_column = typeid_cast<const ColumnTuple *>(column.get());
-            const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
-
-            if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
-
-            bool match_with_subtype = false;
-            const auto & sub_columns = tuple_column->getColumns();
-            const auto & sub_data_types = tuple_data_type->getElements();
-
-            for (size_t index = 0; index < key_node_function_arguments_size; ++index)
-                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out);
-
-            return match_with_subtype;
-        }
-
-        if (key_node_function_name == "arrayElement")
-        {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] IN ('') because if key does not exists in map
-              * we return default value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
-              */
-            if (!prepared_set)
-                return false;
-
-            auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-            ColumnWithTypeAndName default_column_with_type_to_check { default_column_to_check, type, "" };
-            ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
-            auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
-            const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
-            bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
-            if (set_contain_default_value)
-                return false;
-
-            auto first_argument = key_node_function.getArgumentAt(0);
-            const auto column_name = first_argument.getColumnName();
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
-
-            if (header.has(map_keys_index_column_name))
-            {
-                /// For mapKeys we serialize key argument with bloom filter
-
-                auto second_argument = key_node_function.getArgumentAt(1);
-
-                Field constant_value;
-                DataTypePtr constant_type;
-
-                if (second_argument.tryGetConstant(constant_value, constant_type))
-                {
-                    size_t position = header.getPositionByName(map_keys_index_column_name);
-                    out.predicate.emplace_back(position, column);
-//                    const DataTypePtr & index_type = header.getByPosition(position).type;
-//                    const DataTypePtr actual_type = getPrimitiveType(index_type);
-//                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), constant_value)));
-                }
-                else
-                {
-                    return false;
-                }
-            }
-            else if (header.has(map_values_index_column_name))
-            {
-                /// For mapValues we serialize set with bloom filter
-
-//                size_t row_size = column->size();
-                size_t position = header.getPositionByName(map_values_index_column_name);
-                const DataTypePtr & index_type = header.getByPosition(position).type;
-                const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
-                const auto & array_nested_type = array_type.getNestedType();
-                const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-//                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
-                out.predicate.emplace_back(position, converted_column);
-            }
-            else
-            {
-                return false;
-            }
-
-            if (function_name == "in"  || function_name == "globalIn")
-                out.function = RPNElement::FUNCTION_IN;
-
-            if (function_name == "notIn"  || function_name == "globalNotIn")
-                out.function = RPNElement::FUNCTION_NOT_IN;
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
 bool ParquetBloomFilterCondition::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -403,196 +250,31 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
-    if (header.has(key_column_name))
+    if (!header.has(key_column_name))
     {
-        size_t position = header.getPositionByName(key_column_name);
-        const DataTypePtr & index_type = header.getByPosition(position).type;
-        const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
-
-        if (function_name == "has" || function_name == "indexOf")
-        {
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
-
-            /// We can treat `indexOf` function similar to `has`.
-            /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
-            /// The `parent` in this context is expected to be function `!=` (`notEquals`).
-            // tood arthur
-            bool indexOfCanUseBloomFilter = false;
-            if (function_name == "has" || indexOfCanUseBloomFilter)
-            {
-                out.function = RPNElement::FUNCTION_HAS;
-                const DataTypePtr actual_type = getPrimitiveType(array_type->getNestedType());
-                auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-                if (converted_field.isNull())
-                    return false;
-//
-                auto column = actual_type->createColumn();
-                column->insert(converted_field);
-                out.predicate.emplace_back(position, std::move(column));
-//                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
-            }
-        }
-        else if (function_name == "hasAny" || function_name == "hasAll")
-        {
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
-
-            if (value_field.getType() != Field::Types::Array)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array.", function_name);
-
-            const DataTypePtr actual_type = getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column;
-            {
-                const bool is_nullable = actual_type->isNullable();
-                auto mutable_column = actual_type->createColumn();
-
-                for (const auto & f : value_field.get<Array>())
-                {
-                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
-                        return false;
-
-                    auto converted = convertFieldToType(f, *actual_type);
-                    if (converted.isNull())
-                        return false;
-
-                    mutable_column->insert(converted);
-                }
-
-                column = std::move(mutable_column);
-            }
-
-            out.function = function_name == "hasAny" ?
-                                                     RPNElement::FUNCTION_HAS_ANY :
-                                                     RPNElement::FUNCTION_HAS_ALL;
-//            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
-            out.predicate.emplace_back(position, column);
-        }
-        else
-        {
-            if (array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
-
-            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-            const DataTypePtr actual_type = getPrimitiveType(index_type);
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-            if (converted_field.isNull())
-                return false;
-
-//            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
-            auto column = actual_type->createColumn();
-            column->insert(converted_field);
-            out.predicate.emplace_back(position, std::move(column));
-        }
-
-        return true;
+        return false;
     }
 
-    if (function_name == "mapContains" || function_name == "has")
-    {
-        auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
-        if (!header.has(map_keys_index_column_name))
-            return false;
+    size_t position = header.getPositionByName(key_column_name);
+    const DataTypePtr & index_type = header.getByPosition(position).type;
+    const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
-        size_t position = header.getPositionByName(map_keys_index_column_name);
-        const DataTypePtr & index_type = header.getByPosition(position).type;
-        const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+    if (array_type)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
 
-        if (!array_type)
-            return false;
+    out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+    const DataTypePtr actual_type = getPrimitiveType(index_type);
+    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+    if (converted_field.isNull())
+        return false;
 
-        out.function = RPNElement::FUNCTION_HAS;
-        const DataTypePtr actual_type = getPrimitiveType(array_type->getNestedType());
-        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-        if (converted_field.isNull())
-            return false;
+    //            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+    auto column = actual_type->createColumn();
+    column->insert(converted_field);
+    out.predicate.emplace_back(position, std::move(column));
 
-//        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
-        auto column = actual_type->createColumn();
-        column->insert(converted_field);
-        out.predicate.emplace_back(position, std::move(column));
-        return true;
-    }
-
-    if (key_node.isFunction())
-    {
-        WhichDataType which(value_type);
-
-        auto key_node_function = key_node.toFunctionNode();
-        auto key_node_function_name = key_node_function.getFunctionName();
-        size_t key_node_function_arguments_size = key_node_function.getArgumentsSize();
-
-        if (which.isTuple() && key_node_function_name == "tuple")
-        {
-            const Tuple & tuple = value_field.get<const Tuple &>();
-            const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
-
-            if (tuple.size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
-
-            bool match_with_subtype = false;
-            const DataTypes & subtypes = value_tuple_data_type->getElements();
-
-            for (size_t index = 0; index < tuple.size(); ++index)
-                match_with_subtype |= traverseTreeEquals(function_name, key_node_function.getArgumentAt(index), subtypes[index], tuple[index], out, &key_node);
-
-            return match_with_subtype;
-        }
-
-        if (key_node_function_name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
-        {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
-              * we return default value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
-              */
-            if (value_field == value_type->getDefault())
-                return false;
-
-            auto first_argument = key_node_function.getArgumentAt(0);
-            const auto column_name = first_argument.getColumnName();
-
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
-
-            size_t position = 0;
-            Field const_value = value_field;
-            DataTypePtr const_type;
-
-            if (header.has(map_keys_index_column_name))
-            {
-                position = header.getPositionByName(map_keys_index_column_name);
-                auto second_argument = key_node_function.getArgumentAt(1);
-
-                if (!second_argument.tryGetConstant(const_value, const_type))
-                    return false;
-            }
-            else if (header.has(map_values_index_column_name))
-            {
-                position = header.getPositionByName(map_values_index_column_name);
-            }
-            else
-            {
-                return false;
-            }
-
-            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-
-            const auto & index_type = header.getByPosition(position).type;
-            const auto actual_type = getPrimitiveType(index_type);
-//            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
-            auto column = actual_type->createColumn();
-            column->insert(const_value);
-            out.predicate.emplace_back(position, std::move(column));
-
-            return true;
-        }
-    }
-
-    return false;
+    return true;
 }
 
 }
