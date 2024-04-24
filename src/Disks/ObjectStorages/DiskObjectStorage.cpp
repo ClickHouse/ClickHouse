@@ -435,6 +435,11 @@ bool DiskObjectStorage::isWriteOnce() const
     return object_storage->isWriteOnce();
 }
 
+bool DiskObjectStorage::isMutable() const
+{
+    return !isWriteOnce() && !object_storage->isPlain();
+}
+
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     const auto config_prefix = "storage_configuration.disks." + name;

@@ -363,6 +363,9 @@ public:
 
     virtual bool isWriteOnce() const { return false; }
 
+    /// Whether this disk support mutations.
+    virtual bool isMutable() const { return true; }
+
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
