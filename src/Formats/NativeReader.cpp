@@ -176,34 +176,9 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
-        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
-        {
-            auto info = column.type->createSerializationInfo({});
-
-            UInt8 has_custom;
-            readBinary(has_custom, istr);
-            if (has_custom)
-                info->deserializeFromKindsBinary(istr);
-
-            serialization = column.type->getSerialization(*info);
-        }
-        else
-        {
-            serialization = column.type->getDefaultSerialization();
-        }
-
-        if (use_index)
-        {
-            /// Index allows to do more checks.
-            if (index_column_it->name != column.name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
-            if (index_column_it->type != type_name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
-        }
-
-        /// Data
-        ColumnPtr read_column = column.type->createColumn(*serialization);
+        ColumnPtr read_column;
         bool skip_reading = false;
+        bool is_lazy_column = false;
 
         if (const auto * tmp_header_column = header.findByName(column.name))
         {
@@ -220,7 +195,38 @@ Block NativeReader::read()
                     read_column = ColumnLazy::create(rows);
                     skip_reading = true;
                 }
+                is_lazy_column = true;
             }
+        }
+
+        if (is_lazy_column)
+        {
+        }
+        else if (is_lazy_column && server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        {
+            auto info = column.type->createSerializationInfo({});
+
+            UInt8 has_custom;
+            readBinary(has_custom, istr);
+            if (has_custom)
+                info->deserializeFromKindsBinary(istr);
+
+            serialization = column.type->getSerialization(*info);
+            read_column = column.type->createColumn(*serialization);
+        }
+        else
+        {
+            serialization = column.type->getDefaultSerialization();
+            read_column = column.type->createColumn(*serialization);
+        }
+
+        if (use_index)
+        {
+            /// Index allows to do more checks.
+            if (index_column_it->name != column.name)
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
+            if (index_column_it->type != type_name)
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
         }
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
