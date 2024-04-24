@@ -21,3 +21,14 @@ SELECT tuple(number + 1) AS x FROM numbers(10) GROUP BY number + 1, toString(x) 
 SELECT tuple(tuple(number)) AS x FROM numbers(10) WHERE toString(toUUID(tuple(number), NULL), x) GROUP BY number, (toString(x), number) WITH CUBE SETTINGS group_by_use_nulls = 1 FORMAT Null;
 
 SELECT  materialize('a'), 'a' AS key GROUP BY key WITH CUBE WITH TOTALS SETTINGS group_by_use_nulls = 1;
+
+EXPLAIN QUERY TREE
+SELECT a, b
+FROM numbers(3)
+GROUP BY number as a, (number + number) as b WITH CUBE
+ORDER BY a, b format Null;
+
+SELECT a, b
+FROM numbers(3)
+GROUP BY number as a, (number + number) as b WITH CUBE
+ORDER BY a, b;
