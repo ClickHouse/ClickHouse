@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-# isort: off
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
@@ -17,8 +16,6 @@ from github.GithubException import GithubException
 from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
-
-# isort: on
 
 from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
@@ -149,7 +146,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
 
-    if pr_info.is_merge_queue():
+    if pr_info.is_merge_queue:
         # skip report creation for the MQ
         return
 
@@ -448,7 +445,7 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
     )
 
     # FIXME: For now, always set mergeable check in the Merge Queue. It's required to pass MQ
-    if not_run and not pr_info.is_merge_queue():
+    if not_run and not pr_info.is_merge_queue:
         # Let's avoid unnecessary work
         return
 

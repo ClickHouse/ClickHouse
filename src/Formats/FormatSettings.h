@@ -223,6 +223,7 @@ struct FormatSettings
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
+        bool ignore_unnecessary_fields = true;
     } json{};
 
     struct
