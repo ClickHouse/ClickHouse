@@ -100,7 +100,7 @@ length(s)
 
 **Parameters**
 
-- `s`: An input string. [String](../data-types/string)/[Array](../data-types/array).
+- `s`: An input string or array. [String](../data-types/string)/[Array](../data-types/array).
 
 **Returned value**
 
