@@ -6,6 +6,7 @@
                 <object_storage_type>azure</object_storage_type>
                 <skip_access_check>false</skip_access_check>
                 <max_single_part_upload_size>33554432</max_single_part_upload_size>
+                <container_name>openbucketforpublicci</container_name>
                 <connection_string from_env="AZURE_CONNECTION_STRING"/>
             </azure>
             <cached_azure>
