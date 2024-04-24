@@ -109,7 +109,8 @@ public:
         const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
 
         auto [current_shift, state] = getInitialShiftAndState(used_bits);
-        if (start_state.has_value()) {
+        if (start_state.has_value())
+        {
             state = *start_state;
         }
 
