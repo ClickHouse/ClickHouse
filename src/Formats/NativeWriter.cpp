@@ -142,7 +142,15 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        bool skip_writing = false;
+        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
+        {
+            if (column_lazy->getColumnLazyHelper())
+                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+            else
+                skip_writing = true;
+        }
+        else if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->getSerializationInfo(*column.column);
             bool has_custom = false;
@@ -166,15 +174,6 @@ size_t NativeWriter::write(const Block & block)
         {
             serialization = column.type->getDefaultSerialization();
             column.column = recursiveRemoveSparse(column.column);
-        }
-
-        bool skip_writing = false;
-        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
-        {
-            if (column_lazy->getColumnLazyHelper())
-                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
-            else
-                skip_writing = true;
         }
 
         /// Data
