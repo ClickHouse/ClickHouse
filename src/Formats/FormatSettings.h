@@ -458,6 +458,15 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
+
+    struct Diagram
+    {
+        String diagram_type = "SCATTER";
+        String title;
+        bool is_ascii_symbols = false;
+        Int64 limit_height = -1;
+        Int64 limit_width = -1;
+    } diagram;
 };
 
 }

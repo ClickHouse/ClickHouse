@@ -263,6 +263,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
+    format_settings.diagram.diagram_type = settings.diagram_output_format_diagram_type;
+    format_settings.diagram.is_ascii_symbols = settings.diagram_output_format_is_ascii_set;
+    format_settings.diagram.title = settings.diagram_output_format_title;
+    format_settings.diagram.limit_height = settings.diagram_output_format_limit_height;
+    format_settings.diagram.limit_width = settings.diagram_output_format_limit_width;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

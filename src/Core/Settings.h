@@ -1205,7 +1205,12 @@ class IColumn;
     M(Bool, precise_float_parsing, false, "Prefer more precise (but slower) float parsing algorithm", 0) \
     M(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", "Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.", 0) \
     M(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, "Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple", 0) \
-
+    \
+    M(String, diagram_output_format_diagram_type, "SCATTER", "The type of diagram", 0)\
+    M(String, diagram_output_format_title, "", "The title of plot", 0)\
+    M(Bool, diagram_output_format_is_ascii_set, false, "Charset for printing plot. Available charsets: ASCII, UTF-8 (default one).", 0)\
+    M(Int64, diagram_output_format_limit_height, -1, "Limit num of rows in plot", 0)\
+    M(Int64, diagram_output_format_limit_width, -1, "Limit num of columns in plot", 0)\
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
