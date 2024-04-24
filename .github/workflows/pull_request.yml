@@ -83,7 +83,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, StyleCheck]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -97,7 +97,7 @@ jobs:
   # for main CI chain
   #
   Builds_1:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, StyleCheck, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
     # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
@@ -157,16 +157,25 @@ jobs:
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() && github.event_name != 'merge_group' }}
-    needs: [Tests_1, Tests_2]
+    if: ${{ !failure() && !cancelled() }}
+    needs: [Tests_1, Tests_2, Builds_1_Report, Builds_2_Report]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+      - name: Check sync status
+        if: ${{ github.event_name == 'merge_group' }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 sync_pr.py --status
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
+      - name: Auto merge if approved
+        if: ${{ github.event_name != 'merge_group' }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 merge_pr.py --check-approved
 
 

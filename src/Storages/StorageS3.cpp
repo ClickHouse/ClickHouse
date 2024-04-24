@@ -205,7 +205,7 @@ public:
         , read_keys(read_keys_)
         , request_settings(request_settings_)
         , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
-        , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
+        , list_objects_scheduler(threadPoolCallbackRunnerUnsafe<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
         , file_progress_callback(file_progress_callback_)
     {
         if (globbed_uri.bucket.find_first_of("*?{") != std::string::npos)
@@ -461,7 +461,7 @@ private:
     S3Settings::RequestSettings request_settings;
 
     ThreadPool list_objects_pool;
-    ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ListObjectsOutcome> list_objects_scheduler;
     std::future<ListObjectsOutcome> outcome_future;
     std::function<void(FileProgress)> file_progress_callback;
 };
@@ -580,7 +580,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     : callback(callback_)
 {
     ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, max_threads_count);
-    auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "S3ReadTaskItr");
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "S3ReadTaskItr");
 
     std::vector<std::future<String>> keys;
     keys.reserve(max_threads_count);
@@ -651,7 +651,7 @@ StorageS3Source::StorageS3Source(
     , max_parsing_threads(max_parsing_threads_)
     , need_only_count(need_only_count_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
-    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
+    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
 }
 
@@ -928,7 +928,7 @@ public:
                 configuration_.request_settings,
                 std::move(blob_log),
                 std::nullopt,
-                threadPoolCallbackRunner<void>(getIOThreadPool().get(), "S3ParallelWrite"),
+                threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
             compression_method,
             static_cast<int>(settings.output_format_compression_level),
@@ -1008,6 +1008,36 @@ private:
     std::mutex cancel_mutex;
 };
 
+namespace
+{
+    std::optional<String> checkAndGetNewFileOnInsertIfNeeded(const ContextPtr & context, const StorageS3::Configuration & configuration, const String & key, size_t sequence_number)
+    {
+        if (context->getSettingsRef().s3_truncate_on_insert || !S3::objectExists(*configuration.client, configuration.url.bucket, key, configuration.url.version_id, configuration.request_settings))
+            return std::nullopt;
+
+        if (context->getSettingsRef().s3_create_new_file_on_insert)
+        {
+            auto pos = key.find_first_of('.');
+            String new_key;
+            do
+            {
+                new_key = key.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : key.substr(pos));
+                ++sequence_number;
+            }
+            while (S3::objectExists(*configuration.client, configuration.url.bucket, new_key, configuration.url.version_id, configuration.request_settings));
+
+            return new_key;
+        }
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Object in bucket {} with key {} already exists. "
+            "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
+            "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
+            configuration.url.bucket, key);
+    }
+}
+
 
 class PartitionedStorageS3Sink : public PartitionedSink, WithContext
 {
@@ -1040,6 +1070,9 @@ public:
 
         auto partition_key = replaceWildcards(key, partition_id);
         validateKey(partition_key);
+
+        if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(getContext(), configuration, partition_key, /* sequence_number */1))
+            partition_key = *new_key;
 
         return std::make_shared<StorageS3Sink>(
             format,
@@ -1309,6 +1342,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
+    auto key = query_configuration.keys.front();
 
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(query_configuration.keys.back(), query_configuration.compression_method);
@@ -1328,7 +1362,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             chosen_compression_method,
             query_configuration,
             query_configuration.url.bucket,
-            query_configuration.keys.back());
+            key);
     }
     else
     {
@@ -1336,35 +1370,11 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
 
-        bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
-
-        if (!truncate_in_insert && S3::objectExists(*query_configuration.client, query_configuration.url.bucket, query_configuration.keys.back(), query_configuration.url.version_id, query_configuration.request_settings))
+        if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(local_context, configuration, query_configuration.keys.front(), query_configuration.keys.size()))
         {
-            if (local_context->getSettingsRef().s3_create_new_file_on_insert)
-            {
-                size_t index = query_configuration.keys.size();
-                const auto & first_key = query_configuration.keys[0];
-                auto pos = first_key.find_first_of('.');
-                String new_key;
-                do
-                {
-                    new_key = first_key.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : first_key.substr(pos));
-                    ++index;
-                }
-                while (S3::objectExists(*query_configuration.client, query_configuration.url.bucket, new_key, query_configuration.url.version_id, query_configuration.request_settings));
-
-                query_configuration.keys.push_back(new_key);
-                configuration.keys.push_back(new_key);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Object in bucket {} with key {} already exists. "
-                    "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-                    "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-                    query_configuration.url.bucket, query_configuration.keys.back());
-            }
+            query_configuration.keys.push_back(*new_key);
+            configuration.keys.push_back(*new_key);
+            key = *new_key;
         }
 
         return std::make_shared<StorageS3Sink>(
@@ -1375,7 +1385,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             chosen_compression_method,
             query_configuration,
             query_configuration.url.bucket,
-            query_configuration.keys.back());
+            key);
     }
 }
 
@@ -1488,6 +1498,8 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
     /// seems as we don't use it
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
     client_configuration.connectTimeoutMs = local_settings.s3_connect_timeout_ms;
+    client_configuration.http_keep_alive_timeout = S3::DEFAULT_KEEP_ALIVE_TIMEOUT;
+    client_configuration.http_keep_alive_max_requests = S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS;
 
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())

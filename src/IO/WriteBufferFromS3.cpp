@@ -94,7 +94,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const S3Settings::RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
     std::optional<std::map<String, String>> object_metadata_,
-    ThreadPoolCallbackRunner<void> schedule_,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , bucket(bucket_)

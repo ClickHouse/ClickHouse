@@ -1367,6 +1367,16 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
 
+    if (!select_query_info.has_window && query_node.hasQualify())
+    {
+        if (query_node.hasHaving())
+            query_node.getHaving() = mergeConditionNodes({query_node.getHaving(), query_node.getQualify()}, query_context);
+        else
+            query_node.getHaving() = query_node.getQualify();
+
+        query_node.getQualify() = {};
+    }
+
     if (!select_query_info.need_aggregate && query_node.hasHaving())
     {
         if (query_node.hasWhere())
@@ -1635,6 +1645,9 @@ void Planner::buildPlanForQueryNode()
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
+
+            if (expression_analysis_result.hasQualify())
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", result_actions_to_execute);
 
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", result_actions_to_execute);
