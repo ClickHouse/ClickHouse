@@ -62,8 +62,8 @@ template <> struct InstructionValueTypeMap<DataTypeInt16>      { using Instructi
 template <> struct InstructionValueTypeMap<DataTypeUInt16>     { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeInt32>      { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeUInt32>     { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt32; };
+template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = Int64; };
+template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = Int64; };
 template <> struct InstructionValueTypeMap<DataTypeDate>       { using InstructionValueType = UInt16; };
 template <> struct InstructionValueTypeMap<DataTypeDate32>     { using InstructionValueType = Int32; };
 template <> struct InstructionValueTypeMap<DataTypeDateTime>   { using InstructionValueType = UInt32; };
@@ -1017,7 +1017,7 @@ public:
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, *time_zone);
+                    instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
             *pos++ = '\0';
 
