@@ -154,7 +154,7 @@ std::future<void> MergeTreePrefetchedReadPool::createPrefetchedFuture(IMergeTree
         reader->prefetchBeginOfRange(priority);
     };
 
-    return scheduleFromThreadPool<void>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);
+    return scheduleFromThreadPoolUnsafe<void>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);
 }
 
 void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & task)

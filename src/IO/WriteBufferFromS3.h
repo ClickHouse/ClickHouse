@@ -41,7 +41,7 @@ public:
         const S3Settings::RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
-        ThreadPoolCallbackRunner<void> schedule_ = {},
+        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;

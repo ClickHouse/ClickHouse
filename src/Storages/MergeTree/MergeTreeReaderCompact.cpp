@@ -48,7 +48,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
 {
-    marks_loader->startAsyncLoad();
 }
 
 void MergeTreeReaderCompact::fillColumnPositions()
@@ -204,7 +203,6 @@ void MergeTreeReaderCompact::readPrefix(
             serialization = getSerializationInPart({name_and_type.getNameInStorage(), name_and_type.getTypeInStorage()});
         else
             serialization = getSerializationInPart(name_and_type);
-
 
         deserialize_settings.getter = buffer_getter;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name]);
