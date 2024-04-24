@@ -171,7 +171,9 @@ protected:
             ++ptr;
 
             /// Skip empty cells in the main buffer.
-            const auto * buf_end= container->buf + container->max + 1;
+            const auto * buf_end = container->buf + container->NUM_CELLS;
+            if (container->min <= container->max)
+                buf_end = container->buf + container->max + 1;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -296,10 +298,19 @@ public:
 
     const_iterator begin() const
     {
-        if (!buf || min > max)
+        if (!buf)
             return end();
 
-        const Cell * ptr = buf + min;
+        const Cell * ptr = buf;
+        if (min > max)
+        {
+            auto buf_end = buf + NUM_CELLS;
+            while (ptr < buf_end && ptr->isZero(*this))
+                ++ptr;
+        }
+        else
+            ptr = buf + min;
+
         return const_iterator(this, ptr);
     }
 
@@ -307,18 +318,30 @@ public:
 
     iterator begin()
     {
-        /// If the container is empty, the initialization of min/max will not work as min > max.
-        if (!buf || min > max)
+        /// If min > max, it might use emplace to insert the value or the container is empty.
+        if (!buf)
             return end();
 
-        Cell * ptr = buf + min;
+        Cell * ptr = buf;
+        if (min > max)
+        {
+            auto buf_end = buf + NUM_CELLS;
+            while (ptr < buf_end && ptr->isZero(*this))
+                ++ptr;
+        }
+        else
+            ptr = buf + min;
+
         return iterator(this, ptr);
     }
 
     const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        return const_iterator(this, buf ? buf + max + 1: buf);
+        if (min > max)
+            return const_iterator(this, buf ? buf + NUM_CELLS: buf);
+        else
+            return const_iterator(this, buf ? buf + max + 1: buf);
     }
 
     const_iterator cend() const
@@ -328,7 +351,10 @@ public:
 
     iterator end()
     {
-        return iterator(this, buf ? buf + max + 1 : buf);
+        if (min > max)
+            return iterator(this, buf ? buf + NUM_CELLS: buf);
+        else
+            return iterator(this, buf ? buf + max + 1: buf);
     }
 
 
