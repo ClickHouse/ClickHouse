@@ -12,6 +12,7 @@ from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import ERROR, JobReport, TestResult, TestResults, read_test_results
 from stopwatch import Stopwatch
