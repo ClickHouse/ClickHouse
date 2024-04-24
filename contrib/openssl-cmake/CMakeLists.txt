@@ -1371,8 +1371,6 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/quic/uint_set.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/rec_layer_d1.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/rec_layer_s3.c
-    ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls_pad.c
-    ${OPENSSL_SOURCE_DIR}/ssl/record/methods/ssl3_cbc.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/dtls_meth.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/ssl3_meth.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls13_meth.c
