@@ -65,10 +65,11 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
-    void addVirtualRowToChunk(bool add_virtual_row_, const Columns& index_)
+    void addVirtualRowToChunk(bool add_virtual_row_, const Columns& index_, size_t mark_range_begin_)
     {
         add_virtual_row = add_virtual_row_;
         index = index_;
+        mark_range_begin = mark_range_begin_;
     }
 
 private:
@@ -108,8 +109,10 @@ private:
     /// Should we add a virtual row as the single first chunk.
     /// Virtual row is useful for read-in-order optimization when multiple parts exist.
     bool add_virtual_row = false;
-
+    /// PK index used in virtual row.
     Columns index;
+    /// The first range that might contain the candidate, used in virtual row.
+    size_t mark_range_begin;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

@@ -155,7 +155,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 if (j < index.size() && type_and_name.name == primary_key.column_names[j] && type_and_name.type == primary_key.data_types[j])
                 {
                     auto column = current_column->cloneEmpty();
-                    column->insert((*index[j])[0]);  // TODO: use the first range pk whose range might contain results
+                    column->insert((*index[j])[mark_range_begin]);
                     ordered_columns.push_back(std::move(column));
                     ++j;
                 }
