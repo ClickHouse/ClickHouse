@@ -42,7 +42,7 @@ public:
      * @brief start Create the executing thread and start tasks execution.
      * @param id Worker ID.
      */
-    void start(size_t id);
+    void start(size_t id, std::function<bool(Task &, size_t)> parent_steal_);
 
     /**
      * @brief stop Stop all worker's thread and stealing activity.
@@ -133,6 +133,8 @@ private:
     ssize_t m_id = -1;
 
     std::chrono::time_point<std::chrono::steady_clock> m_idle_since;
+    std::function<bool(Task &, size_t)> parent_steal;
+
 };
 
 
@@ -187,13 +189,15 @@ inline void Worker<Task>::stop()
 }
 
 template <typename Task>
-inline void Worker<Task>::start(size_t id)
+inline void Worker<Task>::start(size_t id, std::function<bool(Task &, size_t)> parent_steal_)
 {
     m_id = id;
 
     assert (!m_thread.joinable());
+    parent_steal = std::move(parent_steal_);
 
     m_thread = std::thread(&Worker<Task>::threadFunc, this, id);
+
 }
 
 template <typename Task>
@@ -261,7 +265,7 @@ inline void Worker<Task>::threadFunc(size_t id)
         }
 
 
-        if (got_task  || (m_handler_ptr->steal(handler, m_id)) )
+        if (got_task  || (parent_steal(handler, m_id)))
         {
             // lock.unlock();  // too late in case of steal
             try

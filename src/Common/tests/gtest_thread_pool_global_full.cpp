@@ -21,13 +21,13 @@ namespace CurrentMetrics
 
 TEST(ThreadPool, GlobalFull1)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+    auto & global_pool = GlobalThreadPool<FreeThreadPool>::instance();
 
     static constexpr size_t capacity = 5;
 
-    // global_pool.setMaxThreads(capacity);
-    // global_pool.setMaxFreeThreads(1);
-    // global_pool.setQueueSize(capacity);
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(1);
+    global_pool.setQueueSize(capacity);
     global_pool.wait();
 
     std::atomic<size_t> counter = 0;
@@ -49,21 +49,21 @@ TEST(ThreadPool, GlobalFull1)
     pool.wait();
     EXPECT_EQ(counter, num_jobs);
 
-    // global_pool.setMaxThreads(10000);
-    // global_pool.setMaxFreeThreads(1000);
-    // global_pool.setQueueSize(10000);
+    global_pool.setMaxThreads(10000);
+    global_pool.setMaxFreeThreads(1000);
+    global_pool.setQueueSize(10000);
 }
 
 
 TEST(ThreadPool, GlobalFull2)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+    auto & global_pool = GlobalThreadPool<FreeThreadPool>::instance();
 
     static constexpr size_t capacity = 5;
 
-    // global_pool.setMaxThreads(capacity);
-    // global_pool.setMaxFreeThreads(1);
-    // global_pool.setQueueSize(capacity);
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(1);
+    global_pool.setQueueSize(capacity);
 
     /// ThreadFromGlobalPool from local thread pools from previous test case have exited
     ///  but their threads from global_pool may not have finished (they still have to exit).
@@ -92,7 +92,7 @@ TEST(ThreadPool, GlobalFull2)
     another_pool.wait();
     EXPECT_EQ(counter, capacity * 2 + 1);
 
-    // global_pool.setMaxThreads(10000);
-    // global_pool.setMaxFreeThreads(1000);
-    // global_pool.setQueueSize(10000);
+    global_pool.setMaxThreads(10000);
+    global_pool.setMaxFreeThreads(1000);
+    global_pool.setQueueSize(10000);
 }

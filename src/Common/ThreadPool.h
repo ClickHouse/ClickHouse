@@ -114,6 +114,7 @@ public:
     void addOnDestroyCallback(OnDestroyCallback && callback);
 
 private:
+    template <typename BaseBool>
     friend class GlobalThreadPool;
 
     mutable std::mutex mutex;
@@ -168,9 +169,10 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   * - address sanitizer and thread sanitizer will not fail due to global limit on number of created threads.
   * - program will work faster in gdb;
   */
-class GlobalThreadPool : public tp::ThreadPool /* FreeThreadPool */, private boost::noncopyable
+template <typename BasePool>
+class GlobalThreadPool : public BasePool /* tp::ThreadPool */ /* FreeThreadPool */, private boost::noncopyable
 {
-    static std::unique_ptr<GlobalThreadPool> the_instance;
+    static inline std::unique_ptr<GlobalThreadPool<BasePool>> the_instance;
 
     GlobalThreadPool(
         size_t max_threads_,
@@ -193,6 +195,7 @@ public:
 
     static GlobalThreadPool & instance();
     static void shutdown();
+    static bool initialized();
 };
 
 
@@ -212,46 +215,105 @@ public:
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
         : state(std::make_shared<State>())
     {
-        UInt64 global_profiler_real_time_period = GlobalThreadPool::instance().global_profiler_real_time_period_ns;
-        UInt64 global_profiler_cpu_time_period = GlobalThreadPool::instance().global_profiler_cpu_time_period_ns;
-        /// NOTE:
-        /// - If this will throw an exception, the destructor won't be called
-        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
-        GlobalThreadPool::instance().scheduleOrThrow([
-            my_state = state,
-            global_profiler_real_time_period,
-            global_profiler_cpu_time_period,
-            my_func = std::forward<Function>(func),
-            my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+        if (GlobalThreadPool<tp::ThreadPool>::initialized())
         {
-            SCOPE_EXIT(
-                my_state->thread_id = std::thread::id();
-                my_state->event.set();
-            );
+            auto & instance = GlobalThreadPool<tp::ThreadPool>::instance();
 
-            my_state->thread_id = std::this_thread::get_id();
 
-            /// This moves are needed to destroy function and arguments before exit.
-            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(my_func);
-            auto arguments = std::move(my_args);
+            UInt64 global_profiler_real_time_period = instance.global_profiler_real_time_period_ns;
+            UInt64 global_profiler_cpu_time_period = instance.global_profiler_cpu_time_period_ns;
 
-            /// Thread status holds raw pointer on query context, thus it always must be destroyed
-            /// before sending signal that permits to join this thread.
-            DB::ThreadStatus thread_status;
-            if constexpr (global_trace_collector_allowed)
+
+            /// NOTE:
+            /// - If this will throw an exception, the destructor won't be called
+            /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
+            instance.scheduleOrThrow([
+                    my_state = state,
+                    global_profiler_real_time_period,
+                    global_profiler_cpu_time_period,
+                    my_func = std::forward<Function>(func),
+                    my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
             {
-                if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
-                    thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
-            }
+                SCOPE_EXIT(
+                    my_state->thread_id = std::thread::id();
+                    my_state->event.set();
+                           );
 
-            std::apply(function, arguments);
+                my_state->thread_id = std::this_thread::get_id();
+
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
+                DB::ThreadStatus thread_status;
+                if constexpr (global_trace_collector_allowed)
+                {
+                    if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
+                        thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
+                }
+
+                /// This moves are needed to destroy function and arguments before exit.
+                /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
+                auto function = std::move(my_func);
+                auto arguments = std::move(my_args);
+
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
+                std::apply(function, arguments);
+            }
+                // ,
+                // {}, // default priority
+                // 0, // default wait_microseconds
+                // propagate_opentelemetry_context
+                                     );
         }
-        // ,
-        // {}, // default priority
-        // 0, // default wait_microseconds
-        // propagate_opentelemetry_context
-        );
+        else
+        {
+            auto & instance = GlobalThreadPool<FreeThreadPool>::instance();
+
+
+            UInt64 global_profiler_real_time_period = instance.global_profiler_real_time_period_ns;
+            UInt64 global_profiler_cpu_time_period = instance.global_profiler_cpu_time_period_ns;
+
+            /// NOTE:
+            /// - If this will throw an exception, the destructor won't be called
+            /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
+            instance.scheduleOrThrow([
+                    my_state = state,
+                    global_profiler_real_time_period,
+                    global_profiler_cpu_time_period,
+                    my_func = std::forward<Function>(func),
+                    my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+            {
+                SCOPE_EXIT(
+                    my_state->thread_id = std::thread::id();
+                    my_state->event.set();
+                           );
+
+                my_state->thread_id = std::this_thread::get_id();
+
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
+                DB::ThreadStatus thread_status;
+                if constexpr (global_trace_collector_allowed)
+                {
+                    if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
+                        thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
+                }
+
+                /// This moves are needed to destroy function and arguments before exit.
+                /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
+                auto function = std::move(my_func);
+                auto arguments = std::move(my_args);
+
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
+                std::apply(function, arguments);
+            }
+                // ,
+                // {}, // default priority
+                // 0, // default wait_microseconds
+                // propagate_opentelemetry_context
+                                     );
+        }
     }
 
     ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept

@@ -526,15 +526,20 @@ template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
 
-std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
 
-GlobalThreadPool::GlobalThreadPool(
+// std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
+
+
+template <>
+GlobalThreadPool<tp::ThreadPool>::GlobalThreadPool(
     size_t max_threads_,
     size_t max_free_threads_,
     size_t queue_size_,
-    const bool /* shutdown_on_exception_*/)
-    : tp::ThreadPool (tp::ThreadPoolOptions().setQueueSize(queue_size_).setMaxFreeThreads(max_free_threads_).setMaxThreads(max_threads_))
+    const bool /* shutdown_on_exception_*/,
+    UInt64 global_profiler_real_time_period_ns_,
+    UInt64 global_profiler_cpu_time_period_ns_)
+    : tp::ThreadPool(tp::ThreadPoolOptions().setQueueSize(queue_size_).setMaxFreeThreads(max_free_threads_).setMaxThreads(max_threads_))
         // CurrentMetrics::GlobalThread,
         // CurrentMetrics::GlobalThreadActive,
         // CurrentMetrics::GlobalThreadScheduled,
@@ -542,10 +547,34 @@ GlobalThreadPool::GlobalThreadPool(
         // max_free_threads_,
         // queue_size_,
         // shutdown_on_exception_)
+    , global_profiler_real_time_period_ns(global_profiler_real_time_period_ns_)
+    , global_profiler_cpu_time_period_ns(global_profiler_cpu_time_period_ns_)
 {
 }
 
-void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
+template <>
+GlobalThreadPool<FreeThreadPool>::GlobalThreadPool(
+    size_t max_threads_,
+    size_t max_free_threads_,
+    size_t queue_size_,
+    const bool shutdown_on_exception_,
+    UInt64 global_profiler_real_time_period_ns_,
+    UInt64 global_profiler_cpu_time_period_ns_)
+    : FreeThreadPool(
+        CurrentMetrics::GlobalThread,
+        CurrentMetrics::GlobalThreadActive,
+        CurrentMetrics::GlobalThreadScheduled,
+        max_threads_,
+        max_free_threads_,
+        queue_size_,
+        shutdown_on_exception_)
+    , global_profiler_real_time_period_ns(global_profiler_real_time_period_ns_)
+    , global_profiler_cpu_time_period_ns(global_profiler_cpu_time_period_ns_)
+{
+}
+
+template <typename Pool>
+void GlobalThreadPool<Pool>::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
 {
     if (the_instance)
     {
@@ -556,7 +585,8 @@ void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
     the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/, global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns));
 }
 
-GlobalThreadPool & GlobalThreadPool::instance()
+template <typename Pool>
+GlobalThreadPool<Pool> & GlobalThreadPool<Pool>::instance()
 {
     if (!the_instance)
     {
@@ -567,7 +597,15 @@ GlobalThreadPool & GlobalThreadPool::instance()
 
     return *the_instance;
 }
-void GlobalThreadPool::shutdown()
+
+template <typename Pool>
+bool GlobalThreadPool<Pool>::initialized()
+{
+    return the_instance.get() != nullptr;
+}
+
+template <typename Pool>
+void GlobalThreadPool<Pool>::shutdown()
 {
     if (the_instance)
     {
@@ -613,3 +651,6 @@ scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
     ins.block_fault_injections = true;
     return [&ins](){ ins.block_fault_injections = false; };
 }
+
+template class GlobalThreadPool<FreeThreadPool>;
+template class GlobalThreadPool<tp::ThreadPool>;

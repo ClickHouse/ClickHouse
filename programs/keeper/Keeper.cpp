@@ -360,7 +360,7 @@ try
         PlacementInfo::PlacementInfo::instance().initialize(config());
     }
 
-    GlobalThreadPool::initialize(
+    GlobalThreadPool<FreeThreadPool>::initialize(
         config().getUInt("max_thread_pool_size", 100),
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000)
@@ -369,7 +369,7 @@ try
     SCOPE_EXIT({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
-        GlobalThreadPool::instance().shutdown();
+        GlobalThreadPool<FreeThreadPool>::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 

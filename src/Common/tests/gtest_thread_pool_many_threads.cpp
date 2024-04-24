@@ -20,7 +20,7 @@ void worker()
 #  pragma clang diagnostic ignored "-Wdeprecated-volatile"
 #endif
 
-    std::cerr << "from worker" << std::endl;
+    // std::cerr << "from worker" << std::endl;
 
     std::this_thread::sleep_for(3000us);
     // volatile UInt64 j = 0;
@@ -56,39 +56,79 @@ void small_query()
 }
 
 
+struct GlobalPoolType
+{
+    bool experimental = false;
+};
+
+class ThreadPoolTest : public ::testing::TestWithParam<GlobalPoolType>
+{};
 
 
 constexpr size_t num_threads = 4500;
 constexpr size_t num_jobs = 800000;
 
-TEST(ThreadPool, Warm)
+TEST_P(ThreadPoolTest, Warm)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
-    global_pool.wait();
+    if (GetParam().experimental)
+    {
+        auto t_start = std::chrono::high_resolution_clock::now();
+        GlobalThreadPool<tp::ThreadPool>::initialize(1000, 1000, 10000);
+        auto t_end = std::chrono::high_resolution_clock::now();
+        double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end-t_start).count();
+        std::cout << "elapsed_time_ms=" << elapsed_time_ms << std::endl;
+
+
+        auto & global_pool = GlobalThreadPool<tp::ThreadPool>::instance();
+        global_pool.wait();
+    }
+    else
+    {
+        auto t_start = std::chrono::high_resolution_clock::now();
+        GlobalThreadPool<FreeThreadPool>::initialize(1000, 1000, 10000);
+        auto t_end = std::chrono::high_resolution_clock::now();
+        double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end-t_start).count();
+        std::cout << "elapsed_time_ms=" << elapsed_time_ms << std::endl;
+        auto & global_pool = GlobalThreadPool<FreeThreadPool>::instance();
+        global_pool.wait();
+    }
+
 
     ThreadPool warm_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
     warm_pool.setQueueSize(0);
     warm_pool.wait();
 
-    for (size_t i = 0; i < 3 /* num_jobs */; ++i)
+    for (size_t i = 0; i < 10000 /* num_jobs */; ++i)
+    {
         warm_pool.scheduleOrThrowOnError(worker);
+    }
+
 
     warm_pool.wait();
+
+    // global_pool.finalize();
 }
 
 
-TEST(ThreadPool, ManyThreads)
+TEST_P(ThreadPoolTest, ManyThreads)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+    if (GetParam().experimental)
+    {
+        auto & global_pool = GlobalThreadPool<tp::ThreadPool>::instance();
 
+        global_pool.wait();
+    }
+    else
+    {
+        auto & global_pool = GlobalThreadPool<FreeThreadPool>::instance();
 
-    // global_pool.setMaxThreads(10000);
-    // global_pool.setMaxFreeThreads(1000);
-    // global_pool.setQueueSize(10000);
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
 
+        global_pool.wait();
+    }
 
-    // global_pool.setQueueSize(0);
-    global_pool.wait();
 
     constexpr size_t num_injectors = 10;
 
@@ -147,19 +187,22 @@ TEST(ThreadPool, ManyThreads)
 }
 
 
-TEST(ThreadPool, ManyThreadsNoReclaim)
+TEST_P(ThreadPoolTest, ManyThreadsNoReclaim)
 {
 
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
-
-
-    // global_pool.setMaxThreads(10000);
-    // global_pool.setMaxFreeThreads(10000);
-    // global_pool.setQueueSize(10000);
-
-    // global_pool.setQueueSize(0);
-    global_pool.wait();
-
+    if (GetParam().experimental)
+    {
+        auto & global_pool = GlobalThreadPool<tp::ThreadPool>::instance();
+        global_pool.wait();
+    }
+    else
+    {
+        auto & global_pool = GlobalThreadPool<FreeThreadPool>::instance();
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(10000);
+        global_pool.setQueueSize(10000);
+        global_pool.wait();
+    }
 
     constexpr size_t num_injectors = 10;
 
@@ -208,7 +251,11 @@ TEST(ThreadPool, ManyThreadsNoReclaim)
     std::cout << "pool_watch.elapsedMicroseconds " << pool_watch.elapsedMicroseconds() << std::endl;
 
     small_thread.join();
-
-
-
 }
+
+INSTANTIATE_TEST_SUITE_P(GlobalPoolManyThreads,
+                         ThreadPoolTest,
+                         testing::Values(
+                             GlobalPoolType{false},
+                             GlobalPoolType{true}
+                         ));
