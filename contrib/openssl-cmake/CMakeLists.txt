@@ -1145,6 +1145,13 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/ssl3_cbc.c
 )
 
+if(NOT ENABLE_OPENSSL_DYNAMIC)
+    set(CRYPTO_SRC ${CRYPTO_SRC}
+        ${OPENSSL_SOURCE_DIR}/providers/fips/fips_entry.c
+        ${OPENSSL_SOURCE_DIR}/providers/fips/fipsprov.c
+    )
+endif()
+
 if(ARCH_AMD64)
     if (OS_DARWIN)
         set(CRYPTO_SRC ${CRYPTO_SRC}
