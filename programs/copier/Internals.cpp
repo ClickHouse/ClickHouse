@@ -2,7 +2,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/BalancingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
