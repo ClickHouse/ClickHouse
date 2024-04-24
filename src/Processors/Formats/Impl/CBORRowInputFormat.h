@@ -31,7 +31,10 @@ private:
     {
         IColumn & column;
         DataTypePtr type;
+        bool is_tuple_element;
+        std::optional<size_t> array_size;
     };
+    /// Stack is needed to process arrays and maps
     std::stack<Info> stack_info;
     std::optional<CBORTagTypes> current_tag = std::nullopt;
     //    bool in_array = false;
@@ -40,9 +43,6 @@ private:
 public:
     WriteToDBListener(MutableColumns & columns_, DataTypes & data_types_);
     virtual ~WriteToDBListener() = default;
-
-    void set_info(IColumn & column, DataTypePtr type);
-    bool info_empty() const;
 
     void on_integer(int value) override;
     void on_float32(float value) override;

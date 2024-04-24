@@ -53,12 +53,14 @@ static void insertCommonInteger(IColumn & column, DataTypePtr type, UInt64 value
             assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
             break;
         }
-        case TypeIndex::Enum8: [[fallthrough]];
+        case TypeIndex::Enum8:
+            [[fallthrough]];
         case TypeIndex::Int8: {
             assert_cast<ColumnInt8 &>(column).insertValue(value);
             break;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
+        case TypeIndex::Enum16:
+            [[fallthrough]];
         case TypeIndex::Int16: {
             assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
@@ -269,29 +271,10 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
 
 static void insertNull(IColumn & column, DataTypePtr type)
 {
-    switch (type->getTypeId())
-    {
-        case TypeIndex::Nothing: {
-            assert_cast<ColumnNullable &>(column).insertDefault();
-            break;
-        }
-        case TypeIndex::Nullable: {
-            if (type->isNullable())
-            {
-                auto & nullable_column = assert_cast<ColumnNullable &>(column);
-                //                auto & nested_column = nullable_column.getNestedColumn();
-                //                const auto & nested_type = assert_cast<const DataTypeNullable *>(type.get())->getNestedType();
-                nullable_column.getNullMapColumn().insertValue(0);
-            }
-            else
-            {
-                assert_cast<ColumnNullable &>(column).insertDefault();
-            }
-            break;
-        }
-        default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR null into column with type {}.", type->getName());
-    }
+    if (type->isNullable())
+        assert_cast<ColumnNullable &>(column).getNullMapColumn().insertValue(0);
+    else
+        column.insertDefault();
 }
 
 
@@ -300,43 +283,33 @@ WriteToDBListener::WriteToDBListener(MutableColumns & columns_, DataTypes & data
     // We fill in the reverse order, because we want the first element to be read to be at the top of the stack
     // and the order is correct
     for (ssize_t column_index = columns_.size() - 1; column_index >= 0; --column_index)
-        set_info(*columns_[column_index], data_types_[column_index]);
-}
-
-void WriteToDBListener::set_info(IColumn & column, DataTypePtr type)
-{
-    stack_info.emplace(column, type);
-}
-
-[[maybe_unused]] bool WriteToDBListener::info_empty() const
-{
-    return stack_info.empty();
+        stack_info.emplace(*columns_[column_index], data_types_[column_index], false, std::nullopt);
 }
 
 void WriteToDBListener::on_integer(int value)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertCommonInteger(column, type, value);
+    insertCommonInteger(info.column, info.type, value);
 }
 
 void WriteToDBListener::on_float32(float value)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertFloat32(column, type, value);
+    insertFloat32(info.column, info.type, value);
 }
 
 void WriteToDBListener::on_double(double value)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertDouble(column, type, value);
+    insertDouble(info.column, info.type, value);
 }
 
 void WriteToDBListener::on_bytes(unsigned char * data, int size)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
     if (!current_tag.has_value())
         return;
@@ -344,23 +317,23 @@ void WriteToDBListener::on_bytes(unsigned char * data, int size)
     switch (current_tag.value())
     {
         case CBORTagTypes::UNSIGNED_BIGNUM: {
-            insertPositiveBigInteger(column, type, reinterpret_cast<char *>(data), size);
+            insertPositiveBigInteger(info.column, info.type, reinterpret_cast<char *>(data), size);
             break;
         }
         case CBORTagTypes::NEGATIVE_BIGNUM: {
-            insertNegativeBigInteger(column, type, reinterpret_cast<char *>(data), size);
+            insertNegativeBigInteger(info.column, info.type, reinterpret_cast<char *>(data), size);
             break;
         }
         case CBORTagTypes::IPV4: {
-            insertIPV4(column, type, reinterpret_cast<char *>(data), size);
+            insertIPV4(info.column, info.type, reinterpret_cast<char *>(data), size);
             break;
         }
         case CBORTagTypes::IPV6: {
-            insertIPV6(column, type, reinterpret_cast<char *>(data), size);
+            insertIPV6(info.column, info.type, reinterpret_cast<char *>(data), size);
             break;
         }
         case CBORTagTypes::BIN_UUID: {
-            insertUUID(column, type, reinterpret_cast<char *>(data), size);
+            insertUUID(info.column, info.type, reinterpret_cast<char *>(data), size);
             break;
         }
         default:
@@ -370,27 +343,26 @@ void WriteToDBListener::on_bytes(unsigned char * data, int size)
 
 void WriteToDBListener::on_string(std::string & str)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertString(column, type, str);
+    insertString(info.column, info.type, str);
 }
 
 void WriteToDBListener::on_array(int size)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    if (isArray(type))
+    if (isArray(info.type))
     {
-        auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
-        ColumnArray & column_array = assert_cast<ColumnArray &>(column);
-        //        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        auto nested_type = assert_cast<const DataTypeArray &>(*info.type).getNestedType();
+        ColumnArray & column_array = assert_cast<ColumnArray &>(info.column);
         IColumn & nested_column = column_array.getData();
         if (size > 0)
-            stack_info.emplace(nested_column, nested_type);
+            stack_info.emplace(nested_column, nested_type, false, size);
     }
-    else if (isTuple(type))
+    else if (isTuple(info.type))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info.type);
         const auto & nested_types = tuple_type.getElements();
         if (static_cast<size_t>(size) != nested_types.size())
             throw Exception(
@@ -398,24 +370,24 @@ void WriteToDBListener::on_array(int size)
                 "Cannot insert CBOR array with size {} into Tuple column with {} elements",
                 size,
                 nested_types.size());
-        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(column);
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info.column);
         /// Push nested columns into stack in reverse order.
         for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
-            stack_info.emplace(column_tuple.getColumn(i), nested_types[i]);
+            stack_info.emplace(column_tuple.getColumn(i), nested_types[i], true, std::nullopt);
     }
     else
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR array into column with type {}", type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR array into column with type {}", info.type->getName());
     }
 }
 
 void WriteToDBListener::on_map(int)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    if (!isMap(type))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR map into column with type {}.", type->getName());
-    // ColumnArray & column_array = assert_cast<ColumnMap &>(column).getNestedColumn();
+    if (!isMap(info.type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR map into column with type {}.", info.type->getName());
+    // =ColumnArray & column_array = assert_cast<ColumnMap &>(column).getNestedColumn();
 }
 
 void WriteToDBListener::on_tag(unsigned int tag)
@@ -425,23 +397,23 @@ void WriteToDBListener::on_tag(unsigned int tag)
 
 void WriteToDBListener::on_special(unsigned int code)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertFloat32(column, type, code);
+    insertFloat32(info.column, info.type, code);
 }
 
 void WriteToDBListener::on_bool(bool value)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertBool(column, type, value);
+    insertBool(info.column, info.type, value);
 }
 
 void WriteToDBListener::on_null()
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertNull(column, type);
+    insertNull(info.column, info.type);
 }
 
 void WriteToDBListener::on_undefined()
@@ -456,12 +428,12 @@ void WriteToDBListener::on_error(const char * error)
 
 void WriteToDBListener::on_extra_integer(unsigned long long value, int sign)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
     if (sign == 1)
-        insertCommonInteger(column, type, value);
+        insertCommonInteger(info.column, info.type, value);
     else
-        insertCommonInteger(column, type, -value);
+        insertCommonInteger(info.column, info.type, -value);
 }
 
 void WriteToDBListener::on_extra_tag(unsigned long long tag)
@@ -471,9 +443,9 @@ void WriteToDBListener::on_extra_tag(unsigned long long tag)
 
 void WriteToDBListener::on_extra_special(unsigned long long tag)
 {
-    auto [column, type] = stack_info.top();
+    auto info = stack_info.top();
     stack_info.pop();
-    insertDouble(column, type, tag);
+    insertDouble(info.column, info.type, tag);
 }
 
 CBORRowInputFormat::CBORRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
