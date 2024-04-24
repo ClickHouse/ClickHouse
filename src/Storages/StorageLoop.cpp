@@ -16,7 +16,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int UNKNOWN_TABLE;
+
 }
 StorageLoop::StorageLoop(
     const StorageID & table_id_,

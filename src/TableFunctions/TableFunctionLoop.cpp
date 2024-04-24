@@ -137,7 +137,6 @@ StoragePtr TableFunctionLoop::executeImpl(
         );
     res->startup();
     return res;
-    // return storage;
 }
 
 void registerTableFunctionLoop(TableFunctionFactory & factory)
