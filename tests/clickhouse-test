@@ -907,6 +907,8 @@ class MergeTreeSettingsRandomizer:
             1, 32 * 1024 * 1024
         ),
         "cache_populated_by_fetch": lambda: random.randint(0, 1),
+        "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
+        "old_parts_lifetime": threshold_generator(0.2, 0.3, 30, 8 * 60),
     }
 
     @staticmethod
@@ -3366,6 +3368,7 @@ if __name__ == "__main__":
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
+        os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "

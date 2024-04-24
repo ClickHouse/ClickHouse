@@ -102,6 +102,100 @@ Alias:
 - `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
 
+## left
+
+Returns a substring of string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+left(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT left('Hello', 3);
+```
+
+Result:
+
+```response
+Hel
+```
+
+Query:
+
+```sql
+SELECT left('Hello', -3);
+```
+
+Result:
+
+```response
+He
+```
+
+## leftUTF8
+
+Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+leftUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+Прив
+```
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+Пр
+```
+
 ## leftPad
 
 Pads a string from the left with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
@@ -174,6 +268,100 @@ Result:
 ┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
 │ ***абвг                     │    дежз                │
 └─────────────────────────────┴────────────────────────┘
+```
+
+## right
+
+Returns a substring of string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+right(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT right('Hello', 3);
+```
+
+Result:
+
+```response
+llo
+```
+
+Query:
+
+```sql
+SELECT right('Hello', -3);
+```
+
+Result:
+
+```response
+lo
+```
+
+## rightUTF8
+
+Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+rightUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+ивет
+```
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+ет
 ```
 
 ## rightPad
