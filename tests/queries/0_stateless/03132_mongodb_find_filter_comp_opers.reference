@@ -1,0 +1,7 @@
+test> switched to db default
+default> [ { id: 2, name: 'John', age: 23 }, { id: 3, name: 'Mike', age: 32 } ]
+default> test> switched to db default
+default> [ { id: 1, name: 'Alex', age: 15 }, { id: 2, name: 'John', age: 23 } ]
+default> test> switched to db default
+default> [ { id: 3, name: 'Mike', age: 32 } ]
+default> 

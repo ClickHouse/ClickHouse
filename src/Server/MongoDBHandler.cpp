@@ -20,6 +20,8 @@
 #include <fmt/format.h>
 #include <pcg_random.hpp>
 #include <Poco/Exception.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>

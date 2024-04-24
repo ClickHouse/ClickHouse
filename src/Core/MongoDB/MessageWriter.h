@@ -3,6 +3,7 @@
 #include <Poco/Exception.h>
 #include <Common/logger_useful.h>
 #include "Message.h"
+#include "OpMsgMessage.h"
 #include "OpReply.h"
 #include "QueryRequest.h"
 

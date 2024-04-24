@@ -144,6 +144,8 @@ MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} "
 export MYSQL_CLIENT_OPT="${MYSQL_CLIENT_OPT0:-} ${MYSQL_CLIENT_OPT:-}"
 export MYSQL_CLIENT=${MYSQL_CLIENT:="$MYSQL_CLIENT_BINARY ${MYSQL_CLIENT_OPT:-}"}
 
+export MONGODB_CLIENT=${MONGODB_CLIENT:="mongosh"}
+
 export PROTOC_BINARY=${PROTOC_BINARY:="protoc"}
 
 function clickhouse_client_removed_host_parameter()

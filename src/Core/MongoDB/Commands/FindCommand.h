@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/executeQuery.h>
+#include <Common/CurrentThread.h>
 #include "../Binary.h"
 #include "../Document.h"
 #include "../Element.h"
