@@ -358,6 +358,13 @@ public:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
+    /// For every partition returns max_block of a part with minimum block number within partition.
+    /// This way only single mostly tenured part is returned for a partition. It's used in the scenarious
+    /// where tables with engines like ReplacingMergeTree are continuously updated with newer versions
+    /// of the entries. By ignoring parts that haven't yet been merged/optimized we preserve consistent
+    /// (but outdated) snapshot of the data with no duplicates.
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMostTenuredPartMaxBlocks() const;
+
     void addLastSentPart(const MergeTreePartInfo & info);
 
     /// Wait required amount of milliseconds to give other replicas a chance to

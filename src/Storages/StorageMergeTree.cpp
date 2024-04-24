@@ -250,6 +250,10 @@ void StorageMergeTree::read(
             && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree
             && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
 
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr;
+        if (local_context->getSettingsRef().select_only_one_part_with_min_block_per_partition)
+            max_block_numbers_to_read = std::make_shared<PartitionIdToMaxBlock>(getMostTenuredPartMaxBlocks());
+
         if (auto plan = reader.read(
                 column_names,
                 storage_snapshot,
@@ -257,10 +261,28 @@ void StorageMergeTree::read(
                 local_context,
                 max_block_size,
                 num_streams,
-                nullptr,
+                max_block_numbers_to_read,
                 enable_parallel_reading))
             query_plan = std::move(*plan);
     }
+}
+
+PartitionIdToMaxBlock StorageMergeTree::getMostTenuredPartMaxBlocks() const
+{
+    std::unordered_map<String, std::pair<Int64, Int64>> min_max_blocks_per_partition;
+    for (const auto & data_part : getDataPartsForInternalUsage())
+    {
+        const auto it = min_max_blocks_per_partition.find(data_part->info.partition_id);
+        if (it == min_max_blocks_per_partition.end() || data_part->info.min_block < it->second.first)
+            min_max_blocks_per_partition[data_part->info.partition_id]
+                = std::make_pair(data_part->info.min_block, data_part->info.max_block);
+    }
+
+    PartitionIdToMaxBlock max_added_blocks;
+    for (const auto & it : min_max_blocks_per_partition)
+        max_added_blocks[it.first] = it.second.second;
+
+    return max_added_blocks;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const

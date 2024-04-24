@@ -5468,3 +5468,14 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+
+## select_only_one_part_with_min_block_per_partition {#select_only_one_part_with_min_block_per_partition}
+
+This is an experimental setting. For every partition participating in the query pick single part with minimum block number (within respective partition). This setting could be useful 
+to improve performance of queries against a continuously updated table (e.g. ReplacingMergeTree), at a cost of dealing with an outdated data snapshot. It's assumed that respective table 
+is regularly optimized via `OPTIMIZE TABLE .. FINAL` statements.
+
+Possible values:
+
+- `0`, disabled by default.
+- `1`, only one most tenured part per partition will be considered for SELECT queries.

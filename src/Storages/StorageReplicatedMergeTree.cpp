@@ -5381,6 +5381,24 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 }
 
 
+ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMergeTree::getMostTenuredPartMaxBlocks() const
+{
+    std::unordered_map<String, std::pair<Int64, Int64>> min_max_blocks_per_partition;
+    for (const auto & data_part : getDataPartsForInternalUsage())
+    {
+        const auto it = min_max_blocks_per_partition.find(data_part->info.partition_id);
+        if (it == min_max_blocks_per_partition.end() || data_part->info.min_block < it->second.first)
+            min_max_blocks_per_partition[data_part->info.partition_id]
+                = std::make_pair(data_part->info.min_block, data_part->info.max_block);
+    }
+
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
+    for (const auto & it : min_max_blocks_per_partition)
+        max_added_blocks[it.first] = it.second.second;
+
+    return max_added_blocks;
+}
+
 ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxAddedBlocks() const
 {
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
@@ -5529,10 +5547,14 @@ void StorageReplicatedMergeTree::readLocalImpl(
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
 
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr;
+    if (local_context->getSettingsRef().select_only_one_part_with_min_block_per_partition)
+        max_block_numbers_to_read = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMostTenuredPartMaxBlocks());
+
     auto plan = reader.read(
         column_names, storage_snapshot, query_info,
         local_context, max_block_size, num_streams,
-        /* max_block_numbers_to_read= */ nullptr,
+        max_block_numbers_to_read,
         enable_parallel_reading);
 
     if (plan)

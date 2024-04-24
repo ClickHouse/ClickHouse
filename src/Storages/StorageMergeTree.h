@@ -216,6 +216,13 @@ private:
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
+    /// For every partition returns max_block of a part with minimum block number within partition.
+    /// This way only single mostly tenured part is returned for a partition. It's used in the scenarious
+    /// where tables with engines like ReplacingMergeTree are continuously updated with newer versions
+    /// of the entries. By ignoring parts that haven't yet been merged/optimized we preserve consistent
+    /// (but outdated) snapshot of the data with no duplicates.
+    PartitionIdToMaxBlock getMostTenuredPartMaxBlocks() const;
+
     /// For current mutations queue, returns maximum version of mutation for a part,
     /// with respect of mutations which would not change it.
     /// Returns 0 if there is no such mutation in active status.
