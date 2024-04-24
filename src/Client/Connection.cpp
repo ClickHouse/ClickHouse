@@ -613,15 +613,16 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (!connected)
         connect(timeouts);
 
+    fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
+        sleepForSeconds(5);
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
+    });
+
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
     out->next();
-
-    fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
-        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
-    });
 
     UInt64 response_type = 0;
     readVarUInt(response_type, *in);
