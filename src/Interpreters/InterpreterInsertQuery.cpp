@@ -613,7 +613,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
             {
-                return std::make_shared<SquashingChunksTransform>(
+                return std::make_shared<NewSquashingChunksTransform>(
                     in_header,
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
@@ -669,7 +669,7 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            auto squashing = std::make_shared<SquashingChunksTransform>(
+            auto squashing = std::make_shared<NewSquashingChunksTransform>(
                 chain.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);

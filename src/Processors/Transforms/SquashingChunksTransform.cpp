@@ -7,13 +7,13 @@ namespace DB
 SquashingChunksTransform::SquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void SquashingChunksTransform::onConsume(Chunk chunk)
 {
-    if (auto block = squashing.add(std::move(chunk)))
+    if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
         cur_chunk.setColumns(block.getColumns(), block.rows());
 }
 
@@ -29,9 +29,55 @@ void SquashingChunksTransform::onFinish()
 {
     auto block = squashing.add({});
     finish_chunk.setColumns(block.getColumns(), block.rows());
+    LOG_TRACE(getLogger("squashing"), "{}, SquashingTransform: finished, hasInfo: {}", reinterpret_cast<void*>(this), finish_chunk.hasChunkInfo());
 }
 
 void SquashingChunksTransform::work()
+{
+    if (stage == Stage::Exception)
+    {
+        data.chunk.clear();
+        ready_input = false;
+        return;
+    }
+
+    ExceptionKeepingTransform::work();
+    if (finish_chunk)
+    {
+        data.chunk = std::move(finish_chunk);
+        ready_output = true;
+    }
+}
+
+NewSquashingChunksTransform::NewSquashingChunksTransform(
+    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : ExceptionKeepingTransform(header, header, false)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
+{
+}
+
+void NewSquashingChunksTransform::onConsume(Chunk chunk)
+{
+    if (auto block = squashing.add(std::move(chunk)))
+        cur_chunk.setColumns(block.getColumns(), block.rows());
+}
+
+NewSquashingChunksTransform::GenerateResult NewSquashingChunksTransform::onGenerate()
+{
+    GenerateResult res;
+    res.chunk = std::move(cur_chunk);
+    res.is_done = true;
+    return res;
+}
+
+void NewSquashingChunksTransform::onFinish()
+{
+    auto block = squashing.add({});
+    finish_chunk.setColumns(block.getColumns(), block.rows());
+    LOG_TRACE(getLogger("squashing"), "{}, SquashingTransform: finished, hasInfo: {}", reinterpret_cast<void*>(this), finish_chunk.hasChunkInfo());
+}
+
+void NewSquashingChunksTransform::work()
 {
     if (stage == Stage::Exception)
     {

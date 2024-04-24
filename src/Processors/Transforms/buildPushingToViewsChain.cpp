@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/BalancingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -368,10 +369,16 @@ std::optional<Chain> generateViewChain(
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
 
-            out.addSource(std::make_shared<SquashingChunksTransform>(
+            out.addSource(std::make_shared<NewSquashingChunksTransform>(
                 out.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+
+            out.addSource(std::make_shared<BalancingChunksTransform>(
+                out.getInputHeader(),
+                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
+                true));
         }
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());

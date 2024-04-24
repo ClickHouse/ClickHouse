@@ -313,7 +313,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
     builder.addTransform(std::make_shared<BalancingChunksTransform>(builder.getHeader(), block.rows(), 0, true));
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
+    builder.addTransform(std::make_shared<NewSquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
