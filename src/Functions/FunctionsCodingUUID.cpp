@@ -385,6 +385,8 @@ public:
                 {
                     std::swap(vec_res[dst_offset], vec_res[dst_offset + 3]);
                     std::swap(vec_res[dst_offset + 1], vec_res[dst_offset + 2]);
+                    std::swap(vec_res[dst_offset + 4], vec_res[dst_offset + 5]);
+                    std::swap(vec_res[dst_offset + 6], vec_res[dst_offset + 7]);
                 }
                 dst_offset += uuid_bytes_length;
             }
