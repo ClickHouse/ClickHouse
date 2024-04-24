@@ -426,7 +426,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const override;
+    ConditionSelectivityEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const override;
 
     bool supportsFinal() const override;
 

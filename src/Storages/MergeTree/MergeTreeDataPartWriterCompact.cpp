@@ -14,7 +14,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const std::vector<ColumnStatisticsPtr> & stats_to_recalc,
+    const ColumnsStatistics & stats_to_recalc,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,

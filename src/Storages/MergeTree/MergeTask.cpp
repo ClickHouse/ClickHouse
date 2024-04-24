@@ -632,7 +632,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         /// because all of them were already recalculated and written
         /// as key part of vertical merge
         std::vector<MergeTreeIndexPtr>{},
-        std::vector<ColumnStatisticsPtr>{}, /// TODO(hanfei)
+        ColumnsStatistics{}, /// TODO(hanfei)
         &global_ctx->written_offset_columns,
         global_ctx->to->getIndexGranularity());
 

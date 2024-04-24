@@ -1,4 +1,4 @@
-#include <Storages/Statistics/Estimator.h>
+#include <Storages/Statistics/ConditionEstimator.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
@@ -9,53 +9,53 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ConditionEstimator::ColumnEstimator::merge(std::string part_name, ColumnStatisticsPtr stats)
+void ConditionSelectivityEstimator::ColumnSelectivityEstimator::merge(String part_name, ColumnStatisticsPtr stats)
 {
-    if (estimators.contains(part_name))
+    if (part_statistics.contains(part_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
-    estimators[part_name] = stats;
+    part_statistics[part_name] = stats;
 }
 
-Float64 ConditionEstimator::ColumnEstimator::estimateLess(Float64 val, Float64 total) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(Float64 val, Float64 rows) const
 {
-    if (estimators.empty())
-        return default_normal_cond_factor * total;
+    if (part_statistics.empty())
+        return default_normal_cond_factor * rows;
     Float64 result = 0;
-    Float64 partial_cnt = 0;
-    for (const auto & [key, estimator] : estimators)
+    Float64 part_rows = 0;
+    for (const auto & [key, estimator] : part_statistics)
     {
         result += estimator->estimateLess(val);
-        partial_cnt += estimator->count();
+        part_rows += estimator->count();
     }
-    return result * total / partial_cnt;
+    return result * rows / part_rows;
 }
 
-Float64 ConditionEstimator::ColumnEstimator::estimateGreater(Float64 val, Float64 total) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(Float64 val, Float64 rows) const
 {
-    return total - estimateLess(val, total);
+    return rows - estimateLess(val, rows);
 }
 
-Float64 ConditionEstimator::ColumnEstimator::estimateEqual(Float64 val, Float64 total) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(Float64 val, Float64 rows) const
 {
-    if (estimators.empty())
+    if (part_statistics.empty())
     {
         if (val < - threshold || val > threshold)
-            return default_normal_cond_factor * total;
+            return default_normal_cond_factor * rows;
         else
-            return default_good_cond_factor * total;
+            return default_good_cond_factor * rows;
     }
     Float64 result = 0;
     Float64 partial_cnt = 0;
-    for (const auto & [key, estimator] : estimators)
+    for (const auto & [key, estimator] : part_statistics)
     {
         result += estimator->estimateEqual(val);
         partial_cnt += estimator->count();
     }
-    return result * total / partial_cnt;
+    return result * rows / partial_cnt;
 }
 
 /// second return value represents how many columns in the node.
-static std::pair<std::string, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNode & node)
+static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNode & node)
 {
     if (node.isConstant())
     {
@@ -70,7 +70,7 @@ static std::pair<std::string, Int32> tryToExtractSingleColumn(const RPNBuilderTr
 
     auto function_node = node.toFunctionNode();
     size_t arguments_size = function_node.getArgumentsSize();
-    std::pair<std::string, Int32> result;
+    std::pair<String, Int32> result;
     for (size_t i = 0; i < arguments_size; ++i)
     {
         auto function_argument = function_node.getArgumentAt(i);
@@ -87,7 +87,7 @@ static std::pair<std::string, Int32> tryToExtractSingleColumn(const RPNBuilderTr
     return result;
 }
 
-std::pair<std::string, Float64> ConditionEstimator::extractBinaryOp(const RPNBuilderTreeNode & node, const std::string & column_name) const
+std::pair<String, Float64> ConditionSelectivityEstimator::extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const
 {
     if (!node.isFunction())
         return {};
@@ -96,7 +96,7 @@ std::pair<std::string, Float64> ConditionEstimator::extractBinaryOp(const RPNBui
     if (function_node.getArgumentsSize() != 2)
         return {};
 
-    std::string function_name = function_node.getFunctionName();
+    String function_name = function_node.getFunctionName();
 
     auto lhs_argument = function_node.getArgumentAt(0);
     auto rhs_argument = function_node.getArgumentAt(1);
@@ -137,7 +137,7 @@ std::pair<std::string, Float64> ConditionEstimator::extractBinaryOp(const RPNBui
     return std::make_pair(function_name, value);
 }
 
-Float64 ConditionEstimator::estimateRowCount(const RPNBuilderTreeNode & node) const
+Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node) const
 {
     auto result = tryToExtractSingleColumn(node);
     if (result.second != 1)
@@ -149,8 +149,8 @@ Float64 ConditionEstimator::estimateRowCount(const RPNBuilderTreeNode & node) co
 
     /// If there the estimator of the column is not found or there are no data at all,
     /// we use dummy estimation.
-    bool dummy = total_count == 0;
-    ColumnEstimator estimator;
+    bool dummy = total_rows == 0;
+    ColumnSelectivityEstimator estimator;
     if (it != column_estimators.end())
     {
         estimator = it->second;
@@ -165,33 +165,33 @@ Float64 ConditionEstimator::estimateRowCount(const RPNBuilderTreeNode & node) co
         if (dummy)
         {
             if (val < - threshold || val > threshold)
-                return default_normal_cond_factor * total_count;
+                return default_normal_cond_factor * total_rows;
             else
-                return default_good_cond_factor * total_count;
+                return default_good_cond_factor * total_rows;
         }
-        return estimator.estimateEqual(val, total_count);
+        return estimator.estimateEqual(val, total_rows);
     }
-    else if (op == "less" || op == "lessThan")
+    else if (op == "less" || op == "lessOrEquals")
     {
         if (dummy)
-            return default_normal_cond_factor * total_count;
-        return estimator.estimateLess(val, total_count);
+            return default_normal_cond_factor * total_rows;
+        return estimator.estimateLess(val, total_rows);
     }
-    else if (op == "greater" || op == "greaterThan")
+    else if (op == "greater" || op == "greaterOrEquals")
     {
         if (dummy)
-            return default_normal_cond_factor * total_count;
-        return estimator.estimateGreater(val, total_count);
+            return default_normal_cond_factor * total_rows;
+        return estimator.estimateGreater(val, total_rows);
     }
     else
-        return default_unknown_cond_factor * total_count;
+        return default_unknown_cond_factor * total_rows;
 }
 
-void ConditionEstimator::merge(std::string part_name, UInt64 part_count, ColumnStatisticsPtr column_stat)
+void ConditionSelectivityEstimator::merge(String part_name, UInt64 part_rows, ColumnStatisticsPtr column_stat)
 {
     if (!part_names.contains(part_name))
     {
-        total_count += part_count;
+        total_rows += part_rows;
         part_names.insert(part_name);
     }
     if (column_stat != nullptr)

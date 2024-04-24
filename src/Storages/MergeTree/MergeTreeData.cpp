@@ -73,7 +73,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/Statistics/Estimator.h>
+#include <Storages/Statistics/ConditionEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
@@ -470,7 +470,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     return storage_policy;
 }
 
-ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
+ConditionSelectivityEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
 {
     if (!local_context->getSettings().allow_statistic_optimize)
         return {};
@@ -484,23 +484,29 @@ ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQ
 
     ASTPtr expression_ast;
 
-    ConditionEstimator result;
+    ConditionSelectivityEstimator result;
     PartitionPruner partition_pruner(storage_snapshot->metadata, query_info, local_context, true /* strict */);
 
     if (partition_pruner.isUseless())
     {
         /// Read all partitions.
         for (const auto & part : parts)
+        try
         {
             auto stats = part->loadStatistics();
             /// TODO: We only have one stats file for every part.
             for (const auto & stat : stats)
                 result.merge(part->info.getPartNameV1(), part->rows_count, stat);
         }
+        catch(...)
+        {
+            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part->info.getPartNameV1()));
+        }
     }
     else
     {
         for (const auto & part : parts)
+        try
         {
             if (!partition_pruner.canBePruned(*part))
             {
@@ -508,6 +514,10 @@ ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQ
                 for (const auto & stat : stats)
                     result.merge(part->info.getPartNameV1(), part->rows_count, stat);
             }
+        }
+        catch(...)
+        {
+            tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part->info.getPartNameV1()));
         }
     }
 
@@ -8354,7 +8364,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        std::vector<ColumnStatisticsPtr>{},
+        ColumnsStatistics{},
         compression_codec, txn);
 
     bool sync_on_insert = settings->fsync_after_insert;

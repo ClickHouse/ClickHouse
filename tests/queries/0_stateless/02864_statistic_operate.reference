@@ -1,4 +1,4 @@
-CREATE TABLE default.t1\n(\n    `a` Float64 STATISTIC(tdigest),\n    `b` Int64 STATISTIC(tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.t1\n(\n    `a` Float64 STATISTICS(tdigest),\n    `b` Int64 STATISTICS(tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 After insert
         Prewhere info
           Prewhere filter
@@ -12,7 +12,7 @@ After drop statistic
 10
 CREATE TABLE default.t1\n(\n    `a` Float64,\n    `b` Int64,\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 After add statistic
-CREATE TABLE default.t1\n(\n    `a` Float64 STATISTIC(tdigest),\n    `b` Int64 STATISTIC(tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.t1\n(\n    `a` Float64 STATISTICS(tdigest),\n    `b` Int64 STATISTICS(tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 After materialize statistic
         Prewhere info
           Prewhere filter
@@ -23,7 +23,7 @@ After merge
           Prewhere filter
           Prewhere filter column: and(less(a, 10), less(b, 10)) (removed)
 20
-CREATE TABLE default.t1\n(\n    `a` Float64 STATISTIC(tdigest),\n    `c` Int64 STATISTIC(tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.t1\n(\n    `a` Float64 STATISTICS(tdigest),\n    `c` Int64 STATISTICS(tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 After rename
         Prewhere info
           Prewhere filter

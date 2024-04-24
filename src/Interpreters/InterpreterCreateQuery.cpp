@@ -679,7 +679,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistic)
                  throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
-            column.stats = StatisticsDescription::getStatisticFromColumnDeclaration(col_decl);
+            column.stats = ColumnStatisticsDescription::getStatisticFromColumnDeclaration(col_decl);
             column.stats.data_type = column.type;
         }
 

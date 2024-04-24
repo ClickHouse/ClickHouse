@@ -4,7 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/Estimator.h>
+#include <Storages/Statistics/ConditionEstimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -38,7 +38,7 @@ public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
-        const ConditionEstimator & estimator_,
+        const ConditionSelectivityEstimator & estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         LoggerPtr log_);
@@ -147,7 +147,7 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    const ConditionEstimator estimator;
+    const ConditionSelectivityEstimator estimator;
 
     const NameSet table_columns;
     const Names queried_columns;

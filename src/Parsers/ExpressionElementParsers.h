@@ -198,7 +198,7 @@ protected:
 };
 
 /// STATISTIC(tdigest(200))
-class ParserStatisticType : public IParserBase
+class ParserStatisticsType : public IParserBase
 {
 protected:
     const char * getName() const override { return "statistic"; }

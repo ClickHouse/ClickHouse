@@ -9,7 +9,7 @@
 namespace DB
 {
 
-enum StatisticType : UInt8
+enum class StatisticsType : UInt8
 {
     TDigest = 0,
     Uniq = 1,
@@ -17,66 +17,48 @@ enum StatisticType : UInt8
     UnknownStatistics = 63,
 };
 
-class ColumnsDescription;
-
-struct StatisticDescription
+struct SingleStatisticsDescription
 {
-    /// the type of statistic, right now it's only tdigest.
-    StatisticType type;
+    StatisticsType type;
 
     ASTPtr ast;
 
     String getTypeName() const;
 
-    StatisticDescription() = default;
+    SingleStatisticsDescription() = delete;
+    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_);
 
-    bool operator==(const StatisticDescription & other) const
-    {
-        return type == other.type; //&& column_name == other.column_name;
-    }
+    bool operator==(const SingleStatisticsDescription & other) const;
 };
 
 struct ColumnDescription;
+class ColumnsDescription;
 
-struct StatisticsDescription
+struct ColumnStatisticsDescription
 {
-    std::map<StatisticType, StatisticDescription> stats;
+    bool operator==(const ColumnStatisticsDescription & other) const;
 
-    bool operator==(const StatisticsDescription & other) const
-    {
-        for (const auto & iter : stats)
-        {
-            if (!other.stats.contains(iter.first))
-                return false;
-            if (!(iter.second == other.stats.at(iter.first)))
-                return false;
-        }
-        return stats.size() == other.stats.size();
-    }
-
-    bool empty() const
-    {
-        return stats.empty();
-    }
+    bool empty() const;
 
     bool contains(const String & stat_type) const;
 
-    void merge(const StatisticsDescription & other, const ColumnDescription & column, bool if_not_exists);
+    void merge(const ColumnStatisticsDescription & other, const ColumnDescription & column, bool if_not_exists);
 
-    void modify(const StatisticsDescription & other);
+    void assign(const ColumnStatisticsDescription & other);
 
     void clear();
 
-    void add(StatisticType stat_type, const StatisticDescription & desc);
+    void add(StatisticsType stat_type, const SingleStatisticsDescription & desc);
 
     ASTPtr getAST() const;
 
+    static std::vector<ColumnStatisticsDescription> getStatisticsDescriptionsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
+    static ColumnStatisticsDescription getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column);
+
+    using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
+    StatisticsTypeDescMap types_to_desc;
     String column_name;
     DataTypePtr data_type;
-
-    static std::vector<StatisticsDescription> getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
-    static StatisticsDescription getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column);
-
 };
 
 }

@@ -5,9 +5,9 @@ SET allow_statistic_optimize = 1;
 
 CREATE TABLE t1
 (
-    a Float64 STATISTIC(tdigest),
-    b Int64 STATISTIC(tdigest),
-    c Int64 STATISTIC(tdigest, uniq),
+    a Float64 STATISTICS(tdigest),
+    b Int64 STATISTICS(tdigest),
+    c Int64 STATISTICS(tdigest, uniq),
     pk String,
 ) Engine = MergeTree() ORDER BY pk
 SETTINGS min_bytes_for_wide_part = 0;
@@ -27,15 +27,15 @@ SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8', '') FROM (EXPLAIN act
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE b < 10 and c = 11 and a < 10) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
 SELECT 'After modify TDigest';
-ALTER TABLE t1 MODIFY STATISTIC c TYPE TDigest;
-ALTER TABLE t1 MATERIALIZE STATISTIC c;
+ALTER TABLE t1 MODIFY STATISTICS c TYPE TDigest;
+ALTER TABLE t1 MATERIALIZE STATISTICS c;
 
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE b < 10 and c = 11 and a < 10) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE b < 10 and c = 0 and a < 10) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE b < 10 and c < -1 and a < 10) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
 
-ALTER TABLE t1 DROP STATISTIC c;
+ALTER TABLE t1 DROP STATISTICS c;
 
 SELECT 'After drop';
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM t1 WHERE b < 10 and c = 11 and a < 10) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';

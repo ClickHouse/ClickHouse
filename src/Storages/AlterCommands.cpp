@@ -44,7 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_STATISTIC;
+    extern const int ILLEGAL_STATISTICS;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
@@ -263,32 +263,32 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::ADD_STATISTIC)
+    else if (command_ast->type == ASTAlterCommand::ADD_STATISTICS)
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistic_decl = command_ast->statistic_decl->clone();
-        command.type = AlterCommand::ADD_STATISTIC;
+        command.statistics_decl = command_ast->statistics_decl->clone();
+        command.type = AlterCommand::ADD_STATISTICS;
 
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticsDeclaration &>();
+        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistic_columns = ast_stat_decl.getColumnNames();
-        command.statistic_types = ast_stat_decl.getTypeNames();
+        command.statistics_columns = ast_stat_decl.getColumnNames();
+        command.statistics_types = ast_stat_decl.getTypeNames();
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_STATISTIC)
+    else if (command_ast->type == ASTAlterCommand::MODIFY_STATISTICS)
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistic_decl = command_ast->statistic_decl->clone();
-        command.type = AlterCommand::MODIFY_STATISTIC;
+        command.statistics_decl = command_ast->statistics_decl->clone();
+        command.type = AlterCommand::MODIFY_STATISTICS;
 
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticsDeclaration &>();
+        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistic_columns = ast_stat_decl.getColumnNames();
-        command.statistic_types = ast_stat_decl.getTypeNames();
+        command.statistics_columns = ast_stat_decl.getColumnNames();
+        command.statistics_types = ast_stat_decl.getTypeNames();
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -352,17 +352,17 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_STATISTIC)
+    else if (command_ast->type == ASTAlterCommand::DROP_STATISTICS)
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistic_decl = command_ast->statistic_decl->clone();
-        command.type = AlterCommand::DROP_STATISTIC;
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticsDeclaration &>();
+        command.statistics_decl = command_ast->statistics_decl->clone();
+        command.type = AlterCommand::DROP_STATISTICS;
+        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistic_columns = ast_stat_decl.getColumnNames();
+        command.statistics_columns = ast_stat_decl.getColumnNames();
         command.if_exists = command_ast->if_exists;
-        command.clear = command_ast->clear_statistic;
+        command.clear = command_ast->clear_statistics;
 
         if (command_ast->partition)
             command.partition = command_ast->partition->clone();
@@ -691,54 +691,54 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.secondary_indices.erase(erase_it);
         }
     }
-    else if (type == ADD_STATISTIC)
+    else if (type == ADD_STATISTICS)
     {
-        for (const auto & statistic_column_name : statistic_columns)
+        for (const auto & statistics_column_name : statistics_columns)
         {
-            if (!metadata.columns.has(statistic_column_name))
+            if (!metadata.columns.has(statistics_column_name))
             {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic for column {}: this column is not found", statistic_column_name);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot add statistics for column {}: this column is not found", statistics_column_name);
             }
         }
 
-        auto stats_vec = StatisticsDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
+        auto stats_vec = ColumnStatisticsDescription::getStatisticsDescriptionsFromAST(statistics_decl, metadata.columns);
         for (const auto & stats : stats_vec)
         {
             metadata.columns.modify(stats.column_name,
                 [&](ColumnDescription & column) { column.stats.merge(stats, column, if_not_exists); });
         }
     }
-    else if (type == DROP_STATISTIC)
+    else if (type == DROP_STATISTICS)
     {
-        for (const auto & statistic_column_name : statistic_columns)
+        for (const auto & statistics_column_name : statistics_columns)
         {
-            if (!metadata.columns.has(statistic_column_name))
+            if (!metadata.columns.has(statistics_column_name))
             {
                 if (if_exists)
                     return;
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Wrong statistic name. Cannot find statistic {} to drop", backQuote(statistic_column_name));
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Wrong statistics name. Cannot find statistics {} to drop", backQuote(statistics_column_name));
             }
 
             if (!clear && !partition)
-                metadata.columns.modify(statistic_column_name,
+                metadata.columns.modify(statistics_column_name,
                     [&](ColumnDescription & column) { column.stats.clear(); });
         }
     }
-    else if (type == MODIFY_STATISTIC)
+    else if (type == MODIFY_STATISTICS)
     {
-        for (const auto & statistic_column_name : statistic_columns)
+        for (const auto & statistics_column_name : statistics_columns)
         {
-            if (!metadata.columns.has(statistic_column_name))
+            if (!metadata.columns.has(statistics_column_name))
             {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic for column {}: this column is not found", statistic_column_name);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot add statistics for column {}: this column is not found", statistics_column_name);
             }
         }
 
-        auto stats_vec = StatisticsDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
+        auto stats_vec = ColumnStatisticsDescription::getStatisticsDescriptionsFromAST(statistics_decl, metadata.columns);
         for (const auto & stats : stats_vec)
         {
             metadata.columns.modify(stats.column_name,
-                [&](ColumnDescription & column) { column.stats.modify(stats); });
+                [&](ColumnDescription & column) { column.stats.assign(stats); });
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -987,7 +987,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTIC)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
         return true;
 
     /// Drop alias is metadata alter, in other case mutation is required.
@@ -1094,10 +1094,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         result.predicate = nullptr;
     }
-    else if (type == DROP_STATISTIC)
+    else if (type == DROP_STATISTICS)
     {
-        result.type = MutationCommand::Type::DROP_STATISTIC;
-        result.statistic_columns = statistic_columns;
+        result.type = MutationCommand::Type::DROP_STATISTICS;
+        result.statistics_columns = statistics_columns;
 
         if (clear)
             result.clear = true;

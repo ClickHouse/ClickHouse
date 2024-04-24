@@ -8,12 +8,10 @@ namespace DB
 
 
 /// TDigestStatistic is a kind of histogram.
-class TDigestStatistic : public IStatistic
+class TDigestStatistics : public IStatistics
 {
-    friend class ColumnStatistics;
-    QuantileTDigest<Float64> data;
 public:
-    explicit TDigestStatistic(const StatisticDescription & stat_) : IStatistic(stat_)
+    explicit TDigestStatistics(const SingleStatisticsDescription & stat_) : IStatistics(stat_)
     {
     }
 
@@ -26,6 +24,11 @@ public:
     void deserialize(ReadBuffer & buf) override;
 
     void update(const ColumnPtr & column) override;
+private:
+    QuantileTDigest<Float64> data;
 };
+
+StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
+void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
 
 }

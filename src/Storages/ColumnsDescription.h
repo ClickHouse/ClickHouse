@@ -89,7 +89,7 @@ struct ColumnDescription
     ASTPtr codec;
     SettingsChanges settings;
     ASTPtr ttl;
-    StatisticsDescription stats;
+    ColumnStatisticsDescription stats;
 
     ColumnDescription() = default;
     ColumnDescription(ColumnDescription &&) = default;

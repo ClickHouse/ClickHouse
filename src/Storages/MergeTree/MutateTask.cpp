@@ -114,7 +114,7 @@ static void splitAndModifyMutationCommands(
                 }
             }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -127,7 +127,7 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
-                     || command.type == MutationCommand::Type::DROP_STATISTIC)
+                     || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
                 for_file_renames.push_back(command);
             }
@@ -242,7 +242,7 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(command);
             }
             else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -253,7 +253,7 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
-                     || command.type == MutationCommand::Type::DROP_STATISTIC)
+                     || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
                 for_file_renames.push_back(command);
             }
@@ -756,11 +756,11 @@ static NameToNameVector collectFilesForRenames(
             if (source_part->checksums.has(command.column_name + ".proj"))
                 add_rename(command.column_name + ".proj", "");
         }
-        else if (command.type == MutationCommand::Type::DROP_STATISTIC)
+        else if (command.type == MutationCommand::Type::DROP_STATISTICS)
         {
-            for (const auto & statistic_column_name : command.statistic_columns)
-                if (source_part->checksums.has(STAT_FILE_PREFIX + statistic_column_name + STAT_FILE_SUFFIX))
-                    add_rename(STAT_FILE_PREFIX + statistic_column_name + STAT_FILE_SUFFIX, "");
+            for (const auto & statistics_column_name : command.statistics_columns)
+                if (source_part->checksums.has(STAT_FILE_PREFIX + statistics_column_name + STAT_FILE_SUFFIX))
+                    add_rename(STAT_FILE_PREFIX + statistics_column_name + STAT_FILE_SUFFIX, "");
         }
         else if (isWidePart(source_part))
         {
@@ -781,7 +781,7 @@ static NameToNameVector collectFilesForRenames(
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
-                /// if we drop a column with statistic, we should also drop the stat file.
+                /// if we drop a column with statistics, we should also drop the stat file.
                 if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
                     add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, "");
             }
@@ -817,7 +817,7 @@ static NameToNameVector collectFilesForRenames(
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
-                /// if we rename a column with statistic, we should also rename the stat file.
+                /// if we rename a column with statistics, we should also rename the stat file.
                 if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
                     add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, STAT_FILE_PREFIX + command.rename_to + STAT_FILE_SUFFIX);
             }
@@ -1457,8 +1457,8 @@ private:
         {
             if (command.type == MutationCommand::DROP_INDEX)
                 removed_indices.insert(command.column_name);
-            else if (command.type == MutationCommand::DROP_STATISTIC)
-                for (const auto & column_name : command.statistic_columns)
+            else if (command.type == MutationCommand::DROP_STATISTICS)
+                for (const auto & column_name : command.statistics_columns)
                     removed_stats.insert(column_name);
             else if (command.type == MutationCommand::RENAME_COLUMN
                      && ctx->source_part->checksums.files.contains(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
@@ -1498,7 +1498,7 @@ private:
             }
         }
 
-        std::vector<ColumnStatisticsPtr> stats_to_rewrite;
+        ColumnsStatistics stats_to_rewrite;
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & col : columns)
         {
@@ -1512,7 +1512,7 @@ private:
             else
             {
                 /// We do not hard-link statistics which
-                /// 1. In `DROP STATISTIC` statement. It is filtered by `removed_stats`
+                /// 1. In `DROP STATISTICS` statement. It is filtered by `removed_stats`
                 /// 2. Not in column list anymore, including `DROP COLUMN`. It is not touched by this loop.
                 String stat_file_name = STAT_FILE_PREFIX + col.name + STAT_FILE_SUFFIX;
                 auto it = ctx->source_part->checksums.files.find(stat_file_name);
@@ -1888,7 +1888,7 @@ private:
                 ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                std::vector<ColumnStatisticsPtr>(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
+                ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 nullptr,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info

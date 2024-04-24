@@ -53,7 +53,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
-    const ConditionEstimator & estimator_,
+    const ConditionSelectivityEstimator & estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)

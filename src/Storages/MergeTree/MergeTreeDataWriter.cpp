@@ -735,7 +735,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         MergeTreeIndices{},
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        std::vector<ColumnStatisticsPtr>{},
+        ColumnsStatistics{},
         compression_codec,
         NO_TRANSACTION_PTR,
         false, false, data.getContext()->getWriteSettings());
