@@ -23,18 +23,29 @@ bool cgroupsV2MemoryControllerEnabled()
 {
 #if defined(OS_LINUX)
     chassert(cgroupsV2Enabled());
+
     /// According to https://docs.kernel.org/admin-guide/cgroup-v2.html:
     /// - file 'cgroup.controllers' defines which controllers *can* be enabled
     /// - file 'cgroup.subtree_control' defines which controllers *are* enabled
-    /// Caveat: nested groups may disable controllers. For simplicity, check only the top-level group.
-    std::ifstream subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
-    if (!subtree_control_file.is_open())
-        return false;
-    std::string controllers;
-    std::getline(subtree_control_file, controllers);
-    if (controllers.find("memory") == std::string::npos)
-        return false;
-    return true;
+
+    /// Check from the bottom-most nested subtree_control file. If it does not contain the memory controller,
+    /// check the parent levels recursively as nested subtree_control files can only contain more controllers
+    /// than their parent subtree_control file.
+    std::string cgroup = cgroupV2OfProcess();
+    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
+
+    while (current_cgroup != default_cgroups_mount.parent_path())
+    {
+        std::ifstream subtree_control_file(current_cgroup / "cgroup.subtree_control");
+        if (!subtree_control_file.is_open())
+            return false;
+        std::string controllers;
+        std::getline(subtree_control_file, controllers);
+        if (controllers.find("memory") != std::string::npos)
+            return true;
+        current_cgroup = current_cgroup.parent_path();
+    }
+    return false;
 #else
     return false;
 #endif
