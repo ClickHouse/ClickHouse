@@ -104,7 +104,7 @@ length(s)
 
 **Returned value**
 
-- Length of the string `s` in bytes. [UInt64](../data-types/int-uint).
+- Length of the string or array `s` in bytes. [UInt64](../data-types/int-uint).
 
 **Example**
 
