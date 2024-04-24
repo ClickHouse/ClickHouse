@@ -243,7 +243,10 @@ public:
         table_join.strictness = strictness;
     }
 
+    TableJoin(const TableJoin & rhs) = default;
+
     JoinKind kind() const { return table_join.kind; }
+    void setKind(JoinKind kind) { table_join.kind = kind; }
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
