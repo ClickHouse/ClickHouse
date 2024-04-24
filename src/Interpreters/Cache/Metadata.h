@@ -34,18 +34,18 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool isEvicting(const CachePriorityGuard::Lock & lock) const
+    bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
     {
         auto iterator = getQueueIterator();
-        if (!iterator)
+        if (!iterator || removed)
             return false;
         return iterator->getEntry()->isEvicting(lock);
     }
 
-    bool isEvicting(const LockedKey & lock) const
+    bool isEvictingOrRemoved(const LockedKey & lock) const
     {
         auto iterator = getQueueIterator();
-        if (!iterator)
+        if (!iterator || removed)
             return false;
         return iterator->getEntry()->isEvicting(lock);
     }
@@ -56,6 +56,11 @@ struct FileSegmentMetadata : private boost::noncopyable
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
         iterator->getEntry()->setEvictingFlag(locked_key, lock);
+    }
+
+    void setRemovedFlag(const LockedKey &, const CachePriorityGuard::Lock &)
+    {
+        removed = true;
     }
 
     void resetEvictingFlag() const
@@ -69,6 +74,8 @@ struct FileSegmentMetadata : private boost::noncopyable
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
+private:
+    bool removed = false;
 };
 
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;

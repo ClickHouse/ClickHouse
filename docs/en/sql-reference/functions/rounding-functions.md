@@ -26,6 +26,37 @@ Returns the smallest round number that is greater than or equal to `x`. In every
 
 Returns the round number with largest absolute value that has an absolute value less than or equal to `x`‘s. In every other way, it is the same as the ’floor’ function (see above).
 
+**Syntax**
+
+```sql
+trunc(input, precision)
+```
+
+Alias: `truncate`.
+
+**Parameters**
+
+- `input`: A numeric type ([Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md) or [Integer](/docs/en/sql-reference/data-types/int-uint.md)).
+- `precision`: An [Integer](/docs/en/sql-reference/data-types/int-uint.md) type.
+
+**Returned value**
+
+- A data type of `input`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trunc(123.499, 1) as res;
+```
+
+```response
+┌───res─┐
+│ 123.4 │
+└───────┘
+```
+
 ## round(x\[, N\])
 
 Rounds a value to a specified number of decimal places.
