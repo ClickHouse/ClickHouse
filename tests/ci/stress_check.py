@@ -20,6 +20,8 @@ from tee_popen import TeePopen
 
 def get_additional_envs(check_name: str) -> List[str]:
     result = []
+    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
+    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
