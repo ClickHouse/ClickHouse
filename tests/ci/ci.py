@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, CIStages, JobNames, Labels
+from ci_config import CI_CONFIG, Build, CILabels, CIStages, JobNames
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -800,7 +800,7 @@ class CiOptions:
                 if not res.ci_jobs:
                     res.ci_jobs = []
                 res.ci_jobs.append(match.removeprefix("job_"))
-            elif match.startswith("ci_set_") and match in Labels:
+            elif match.startswith("ci_set_") and match in CILabels:
                 if not res.ci_sets:
                     res.ci_sets = []
                 res.ci_sets.append(match)
@@ -816,12 +816,12 @@ class CiOptions:
                 res.exclude_keywords.append(
                     normalize_check_name(match.removeprefix("ci_exclude_"))
                 )
-            elif match == Labels.NO_CI_CACHE:
+            elif match == CILabels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
-            elif match == Labels.DO_NOT_TEST_LABEL:
+            elif match == CILabels.DO_NOT_TEST_LABEL:
                 res.do_not_test = True
-            elif match == Labels.NO_MERGE_COMMIT:
+            elif match == CILabels.NO_MERGE_COMMIT:
                 res.no_merge_commit = True
                 print("NOTE: Merge Commit will be disabled")
             elif match.startswith("batch_"):
@@ -920,7 +920,7 @@ class CiOptions:
 
         # 3. Handle "do not test"
         if self.do_not_test:
-            label_config = CI_CONFIG.get_label_config(Labels.DO_NOT_TEST_LABEL)
+            label_config = CI_CONFIG.get_label_config(CILabels.DO_NOT_TEST_LABEL)
             assert label_config
             print(
                 f"NOTE: CI 'do not test' setting applied, set jobs: [{label_config.run_jobs}]"
@@ -1547,7 +1547,7 @@ def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
     res = [
         match
         for match in matches
-        if match in Labels or match.startswith("job_") or match.startswith("batch_")
+        if match in CILabels or match.startswith("job_") or match.startswith("batch_")
     ]
     print(f"CI modifyers from commit message: [{res}]")
     res_2 = []
@@ -1556,7 +1556,9 @@ def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
         res_2 = [
             match
             for match in matches
-            if match in Labels or match.startswith("job_") or match.startswith("batch_")
+            if match in CILabels
+            or match.startswith("job_")
+            or match.startswith("batch_")
         ]
         print(f"CI modifyers from PR body: [{res_2}]")
     return list(set(res + res_2))
