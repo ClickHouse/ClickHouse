@@ -4,8 +4,8 @@
 
 #if USE_CBOR
 
-#    include <Formats/FormatFactory.h>
 #    include <Formats/CBORReader.h>
+#    include <Formats/FormatFactory.h>
 #    include <Processors/Formats/IRowInputFormat.h>
 
 namespace DB
@@ -13,17 +13,15 @@ namespace DB
 
 class ReadBuffer;
 
-enum class CBORTagTypes : uint64_t
+enum CBORTagTypes : uint64_t
 {
-    STANDARD_DATETIME = 0, // text string
-    EPOCH_BASED_DATETIME = 1, // integer or float
     UNSIGNED_BIGNUM = 2, // byte string
     NEGATIVE_BIGNUM = 3, // byte string
     DECIMAL = 4, // array
-    BIGFLOAT = 5, // byte string
     BIN_UUID = 37, // byte string
     IPV4 = 52, // 	byte string or array
     IPV6 = 54, // 	byte string or array
+    DATE_IN_DAYS = 100, // 	Unsigned or negative integer
 };
 
 class WriteToDBListener final : public cbor::listener
@@ -35,9 +33,9 @@ private:
         DataTypePtr type;
     };
     std::stack<Info> stack_info;
-    CBORTagTypes current_tag; // None
-//    bool in_array = false;
-//    bool in_map = false;
+    std::optional<CBORTagTypes> current_tag = std::nullopt;
+    //    bool in_array = false;
+    //    bool in_map = false;
 
 public:
     WriteToDBListener(MutableColumns & columns_, DataTypes & data_types_);

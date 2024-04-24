@@ -210,7 +210,7 @@ size_t CBORReader::getTypeBytesCount(unsigned char type)
 void CBORReader::readAndCheckPrefix()
 {
     if (!cbor_reader.has_bytes(1))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Not supported CBOR data schema.");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "There is no data in the buffer to read.");
     unsigned char byte = cbor_reader.get_byte();
     ++buf.position();
     if (byte != 0x9F)

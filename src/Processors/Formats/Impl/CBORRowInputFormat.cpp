@@ -2,29 +2,19 @@
 
 #if USE_CBOR
 
-#    include <cstdlib>
 #    include <IO/ReadBufferFromMemory.h>
 #    include <IO/ReadHelpers.h>
 #    include <Common/assert_cast.h>
 
 #    include <DataTypes/DataTypeArray.h>
 #    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeLowCardinality.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/DataTypeUUID.h>
 
 #    include <Columns/ColumnArray.h>
-#    include <Columns/ColumnLowCardinality.h>
 #    include <Columns/ColumnMap.h>
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnTuple.h>
-#    include <Columns/ColumnsNumber.h>
-
-#    include <Formats/EscapingRuleUtils.h>
 
 namespace DB
 {
@@ -43,10 +33,14 @@ static void insertCommonInteger(IColumn & column, DataTypePtr type, UInt64 value
             assert_cast<ColumnUInt8 &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::Date:
+            [[fallthrough]];
         case TypeIndex::UInt16: {
             assert_cast<ColumnUInt16 &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::DateTime:
+            [[fallthrough]];
         case TypeIndex::UInt32: {
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
@@ -59,14 +53,18 @@ static void insertCommonInteger(IColumn & column, DataTypePtr type, UInt64 value
             assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
             break;
         }
+        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8: {
             assert_cast<ColumnInt8 &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16: {
             assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::Date32:
+            [[fallthrough]];
         case TypeIndex::Int32: {
             assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
@@ -92,14 +90,14 @@ static void insertCommonInteger(IColumn & column, DataTypePtr type, UInt64 value
     }
 }
 
-[[maybe_unused]] static void insertFloat32(IColumn & column, DataTypePtr type, float value)
+static void insertFloat32(IColumn & column, DataTypePtr type, float value)
 {
     if (!WhichDataType(type).isFloat32())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR float32 into column with type {}.", type->getName());
     assert_cast<ColumnFloat32 &>(column).insertValue(value);
 }
 
-[[maybe_unused]] static void insertDouble(IColumn & column, DataTypePtr type, double value)
+static void insertDouble(IColumn & column, DataTypePtr type, double value)
 {
     if (!WhichDataType(type).isFloat64())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR double into column with type {}.", type->getName());
@@ -137,7 +135,6 @@ static void insertDouble(IColumn & column, DataTypePtr type, unsigned long long 
 
 static void insertBool(IColumn & column, DataTypePtr type, bool value)
 {
-    // TODO: can we write bool value into other integer types?
     if (!WhichDataType(type).isUInt8())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR bool into column with type {}.", type->getName());
     assert_cast<ColumnUInt8 &>(column).insertValue(value);
@@ -219,6 +216,23 @@ static void insertNegativeBigInteger(IColumn & column, DataTypePtr type, const c
     }
 }
 
+static void insertIPV4(IColumn & column, DataTypePtr type, const char * data, size_t size)
+{
+    if (!WhichDataType(type).isIPv4())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR IPV4 into column with type {}.", type->getName());
+    char reversed_data[size];
+    for (size_t i = 0; i < size; ++i)
+        reversed_data[i] = data[size - i - 1];
+    assert_cast<ColumnIPv4 &>(column).insertData(reversed_data, size);
+}
+
+static void insertIPV6(IColumn & column, DataTypePtr type, const char * data, size_t size)
+{
+    if (!WhichDataType(type).isIPv6())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR IPV6 into column with type {}.", type->getName());
+    assert_cast<ColumnIPv6 &>(column).insertData(data, size);
+}
+
 static void insertString(IColumn & column, DataTypePtr type, const std::string & str)
 {
     switch (type->getTypeId())
@@ -241,6 +255,16 @@ static void insertString(IColumn & column, DataTypePtr type, const std::string &
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR string into column with type {}.", type->getName());
     }
+}
+
+static void insertUUID(IColumn & column, DataTypePtr type, const char * value, size_t size)
+{
+    if (!isUUID(type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR binary UUID into column with type {}.", type->getName());
+    ReadBufferFromMemory buf(value, size);
+    UUID uuid;
+    readBinary(uuid, buf);
+    assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 
 static void insertNull(IColumn & column, DataTypePtr type)
@@ -314,19 +338,33 @@ void WriteToDBListener::on_bytes(unsigned char * data, int size)
 {
     auto [column, type] = stack_info.top();
     stack_info.pop();
+    if (!current_tag.has_value())
+        return;
     // Dispatch tag
-    switch (current_tag)
+    switch (current_tag.value())
     {
         case CBORTagTypes::UNSIGNED_BIGNUM: {
-            insertPositiveBigInteger(column, type, const_cast<const char *>(reinterpret_cast<char *>(data)), size);
+            insertPositiveBigInteger(column, type, reinterpret_cast<char *>(data), size);
             break;
         }
         case CBORTagTypes::NEGATIVE_BIGNUM: {
-            insertNegativeBigInteger(column, type, const_cast<const char *>(reinterpret_cast<char *>(data)), size);
+            insertNegativeBigInteger(column, type, reinterpret_cast<char *>(data), size);
+            break;
+        }
+        case CBORTagTypes::IPV4: {
+            insertIPV4(column, type, reinterpret_cast<char *>(data), size);
+            break;
+        }
+        case CBORTagTypes::IPV6: {
+            insertIPV6(column, type, reinterpret_cast<char *>(data), size);
+            break;
+        }
+        case CBORTagTypes::BIN_UUID: {
+            insertUUID(column, type, reinterpret_cast<char *>(data), size);
             break;
         }
         default:
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert CBOR byte string with {} tag.", current_tag);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert CBOR byte string with {} tag.", current_tag.value());
     }
 }
 
@@ -390,8 +428,6 @@ void WriteToDBListener::on_special(unsigned int code)
     auto [column, type] = stack_info.top();
     stack_info.pop();
     insertFloat32(column, type, code);
-    // Special (simple values 0 - 20)
-    // and Simple value (value 32..255 in following byte),  f16, f32
 }
 
 void WriteToDBListener::on_bool(bool value)
