@@ -610,7 +610,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     });
     builder.addSimpleTransform([&](const Block & current_header)
     {
-        return std::make_shared<SquashingChunksTransform>(
+        return std::make_shared<SimpleSquashingChunksTransform>(
             current_header,
             getContext()->getSettingsRef().min_insert_block_size_rows,
             getContext()->getSettingsRef().min_insert_block_size_bytes);
@@ -1498,7 +1498,7 @@ void StorageWindowView::writeIntoWindowView(
     builder = select_block.buildQueryPipeline();
     builder.addSimpleTransform([&](const Block & current_header)
     {
-        return std::make_shared<SquashingChunksTransform>(
+        return std::make_shared<SimpleSquashingChunksTransform>(
             current_header,
             local_context->getSettingsRef().min_insert_block_size_rows,
             local_context->getSettingsRef().min_insert_block_size_bytes);

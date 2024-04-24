@@ -369,7 +369,7 @@ std::optional<Chain> generateViewChain(
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
 
-            out.addSource(std::make_shared<NewSquashingChunksTransform>(
+            out.addSource(std::make_shared<SquashingChunksTransform>(
                 out.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
@@ -625,7 +625,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    pipeline.addTransform(std::make_shared<SquashingChunksTransform>(
+    pipeline.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
         pipeline.getHeader(),
         context->getSettingsRef().min_insert_block_size_rows,
         context->getSettingsRef().min_insert_block_size_bytes));

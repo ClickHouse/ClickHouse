@@ -667,7 +667,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     /// and two-level aggregation is triggered).
     builder.addSimpleTransform([&](const Block & cur_header)
     {
-        return std::make_shared<SquashingChunksTransform>(
+        return std::make_shared<SimpleSquashingChunksTransform>(
             cur_header,
             getContext()->getSettingsRef().min_insert_block_size_rows,
             getContext()->getSettingsRef().min_insert_block_size_bytes);
