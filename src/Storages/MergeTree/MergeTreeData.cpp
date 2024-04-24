@@ -498,7 +498,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionEstimatorByPredicate(co
             for (const auto & stat : stats)
                 result.merge(part->info.getPartNameV1(), part->rows_count, stat);
         }
-        catch(...)
+        catch (...)
         {
             tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part->info.getPartNameV1()));
         }
@@ -515,7 +515,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionEstimatorByPredicate(co
                     result.merge(part->info.getPartNameV1(), part->rows_count, stat);
             }
         }
-        catch(...)
+        catch (...)
         {
             tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part->info.getPartNameV1()));
         }
