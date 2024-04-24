@@ -59,17 +59,16 @@ jobs:
     uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
-  # Tested in MQ
-  # StyleCheck:
-  #   needs: [RunConfig, BuildDockers]
-  #   if: ${{ !failure() && !cancelled() }}
-  #   uses: ./.github/workflows/reusable_test.yml
-  #   with:
-  #     test_name: Style check
-  #     runner_type: style-checker
-  #     data: ${{ needs.RunConfig.outputs.data }}
-  #     run_command: |
-  #         python3 style_check.py --no-push
+  StyleCheck:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Style check
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+          python3 style_check.py --no-push
   CompatibilityCheckX86:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
