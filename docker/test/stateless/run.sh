@@ -47,7 +47,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
 elif [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     echo "Azure is disabled"
 else
-    azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+    azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
 fi
 
 ./setup_minio.sh stateless
@@ -212,6 +212,14 @@ function run_tests()
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--s3-storage')
+    fi
+
+    if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE"  -eq 1 ]]; then
+        # to disable the same tests
+        ADDITIONAL_OPTIONS+=('--s3-storage')
+        # azurite is slow, but with these two settings it can be super slow
+        ADDITIONAL_OPTIONS+=('--no-random-settings')
+        ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
     fi
 
     if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then

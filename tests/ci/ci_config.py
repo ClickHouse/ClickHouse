@@ -107,7 +107,7 @@ class JobNames(metaclass=WithIter):
     # STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
-    STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
+    STATELESS_TEST_AZURE_RELEASE = "Stateless tests (azure, release)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
 
     STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
@@ -1196,8 +1196,8 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_DEBUG,
             job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
-        JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
-            Build.PACKAGE_ASAN,
+        JobNames.STATELESS_TEST_AZURE_RELEASE: TestConfig(
+            Build.PACKAGE_RELEASE,
             job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
