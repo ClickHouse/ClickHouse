@@ -70,11 +70,9 @@ def test_skip_unresponsive_replicas(start_cluster):
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
             settings={
-                # "log_comment": log_comment,
                 "allow_experimental_parallel_reading_from_replicas": 2,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
-                "receive_timeout": 2,
             },
         )
         == expected_result

@@ -412,10 +412,14 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
+    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get());
+    if (!table_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
+
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        StorageID::createEmpty(),
+        table_node->getStorageID(),
         header,
         processed_stage,
         modified_query_ast,
