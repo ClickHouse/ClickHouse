@@ -40,12 +40,16 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
 {
     void add(const Float64 xval, const Float64 yval, Arena * arena)
     {
+        /// We need to ensure either both or neither coordinates are saved (StatisticalSample ignores NaNs)
+        if (isNaN(xval) || isNaN(yval))
+            return;
         this->addX(xval, arena);
         this->addY(yval, arena);
     }
 
     void sort(Arena * arena)
     {
+        chassert(this->x.size() == this->y.size());
         // sort the this->x and this->y in ascending order of this->x using index
         std::vector<size_t> index(this->x.size());
 

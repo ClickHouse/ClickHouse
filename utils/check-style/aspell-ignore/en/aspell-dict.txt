@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758 
+personal_ws-1.1 en 2758
 AArch
 ACLs
 ALTERs
@@ -183,6 +183,8 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
+Composable
+composable
 Config
 ConnectionDetails
 Const
@@ -697,6 +699,7 @@ PCRE
 PRCP
 PREWHERE
 PROCESSLIST
+PROXYv
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
@@ -946,6 +949,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
+tanh
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1368,6 +1372,8 @@ countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
+countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
@@ -1841,6 +1847,7 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -2314,6 +2321,7 @@ retriable
 reverseUTF
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
@@ -2341,10 +2349,13 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
 russian
+rustc
+rustup
 rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
@@ -2748,6 +2759,7 @@ varpop
 varsamp
 vectorized
 vectorscan
+vendoring
 verificationDepth
 verificationMode
 versionedcollapsingmergetree

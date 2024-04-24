@@ -23,10 +23,10 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
-      - name: Check sync PR
+      - name: Merge sync PR
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 sync_pr.py || :
+          python3 sync_pr.py --merge || :
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -238,14 +238,15 @@ jobs:
       build_name: binary_riscv64
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
-  BuilderBinS390X:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_s390x
-      data: ${{ needs.RunConfig.outputs.data }}
-      checkout_depth: 0
+  # disabled because s390x refused to build in the migration to OpenSSL
+  # BuilderBinS390X:
+  #   needs: [RunConfig, BuilderDebRelease]
+  #   if: ${{ !failure() && !cancelled() }}
+  #   uses: ./.github/workflows/reusable_build.yml
+  #   with:
+  #     build_name: binary_s390x
+  #     data: ${{ needs.RunConfig.outputs.data }}
+  #     checkout_depth: 0
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -296,7 +297,7 @@ jobs:
       - BuilderBinFreeBSD
       - BuilderBinPPC64
       - BuilderBinRISCV64
-      - BuilderBinS390X
+      # - BuilderBinS390X # disabled because s390x refused to build in the migration to OpenSSL
       - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy

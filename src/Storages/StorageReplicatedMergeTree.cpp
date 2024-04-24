@@ -401,6 +401,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         try
         {
+            if (LoadingStrictnessLevel::ATTACH == mode && current_zookeeper && current_zookeeper->exists(replica_path + "/is_active"))
+            {
+                throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "There already is an active replica with this replica path {}", replica_path);
+            }
+
             if (current_zookeeper && current_zookeeper->exists(replica_path + "/host"))
             {
                 /// Check it earlier if we can (we don't want incompatible version to start).
@@ -2788,7 +2793,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     auto obtain_part = [&] (PartDescriptionPtr & part_desc)
     {
-        /// Fetches with zero-copy-replication are cheap, but cloneAndLoadDataPart(OnSameDisk) will do full copy.
+        /// Fetches with zero-copy-replication are cheap, but cloneAndLoadDataPartOnSameDisk will do full copy.
         /// It's okay to check the setting for current table and disk for the source table, because src and dst part are on the same disk.
         bool prefer_fetch_from_other_replica = !part_desc->replica.empty() && storage_settings_ptr->allow_remote_fs_zero_copy_replication
             && part_desc->src_table_part && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport();
@@ -2807,7 +2812,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
+            auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
                 part_desc->src_table_part,
                 TMP_PREFIX + "clone_",
                 part_desc->new_part_info,
@@ -4888,7 +4893,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 .keep_metadata_version = true,
             };
 
-            auto [cloned_part, lock] = cloneAndLoadDataPart(
+            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(
                 part_to_clone,
                 "tmp_clone_",
                 part_info,
@@ -5836,11 +5841,24 @@ bool StorageReplicatedMergeTree::optimize(
 
             if (select_decision != SelectPartsDecision::SELECTED)
             {
-                constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
-                assert(disable_reason.text != unknown_disable_reason);
-                if (!partition_id.empty())
-                    disable_reason.text += fmt::format(" (in partition {})", partition_id);
-                return handle_noop(message_fmt, disable_reason.text);
+                if (try_no + 1 < max_retries)
+                {
+                    /// Here we trying to have a similar behaviour to ordinary MergeTree: if some merges are already in progress - let's wait for them to finish.
+                    /// This way `optimize final` won't just silently be a noop (if also `optimize_throw_if_noop=false`), but will wait for the active merges and repeat an attempt to schedule final merge.
+                    /// This guarantees are enough for tests, because there we have full control over insertions.
+                    const auto wait_timeout = query_context->getSettingsRef().receive_timeout.totalMilliseconds() / max_retries;
+                    /// DEFAULT (and not LIGHTWEIGHT) because merges are not condidered lightweight; empty `source_replicas` means "all replicas"
+                    waitForProcessingQueue(wait_timeout, SyncReplicaMode::DEFAULT, {});
+                    continue;
+                }
+                else
+                {
+                    constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
+                    assert(disable_reason.text != unknown_disable_reason);
+                    if (!partition_id.empty())
+                        disable_reason.text += fmt::format(" (in partition {})", partition_id);
+                    return handle_noop(message_fmt, disable_reason.text);
+                }
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
@@ -8078,14 +8096,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                 || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
-
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-
-            auto [dst_part, part_lock] = cloneAndLoadDataPart(
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
@@ -8093,10 +8109,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 clone_params,
                 query_context->getReadSettings(),
                 query_context->getWriteSettings());
-
-            dst_parts.emplace_back(std::move(dst_part));
-            dst_parts_locks.emplace_back(std::move(part_lock));
             src_parts.emplace_back(src_part);
+            dst_parts.emplace_back(dst_part);
+            dst_parts_locks.emplace_back(std::move(part_lock));
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);
@@ -8349,7 +8364,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
+            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,

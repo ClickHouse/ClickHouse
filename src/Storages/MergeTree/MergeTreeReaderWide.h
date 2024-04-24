@@ -73,7 +73,6 @@ private:
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_set<std::string> prefetched_streams;
     ssize_t prefetched_from_mark = -1;
-    bool read_whole_part = false;
 };
 
 }

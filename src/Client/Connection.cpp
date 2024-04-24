@@ -197,6 +197,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
         out->setAsyncCallback(async_callback);
         connected = true;
+        setDescription();
 
         sendHello();
         receiveHello(timeouts.handshake_timeout);
@@ -215,7 +216,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Exception will preserve stack trace.
-        e.addMessage("({})", getDescription());
+        e.addMessage("({})", getDescription(/*with_extra*/ true));
         throw;
     }
     catch (Poco::Net::NetException & e)
@@ -226,7 +227,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
     }
     catch (Poco::TimeoutException & e)
     {
@@ -242,7 +243,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             ErrorCodes::SOCKET_TIMEOUT,
             "{} ({}, connection timeout {} ms)",
             e.displayText(),
-            getDescription(),
+            getDescription(/*with_extra*/ true),
             connection_timeout.totalMilliseconds());
     }
 }
@@ -474,8 +475,10 @@ const String & Connection::getDefaultDatabase() const
     return default_database;
 }
 
-const String & Connection::getDescription() const
+const String & Connection::getDescription(bool with_extra) const /// NOLINT
 {
+    if (with_extra)
+        return full_description;
     return description;
 }
 
@@ -1221,11 +1224,19 @@ void Connection::setDescription()
     auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(port);
 
+    full_description = description;
+
     if (resolved_address)
     {
         auto ip_address = resolved_address->host().toString();
         if (host != ip_address)
-            description += ", " + ip_address;
+            full_description += ", " + ip_address;
+    }
+
+    if (const auto * socket_ = getSocket())
+    {
+        full_description += ", local address: ";
+        full_description += socket_->address().toString();
     }
 }
 
