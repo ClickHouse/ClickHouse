@@ -7,13 +7,13 @@ namespace DB
 SquashingChunksTransform::SquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void SquashingChunksTransform::onConsume(Chunk chunk)
 {
-    if (auto block = squashing.add(std::move(chunk)))
+    if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
         cur_chunk.setColumns(block.getColumns(), block.rows());
 }
 
@@ -32,6 +32,50 @@ void SquashingChunksTransform::onFinish()
 }
 
 void SquashingChunksTransform::work()
+{
+    if (stage == Stage::Exception)
+    {
+        data.chunk.clear();
+        ready_input = false;
+        return;
+    }
+
+    ExceptionKeepingTransform::work();
+    if (finish_chunk)
+    {
+        data.chunk = std::move(finish_chunk);
+        ready_output = true;
+    }
+}
+
+SquashingChunksTransformForBalancing::SquashingChunksTransformForBalancing(
+    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : ExceptionKeepingTransform(header, header, false)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
+{
+}
+
+void SquashingChunksTransformForBalancing::onConsume(Chunk chunk)
+{
+    if (auto block = squashing.add(std::move(chunk)))
+        cur_chunk.setColumns(block.getColumns(), block.rows());
+}
+
+SquashingChunksTransformForBalancing::GenerateResult SquashingChunksTransformForBalancing::onGenerate()
+{
+    GenerateResult res;
+    res.chunk = std::move(cur_chunk);
+    res.is_done = true;
+    return res;
+}
+
+void SquashingChunksTransformForBalancing::onFinish()
+{
+    auto block = squashing.add({});
+    finish_chunk.setColumns(block.getColumns(), block.rows());
+}
+
+void SquashingChunksTransformForBalancing::work()
 {
     if (stage == Stage::Exception)
     {
