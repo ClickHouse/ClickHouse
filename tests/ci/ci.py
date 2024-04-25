@@ -1323,6 +1323,8 @@ def _configure_jobs(
     # FIXME: find better place for these config variables
     DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
     MQ_JOBS = [JobNames.STYLE_CHECK, JobNames.FAST_TEST]
+    # Must always calculate digest for these jobs for CI Cache to function (they define s3 paths where records are stored)
+    REQUIRED_DIGESTS = [JobNames.DOCS_CHECK, Build.PACKAGE_RELEASE]
     if pr_info.has_changes_in_documentation_only():
         print(f"WARNING: Only docs are changed - will run only [{DOCS_CHECK_JOBS}]")
     if pr_info.is_merge_queue:
@@ -1330,9 +1332,18 @@ def _configure_jobs(
 
     print("::group::Job Digests")
     for job in CI_CONFIG.job_generator(pr_info.head_ref if CI else "dummy_branch_name"):
-        if pr_info.is_merge_queue and job not in MQ_JOBS:
+        if (
+            pr_info.is_merge_queue
+            and job not in MQ_JOBS
+            and job not in REQUIRED_DIGESTS
+        ):
+            # We still need digest for JobNames.DOCS_CHECK since CiCache depends on it (FIXME)
             continue
-        if pr_info.has_changes_in_documentation_only() and job not in DOCS_CHECK_JOBS:
+        if (
+            pr_info.has_changes_in_documentation_only()
+            and job not in DOCS_CHECK_JOBS
+            and job not in REQUIRED_DIGESTS
+        ):
             continue
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest

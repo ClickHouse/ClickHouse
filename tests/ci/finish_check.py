@@ -36,12 +36,12 @@ def main():
         if has_failure:
             set_mergeable_check(commit, "workflow failed", "failure")
         else:
+            # This must be the only place where green MCheck is set in the MQ (in the end of CI) to avoid early merge
             set_mergeable_check(commit, "workflow passed", "success")
     else:
         statuses = get_commit_filtered_statuses(commit)
         trigger_mergeable_check(commit, statuses)
 
-    if not pr_info.is_merge_queue:
         statuses = [s for s in statuses if s.context == StatusNames.CI]
         if not statuses:
             return
