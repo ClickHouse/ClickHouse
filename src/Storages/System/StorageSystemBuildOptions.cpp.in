@@ -60,6 +60,7 @@ const char * auto_config_build[]
     "USE_DATASKETCHES", "@USE_DATASKETCHES@",
     "USE_AVRO", "@USE_AVRO@",
     "USE_ARROW", "@USE_ARROW@",
+    "USE_FLATBUFFERS", "@USE_FLATBUFFERS@",
     "USE_ORC", "@USE_ORC@",
     "USE_MSGPACK", "@USE_MSGPACK@",
     "USE_QPL", "@ENABLE_QPL@",
