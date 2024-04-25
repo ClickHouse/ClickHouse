@@ -28,10 +28,6 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
-Suggest::Suggest()
-{
-}
-
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
 {
     /// NOTE: Once you will update the completion list,
