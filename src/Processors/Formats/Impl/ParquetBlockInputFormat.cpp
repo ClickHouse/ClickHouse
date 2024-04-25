@@ -484,7 +484,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             continue;
 
         // this has to be checked every loop, but the dag evaluation should not afaik. hmm that's tricky
-        // two options: 1. make it happen everytime. 2. store raw columns and hash only at the end
+        // two options: 1. make it happen every time. 2. store raw columns and hash only at the end
         if (format_settings.parquet.bloom_filter_push_down
             && !bloomFilterMaybeContains(row_group, filter_dag, getPort().getHeader(), column_name_to_index, arrow_file, metadata, ctx))
         {
