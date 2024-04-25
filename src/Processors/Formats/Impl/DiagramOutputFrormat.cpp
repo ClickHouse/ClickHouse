@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <sstream>
@@ -519,15 +520,15 @@ void DiagramOutputFormat::writeLineplot()
 String DiagramOutputFormat::limitNumSize(Float64 num, size_t limit) const
 {
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2) << num;
+    oss << num;
     std::string y_str = oss.str();
-    if (y_str.size() > limit || std::abs(num) < 0.01)
+    if (y_str.size() > limit)
     {
         oss = std::ostringstream();
         Float64 lg_y = std::floor(std::log10(num));
         num = num / std::pow(10, lg_y);
         oss << std::fixed << std::setprecision(2) << num;
-        if (static_cast<Int64>(std::abs(lg_y)) != 0)
+        if (!std::isnan(num) && !std::isinf(num) && static_cast<Int64>(std::abs(lg_y)) != 0)
         {
             oss << 'e';
             if (lg_y > 0)
