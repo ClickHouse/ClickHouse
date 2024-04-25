@@ -257,15 +257,15 @@ void MergeTreeSink::finishDelayedChunk()
             added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
 
-            /// Explicitly committing block number after commit
-            partition.committing_block_number_tagger.reset();
-
             /// if block is added: push current_block to all subscribers under the same lock as commit.
             /// But there may be a race between insert and creating a new subscription, in which case
             /// the block may already have been cleared, but this is normal, because this is concurrent operations.
             if (added && partition.block_with_partition.block.columns() > 0)
                 storage.subscription_manager.pushToAll(std::move(partition.block_with_partition.block));
         }
+
+        /// Explicitly committing block number after commit
+        partition.committing_block_number_tagger.reset();
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)

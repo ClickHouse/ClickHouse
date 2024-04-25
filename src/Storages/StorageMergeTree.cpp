@@ -1013,8 +1013,44 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
 
-    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, PreformattedMessage & disable_reason) -> bool
+    std::optional<std::map<String, std::set<Int64>>> committing_block_numbers_snapshot;
+    std::optional<ActiveDataPartSet> data_parts_snapshot;
+
+    /// if storage in queue mode, make actual snapshot of state.
+    /// logic is similar to ReplicatedMergeRree merge predicate.
+    if (data_settings->queue_mode)
     {
+        DataPartsVector data_parts;
+
+        {
+            auto parts_lock = lockParts();
+            std::lock_guard committing_block_numbers_lock{committing_block_numbers_mutex};
+            committing_block_numbers_snapshot = committing_block_numbers;
+            data_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, parts_lock);
+        }
+
+        data_parts_snapshot = ActiveDataPartSet(format_version);
+
+        for (const auto & part : data_parts)
+        {
+            bool is_added = data_parts_snapshot->add(part->info, part->name);
+            chassert(is_added);
+        }
+    }
+
+    auto can_merge = [this, &lock, &data_settings, &committing_block_numbers_snapshot, &data_parts_snapshot](
+                         const DataPartPtr & left,
+                         const DataPartPtr & right,
+                         const MergeTreeTransaction * tx,
+                         PreformattedMessage & disable_reason) -> bool
+    {
+        /// sanity check for queue_mode
+        if (data_settings->queue_mode)
+        {
+            chassert(committing_block_numbers_snapshot.has_value());
+            chassert(data_parts_snapshot.has_value());
+        }
+
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
@@ -1033,6 +1069,17 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
                 disable_reason = PreformattedMessage::create("Some part is locked for removal in another cuncurrent transaction");
                 return false;
             }
+        }
+
+        /// If storage in queue mode, permit to merge parts only from data_parts_snapshot
+        if (data_settings->queue_mode)
+        {
+            for (const auto & part : {left, right})
+                if (part && data_parts_snapshot->getContainingPart(part->info).empty())
+                {
+                    disable_reason = PreformattedMessage::create("Part {} hasn't been visible in snapshot before merge", part->name);
+                    return false;
+                }
         }
 
         /// This predicate is checked for the first part of each range.
@@ -1070,7 +1117,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         /// If block number will be allocated after this check then it must have at least value of
         /// max(left.max_block, right.max_block) + 1 and if it is already allocated but not committed yet
         /// it will be seen in set.
-        if (getSettings()->queue_mode)
+        if (data_settings->queue_mode)
         {
             if (left->info.partition_id != right->info.partition_id)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} belong to different partitions", left->name, right->name);
@@ -1078,14 +1125,17 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             Int64 min_block = std::min(left->info.min_block, right->info.min_block);
             Int64 max_block = std::max(left->info.max_block, right->info.max_block);
 
-            std::lock_guard guard(committing_block_numbers_mutex);
-            const std::set<Int64> & block_numbers = committing_block_numbers[left->info.partition_id];
-
-            auto it = block_numbers.upper_bound(min_block);
-            if (it != block_numbers.end() && *it < max_block)
+            auto block_numbers_it = committing_block_numbers_snapshot->find(left->info.partition_id);
+            if (block_numbers_it != committing_block_numbers_snapshot->end())
             {
-                disable_reason = PreformattedMessage::create("There is committing part between (min_block, max_block) range with block number: {}", *it);
-                return false;
+                const std::set<Int64> & block_numbers = block_numbers_it->second;
+
+                auto it = block_numbers.upper_bound(min_block);
+                if (it != block_numbers.end() && *it < max_block)
+                {
+                    disable_reason = PreformattedMessage::create("There is committing part between (min_block, max_block) range with block number: {}", *it);
+                    return false;
+                }
             }
         }
 

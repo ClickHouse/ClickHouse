@@ -444,7 +444,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// This merging param maybe used as part of sorting key
     std::optional<KeyDescription::AdditionalSettings> additional_sorting_key_settings;
     std::optional<KeyDescription::AdditionalSettings> additional_primary_key_settings;
-    std::optional<KeyDescription::AdditionalSettings> additional_partition_key_settings;
 
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
@@ -565,9 +564,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_column(QueueBlockNumberColumn::name, QueueBlockNumberColumn::type, QueueBlockNumberColumn::codec);
             add_column(QueueBlockOffsetColumn::name, QueueBlockOffsetColumn::type, QueueBlockOffsetColumn::codec);
 
-            if (replicated)
-                add_column(QueueReplicaColumn::name, QueueReplicaColumn::type);
-
             /// mode is ordinary -> additional_sorting_key_settings must be empty
             chassert(!additional_sorting_key_settings.has_value());
 
@@ -576,12 +572,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
             additional_primary_key_settings = KeyDescription::AdditionalSettings{};
             additional_primary_key_settings->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
-
-            if (replicated)
-            {
-                additional_partition_key_settings = KeyDescription::AdditionalSettings{};
-                additional_partition_key_settings->ext_columns_front = {QueueReplicaColumn::name};
-            }
         }
 
         ASTPtr partition_by_key;
@@ -591,8 +581,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Partition key may be undefined, but despite this we store it's empty
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
-        metadata.partition_key = KeyDescription::Builder(additional_partition_key_settings).buildFromAST(
-            partition_by_key, metadata.columns, context);
+        metadata.partition_key = KeyDescription::Builder().buildFromAST(partition_by_key, metadata.columns, context);
 
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
@@ -718,8 +707,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
 
-        metadata.partition_key = KeyDescription::Builder(additional_partition_key_settings).buildFromAST(
-            partition_by_ast, metadata.columns, context);
+        metadata.partition_key = KeyDescription::Builder().buildFromAST(partition_by_ast, metadata.columns, context);
 
         ++arg_num;
 
