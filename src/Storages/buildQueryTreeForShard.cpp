@@ -1,24 +1,27 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/TableNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageDummy.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
 
 namespace DB
 {
@@ -283,7 +286,16 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+    auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
+
+    size_t min_block_size_rows = mutable_context->getSettingsRef().min_external_table_block_size_rows;
+    size_t min_block_size_bytes = mutable_context->getSettingsRef().min_external_table_block_size_bytes;
+    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
+
+    builder->resize(1);
+    builder->addTransform(std::move(squashing));
+
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
     pipeline.complete(std::move(table_out));
     CompletedPipelineExecutor executor(pipeline);
@@ -295,10 +307,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeNodePtr query_tree_to_modify)
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
 {
-    auto & planner_context = query_info.planner_context;
-
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
 
@@ -351,10 +361,14 @@ QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeN
         {
             auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
             auto in_function_node_type = in_function_subquery_node->getNodeType();
-            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
+            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
+            auto subquery_to_execute = in_function_subquery_node;
+            if (subquery_to_execute->as<TableNode>())
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context->getQueryContext());
+
+            auto temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
 
@@ -375,19 +389,56 @@ QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeN
 
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
 
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    if (auto * query_node = query_tree_to_modify->as<QueryNode>())
+        query_node->clearSettingsChanges();
+
     return query_tree_to_modify;
 }
 
-class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitor<RewriteJoinToGlobalJoinVisitor>
+class CollectStoragesVisitor : public InDepthQueryTreeVisitor<CollectStoragesVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<RewriteJoinToGlobalJoinVisitor>;
+    using Base = InDepthQueryTreeVisitor<CollectStoragesVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (auto * table_node = node->as<TableNode>())
+            storages.push_back(table_node->getStorage());
+    }
+
+    std::vector<StoragePtr> storages;
+};
+
+class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>;
+    using Base::Base;
+
+    static bool allStoragesAreMergeTree(QueryTreeNodePtr & node)
+    {
+        CollectStoragesVisitor collect_storages;
+        collect_storages.visit(node);
+        for (const auto & storage : collect_storages.storages)
+            if (!storage->isMergeTree())
+                return false;
+
+        return true;
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
         if (auto * join_node = node->as<JoinNode>())
-            join_node->setLocality(JoinLocality::Global);
+        {
+            bool prefer_local_join = getContext()->getSettingsRef().parallel_replicas_prefer_local_join;
+            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
+            if (should_use_global_join)
+                join_node->setLocality(JoinLocality::Global);
+        }
     }
 
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
@@ -400,9 +451,9 @@ public:
     }
 };
 
-void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify)
+void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context)
 {
-    RewriteJoinToGlobalJoinVisitor visitor;
+    RewriteJoinToGlobalJoinVisitor visitor(context);
     visitor.visit(query_tree_to_modify);
 }
 

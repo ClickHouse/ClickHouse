@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 SquashingChunksTransform::SquashingChunksTransform(
     const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
@@ -64,6 +69,9 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
     }
     else
     {
+        if (chunk.hasRows())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
+
         auto block = squashing.add({});
         chunk.setColumns(block.getColumns(), block.rows());
     }
@@ -73,7 +81,21 @@ IProcessor::Status SimpleSquashingChunksTransform::prepare()
 {
     if (!finished && input.isFinished())
     {
+        if (output.isFinished())
+            return Status::Finished;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (has_output)
+        {
+            output.pushData(std::move(output_data));
+            has_output = false;
+            return Status::PortFull;
+        }
+
         finished = true;
+        /// On the next call to transform() we will return all data buffered in `squashing` (if any)
         return Status::Ready;
     }
     return ISimpleTransform::prepare();

@@ -49,7 +49,25 @@ A	2
 2	A
 3	B
 \N	C
--- what happens if some column "all" already exists?
+-- SELECT *
+A	2
+B	3
+C	\N
+D	1
+A	2
+B	3
+C	\N
+D	1
+-- the trouble starts when "order by all is all" is ambiguous
+  -- columns
+B	3	10
+D	1	20
+A	2	30
+C	\N	40
+B
+D
+A
+C
 B	3	10
 D	1	20
 A	2	30
@@ -58,6 +76,15 @@ B	3	10
 D	1	20
 A	2	30
 C	\N	40
+B
+D
+A
+C
+B	3	10
+D	1	20
+A	2	30
+C	\N	40
+  -- column aliases
 D	1
 A	2
 B	3
@@ -66,6 +93,7 @@ D	1
 A	2
 B	3
 C	\N
+  -- expressions
 A 2
 B 3
 D 1
@@ -74,6 +102,7 @@ A 2
 B 3
 D 1
 \N
+  -- ORDER BY ALL loses its special meaning when used in conjunction with other columns
 B	3	10
 D	1	20
 A	2	30

@@ -51,10 +51,15 @@ public:
         {
             const auto & second_const_value = second_const_node->getValue();
             if (second_const_value.isNull()
-                || (lower_name == "sum" && isInt64OrUInt64FieldType(second_const_value.getType()) && second_const_value.get<UInt64>() == 0))
+                || (lower_name == "sum" && isInt64OrUInt64FieldType(second_const_value.getType()) && second_const_value.get<UInt64>() == 0
+                    && !function_node->getResultType()->isNullable()))
             {
                 /// avg(if(cond, a, null)) -> avgIf(a, cond)
+                /// avg(if(cond, nullable_a, null)) -> avgIfOrNull(a, cond)
+
                 /// sum(if(cond, a, 0)) -> sumIf(a, cond)
+                /// sum(if(cond, nullable_a, 0)) **is not** equivalent to sumIfOrNull(cond, nullable_a) as
+                ///     it changes the output when no rows pass the condition (from 0 to NULL)
                 function_arguments_nodes.resize(2);
                 function_arguments_nodes[0] = std::move(if_arguments_nodes[1]);
                 function_arguments_nodes[1] = std::move(if_arguments_nodes[0]);
@@ -66,10 +71,13 @@ public:
         {
             const auto & first_const_value = first_const_node->getValue();
             if (first_const_value.isNull()
-                || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.get<UInt64>() == 0))
+                || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.get<UInt64>() == 0
+                    && !function_node->getResultType()->isNullable()))
             {
-                /// avg(if(cond, null, a) -> avgIf(a, !cond))
+                /// avg(if(cond, null, a) -> avgIfOrNullable(a, !cond))
+
                 /// sum(if(cond, 0, a) -> sumIf(a, !cond))
+                /// sum(if(cond, 0, nullable_a) **is not** sumIf(a, !cond)) -> Same as above
                 auto not_function = std::make_shared<FunctionNode>("not");
                 auto & not_function_arguments = not_function->getArguments().getNodes();
                 not_function_arguments.push_back(std::move(if_arguments_nodes[0]));
@@ -109,7 +117,7 @@ private:
 }
 
 
-void RewriteAggregateFunctionWithIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void RewriteAggregateFunctionWithIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     RewriteAggregateFunctionWithIfVisitor visitor(context);
     visitor.visit(query_tree_node);

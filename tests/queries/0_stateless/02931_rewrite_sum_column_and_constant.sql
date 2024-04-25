@@ -204,6 +204,11 @@ EXPLAIN SYNTAX (SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decimal32)
 EXPLAIN SYNTAX (SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table);
 EXPLAIN SYNTAX (SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table);
 EXPLAIN SYNTAX (SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table);
+
+-- https://github.com/ClickHouse/ClickHouse/issues/59414
+SELECT sum(uint64 + 2) as j, j + 5 as t from test_table;
+EXPLAIN SYNTAX SELECT sum(uint64 + 2) as j, j + 5 as t from test_table;
 -- { echoOff }
+
 
 DROP TABLE IF EXISTS test_table;

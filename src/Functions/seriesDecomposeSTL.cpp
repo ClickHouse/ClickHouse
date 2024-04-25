@@ -1,15 +1,9 @@
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #pragma clang diagnostic ignored "-Wshadow"
 #pragma clang diagnostic ignored "-Wimplicit-float-conversion"
-#endif
-
 #include <Functions/stl.hpp>
-
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -48,8 +42,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"time_series", &isArray<IDataType>, nullptr, "Array"},
-            {"period", &isNativeUInt<IDataType>, nullptr, "Unsigned Integer"},
+            {"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"period", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Unsigned Integer"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -128,6 +122,10 @@ public:
                 res_data.insert(residue.begin(), residue.end());
                 res_col_offsets_data.push_back(res_data.size());
 
+                // Create Baseline = seasonal + trend
+                std::transform(seasonal.begin(), seasonal.end(), trend.begin(), std::back_inserter(res_data), std::plus<>());
+                res_col_offsets_data.push_back(res_data.size());
+
                 root_offsets_data.push_back(res_col_offsets->size());
 
                 prev_src_offset = curr_offset;
@@ -201,7 +199,7 @@ The number of data points in `series` should be at least twice the value of `per
 
 **Returned value**
 
-- An array of three arrays where the first array include seasonal components, the second array - trend, and the third array - residue component.
+- An array of four arrays where the first array include seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
@@ -230,6 +228,10 @@ Result:
     [
         0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
         0
+    ],
+    [
+        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
+        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
     ]]                                                                                                                   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```)",

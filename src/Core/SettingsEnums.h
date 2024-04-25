@@ -1,15 +1,119 @@
 #pragma once
 
-#include <Core/SettingsFields.h>
 #include <Core/Joins.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <Core/LogsLevel.h>
+#include <Core/SettingsFields.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
 
 
 namespace DB
 {
+
+template <typename Type>
+constexpr auto getEnumValues();
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_ENUM(ENUM_TYPE) \
+    DECLARE_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_ENUM_WITH_RENAME(NEW_NAME, ENUM_TYPE) \
+    struct SettingField##NEW_NAME##Traits \
+    { \
+        using EnumType = ENUM_TYPE; \
+        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
+        static const String & toString(EnumType value); \
+        static EnumType fromString(std::string_view str); \
+    }; \
+    \
+    using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, EnumValuePairs, __VA_ARGS__)
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, , getEnumValues<EnumType>())
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, PAIRS_TYPE, ...) \
+    const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
+    { \
+        static const std::unordered_map<EnumType, String> map = [] { \
+            std::unordered_map<EnumType, String> res; \
+            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
+                res.emplace(val, name); \
+            return res; \
+        }(); \
+        auto it = map.find(value); \
+        if (it != map.end()) \
+            return it->second; \
+        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, \
+            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type_t<EnumType>(value))); \
+    } \
+    \
+    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
+    { \
+        static const std::unordered_map<std::string_view, EnumType> map = [] { \
+            std::unordered_map<std::string_view, EnumType> res; \
+            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
+                res.emplace(name, val); \
+            return res; \
+        }(); \
+        auto it = map.find(str); \
+        if (it != map.end()) \
+            return it->second; \
+        String msg; \
+        bool need_comma = false; \
+        for (auto & name : map | boost::adaptors::map_keys) \
+        { \
+            if (std::exchange(need_comma, true)) \
+                msg += ", "; \
+            msg += "'" + String{name} + "'"; \
+        } \
+        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, "Unexpected value of " #NEW_NAME ": '{}'. Must be one of [{}]", String{str}, msg); \
+    }
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_MULTI_ENUM(ENUM_TYPE) \
+    DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, NEW_NAME) \
+    struct SettingField##NEW_NAME##Traits \
+    { \
+        using EnumType = ENUM_TYPE; \
+        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
+        static size_t getEnumSize(); \
+        static const String & toString(EnumType value); \
+        static EnumType fromString(std::string_view str); \
+    }; \
+    \
+    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>; \
+    using NEW_NAME##List = typename SettingField##NEW_NAME::ValueType;
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_MULTI_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
+    size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
+        return std::initializer_list<std::pair<const char*, NEW_NAME>> __VA_ARGS__ .size();\
+    }
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_MULTI_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME)\
+    size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
+        return getEnumValues<EnumType>().size();\
+    }
 
 enum class LoadBalancing
 {
@@ -80,6 +184,15 @@ enum class QueryCacheNondeterministicFunctionHandling
 
 DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
 
+/// How the query cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
+enum class QueryCacheSystemTableHandling
+{
+    Throw,
+    Save,
+    Ignore
+};
+
+DECLARE_SETTING_ENUM(QueryCacheSystemTableHandling)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
@@ -88,18 +201,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeO
 DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
-
-enum class LogsLevel
-{
-    none = 0,    /// Disable
-    fatal,
-    error,
-    warning,
-    information,
-    debug,
-    trace,
-    test,
-};
 
 DECLARE_SETTING_ENUM(LogsLevel)
 
@@ -140,6 +241,7 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+
 enum class CleanDeletedRows
 {
     Never = 0, /// Disable.
@@ -175,6 +277,7 @@ enum class DistributedDDLOutputMode
     NEVER_THROW,
     THROW_ONLY_ACTIVE,
     NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
+    NONE_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
@@ -266,4 +369,13 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
+DECLARE_SETTING_ENUM(SQLSecurityType)
+
+enum class FirstDayOfWeek
+{
+    Monday,
+    Sunday
+};
+
+DECLARE_SETTING_ENUM(FirstDayOfWeek)
 }

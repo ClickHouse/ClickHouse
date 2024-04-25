@@ -94,7 +94,7 @@ using BinlogFactoryPtr = std::shared_ptr<IBinlogFactory>;
 class BinlogFromFileFactory : public IBinlogFactory
 {
 public:
-    BinlogFromFileFactory(const String & filename_);
+    explicit BinlogFromFileFactory(const String & filename_);
     BinlogPtr createBinlog(const String & executed_gtid_set) override;
 
 private:

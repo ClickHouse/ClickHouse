@@ -37,6 +37,10 @@ public:
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
     virtual size_t uniqueInsert(const Field & x) = 0;
 
+    /// Appends new value at the end of column if value has appropriate type (column's size is increased by 1).
+    /// Return true if value is inserted and set @index to inserted value index and false otherwise.
+    virtual bool tryUniqueInsert(const Field & x, size_t & index) = 0;
+
     virtual size_t uniqueInsertFrom(const IColumn & src, size_t n) = 0;
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
@@ -74,6 +78,11 @@ public:
     void insert(const Field &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insert is not supported for ColumnUnique.");
+    }
+
+    bool tryInsert(const Field &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryInsert is not supported for ColumnUnique.");
     }
 
     void insertRangeFrom(const IColumn &, size_t, size_t) override
@@ -145,7 +154,7 @@ public:
     void updatePermutation(PermutationSortDirection, PermutationSortStability,
                     size_t, int, Permutation &, EqualRanges &) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getPermutation is not supported for ColumnUnique.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePermutation is not supported for ColumnUnique.");
     }
 
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override

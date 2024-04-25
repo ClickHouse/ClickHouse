@@ -11,6 +11,7 @@
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -189,11 +190,15 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
 {
+    /// If we read Tuple as Variant subcolumn, it may be wrapped to SerializationVariantElement.
+    /// Here we don't need it, so we drop this wrapper.
+    const auto * current_serialization = &serialization;
+    while (const auto * serialization_variant_element = typeid_cast<const SerializationVariantElement *>(current_serialization))
+        current_serialization = serialization_variant_element->getNested().get();
+
     /// If we read subcolumn of nested Tuple, it may be wrapped to SerializationNamed
     /// several times to allow to reconstruct the substream path name.
     /// Here we don't need substream path name, so we drop first several wrapper serializations.
-
-    const auto * current_serialization = &serialization;
     while (const auto * serialization_named = typeid_cast<const SerializationNamed *>(current_serialization))
         current_serialization = serialization_named->getNested().get();
 
@@ -341,7 +346,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
 
-MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfo::Settings & settings) const
+MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
@@ -371,6 +376,14 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names, SerializationInfo::Settings{});
 }
 
+void DataTypeTuple::forEachChild(const ChildCallback & callback) const
+{
+    for (const auto & elem : elems)
+    {
+        callback(*elem);
+        elem->forEachChild(callback);
+    }
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

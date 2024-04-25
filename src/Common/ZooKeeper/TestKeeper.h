@@ -101,6 +101,10 @@ public:
             const Requests & requests,
             MultiCallback callback) override;
 
+    void multi(
+            std::span<const RequestPtr> requests,
+            MultiCallback callback) override;
+
     void finalize(const String & reason) override;
 
     bool isFeatureEnabled(DB::KeeperFeatureFlag) const override

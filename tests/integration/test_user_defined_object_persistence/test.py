@@ -35,9 +35,16 @@ def test_persistence():
 
     instance.restart_clickhouse()
 
-    assert "Unknown function MySum1" in instance.query_and_get_error(
-        "SELECT MySum1(1, 2)"
+    error_message = instance.query_and_get_error("SELECT MySum1(1, 2)")
+    assert (
+        "Unknown function MySum1" in error_message
+        or "Function with name 'MySum1' does not exists. In scope SELECT MySum1(1, 2)"
+        in error_message
     )
-    assert "Unknown function MySum2" in instance.query_and_get_error(
-        "SELECT MySum2(1, 2)"
+
+    error_message = instance.query_and_get_error("SELECT MySum2(1, 2)")
+    assert (
+        "Unknown function MySum2" in error_message
+        or "Function with name 'MySum2' does not exists. In scope SELECT MySum2(1, 2)"
+        in error_message
     )

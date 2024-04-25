@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include "IO/S3/Client.h"
+#include <IO/S3/Client.h>
+#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
@@ -10,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include "Disks/DiskFactory.h"
+#include <Disks/DiskFactory.h>
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
@@ -24,6 +25,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int NO_ELEMENTS_IN_CONFIG;
+}
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
@@ -47,10 +53,14 @@ std::unique_ptr<S3::Client> getClient(
     const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
     const Settings & local_settings = context->getSettingsRef();
 
-    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    const String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
     if (!uri.key.ends_with('/'))
         uri.key.push_back('/');
+
+    if (S3::isS3ExpressEndpoint(endpoint) && !config.has(config_prefix + ".region"))
+        throw Exception(
+            ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Region should be explicitly specified for directory buckets ({})", config_prefix);
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
@@ -66,11 +76,10 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", S3::DEFAULT_CONNECT_TIMEOUT_MS);
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", S3::DEFAULT_REQUEST_TIMEOUT_MS);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", S3::DEFAULT_MAX_CONNECTIONS);
+    client_configuration.http_keep_alive_timeout = config.getUInt(config_prefix + ".http_keep_alive_timeout", S3::DEFAULT_KEEP_ALIVE_TIMEOUT);
+    client_configuration.http_keep_alive_max_requests = config.getUInt(config_prefix + ".http_keep_alive_max_requests", S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS);
+
     client_configuration.endpointOverride = uri.endpoint;
-    client_configuration.http_keep_alive_timeout_ms = config.getUInt(
-        config_prefix + ".http_keep_alive_timeout_ms", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT * 1000);
-    client_configuration.http_connection_pool_size = config.getUInt(config_prefix + ".http_connection_pool_size", 1000);
-    client_configuration.wait_on_pool_size_limit = false;
     client_configuration.s3_use_adaptive_timeouts = config.getBool(
         config_prefix + ".use_adaptive_timeouts", client_configuration.s3_use_adaptive_timeouts);
 
@@ -97,6 +106,7 @@ std::unique_ptr<S3::Client> getClient(
         .use_virtual_addressing = uri.is_virtual_hosted_style,
         .disable_checksum = local_settings.s3_disable_checksum,
         .gcs_issue_compose_request = config.getBool("s3.gcs_issue_compose_request", false),
+        .is_s3express_bucket = S3::isS3ExpressEndpoint(endpoint),
     };
 
     return S3::ClientFactory::instance().create(
