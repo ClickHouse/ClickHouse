@@ -314,7 +314,7 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_mixed_join_condition;
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef().join_use_nulls;
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
             if (support_mixed_join_condition && !join_use_nulls)
@@ -350,7 +350,7 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_mixed_join_condition;
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef().join_use_nulls;
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
             if (support_mixed_join_condition && !join_use_nulls)
