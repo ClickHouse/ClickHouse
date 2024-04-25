@@ -1325,12 +1325,12 @@ def _configure_jobs(
     MQ_JOBS = [JobNames.STYLE_CHECK, JobNames.FAST_TEST]
     if pr_info.has_changes_in_documentation_only():
         print(f"WARNING: Only docs are changed - will run only [{DOCS_CHECK_JOBS}]")
-    if pr_info.is_merge_queue():
+    if pr_info.is_merge_queue:
         print(f"WARNING: It's a MQ run - will run only [{MQ_JOBS}]")
 
     print("::group::Job Digests")
     for job in CI_CONFIG.job_generator(pr_info.head_ref if CI else "dummy_branch_name"):
-        if pr_info.is_merge_queue() and job not in MQ_JOBS:
+        if pr_info.is_merge_queue and job not in MQ_JOBS:
             continue
         if pr_info.has_changes_in_documentation_only() and job not in DOCS_CHECK_JOBS:
             continue
