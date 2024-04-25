@@ -16,40 +16,36 @@ namespace DB
 namespace
 {
 
-std::vector<char> toByteArray(std::string_view data)
+parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_t * buffer, uint32_t buffer_size)
 {
-    auto size = std::max(data.size(), sizeof(uint32_t));
-    std::vector<char> result(size);
-    std::copy(data.begin(), data.end(), result.begin());
-    return result;
+    if (isStringOrFixedString(type))
+    {
+        return view;
+    }
+    else
+    {
+        auto size = static_cast<uint32_t>(std::max(view.size(), sizeof(uint32_t)));
+        assert(size <= buffer_size);
+        std::copy(view.begin(), view.end(), buffer);
+        return parquet::ByteArray(size, buffer);
+    }
 }
 
 bool maybeTrueOnBloomFilter(const IColumn * data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
 {
+    static constexpr uint32_t buffer_size = 32;
+    uint8_t buffer[buffer_size] = {0};
+
     for (size_t i = 0; i < data_column->size(); ++i) {
         const auto data_view = data_column->getDataAt(i).toView();
-        if (isStringOrFixedString(data_column->getDataType()))
-        {
-            parquet::ByteArray ba = data_view;
-            bool found = bloom_filter->FindHash(bloom_filter->Hash(&ba));
 
-            if (match_all && !found)
-                return false;
-            if (!match_all && found)
-                return true;
-        }
-        else
-        {
-            parquet::ByteArray ba;
-            const auto normalized_vector = toByteArray(data_view);
-            ba = std::string_view {normalized_vector.data(), normalized_vector.size()};
-            bool found = bloom_filter->FindHash(bloom_filter->Hash(&ba));
+        const auto ba = createByteArray(data_view, data_column->getDataType(), buffer, buffer_size);
+        bool found = bloom_filter->FindHash(bloom_filter->Hash(&ba));
 
-            if (match_all && !found)
-                return false;
-            if (!match_all && found)
-                return true;
-        }
+        if (match_all && !found)
+            return false;
+        if (!match_all && found)
+            return true;
     }
 
     return match_all;
@@ -72,6 +68,19 @@ DataTypePtr getPrimitiveType(const DataTypePtr & data_type)
         return getPrimitiveType(low_cardinality_type->getDictionaryType());
 
     return data_type;
+}
+
+ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
+{
+    if (prepared_set->getDataTypes().size() == 1)
+        return {prepared_set->getSetElements()[0], prepared_set->getElementsTypes()[0], "dummy"};
+
+    Columns set_elements;
+    for (auto & set_element : prepared_set->getSetElements())
+
+        set_elements.emplace_back(set_element->convertToFullColumnIfConst());
+
+    return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
 }
@@ -219,7 +228,22 @@ bool ParquetBloomFilterCondition::traverseFunction(
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if (function_name == "equals" || function_name == "notEquals")
+        if (functionIsInOrGlobalInOperator(function_name))
+        {
+            if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
+            {
+                if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+                {
+                    if (prepared_set->hasExplicitSetElements())
+                    {
+                        [[maybe_unused]] const auto prepared_info = getPreparedSetInfo(prepared_set);
+//                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                            maybe_useful = true;
+                    }
+                }
+            }
+        }
+        else if (function_name == "equals" || function_name == "notEquals")
         {
             Field const_value;
             DataTypePtr const_type;
