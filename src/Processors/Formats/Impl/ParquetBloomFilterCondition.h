@@ -3,6 +3,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#if USE_PARQUET
+
 namespace parquet
 {
     class BloomFilter;
@@ -65,3 +67,5 @@ private:
 };
 
 }
+
+#endif
