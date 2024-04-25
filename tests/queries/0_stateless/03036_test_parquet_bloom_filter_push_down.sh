@@ -36,7 +36,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #make_query=$(${CLICKHOUSE_CLIENT} --query=)
 #jq_query="del(.meta,.statistics.elapsed)"
 
-DATA_FILE=$CUR_DIR/data_parquet/int-list-zero-based-chunked-array.parquet
 ${CLICKHOUSE_CLIENT} --query="select count(*) from file('simple-fd-bf.parquet', Parquet) SETTINGS use_cache_for_count_from_files=false;"
 # bloom filter is off, all row groups should be read
 # expect rows_read = select count()
