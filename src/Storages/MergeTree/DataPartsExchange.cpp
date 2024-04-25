@@ -762,9 +762,11 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         if (expected_hash != hashing_out.getHash())
             throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                "Checksum mismatch for file {} transferred from {}",
+                "Checksum mismatch for file {} transferred from {} (0x{} vs 0x{})",
                 (fs::path(data_part_storage->getFullPath()) / file_name).string(),
-                replica_path);
+                replica_path,
+                getHexUIntLowercase(expected_hash),
+                getHexUIntLowercase(hashing_out.getHash()));
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&
