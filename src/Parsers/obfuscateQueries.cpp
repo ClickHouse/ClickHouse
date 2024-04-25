@@ -1,6 +1,4 @@
 #include <Parsers/CommonParsers.h>
-#include <algorithm>
-#include <cassert>
 
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/Lexer.h>
@@ -12,7 +10,12 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
+
+#include <algorithm>
+#include <cassert>
 #include <iterator>
+
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -27,11 +30,11 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_set<std::string_view> & getObfuscateKeywords()
+const std::unordered_set<std::string> & getObfuscateKeywords()
 {
     auto initialize = []()
     {
-        std::unordered_set<std::string_view> instance = {
+        std::unordered_set<std::string> instance = {
             "!=",
             "",
             "%",
@@ -60,12 +63,20 @@ const std::unordered_set<std::string_view> & getObfuscateKeywords()
             "]+$"
         };
 
-        auto & global_keywords = getAllKeyWords();
-        std::copy(global_keywords.begin(), global_keywords.end(), std::inserter(instance, instance.begin()));
+        for (const auto & keyword : getAllKeyWords())
+        {
+            /// The keyword may consist of several tokens (ORDER BY or GROUP BY)
+            /// We will split them and add separately.
+            std::vector<std::string> tokens;
+            boost::split(tokens, keyword, [](char c) { return c == ' '; });
+            for (const auto & token : tokens)
+                instance.insert(token);
+        }
+
         return instance;
     };
 
-    static std::unordered_set<std::string_view> instance = initialize();
+    static std::unordered_set<std::string> instance = initialize();
     return instance;
 };
 
@@ -945,11 +956,9 @@ void obfuscateQueries(
 
         if (token.type == TokenType::BareWord)
         {
-            std::string whole_token_uppercase(whole_token);
-            Poco::toUpperInPlace(whole_token_uppercase);
+            auto whole_token_uppercase = Poco::toUpper(toString(whole_token));
 
-            if (getObfuscateKeywords().contains(whole_token_uppercase)
-                || known_identifier_func(whole_token))
+            if (getObfuscateKeywords().contains(whole_token_uppercase) || known_identifier_func(whole_token))
             {
                 /// Keep keywords as is.
                 result.write(token.begin, token.size());
