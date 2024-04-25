@@ -3,6 +3,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromLoopStep.h>
 
 
 namespace DB
@@ -33,25 +34,18 @@ void StorageLoop::read(
     size_t num_streams)
 {
     query_info.optimize_trivial_count = false;
-    QueryPlan temp_query_plan(std::move(query_plan));
-    for (size_t i = 0; i < 10; ++i)
-    {
-        QueryPlan swapped_query_plan;
-        std::swap(temp_query_plan, swapped_query_plan);
 
-        inner_storage->read(temp_query_plan,
-                            column_names,
-                            storage_snapshot,
-                            query_info,
-                            context,
-                            processed_stage,
-                            max_block_size,
-                            num_streams);
-
-        // std::cout << "Loop iteration: " << (i + 1) << std::endl;
-
-    }
-    query_plan = std::move(temp_query_plan);
+    query_plan.addStep(std::make_unique<ReadFromLoopStep>(
+        column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, max_block_size, num_streams
+        ));
+    /*inner_storage->read(query_plan,
+                        column_names,
+                        storage_snapshot,
+                        query_info,
+                        context,
+                        processed_stage,
+                        max_block_size,
+                        num_streams);*/
 }
 
 void registerStorageLoop(StorageFactory & factory)
