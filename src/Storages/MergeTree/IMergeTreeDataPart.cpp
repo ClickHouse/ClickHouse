@@ -326,6 +326,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
+    index = std::make_shared<Columns>();
     minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo();
@@ -339,7 +340,7 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 }
 
 
-const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
+const IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
     if (!index_loaded)
@@ -349,19 +350,19 @@ const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
 }
 
 
-void IMergeTreeDataPart::setIndex(Columns index_)
+void IMergeTreeDataPart::setIndex(Index index_)
 {
     std::scoped_lock lock(index_mutex);
-    if (!index.empty())
+    if (!index->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = std::move(index_);
+    index = index_;
     index_loaded = true;
 }
 
 void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
-    index.clear();
+    index = std::make_shared<Columns>();
     index_loaded = false;
 }
 
@@ -573,7 +574,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : index)
+    for (const ColumnPtr & column : *index)
         res += column->byteSize();
     return res;
 }
@@ -582,7 +583,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : index)
+    for (const ColumnPtr & column : *index)
         res += column->allocatedBytes();
     return res;
 }
@@ -912,7 +913,7 @@ void IMergeTreeDataPart::loadIndex() const
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
-        index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+        index->assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 }
 
