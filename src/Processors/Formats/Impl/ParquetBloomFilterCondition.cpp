@@ -1,4 +1,7 @@
 #include "ParquetBloomFilterCondition.h"
+
+#if USE_PARQUET
+
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -6,6 +9,7 @@
 #include <Interpreters/misc.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/ColumnConst.h>
+
 #include <parquet/bloom_filter.h>
 
 namespace DB
@@ -308,3 +312,5 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
 }
 
 }
+
+#endif
