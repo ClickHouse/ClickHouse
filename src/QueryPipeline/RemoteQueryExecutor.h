@@ -52,6 +52,18 @@ public:
         std::optional<IConnections::ReplicaInfo> replica_info = {};
     };
 
+    /// Takes a connection pool for a node (not cluster)
+    RemoteQueryExecutor(
+        ConnectionPoolPtr pool,
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
+
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,

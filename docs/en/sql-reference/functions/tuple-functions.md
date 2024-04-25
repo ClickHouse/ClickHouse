@@ -521,45 +521,6 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## dotProduct
-
-Calculates the scalar product of two tuples of the same size.
-
-**Syntax**
-
-```sql
-dotProduct(tuple1, tuple2)
-```
-
-Alias: `scalarProduct`.
-
-**Arguments**
-
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-
-**Returned value**
-
-- Scalar product.
-
-Type: [Int/UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT dotProduct((1, 2), (2, 3));
-```
-
-Result:
-
-```text
-┌─dotProduct((1, 2), (2, 3))─┐
-│                          8 │
-└────────────────────────────┘
-```
-
 ## tupleConcat
 
 Combines tuples passed as arguments.
@@ -582,6 +543,278 @@ SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
 ┌─res──────────────────┐
 │ (1,2,3,4,true,false) │
 └──────────────────────┘
+```
+
+## tupleIntDiv
+
+Does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
+
+**Syntax**
+
+```sql
+tupleIntDiv(tuple_num, tuple_div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+
+**Implementation details**
+
+- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+- An error will be thrown for division by 0. 
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDiv((15, 10, 5), (5, 5, 5));
+```
+
+Result:
+
+``` text
+┌─tupleIntDiv((15, 10, 5), (5, 5, 5))─┐
+│ (3,2,1)                             │
+└─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5));
+```
+
+Result:
+
+``` text
+┌─tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))─┐
+│ (2,1,0)                                   │
+└───────────────────────────────────────────┘
+```
+
+## tupleIntDivOrZero
+
+Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
+
+**Syntax**
+
+```sql
+tupleIntDivOrZero(tuple_num, tuple_div)
+```
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+- Returns 0 for quotients where the divisor is 0.
+
+**Implementation details**
+
+- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDiv](#tupleintdiv).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0));
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZero((5, 10, 15), (0, 0, 0))─┐
+│ (0,0,0)                                   │
+└───────────────────────────────────────────┘
+```
+
+## tupleIntDivByNumber
+
+Does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
+
+**Syntax**
+
+```sql
+tupleIntDivByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
+
+**Implementation details**
+
+- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+- An error will be thrown for division by 0. 
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivByNumber((15, 10, 5), 5);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivByNumber((15, 10, 5), 5)─┐
+│ (3,2,1)                             │
+└─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)─┐
+│ (2,1,0)                                     │
+└─────────────────────────────────────────────┘
+```
+
+## tupleIntDivOrZeroByNumber
+
+Like [tupleIntDivByNumber](#tupleintdivbynumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
+
+**Syntax**
+
+```sql
+tupleIntDivOrZeroByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
+- Returns 0 for quotients where the divisor is 0.
+
+**Implementation details**
+
+- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDivByNumber](#tupleintdivbynumber).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZeroByNumber((15, 10, 5), 5)─┐
+│ (3,2,1)                                   │
+└───────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZeroByNumber((15, 10, 5), 0)─┐
+│ (0,0,0)                                   │
+└───────────────────────────────────────────┘
+```
+
+## tupleModulo
+
+Returns a tuple of the moduli (remainders) of division operations of two tuples.
+
+**Syntax**
+
+```sql
+tupleModulo(tuple_num, tuple_mod)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of modulus values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- An error is thrown for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModulo((15, 10, 5), (5, 3, 2));
+```
+
+Result:
+
+``` text
+┌─tupleModulo((15, 10, 5), (5, 3, 2))─┐
+│ (0,1,1)                             │
+└─────────────────────────────────────┘
+```
+
+## tupleModuloByNumber
+
+Returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor.
+
+**Syntax**
+
+```sql
+tupleModuloByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- An error is thrown for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModuloByNumber((15, 10, 5), 2);
+```
+
+Result:
+
+``` text
+┌─tupleModuloByNumber((15, 10, 5), 2)─┐
+│ (1,0,1)                             │
+└─────────────────────────────────────┘
 ```
 
 ## Distance functions

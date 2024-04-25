@@ -9,7 +9,7 @@ CREATE TABLE default.numbers1\n(\n    `number` UInt64\n)\nENGINE = Memory
 CREATE TABLE default.numbers2\n(\n    `number` UInt64\n)\nENGINE = MergeTree\nORDER BY intHash32(number)\nSAMPLE BY intHash32(number)\nSETTINGS index_granularity = 8192
 45
 CREATE TABLE default.numbers3\n(\n    `number` UInt64\n)\nENGINE = Log
-CREATE MATERIALIZED VIEW default.test_view_filtered\n(\n    `EventDate` Date,\n    `CounterID` UInt32\n)\nENGINE = Memory AS\nSELECT\n    CounterID,\n    EventDate\nFROM default.test_table\nWHERE EventDate < \'2013-01-01\'
+CREATE MATERIALIZED VIEW default.test_view_filtered\n(\n    `EventDate` Date,\n    `CounterID` UInt32\n)\nENGINE = Memory\nAS SELECT\n    CounterID,\n    EventDate\nFROM default.test_table\nWHERE EventDate < \'2013-01-01\'
 2014-01-02	0	0	1969-12-31 16:00:00	2014-01-02 03:04:06
 1	2014-01-01 19:04:06
 CREATE TABLE default.t1\n(\n    `Rows` UInt64,\n    `MaxHitTime` DateTime(\'UTC\')\n)\nENGINE = MergeTree\nORDER BY Rows\nSETTINGS index_granularity = 8192

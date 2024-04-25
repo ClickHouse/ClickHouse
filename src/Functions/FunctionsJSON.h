@@ -5,7 +5,7 @@
 
 #include <base/range.h>
 
-#include <Common/CpuId.h>
+#include <Common/CPUID.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -21,6 +21,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -35,6 +36,8 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Functions/IFunction.h>
@@ -257,7 +260,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = (*arguments[j + 1].column).getDataAt(row).toView();
+                    key = arguments[j + 1].column->getDataAt(row).toView();
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -334,6 +337,26 @@ private:
 
 };
 
+template <typename T>
+class JSONExtractImpl;
+
+template <typename T>
+class JSONExtractKeysAndValuesImpl;
+
+/**
+* Functions JSONExtract and JSONExtractKeysAndValues force the return type - it is specified in the last argument.
+* For example - `SELECT JSONExtract(materialize('{"a": 131231, "b": 1234}'), 'b', 'LowCardinality(FixedString(4))')`
+* But by default ClickHouse decides on its own whether the return type will be LowCardinality based on the types of
+* input arguments.
+* And for these specific functions we cannot rely on this mechanism, so these functions have their own implementation -
+* just convert all of the LowCardinality input columns to full ones, execute and wrap the resulting column in LowCardinality
+* if needed.
+*/
+template <template<typename> typename Impl>
+constexpr bool functionForcesTheReturnType()
+{
+    return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
+}
 
 template <typename Name, template<typename> typename Impl>
 class ExecutableFunctionJSON : public IExecutableFunction
@@ -348,17 +371,50 @@ public:
     String getName() const override { return Name::name; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return !functionForcesTheReturnType<Impl>();
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
-        if (null_presence.has_nullable)
-            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
-        return temporary_result;
+        if constexpr (functionForcesTheReturnType<Impl>())
+        {
+            ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
+
+            for (auto & column : columns_without_low_cardinality)
+            {
+                column.column = recursiveRemoveLowCardinality(column.column);
+                column.type = recursiveRemoveLowCardinality(column.type);
+            }
+
+            ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(columns_without_low_cardinality) : columns_without_low_cardinality;
+            ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
+
+            if (null_presence.has_nullable)
+                temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+
+            if (result_type->lowCardinality())
+                temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
+
+            return temporary_result;
+        }
+        else
+        {
+            ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
+            ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
+
+            if (null_presence.has_nullable)
+                temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+
+            if (result_type->lowCardinality())
+                temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
+
+            return temporary_result;
+        }
     }
 
 private:
@@ -429,7 +485,6 @@ private:
     DataTypePtr json_return_type;
 };
 
-
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl>
@@ -450,6 +505,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return !functionForcesTheReturnType<Impl>();
+    }
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -480,7 +539,6 @@ public:
                 null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type);
     }
 };
-
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
 struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
@@ -1238,6 +1296,35 @@ struct JSONExtractTree
         std::unique_ptr<Node> value;
     };
 
+    class VariantNode : public Node
+    {
+    public:
+        VariantNode(std::vector<std::unique_ptr<Node>> variant_nodes_, std::vector<size_t> order_) : variant_nodes(std::move(variant_nodes_)), order(std::move(order_)) { }
+
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            auto & column_variant = assert_cast<ColumnVariant &>(dest);
+            for (size_t i : order)
+            {
+                auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
+                if (variant_nodes[i]->insertResultToColumn(variant, element))
+                {
+                    column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(i));
+                    column_variant.getOffsets().push_back(variant.size() - 1);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+    private:
+        std::vector<std::unique_ptr<Node>> variant_nodes;
+        /// Order in which we should try variants nodes.
+        /// For example, String should be always the last one.
+        std::vector<size_t> order;
+    };
+
     static std::unique_ptr<Node> build(const char * function_name, const DataTypePtr & type)
     {
         switch (type->getTypeId())
@@ -1313,6 +1400,16 @@ struct JSONExtractTree
 
                 const auto & value_type = map_type.getValueType();
                 return std::make_unique<MapNode>(build(function_name, key_type), build(function_name, value_type));
+            }
+            case TypeIndex::Variant:
+            {
+                const auto & variant_type = static_cast<const DataTypeVariant &>(*type);
+                const auto & variants = variant_type.getVariants();
+                std::vector<std::unique_ptr<Node>> variant_nodes;
+                variant_nodes.reserve(variants.size());
+                for (const auto & variant : variants)
+                    variant_nodes.push_back(build(function_name, variant));
+                return std::make_unique<VariantNode>(std::move(variant_nodes), SerializationVariant::getVariantsDeserializeTextOrder(variants));
             }
             default:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

@@ -54,10 +54,10 @@ public:
             if (!constant_node)
                 return;
 
-            const auto & constant_value_literal = constant_node->getValue();
-            if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
+            if (auto constant_type = constant_node->getResultType(); !isNativeInteger(constant_type))
                 return;
 
+            const auto & constant_value_literal = constant_node->getValue();
             if (getSettings().aggregate_functions_null_for_empty)
                 return;
 
@@ -97,12 +97,14 @@ public:
         if (!if_true_condition_constant_node || !if_false_condition_constant_node)
             return;
 
+        if (auto constant_type = if_true_condition_constant_node->getResultType(); !isNativeInteger(constant_type))
+            return;
+
+        if (auto constant_type = if_false_condition_constant_node->getResultType(); !isNativeInteger(constant_type))
+            return;
+
         const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
         const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
-
-        if (!isInt64OrUInt64FieldType(if_true_condition_constant_value_literal.getType()) ||
-            !isInt64OrUInt64FieldType(if_false_condition_constant_value_literal.getType()))
-            return;
 
         auto if_true_condition_value = if_true_condition_constant_value_literal.get<UInt64>();
         auto if_false_condition_value = if_false_condition_constant_value_literal.get<UInt64>();
@@ -178,7 +180,7 @@ private:
 
 }
 
-void SumIfToCountIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void SumIfToCountIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     SumIfToCountIfVisitor visitor(context);
     visitor.visit(query_tree_node);

@@ -2776,7 +2776,7 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 -   0 — номера строк не выводятся.
 -   1 — номера строк выводятся.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 **Пример**
 
@@ -2798,7 +2798,7 @@ SELECT TOP 3 name, value FROM system.settings;
 ```
 ### output_format_pretty_color {#output_format_pretty_color}
 
-Включает/выключает управляющие последовательности ANSI в форматах Pretty. 
+Включает/выключает управляющие последовательности ANSI в форматах Pretty.
 
 Возможные значения:
 
@@ -3258,7 +3258,7 @@ SELECT * FROM test2;
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Включает экспериментальную возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
+Включает устаревшую возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
 
 Возможные значения:
 - 0 — живые представления не поддерживаются.
@@ -3268,21 +3268,15 @@ SELECT * FROM test2;
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Задает интервал в секундах для периодической проверки существования [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view).
-
-Значение по умолчанию: `15`.
+Устарело.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
-
-Значение по умолчанию: `64`.
+Устарело.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Задает время в секундах, по истечении которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
-
-Значение по умолчанию: `60`.
+Устарело.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -4129,7 +4123,7 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 ## session_timezone {#session_timezone}
 
 Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо [часового пояса сервера](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone). То есть, все значения DateTime/DateTime64, для которых явно не задан часовой пояс, будут интерпретированы как относящиеся к указанной зоне.
-При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера. 
+При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера.
 
 Функции `timeZone()` and `serverTimezone()` возвращают часовой пояс текущей сессии и сервера соответственно.
 

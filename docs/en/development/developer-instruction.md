@@ -7,13 +7,13 @@ description: Prerequisites and an overview of how to build ClickHouse
 
 # Getting Started Guide for Building ClickHouse
 
-ClickHouse can be build on Linux, FreeBSD and macOS. If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
+ClickHouse can be built on Linux, FreeBSD and macOS. If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
 
 ClickHouse requires a 64-bit system to compile and run, 32-bit systems do not work.
 
 ## Creating a Repository on GitHub {#creating-a-repository-on-github}
 
-To start developing for ClickHouse you will need a [GitHub](https://www.virtualbox.org/) account. Please also generate a SSH key locally (if you don't have one already) and upload the public key to GitHub as this is a prerequisite for contributing patches.
+To start developing for ClickHouse you will need a [GitHub](https://www.virtualbox.org/) account. Please also generate an SSH key locally (if you don't have one already) and upload the public key to GitHub as this is a prerequisite for contributing patches.
 
 Next, create a fork of the [ClickHouse repository](https://github.com/ClickHouse/ClickHouse/) in your personal account by clicking the "fork" button in the upper right corner.
 
@@ -37,7 +37,7 @@ git clone git@github.com:your_github_username/ClickHouse.git  # replace placehol
 cd ClickHouse
 ```
 
-This command creates a directory `ClickHouse/` containing the source code of ClickHouse. If you specify a custom checkout directory after the URL but it is important that this path does not contain whitespaces as it may lead to problems with the build later on.
+This command creates a directory `ClickHouse/` containing the source code of ClickHouse. If you specify a custom checkout directory after the URL, but it is important that this path does not contain whitespaces as it may lead to problems with the build later on.
 
 The ClickHouse repository uses Git submodules, i.e. references to external repositories (usually 3rd party libraries used by ClickHouse). These are not checked out by default. To do so, you can either
 
@@ -45,7 +45,7 @@ The ClickHouse repository uses Git submodules, i.e. references to external repos
 
 - if `git clone` did not check out submodules, run `git submodule update --init --jobs <N>` (e.g. `<N> = 12` to parallelize the checkout) to achieve the same as the previous alternative, or
 
-- if `git clone` did not check out submodules and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. Not really recommended as it generally makes working with submodules less convenient and slower.
+- if `git clone` did not check out submodules, and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. Not really recommended as it generally makes working with submodules less convenient and slower.
 
 You can check the Git status with the command: `git submodule status`.
 
@@ -83,15 +83,21 @@ ClickHouse uses CMake and Ninja for building.
 
 - Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
 
-To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build`.
+- ccache - a compiler cache. It speeds up recompilation by caching previous compilations and detecting when the same compilation is being done again.
 
-On CentOS, RedHat run `sudo yum install cmake ninja-build`.
+:::tip
+As an alternative for ccache a distributed [sccache](https://github.com/mozilla/sccache) could be used. To prefer it, `-DCOMPILER_CACHE=sccache` CMake flag should be used.
+:::
 
-If you use Arch or Gentoo, you probably know it yourself how to install CMake.
+To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build ccache`.
+
+On CentOS, RedHat run `sudo yum install cmake ninja-build ccache`.
+
+If you use Arch or Gentoo, you probably know it yourself how to install CMake and others.
 
 ## C++ Compiler {#c-compiler}
 
-Compilers Clang starting from version 15 is supported for building ClickHouse.
+Compilers Clang starting from version 16 is supported for building ClickHouse.
 
 Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
@@ -143,7 +149,7 @@ When a large amount of RAM is available on build machine you should limit the nu
 
 On machines with 4GB of RAM, it is recommended to specify 1, for 8GB of RAM `-j 2` is recommended.
 
-If you get the message: `ninja: error: loading 'build.ninja': No such file or directory`, it means that generating a build configuration has failed and you need to inspect the message above.
+If you get the message: `ninja: error: loading 'build.ninja': No such file or directory`, it means that generating a build configuration has failed, and you need to inspect the message above.
 
 Upon the successful start of the building process, you’ll see the build progress - the number of processed tasks and the total number of tasks.
 
@@ -152,6 +158,26 @@ While building messages about LLVM library may show up. They affect nothing and 
 Upon successful build you get an executable file `ClickHouse/<build_dir>/programs/clickhouse`:
 
     ls -l programs/clickhouse
+
+### Advanced Building Process {#advanced-building-process}
+
+#### Minimal Build {#minimal-build}
+
+If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
+
+```
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+In case of problems with any of the development options, you are on your own!
+
+#### Rust support {#rust-support}
+
+Rust requires internet connection, in case you don't have it, you can disable Rust support:
+
+```
+cmake -DENABLE_RUST=OFF
+```
 
 ## Running the Built Executable of ClickHouse {#running-the-built-executable-of-clickhouse}
 
@@ -184,7 +210,7 @@ You can also run your custom-built ClickHouse binary with the config file from t
 
 **CLion (recommended)**
 
-If you do not know which IDE to use, we recommend that you use [CLion](https://www.jetbrains.com/clion/). CLion is commercial software but it offers a 30 day free trial. It is also free of charge for students. CLion can be used on both Linux and macOS.
+If you do not know which IDE to use, we recommend that you use [CLion](https://www.jetbrains.com/clion/). CLion is commercial software, but it offers a 30 day free trial. It is also free of charge for students. CLion can be used on both Linux and macOS.
 
 A few things to know when using CLion to develop ClickHouse:
 
@@ -250,10 +276,3 @@ Most probably some of the builds will fail at first times. This is due to the fa
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
-
-If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
-```
--DENABLE_LIBRARIES=0
-```
-
-In case of problems with any of the development options, you are on your own!

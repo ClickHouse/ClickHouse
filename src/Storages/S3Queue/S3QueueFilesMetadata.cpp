@@ -1,9 +1,5 @@
 #include "config.h"
 
-#include <base/sleep.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/randomSeed.h>
-#include <Common/getRandomASCIIString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -12,6 +8,12 @@
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
+#include <base/sleep.h>
+#include <Common/CurrentThread.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/randomSeed.h>
+
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -214,7 +216,7 @@ size_t S3QueueFilesMetadata::registerNewShard()
     }
 
     const auto zk_client = getZooKeeper();
-    zk_client->createAncestors(zookeeper_shards_path / "");
+    zk_client->createIfNotExists(zookeeper_shards_path, "");
 
     std::string shard_node_path;
     size_t shard_id = 0;
@@ -287,7 +289,10 @@ void S3QueueFilesMetadata::unregisterShard(size_t shard_id)
 
     const auto zk_client = getZooKeeper();
     const auto node_path = getZooKeeperPathForShard(shard_id);
-    zk_client->remove(node_path);
+    auto error_code = zk_client->tryRemove(node_path);
+    if (error_code != Coordination::Error::ZOK
+        && error_code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException::fromPath(error_code, node_path);
 }
 
 size_t S3QueueFilesMetadata::getProcessingIdsNum() const
@@ -696,7 +701,10 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
         {
             auto code = zk_client->tryMulti(requests, responses);
             if (code == Coordination::Error::ZOK)
+            {
+                LOG_TEST(log, "Moved file `{}` to processed", path);
                 return;
+            }
         }
 
         /// Failed to update max processed node, retry.

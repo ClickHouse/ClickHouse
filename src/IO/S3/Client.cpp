@@ -1,4 +1,6 @@
 #include <IO/S3/Client.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
@@ -27,7 +29,10 @@
 
 #include <base/sleep.h>
 
-#include <algorithm>
+
+#ifdef ADDRESS_SANITIZER
+#include <sanitizer/lsan_interface.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -48,7 +53,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -106,19 +110,6 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
-void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
-{
-    if (auth_credentials.GetAWSAccessKeyId().empty())
-    {
-        return;
-    }
-    /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
-    if (!std::all_of(auth_credentials.GetAWSAccessKeyId().begin(), auth_credentials.GetAWSAccessKeyId().end(), isWordCharASCII))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has an invalid character");
-    }
-}
-
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const HTTPHeaderEntries & extra_headers
@@ -144,7 +135,6 @@ std::unique_ptr<Client> Client::create(
     const ClientSettings & client_settings)
 {
     verifyClientConfiguration(client_configuration);
-    validateCredentials(credentials_provider->GetAWSCredentials());
     return std::unique_ptr<Client>(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
 }
@@ -319,6 +309,9 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
+
+    if (isS3ExpressBucket())
+        request.setIsS3ExpressBucket();
 
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
@@ -546,7 +539,11 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-    if (client_settings.disable_checksum)
+
+    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
+    if (client_settings.is_s3express_bucket)
+        request.setIsS3ExpressBucket();
+    else if (client_settings.disable_checksum)
         request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -731,7 +728,7 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     if (outcome.IsSuccess())
     {
         const auto & result = outcome.GetResult();
-        region = result.GetRegion();
+        region = result.GetBucketRegion();
     }
     else
     {
@@ -864,7 +861,14 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-    Aws::InitAPI(aws_options);
+    {
+#ifdef ADDRESS_SANITIZER
+        /// Leak sanitizer (part of address sanitizer) thinks that memory in OpenSSL (called by AWS SDK) is allocated but not
+        /// released. Actually, the memory is released at the end of the program (ClientFactory is a singleton, see the dtor).
+        __lsan::ScopedDisabler lsan_disabler;
+#endif
+        Aws::InitAPI(aws_options);
+    }
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }
@@ -931,9 +935,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
-        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings
-    );
+        client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
+                                            : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        client_settings);
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
@@ -972,6 +976,11 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     return config;
 }
 
+bool isS3ExpressEndpoint(const std::string & endpoint)
+{
+    /// On one hand this check isn't 100% reliable, on the other - all it will change is whether we attach checksums to the requests.
+    return endpoint.contains("s3express");
+}
 }
 
 }

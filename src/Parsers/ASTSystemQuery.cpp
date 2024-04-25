@@ -7,8 +7,14 @@
 
 #include <magic_enum.hpp>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -85,7 +91,7 @@ void ASTSystemQuery::setTable(const String & name)
     }
 }
 
-void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
@@ -104,9 +110,12 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (database)
         {
-            print_identifier(getDatabase()) << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        print_identifier(getTable());
+
+        chassert(table);
+        table->formatImpl(settings, state, frame);
         return settings.ostr;
     };
 
@@ -144,185 +153,291 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     if (!cluster.empty())
         formatOnCluster(settings);
 
-    if (   type == Type::STOP_MERGES
-        || type == Type::START_MERGES
-        || type == Type::STOP_TTL_MERGES
-        || type == Type::START_TTL_MERGES
-        || type == Type::STOP_MOVES
-        || type == Type::START_MOVES
-        || type == Type::STOP_FETCHES
-        || type == Type::START_FETCHES
-        || type == Type::STOP_REPLICATED_SENDS
-        || type == Type::START_REPLICATED_SENDS
-        || type == Type::STOP_REPLICATION_QUEUES
-        || type == Type::START_REPLICATION_QUEUES
-        || type == Type::STOP_DISTRIBUTED_SENDS
-        || type == Type::START_DISTRIBUTED_SENDS
-        || type == Type::STOP_PULLING_REPLICATION_LOG
-        || type == Type::START_PULLING_REPLICATION_LOG
-        || type == Type::STOP_CLEANUP
-        || type == Type::START_CLEANUP)
+    switch (type)
     {
-        if (table)
+        case Type::STOP_MERGES:
+        case Type::START_MERGES:
+        case Type::STOP_TTL_MERGES:
+        case Type::START_TTL_MERGES:
+        case Type::STOP_MOVES:
+        case Type::START_MOVES:
+        case Type::STOP_FETCHES:
+        case Type::START_FETCHES:
+        case Type::STOP_REPLICATED_SENDS:
+        case Type::START_REPLICATED_SENDS:
+        case Type::STOP_REPLICATION_QUEUES:
+        case Type::START_REPLICATION_QUEUES:
+        case Type::STOP_DISTRIBUTED_SENDS:
+        case Type::START_DISTRIBUTED_SENDS:
+        case Type::STOP_PULLING_REPLICATION_LOG:
+        case Type::START_PULLING_REPLICATION_LOG:
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
         {
-            settings.ostr << ' ';
-            print_database_table();
-        }
-        else if (!volume.empty())
-            print_on_volume();
-    }
-    else if (  type == Type::RESTART_REPLICA
-            || type == Type::RESTORE_REPLICA
-            || type == Type::SYNC_REPLICA
-            || type == Type::WAIT_LOADING_PARTS
-            || type == Type::FLUSH_DISTRIBUTED
-            || type == Type::RELOAD_DICTIONARY
-            || type == Type::RELOAD_MODEL
-            || type == Type::RELOAD_FUNCTION
-            || type == Type::RESTART_DISK
-            || type == Type::DROP_DISK_METADATA_CACHE)
-    {
-        if (table)
-        {
-            settings.ostr << ' ';
-            print_database_table();
-        }
-        else if (!target_model.empty())
-        {
-            settings.ostr << ' ';
-            print_identifier(target_model);
-        }
-        else if (!target_function.empty())
-        {
-            settings.ostr << ' ';
-            print_identifier(target_function);
-        }
-        else if (!disk.empty())
-        {
-            settings.ostr << ' ';
-            print_identifier(disk);
-        }
-
-        if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-        {
-            settings.ostr << ' ';
-            print_keyword(magic_enum::enum_name(sync_replica_mode));
-
-            // If the mode is LIGHTWEIGHT and specific source replicas are specified
-            if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
+            if (table)
             {
                 settings.ostr << ' ';
-                print_keyword("FROM");
+                print_database_table();
+            }
+            else if (!volume.empty())
+            {
+                print_on_volume();
+            }
+            break;
+        }
+        case Type::RESTART_REPLICA:
+        case Type::RESTORE_REPLICA:
+        case Type::SYNC_REPLICA:
+        case Type::WAIT_LOADING_PARTS:
+        case Type::FLUSH_DISTRIBUTED:
+        {
+            if (table)
+            {
                 settings.ostr << ' ';
+                print_database_table();
+            }
 
-                for (auto it = src_replicas.begin(); it != src_replicas.end(); ++it)
+            if (query_settings)
+            {
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                query_settings->formatImpl(settings, state, frame);
+            }
+
+            break;
+        }
+        case Type::RELOAD_DICTIONARY:
+        case Type::RELOAD_MODEL:
+        case Type::RELOAD_FUNCTION:
+        case Type::RESTART_DISK:
+        case Type::DROP_DISK_METADATA_CACHE:
+        {
+            if (table)
+            {
+                settings.ostr << ' ';
+                print_database_table();
+            }
+            else if (!target_model.empty())
+            {
+                settings.ostr << ' ';
+                print_identifier(target_model);
+            }
+            else if (!target_function.empty())
+            {
+                settings.ostr << ' ';
+                print_identifier(target_function);
+            }
+            else if (!disk.empty())
+            {
+                settings.ostr << ' ';
+                print_identifier(disk);
+            }
+
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                settings.ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+
+                // If the mode is LIGHTWEIGHT and specific source replicas are specified
+                if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
                 {
-                    print_identifier(*it);
+                    settings.ostr << ' ';
+                    print_keyword("FROM");
+                    settings.ostr << ' ';
 
-                    // Add a comma and space after each identifier, except the last one
-                    if (std::next(it) != src_replicas.end())
-                        settings.ostr << ", ";
+                    bool first = true;
+                    for (const auto & src : src_replicas)
+                    {
+                        if (!first)
+                            settings.ostr << ", ";
+                        first = false;
+                        settings.ostr << quoteString(src);
+                    }
                 }
             }
+            break;
         }
-    }
-    else if (type == Type::SYNC_DATABASE_REPLICA)
-    {
-        settings.ostr << ' ';
-        print_identifier(database->as<ASTIdentifier>()->name());
-    }
-    else if (type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA)
-    {
-        print_drop_replica();
-    }
-    else if (type == Type::SUSPEND)
-    {
-        print_keyword(" FOR ") << seconds;
-        print_keyword(" SECOND");
-    }
-    else if (type == Type::DROP_FORMAT_SCHEMA_CACHE)
-    {
-        if (!schema_cache_format.empty())
-        {
-            print_keyword(" FOR ");
-            print_identifier(schema_cache_format);
-        }
-    }
-    else if (type == Type::DROP_FILESYSTEM_CACHE)
-    {
-        if (!filesystem_cache_name.empty())
+        case Type::SYNC_DATABASE_REPLICA:
         {
             settings.ostr << ' ';
-            print_identifier(filesystem_cache_name);
-            if (!key_to_drop.empty())
+            print_identifier(database->as<ASTIdentifier>()->name());
+            break;
+        }
+        case Type::DROP_REPLICA:
+        case Type::DROP_DATABASE_REPLICA:
+        {
+            print_drop_replica();
+            break;
+        }
+        case Type::SUSPEND:
+        {
+            print_keyword(" FOR ") << seconds;
+            print_keyword(" SECOND");
+            break;
+        }
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+            if (!schema_cache_format.empty())
             {
-                print_keyword(" KEY ");
-                print_identifier(key_to_drop);
-                if (offset_to_drop.has_value())
+                print_keyword(" FOR ");
+                print_identifier(schema_cache_format);
+            }
+            break;
+        }
+        case Type::DROP_FILESYSTEM_CACHE:
+        {
+            if (!filesystem_cache_name.empty())
+            {
+                settings.ostr << ' ' << quoteString(filesystem_cache_name);
+                if (!key_to_drop.empty())
                 {
-                    print_keyword(" OFFSET ");
-                    settings.ostr << offset_to_drop.value();
+                    print_keyword(" KEY ");
+                    print_identifier(key_to_drop);
+                    if (offset_to_drop.has_value())
+                    {
+                        print_keyword(" OFFSET ");
+                        settings.ostr << offset_to_drop.value();
+                    }
                 }
             }
+            break;
         }
-    }
-    else if (type == Type::DROP_SCHEMA_CACHE)
-    {
-        if (!schema_cache_storage.empty())
+        case Type::DROP_SCHEMA_CACHE:
         {
-            print_keyword(" FOR ");
-            print_identifier(schema_cache_storage);
-        }
-    }
-    else if (type == Type::UNFREEZE)
-    {
-        print_keyword(" WITH NAME ");
-        settings.ostr << quoteString(backup_name);
-    }
-    else if (type == Type::START_LISTEN || type == Type::STOP_LISTEN)
-    {
-        settings.ostr << ' ';
-        print_keyword(ServerType::serverTypeToString(server_type.type));
-
-        if (server_type.type == ServerType::Type::CUSTOM)
-            settings.ostr << ' ' << quoteString(server_type.custom_name);
-
-        bool comma = false;
-
-        if (!server_type.exclude_types.empty())
-        {
-            print_keyword(" EXCEPT");
-
-            for (auto cur_type : server_type.exclude_types)
+            if (!schema_cache_storage.empty())
             {
-                if (cur_type == ServerType::Type::CUSTOM)
-                    continue;
-
-                if (comma)
-                    settings.ostr << ',';
-                else
-                    comma = true;
-
-                settings.ostr << ' ';
-                print_keyword(ServerType::serverTypeToString(cur_type));
+                print_keyword(" FOR ");
+                print_identifier(schema_cache_storage);
             }
+            break;
+        }
+        case Type::UNFREEZE:
+        {
+            print_keyword(" WITH NAME ");
+            settings.ostr << quoteString(backup_name);
+            break;
+        }
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+        {
+            settings.ostr << ' ';
+            print_keyword(ServerType::serverTypeToString(server_type.type));
 
-            if (server_type.exclude_types.contains(ServerType::Type::CUSTOM))
+            if (server_type.type == ServerType::Type::CUSTOM)
+                settings.ostr << ' ' << quoteString(server_type.custom_name);
+
+            bool comma = false;
+
+            if (!server_type.exclude_types.empty())
             {
-                for (const auto & cur_name : server_type.exclude_custom_names)
+                print_keyword(" EXCEPT");
+
+                for (auto cur_type : server_type.exclude_types)
                 {
+                    if (cur_type == ServerType::Type::CUSTOM)
+                        continue;
+
                     if (comma)
                         settings.ostr << ',';
                     else
                         comma = true;
 
                     settings.ostr << ' ';
-                    print_keyword(ServerType::serverTypeToString(ServerType::Type::CUSTOM));
-                    settings.ostr << " " << quoteString(cur_name);
+                    print_keyword(ServerType::serverTypeToString(cur_type));
+                }
+
+                if (server_type.exclude_types.contains(ServerType::Type::CUSTOM))
+                {
+                    for (const auto & cur_name : server_type.exclude_custom_names)
+                    {
+                        if (comma)
+                            settings.ostr << ',';
+                        else
+                            comma = true;
+
+                        settings.ostr << ' ';
+                        print_keyword(ServerType::serverTypeToString(ServerType::Type::CUSTOM));
+                        settings.ostr << " " << quoteString(cur_name);
+                    }
                 }
             }
+            break;
         }
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
+        {
+            settings.ostr << ' ';
+            print_identifier(fail_point_name);
+            break;
+        }
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::STOP_VIEW:
+        case Type::CANCEL_VIEW:
+        {
+            settings.ostr << ' ';
+            print_database_table();
+            break;
+        }
+        case Type::TEST_VIEW:
+        {
+            settings.ostr << ' ';
+            print_database_table();
 
+            if (!fake_time_for_view)
+            {
+                settings.ostr << ' ';
+                print_keyword("UNSET FAKE TIME");
+            }
+            else
+            {
+                settings.ostr << ' ';
+                print_keyword("SET FAKE TIME");
+                settings.ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
+            }
+            break;
+        }
+        case Type::KILL:
+        case Type::SHUTDOWN:
+        case Type::DROP_DNS_CACHE:
+        case Type::DROP_CONNECTIONS_CACHE:
+        case Type::DROP_MMAP_CACHE:
+        case Type::DROP_QUERY_CACHE:
+        case Type::DROP_MARK_CACHE:
+        case Type::DROP_INDEX_MARK_CACHE:
+        case Type::DROP_UNCOMPRESSED_CACHE:
+        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+        case Type::DROP_S3_CLIENT_CACHE:
+        case Type::RESET_COVERAGE:
+        case Type::RESTART_REPLICAS:
+        case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        case Type::SYNC_TRANSACTION_LOG:
+        case Type::SYNC_FILE_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
+        case Type::REPLICA_READY:   /// Obsolete
+        case Type::REPLICA_UNREADY: /// Obsolete
+        case Type::RELOAD_DICTIONARIES:
+        case Type::RELOAD_EMBEDDED_DICTIONARIES:
+        case Type::RELOAD_MODELS:
+        case Type::RELOAD_FUNCTIONS:
+        case Type::RELOAD_CONFIG:
+        case Type::RELOAD_USERS:
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        case Type::FLUSH_LOGS:
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        case Type::START_THREAD_FUZZER:
+        case Type::STOP_THREAD_FUZZER:
+        case Type::START_VIEWS:
+        case Type::STOP_VIEWS:
+        case Type::DROP_PAGE_CACHE:
+            break;
+        case Type::UNKNOWN:
+        case Type::END:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
     }
 }
 

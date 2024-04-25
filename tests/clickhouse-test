@@ -4,48 +4,49 @@
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
 # pylint: disable=anomalous-backslash-in-string
+# pylint: disable=protected-access
 
-import enum
-from queue import Full
-import shutil
-import itertools
-import sys
-import os
-import os.path
-import platform
-import signal
-import re
 import copy
-import traceback
-import math
+import enum
+import tempfile
+import glob
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
-import urllib.parse
+import itertools
 import json
+import math
+import multiprocessing
+import os
+import os.path
+import platform
+import random
+import re
+import shutil
+import signal
+import socket
+import string
+import subprocess
+import sys
+import traceback
+import urllib.parse
 
 # for crc32
 import zlib
-
 from argparse import ArgumentParser
-from typing import Tuple, Union, Optional, Dict, Set, List
-import subprocess
-from subprocess import Popen
-from subprocess import PIPE
+from contextlib import closing
 from datetime import datetime, timedelta
-from time import time, sleep
 from errno import ESRCH
+from queue import Full
+from subprocess import PIPE, Popen
+from time import sleep, time
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 try:
     import termcolor  # type: ignore
 except ImportError:
     termcolor = None
 
-import random
-import string
-import multiprocessing
-import socket
-from contextlib import closing
 
 USE_JINJA = True
 try:
@@ -68,11 +69,157 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
+TEST_MAX_RUN_TIME_IN_SECONDS = 120
 
-def stringhash(s):
+
+class SharedEngineReplacer:
+    ENGINES_NON_REPLICATED_REGEXP = r"[ =]((Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|)MergeTree\(?\)?)"
+    ENGINES_MAPPING_REPLICATED = [
+        ("ReplicatedMergeTree", "SharedMergeTree"),
+        ("ReplicatedCollapsingMergeTree", "SharedCollapsingMergeTree"),
+        (
+            "ReplicatedVersionedCollapsingMergeTree",
+            "SharedVersionedCollapsingMergeTree",
+        ),
+        ("ReplicatedSummingMergeTree", "SharedSummingMergeTree"),
+        ("ReplicatedReplacingMergeTree", "SharedReplacingMergeTree"),
+        ("ReplicatedAggregatingMergeTree", "SharedAggregatingMergeTree"),
+    ]
+    NEW_SYNTAX_REPLICATED_MERGE_TREE_RE = (
+        r"Replicated[a-zA-Z]*MergeTree\((\\?'.*\\?')?,?(\\?'.*\\?')?[a-zA-Z, _}{]*\)"
+    )
+    OLD_SYNTAX_OR_ARGUMENTS_RE = r"Tree\(.*[0-9]+.*\)"
+
+    def _check_replicad_new_syntax(self, line):
+        return re.search(self.NEW_SYNTAX_REPLICATED_MERGE_TREE_RE, line) is not None
+
+    def _check_old_syntax_or_arguments(self, line):
+        return re.search(self.OLD_SYNTAX_OR_ARGUMENTS_RE, line) is not None
+
+    @staticmethod
+    def _is_comment_line(line):
+        return line.startswith("SELECT") or line.startswith("select")
+
+    @staticmethod
+    def _is_create_query(line):
+        return (
+            line.startswith("CREATE")
+            or line.startswith("create")
+            or line.startswith("ENGINE")
+            or line.startswith("engine")
+        )
+
+    def _replace_non_replicated(self, line, escape_quotes, use_random_path):
+        groups = re.search(self.ENGINES_NON_REPLICATED_REGEXP, line)
+        if groups is not None and not self._check_old_syntax_or_arguments(line):
+            non_replicated_engine = groups.groups()[0]
+            basename_no_ext = os.path.splitext(os.path.basename(self.file_name))[0]
+            if use_random_path:
+                shared_path = "/" + os.path.join(
+                    basename_no_ext.replace("_", "/"),
+                    str(os.getpid()),
+                    str(random.randint(1, 1000)),
+                )
+            else:
+                shared_path = "/" + os.path.join(
+                    basename_no_ext.replace("_", "/"), str(os.getpid())
+                )
+
+            if escape_quotes:
+                shared_engine = (
+                    "Shared"
+                    + non_replicated_engine.replace("()", "")
+                    + f"(\\'{shared_path}\\', \\'1\\')"
+                )
+            else:
+                shared_engine = (
+                    "Shared"
+                    + non_replicated_engine.replace("()", "")
+                    + f"('{shared_path}', '1')"
+                )
+            return line.replace(non_replicated_engine, shared_engine)
+
+        return line
+
+    def _need_to_replace_something(self):
+        return (
+            self.replace_replicated or self.replace_non_replicated
+        ) and "shared_merge_tree" not in self.file_name
+
+    def _has_show_create_table(self):
+        with open(self.file_name, "r", encoding="utf-8") as f:
+            return re.search("show create table", f.read(), re.IGNORECASE)
+
+    def __init__(
+        self, file_name, replace_replicated, replace_non_replicated, reference_file
+    ):
+        self.file_name = file_name
+        self.temp_file_path = get_temp_file_path()
+        self.replace_replicated = replace_replicated
+        self.replace_non_replicated = replace_non_replicated
+
+        use_random_path = not reference_file and not self._has_show_create_table()
+
+        if not self._need_to_replace_something():
+            return
+
+        shutil.copyfile(self.file_name, self.temp_file_path)
+        shutil.copymode(self.file_name, self.temp_file_path)
+
+        with open(self.file_name, "w", newline="", encoding="utf-8") as modified:
+            with open(self.temp_file_path, "r", newline="", encoding="utf-8") as source:
+                for line in source:
+                    if self._is_comment_line(line) or (
+                        reference_file and not self._is_create_query(line)
+                    ):
+                        modified.write(line)
+                        continue
+
+                    if self.replace_replicated:
+                        for (
+                            engine_from,
+                            engine_to,
+                        ) in SharedEngineReplacer.ENGINES_MAPPING_REPLICATED:
+                            if engine_from in line and (
+                                self._check_replicad_new_syntax(line)
+                                or engine_from + " " in line
+                                or engine_from + ";" in line
+                            ):
+                                line = line.replace(engine_from, engine_to)
+                                break
+
+                    if self.replace_non_replicated:
+                        line = self._replace_non_replicated(
+                            line, reference_file, use_random_path
+                        )
+
+                    modified.write(line)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        if not self._need_to_replace_something():
+            return
+        shutil.move(self.temp_file_path, self.file_name)
+
+
+def get_temp_file_path():
+    return os.path.join(
+        tempfile._get_default_tempdir(), next(tempfile._get_candidate_names())
+    )
+
+
+def stringhash(s: str) -> int:
     # default hash() function consistent
     # only during process invocation https://stackoverflow.com/a/42089311
     return zlib.crc32(s.encode("utf-8"))
+
+
+def read_file_as_binary_string(file_path):
+    with open(file_path, "rb") as file:
+        binary_data = file.read()
+    return binary_data
 
 
 # First and last lines of the log
@@ -85,6 +232,20 @@ def trim_for_log(s):
         return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
+
+
+def is_valid_utf_8(fname):
+    try:
+        with open(fname, "rb") as f:
+            contents = f.read()
+            contents.decode("utf-8")
+            return True
+    except UnicodeDecodeError:
+        return False
+
+
+class TestException(Exception):
+    pass
 
 
 class HTTPError(Exception):
@@ -101,6 +262,7 @@ class HTTPError(Exception):
 def clickhouse_execute_http(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     default_format=None,
@@ -140,6 +302,7 @@ def clickhouse_execute_http(
             client.request(
                 "POST",
                 f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+                body=body,
             )
             res = client.getresponse()
             data = res.read()
@@ -160,6 +323,7 @@ def clickhouse_execute_http(
 def clickhouse_execute(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     max_http_retries=5,
@@ -168,6 +332,7 @@ def clickhouse_execute(
     return clickhouse_execute_http(
         base_args,
         query,
+        body,
         timeout,
         settings,
         max_http_retries=max_http_retries,
@@ -181,6 +346,7 @@ def clickhouse_execute_json(
     data = clickhouse_execute_http(
         base_args,
         query,
+        None,
         timeout,
         settings,
         "JSONEachRow",
@@ -238,7 +404,7 @@ def get_db_engine(args, database_name):
 
 
 def get_create_database_settings(args, testcase_args):
-    create_database_settings = dict()
+    create_database_settings = {}
     if testcase_args:
         create_database_settings["log_comment"] = testcase_args.testcase_basename
     if args.db_engine == "Ordinary":
@@ -287,8 +453,7 @@ def get_processlist_size(args):
                 """
                 SELECT
                     count()
-                FROM
-                    FROM system.processes
+                FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 """,
             ).strip()
@@ -400,7 +565,6 @@ def get_stacktraces_from_gdb(server_pid):
 
 
 # collect server stacktraces from system.stack_trace table
-# it does not work in Sandbox
 def get_stacktraces_from_clickhouse(args):
     settings_str = " ".join(
         [
@@ -519,10 +683,14 @@ class FailureReason(enum.Enum):
     STDERR = "having stderror: "
     EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
-    TOO_LONG = "Test runs too long (> 60s). Make it faster."
+    TOO_LONG = (
+        f"Test runs too long (> {TEST_MAX_RUN_TIME_IN_SECONDS}s). Make it faster."
+    )
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
+    NOT_SUPPORTED_IN_CLOUD = "not supported in cloud environment"
+    NOT_SUPPORTED_IN_PRIVATE = "not supported in private build"
     DISABLED = "disabled"
     SKIP = "skip"
     NO_JINJA = "no jinja"
@@ -535,6 +703,7 @@ class FailureReason(enum.Enum):
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
+    SHARED_MERGE_TREE = "no-shared-merge-tree"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -593,8 +762,6 @@ class SettingsRandomizer:
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
-        "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
-        "max_compress_block_size": lambda: random.randint(1, 1048576 * 3),
         "use_uncompressed_cache": lambda: random.randint(0, 1),
         "min_bytes_to_use_direct_io": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
@@ -646,6 +813,11 @@ class SettingsRandomizer:
             0.3, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
+        "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
+        "max_compress_block_size": lambda: random.randint(1, 1048576 * 3),
+        "merge_tree_compact_parts_min_granules_to_multibuffer_read": lambda: random.randint(
+            1, 128
+        ),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
         "http_response_buffer_size": lambda: random.randint(0, 10 * 1048576),
         "http_wait_end_of_query": lambda: random.random() > 0.5,
@@ -670,6 +842,12 @@ class SettingsRandomizer:
                 # NOTE: due to lots of trickery we cannot use empty timezone here, but this should be the same.
                 get_localzone(),
             ]
+        ),
+        "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
+        "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
+        "page_cache_inject_eviction": lambda: random.random() < 0.5,
+        "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
+            random.random(), 2
         ),
     }
 
@@ -718,6 +896,19 @@ class MergeTreeSettingsRandomizer:
         "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
         "replace_long_file_name_to_hash": lambda: random.randint(0, 1),
         "max_file_name_length": threshold_generator(0.3, 0.3, 0, 128),
+        "min_bytes_for_full_part_storage": threshold_generator(
+            0.3, 0.3, 0, 512 * 1024 * 1024
+        ),
+        "compact_parts_max_bytes_to_buffer": lambda: random.randint(
+            1024, 512 * 1024 * 1024
+        ),
+        "compact_parts_max_granules_to_buffer": threshold_generator(0.15, 0.15, 1, 256),
+        "compact_parts_merge_max_bytes_to_prefetch_part": lambda: random.randint(
+            1, 32 * 1024 * 1024
+        ),
+        "cache_populated_by_fetch": lambda: random.randint(0, 1),
+        "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
+        "old_parts_lifetime": threshold_generator(0.2, 0.3, 30, 8 * 60),
     }
 
     @staticmethod
@@ -727,6 +918,10 @@ class MergeTreeSettingsRandomizer:
             if setting not in args.changed_merge_tree_settings:
                 random_settings[setting] = generator()
         return random_settings
+
+
+def replace_in_file(filename, what, with_what):
+    os.system(f"LC_ALL=C sed -i -e 's|{what}|{with_what}|g' {filename}")
 
 
 class TestResult:
@@ -957,6 +1152,15 @@ class TestCase:
         if tags and ("disabled" in tags) and not args.disabled:
             return FailureReason.DISABLED
 
+        elif args.private and self.name in suite.private_skip_list:
+            return FailureReason.NOT_SUPPORTED_IN_PRIVATE
+
+        elif args.cloud and ("no-replicated-database" in tags):
+            return FailureReason.REPLICATED_DB
+
+        elif args.cloud and self.name in suite.cloud_skip_list:
+            return FailureReason.NOT_SUPPORTED_IN_CLOUD
+
         elif (
             os.path.exists(os.path.join(suite.suite_path, self.name) + ".disabled")
             and not args.disabled
@@ -1007,6 +1211,13 @@ class TestCase:
         ):
             return FailureReason.NON_ATOMIC_DB
 
+        elif (
+            tags
+            and ("no-shared-merge-tree" in tags)
+            and args.replace_replicated_with_shared
+        ):
+            return FailureReason.SHARED_MERGE_TREE
+
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
         elif (
@@ -1036,7 +1247,8 @@ class TestCase:
     ):
         description = ""
 
-        debug_log = trim_for_log(debug_log)
+        if debug_log:
+            debug_log = "\n".join(debug_log.splitlines()[:100])
 
         if proc:
             if proc.returncode is None:
@@ -1121,6 +1333,7 @@ class TestCase:
             description += "\nstdout:\n"
             description += trim_for_log(stdout)
             description += "\n"
+
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -1133,9 +1346,7 @@ class TestCase:
             )
 
         if "Exception" in stdout:
-            description += "\n"
-            description += trim_for_log(stdout)
-            description += "\n"
+            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -1173,7 +1384,7 @@ class TestCase:
         )
 
         if result_is_different:
-            diff_proc = Popen(
+            with Popen(
                 [
                     "diff",
                     "-U",
@@ -1181,26 +1392,25 @@ class TestCase:
                     self.reference_file,
                     self.stdout_file,
                 ],
-                encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
-            )
-            if self.show_whitespaces_in_diff:
-                sed_proc = Popen(
-                    ["sed", "-e", "s/[ \t]\\+$/&$/g"],
-                    stdin=diff_proc.stdout,
-                    stdout=PIPE,
-                )
-                diff_proc.stdout.close()  # Allow diff to receive a SIGPIPE if cat exits.
-                diff = sed_proc.communicate()[0].decode("utf-8", errors="ignore")
-            else:
-                diff = diff_proc.communicate()[0]
+            ) as diff_proc:
+                if self.show_whitespaces_in_diff:
+                    with Popen(
+                        ["sed", "-e", "s/[ \t]\\+$/&$/g"],
+                        stdin=diff_proc.stdout,
+                        stdout=PIPE,
+                    ) as sed_proc:
+                        diff = sed_proc.communicate()[0].decode(
+                            "utf-8", errors="ignore"
+                        )
+                else:
+                    diff = diff_proc.communicate()[0]
 
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "rb")
-                diff += str(file.read())
-                file.close()
+                with open(self.stdout_file, "rb") as file:
+                    diff += str(file.read())
                 diff += "==================="
             description += f"\n{diff}\n"
             if debug_log:
@@ -1216,7 +1426,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > 120
+            and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
             and "long" not in self.tags
         ):
             if debug_log:
@@ -1262,17 +1472,34 @@ class TestCase:
         ):
             clickhouse_execute(
                 args,
-                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
+                f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
                 retry_error_codes=True,
             )
 
+            # Check for dumped coverage files
+            file_pattern = "coverage.*"
+            matching_files = glob.glob(file_pattern)
+            for file_path in matching_files:
+                try:
+                    body = read_file_as_binary_string(file_path)
+                    clickhouse_execute(
+                        args,
+                        f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        body=body,
+                        retry_error_codes=True,
+                    )
+                except Exception as e:
+                    print("Cannot insert coverage data: ", str(e))
+                # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
+                os.remove(file_path)
+
             coverage = clickhouse_execute(
                 args,
-                "SELECT length(coverage())",
+                "SELECT length(coverageCurrent())",
                 retry_error_codes=True,
             ).decode()
 
-            description_full += f" Coverage: {coverage}"
+            description_full += f" (coverage: {coverage})"
 
         description_full += "\n"
 
@@ -1326,7 +1553,13 @@ class TestCase:
         # because there are also output of per test database creation
         pattern = "{test} > {stdout} 2> {stderr}"
 
-        if self.ext == ".sql":
+        if self.ext == ".sql" and args.cloud:
+            # Get at least some logs, because we don't have access to system.text_log and pods...
+            pattern = (
+                "{client} --send_logs_level={logs_level} {secure} --multiquery {options}"
+                " --send_logs_level=trace < {test} > {stdout}  2>> /test_output/some_logs_from_server.log"
+            )
+        elif self.ext == ".sql" and not args.cloud:
             pattern = (
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
@@ -1335,6 +1568,7 @@ class TestCase:
         # We want to calculate per-test code coverage. That's why we reset it before each test.
         if (
             args.collect_per_test_coverage
+            and args.reset_coverage_before_every_test
             and BuildFlags.SANITIZE_COVERAGE in args.build_flags
         ):
             clickhouse_execute(
@@ -1345,6 +1579,7 @@ class TestCase:
 
         command = pattern.format(**params)
 
+        # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
         while (
@@ -1362,17 +1597,15 @@ class TestCase:
         total_time = (datetime.now() - start_time).total_seconds()
 
         # Normalize randomized database names in stdout, stderr files.
-        os.system(f"LC_ALL=C sed -i -e 's/{database}/default/g' {self.stdout_file}")
+        replace_in_file(self.stdout_file, database, "default")
         if args.hide_db_name:
-            os.system(f"LC_ALL=C sed -i -e 's/{database}/default/g' {self.stderr_file}")
+            replace_in_file(self.stderr_file, database, "default")
         if args.replicated_database:
-            os.system(f"LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {self.stdout_file}")
-            os.system(f"LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {self.stdout_file}")
+            replace_in_file(self.stdout_file, "/auto_{shard}", "")
+            replace_in_file(self.stdout_file, "auto_{replica}", "")
 
         # Normalize hostname in stdout file.
-        os.system(
-            f"LC_ALL=C sed -i -e 's/{socket.gethostname()}/localhost/g' {self.stdout_file}"
-        )
+        replace_in_file(self.stdout_file, socket.gethostname(), "localhost")
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -1410,18 +1643,51 @@ class TestCase:
             self.testcase_args = self.configure_testcase_args(
                 args, self.case_file, suite.suite_tmp_path
             )
+
             client_options = self.add_random_settings(client_options)
-            proc, stdout, stderr, debug_log, total_time = self.run_single_test(
-                server_logs_level, client_options
-            )
 
-            result = self.process_result_impl(
-                proc, stdout, stderr, debug_log, total_time
-            )
-            result.check_if_need_retry(args, stdout, stderr, self.runs_count)
-            # to avoid breaking CSV parser
-            result.description = result.description.replace("\0", "")
+            if not is_valid_utf_8(self.case_file) or not is_valid_utf_8(
+                self.reference_file
+            ):
+                proc, stdout, stderr, debug_log, total_time = self.run_single_test(
+                    server_logs_level, client_options
+                )
 
+                result = self.process_result_impl(
+                    proc, stdout, stderr, debug_log, total_time
+                )
+                result.check_if_need_retry(args, stdout, stderr, self.runs_count)
+                # to avoid breaking CSV parser
+                result.description = result.description.replace("\0", "")
+            else:
+                with SharedEngineReplacer(
+                    self.case_file,
+                    args.replace_replicated_with_shared,
+                    args.replace_non_replicated_with_shared,
+                    False,
+                ):
+                    with SharedEngineReplacer(
+                        self.reference_file,
+                        args.replace_replicated_with_shared,
+                        args.replace_non_replicated_with_shared,
+                        True,
+                    ):
+                        (
+                            proc,
+                            stdout,
+                            stderr,
+                            debug_log,
+                            total_time,
+                        ) = self.run_single_test(server_logs_level, client_options)
+
+                        result = self.process_result_impl(
+                            proc, stdout, stderr, debug_log, total_time
+                        )
+                        result.check_if_need_retry(
+                            args, stdout, stderr, self.runs_count
+                        )
+                        # to avoid breaking CSV parser
+                        result.description = result.description.replace("\0", "")
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
@@ -1511,7 +1777,7 @@ class TestCase:
             )
 
             if len(leftover_tables) != 0:
-                raise Exception(
+                raise TestException(
                     f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
                 )
 
@@ -1594,7 +1860,7 @@ class TestSuite:
             ):
                 return "#"
             else:
-                raise Exception(f"Unknown file_extension: {filename}")
+                raise TestException(f"Unknown file_extension: {filename}")
 
         def parse_tags_from_line(line, comment_sign) -> Set[str]:
             if not line.startswith(comment_sign):
@@ -1654,18 +1920,25 @@ class TestSuite:
         self.suite_path: str = suite_path
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
-
-        filter_func = lambda x: True  # noqa: ignore E731
+        self.cloud_skip_list: List[str] = []
+        self.private_skip_list: List[str] = []
 
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
-                raise Exception(
+                raise TestException(
                     f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}"
                 )
 
-            filter_func = (
-                lambda x: stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
-            )
+            def filter_func(x: str) -> bool:
+                return bool(
+                    stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+                )
+
+        else:
+
+            def filter_func(x: str) -> bool:
+                _ = x
+                return True
 
         self.all_tests: List[str] = self.get_tests_list(
             self.tests_in_suite_key_func, filter_func
@@ -1948,10 +2221,16 @@ def check_server_started(args):
 
     sys.stdout.flush()
     retry_count = args.server_check_retries
+    query = "SELECT version(), arrayStringConcat(groupArray(value), ' ') FROM system.build_options WHERE name IN ('GIT_HASH', 'GIT_BRANCH')"
     while retry_count > 0:
         try:
-            clickhouse_execute(args, "SELECT 1", max_http_retries=1)
+            res = (
+                str(clickhouse_execute(args, query).decode())
+                .strip()
+                .replace("\t", " @ ")
+            )
             print(" OK")
+            print(f"Connected to server {res}")
             sys.stdout.flush()
             return True
         except (ConnectionError, http.client.ImproperConnectionState) as e:
@@ -2373,6 +2652,23 @@ def reportLogStats(args):
     print("\n")
 
 
+def try_get_skip_list(base_dir, name):
+    test_names_to_skip = []
+    skip_list_path = os.path.join(base_dir, name)
+    if not os.path.exists(skip_list_path):
+        return test_names_to_skip
+
+    with open(skip_list_path, "r", encoding="utf-8") as fd:
+        for line in fd.read().split("\n"):
+            if line == "" or line[0] == " ":
+                continue
+            test_name = line.split()[0].strip()
+            if test_name != "":
+                test_names_to_skip.append(test_name)
+
+    return test_names_to_skip
+
+
 def main(args):
     global server_died
     global stop_time
@@ -2387,20 +2683,20 @@ def main(args):
             pid = get_server_pid()
             print("Got server pid", pid)
             print_stacktraces()
-        raise Exception(msg)
+        raise TestException(msg)
 
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
-    args.suppport_system_processes_is_all_data_sent = check_table_column(
-        args, "system", "processes", "is_all_data_sent"
-    )
 
-    if args.s3_storage and (
-        BuildFlags.THREAD in args.build_flags or BuildFlags.DEBUG in args.build_flags
-    ):
+    if args.s3_storage and (BuildFlags.RELEASE not in args.build_flags):
         args.no_random_settings = True
 
     if args.skip:
+        args.skip = set(args.skip)
+
+    if args.replace_replicated_with_shared:
+        if not args.skip:
+            args.skip = set([])
         args.skip = set(args.skip)
 
     base_dir = os.path.abspath(args.queries)
@@ -2460,22 +2756,25 @@ def main(args):
         clickhouse_execute(
             args,
             """
-                CREATE TABLE IF NOT EXISTS system.coverage
+                CREATE TABLE IF NOT EXISTS system.coverage_log
                 (
                     time DateTime,
                     test_name String,
                     coverage Array(UInt64)
-                ) ENGINE = MergeTree ORDER BY test_name;
+                ) ENGINE = MergeTree ORDER BY test_name
+                COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster';
             """,
         )
 
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage SELECT now(), '', coverage()",
+            "INSERT INTO system.coverage_log SELECT now(), '', coverageCurrent()",
         )
 
     total_tests_run = 0
+    cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
+    private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
@@ -2485,6 +2784,8 @@ def main(args):
         if test_suite is None:
             continue
 
+        test_suite.cloud_skip_list = cloud_skip_list
+        test_suite.private_skip_list = private_skip_list
         total_tests_run += do_run_tests(args.jobs, test_suite, args.parallel)
 
     if server_died.is_set():
@@ -2590,7 +2891,7 @@ def find_binary(name):
     if os.access(bin_path, os.X_OK):
         return bin_path
 
-    raise Exception(f"{name} was not found in PATH")
+    raise TestException(f"{name} was not found in PATH")
 
 
 def find_clickhouse_command(binary, command):
@@ -2604,7 +2905,14 @@ def find_clickhouse_command(binary, command):
 
 def get_additional_client_options(args):
     if args.client_option:
-        return " ".join("--" + option for option in args.client_option)
+        client_options = " ".join("--" + option for option in args.client_option)
+        if "CLICKHOUSE_CLIENT_OPT" in os.environ:
+            return os.environ["CLICKHOUSE_CLIENT_OPT"] + " " + client_options
+        else:
+            return client_options
+    else:
+        if "CLICKHOUSE_CLIENT_OPT" in os.environ:
+            return os.environ["CLICKHOUSE_CLIENT_OPT"]
     return ""
 
 
@@ -2801,6 +3109,43 @@ def parse_args():
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
+        "--cloud",
+        action="store_true",
+        default=None,
+        dest="cloud",
+        help="Run only tests that are supported in ClickHouse Cloud environment",
+    )
+
+    group.add_argument(
+        "--no-cloud",
+        action="store_false",
+        default=None,
+        dest="cloud",
+        help="Run all the tests, including the ones not supported in ClickHouse Cloud environment",
+    )
+    parser.set_defaults(cloud=False)
+
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument(
+        "--private",
+        action="store_true",
+        default=None,
+        dest="private",
+        help="Run only tests that are supported in the private build",
+    )
+
+    group.add_argument(
+        "--no-private",
+        action="store_false",
+        default=None,
+        dest="private",
+        help="Run all the tests, including the ones not supported in the private build",
+    )
+    # Only used to skip tests via "../queries-no-private-tests.txt", so it's fine to keep it enabled by default
+    parser.set_defaults(private=True)
+
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument(
         "--zookeeper",
         action="store_true",
         default=None,
@@ -2832,6 +3177,8 @@ def parse_args():
         help="Do not run shard related tests",
     )
 
+    # TODO: Remove upgrade-check option after release 24.3 and use
+    #       ignore_drop_queries_probability option in stress.py as in stress tests
     group.add_argument(
         "--upgrade-check",
         action="store_true",
@@ -2859,8 +3206,14 @@ def parse_args():
     parser.add_argument(
         "--collect-per-test-coverage",
         action="store_true",
-        default=False,
-        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
+        default=True,
+        help="Create `system.coverage_log` table on the server and collect information about low-level code coverage on a per test basis there",
+    )
+    parser.add_argument(
+        "--reset-coverage-before-every-test",
+        action="store_true",
+        default=True,
+        help="Collect isolated test coverage for every test instead of a cumulative. Useful only when tests are run sequentially.",
     )
     parser.add_argument(
         "--report-logs-stats",
@@ -2873,6 +3226,18 @@ def parse_args():
         action="store_true",
         default=False,
         help="Do not include tests that are not supported with parallel replicas feature",
+    )
+    parser.add_argument(
+        "--replace-replicated-with-shared",
+        action="store_true",
+        default=os.environ.get("USE_META_IN_KEEPER_FOR_MERGE_TREE", False),
+        help="Replace ReplicatedMergeTree engine with SharedMergeTree",
+    )
+    parser.add_argument(
+        "--replace-non-replicated-with-shared",
+        action="store_true",
+        default=False,
+        help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
 
     return parser.parse_args()
@@ -3003,8 +3368,8 @@ if __name__ == "__main__":
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
-
         os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
+
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
 
@@ -3016,6 +3381,7 @@ if __name__ == "__main__":
 
         client_options_query_str = get_additional_client_options_url(args)
         args.client_options_query_str = client_options_query_str + "&"
+        args.client_options_query_str += os.environ["CLICKHOUSE_URL_PARAMS"]
         os.environ["CLICKHOUSE_URL_PARAMS"] += client_options_query_str
     else:
         args.client_options_query_str = ""
@@ -3025,5 +3391,8 @@ if __name__ == "__main__":
 
     if args.db_engine and args.db_engine == "Ordinary":
         MESSAGES_TO_RETRY.append(" locking attempt on ")
+
+    if args.replace_replicated_with_shared:
+        args.s3_storage = True
 
     main(args)

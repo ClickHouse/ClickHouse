@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import subprocess
-import os
 import argparse
 import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
 
 SCRIPT_PATH = Path(__file__).absolute()
-IMAGE_TYPE = "binary"
-IMAGE_NAME = f"clickhouse/{IMAGE_TYPE}-builder"
+IMAGE_TYPE = "binary-builder"
+IMAGE_NAME = f"clickhouse/{IMAGE_TYPE}"
 
 
 class BuildException(Exception):
@@ -115,12 +115,17 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(debug_build: bool, package_type: str, sanitizer: str) -> bool:
-    return not debug_build and package_type == "deb" and sanitizer == ""
+def is_release_build(
+    debug_build: bool, package_type: str, sanitizer: str, coverage: bool
+) -> bool:
+    return (
+        not debug_build and package_type == "deb" and sanitizer == "" and not coverage
+    )
 
 
 def parse_env_variables(
     debug_build: bool,
+    coverage: bool,
     compiler: str,
     sanitizer: str,
     package_type: str,
@@ -143,7 +148,7 @@ def parse_env_variables(
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
     RISCV_SUFFIX = "-riscv64"
-    S390X_SUFFIX = "-s390x"
+    # S390X_SUFFIX = "-s390x"  # disabled because s390x refused to build in the migration to OpenSSL
     AMD64_COMPAT_SUFFIX = "-amd64-compat"
     AMD64_MUSL_SUFFIX = "-amd64-musl"
 
@@ -161,7 +166,7 @@ def parse_env_variables(
     is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_riscv = compiler.endswith(RISCV_SUFFIX)
-    is_cross_s390x = compiler.endswith(S390X_SUFFIX)
+    # is_cross_s390x = compiler.endswith(S390X_SUFFIX)  # disabled because s390x refused to build in the migration to OpenSSL
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
     is_amd64_musl = compiler.endswith(AMD64_MUSL_SUFFIX)
@@ -225,11 +230,12 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-riscv64.cmake"
         )
-    elif is_cross_s390x:
-        cc = compiler[: -len(S390X_SUFFIX)]
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake"
-        )
+    # disabled because s390x refused to build in the migration to OpenSSL
+    # elif is_cross_s390x:
+    #     cc = compiler[: -len(S390X_SUFFIX)]
+    #     cmake_flags.append(
+    #         "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake"
+    #     )
     elif is_amd64_compat:
         cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
         result.append("DEB_ARCH=amd64")
@@ -261,7 +267,7 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(debug_build, package_type, sanitizer):
+        if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -286,6 +292,9 @@ def parse_env_variables(
         result.append("BUILD_TYPE=Debug")
     else:
         result.append("BUILD_TYPE=None")
+
+    if coverage:
+        cmake_flags.append("-DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0")
 
     if not cache:
         cmake_flags.append("-DCOMPILER_CACHE=disabled")
@@ -402,7 +411,7 @@ def parse_args() -> argparse.Namespace:
             "clang-17-aarch64-v80compat",
             "clang-17-ppc64le",
             "clang-17-riscv64",
-            "clang-17-s390x",
+            # "clang-17-s390x",  # disabled because s390x refused to build in the migration to OpenSSL
             "clang-17-amd64-compat",
             "clang-17-amd64-musl",
             "clang-17-freebsd",
@@ -414,6 +423,11 @@ def parse_args() -> argparse.Namespace:
         "--sanitizer",
         choices=("address", "thread", "memory", "undefined", ""),
         default="",
+    )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="enable granular coverage with introspection",
     )
 
     parser.add_argument("--clang-tidy", action="store_true")
@@ -507,6 +521,7 @@ def main() -> None:
 
     env_prepared = parse_env_variables(
         args.debug_build,
+        args.coverage,
         args.compiler,
         args.sanitizer,
         args.package_type,

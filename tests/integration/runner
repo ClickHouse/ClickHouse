@@ -39,9 +39,7 @@ def check_args_and_update_paths(args):
         else:
             CLICKHOUSE_ROOT = args.clickhouse_root
     else:
-        logging.info(
-            "ClickHouse root is not set. Will use %s" % (DEFAULT_CLICKHOUSE_ROOT)
-        )
+        logging.info("ClickHouse root is not set. Will use %s", DEFAULT_CLICKHOUSE_ROOT)
         CLICKHOUSE_ROOT = DEFAULT_CLICKHOUSE_ROOT
 
     if not os.path.isabs(args.binary):
@@ -74,9 +72,7 @@ def check_args_and_update_paths(args):
         args.base_configs_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO)
         )
-        logging.info(
-            "Base configs dir is not set. Will use %s" % (args.base_configs_dir)
-        )
+        logging.info("Base configs dir is not set. Will use %s", args.base_configs_dir)
 
     if args.cases_dir:
         if not os.path.isabs(args.cases_dir):
@@ -87,7 +83,7 @@ def check_args_and_update_paths(args):
         args.cases_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, INTEGRATION_DIR_IN_REPO)
         )
-        logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
+        logging.info("Cases dir is not set. Will use %s", args.cases_dir)
 
     if args.utils_dir:
         if not os.path.isabs(args.utils_dir):
@@ -98,12 +94,13 @@ def check_args_and_update_paths(args):
         args.utils_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, UTILS_DIR_IN_REPO)
         )
-        logging.info("utils dir is not set. Will use %s" % (args.utils_dir))
+        logging.info("utils dir is not set. Will use %s", args.utils_dir)
 
     logging.info(
-        "base_configs_dir: {}, binary: {}, cases_dir: {} ".format(
-            args.base_configs_dir, args.binary, args.cases_dir
-        )
+        "base_configs_dir: %s, binary: %s, cases_dir: %s ",
+        args.base_configs_dir,
+        args.binary,
+        args.cases_dir,
     )
 
     for path in [
@@ -115,7 +112,7 @@ def check_args_and_update_paths(args):
         CLICKHOUSE_ROOT,
     ]:
         if not os.path.exists(path):
-            raise Exception("Path {} doesn't exist".format(path))
+            raise FileNotFoundError(f"Path {path} doesn't exist")
 
     if args.dockerd_volume:
         if not os.path.isabs(args.dockerd_volume):
@@ -126,21 +123,22 @@ def check_args_and_update_paths(args):
     if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (
         not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))
     ):
-        raise Exception(
-            "No config.xml or config.yaml in {}".format(args.base_configs_dir)
+        raise FileNotFoundError(
+            f"No config.xml or config.yaml in {args.base_configs_dir}"
         )
 
     if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (
         not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))
     ):
-        raise Exception(
-            "No users.xml or users.yaml in {}".format(args.base_configs_dir)
+        raise FileNotFoundError(
+            f"No users.xml or users.yaml in {args.base_configs_dir}"
         )
 
 
 def docker_kill_handler_handler(signum, frame):
+    _, _ = signum, frame
     subprocess.check_call(
-        "docker ps --all --quiet --filter name={name}".format(name=CONTAINER_NAME),
+        f"docker ps --all --quiet --filter name={CONTAINER_NAME}",
         shell=True,
     )
     raise KeyboardInterrupt("Killed by Ctrl+C")
@@ -318,7 +316,7 @@ if __name__ == "__main__":
     parallel_args = ""
     if args.parallel:
         parallel_args += "--dist=loadfile"
-        parallel_args += " -n {}".format(args.parallel)
+        parallel_args += f" -n {args.parallel}".format()
 
     rand_args = ""
     # if not args.no_random:
@@ -326,7 +324,7 @@ if __name__ == "__main__":
 
     net = ""
     if args.network:
-        net = "--net={}".format(args.network)
+        net = f"--net={args.network}"
     elif not args.disable_net_host:
         net = "--net=host"
 
@@ -350,9 +348,7 @@ if __name__ == "__main__":
         dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
     elif args.dockerd_volume:
         dockerd_internal_volume = (
-            "--mount type=bind,source={},target=/var/lib/docker".format(
-                args.dockerd_volume
-            )
+            f"--mount type=bind,source={args.dockerd_volume},target=/var/lib/docker"
         )
     else:
         try:
@@ -391,7 +387,7 @@ if __name__ == "__main__":
 
     use_analyzer = ""
     if args.analyzer:
-        use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
+        use_analyzer = "-e CLICKHOUSE_USE_OLD_ANALYZER=1"
 
     # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
     pytest_opts = " ".join(
@@ -419,7 +415,7 @@ if __name__ == "__main__":
 
     cmd = cmd_base + " " + args.command
     cmd_pre_pull = (
-        f"{cmd_base} find /compose -name docker_compose_*.yml "
+        f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
         r"-exec docker-compose -f '{}' pull \;"
     )
 

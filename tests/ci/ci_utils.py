@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 import os
-from typing import List, Union, Iterator
+import signal
+from typing import Any, List, Union, Iterator
 from pathlib import Path
 
 
@@ -27,11 +28,35 @@ def is_hex(s):
         return False
 
 
+def normalize_string(string: str) -> str:
+    lowercase_string = string.lower()
+    normalized_string = (
+        lowercase_string.replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(",", "")
+    )
+    return normalized_string
+
+
 class GHActions:
     @staticmethod
-    def print_in_group(group_name: str, lines: Union[str, List[str]]) -> None:
+    def print_in_group(group_name: str, lines: Union[Any, List[Any]]) -> None:
         lines = list(lines)
         print(f"::group::{group_name}")
         for line in lines:
             print(line)
         print("::endgroup::")
+
+
+def set_job_timeout():
+    def timeout_handler(_signum, _frame):
+        print("Timeout expired")
+        raise TimeoutError("Job's KILL_TIMEOUT expired")
+
+    kill_timeout = int(os.getenv("KILL_TIMEOUT", "0"))
+    assert kill_timeout > 0, "kill timeout must be provided in KILL_TIMEOUT env"
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(kill_timeout)

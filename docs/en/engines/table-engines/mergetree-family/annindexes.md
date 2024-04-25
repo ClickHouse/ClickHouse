@@ -2,7 +2,7 @@
 
 Nearest neighborhood search is the problem of finding the M closest points for a given point in an N-dimensional vector space. The most
 straightforward approach to solve this problem is a brute force search where the distance between all points in the vector space and the
-reference point is computed. This method guarantees perfect accuracy but it is usually too slow for practical applications. Thus, nearest
+reference point is computed. This method guarantees perfect accuracy, but it is usually too slow for practical applications. Thus, nearest
 neighborhood search problems are often solved with [approximative algorithms](https://github.com/erikbern/ann-benchmarks). Approximative
 nearest neighborhood search techniques, in conjunction with [embedding
 methods](https://cloud.google.com/architecture/overview-extracting-and-serving-feature-embeddings-for-machine-learning) allow to search huge
@@ -24,7 +24,7 @@ LIMIT N
 
 `vectors` contains N-dimensional values of type [Array](../../../sql-reference/data-types/array.md) or
 [Tuple](../../../sql-reference/data-types/tuple.md), for example embeddings. Function `Distance` computes the distance between two vectors.
-Often, the the Euclidean (L2) distance is chosen as distance function but [other
+Often, the Euclidean (L2) distance is chosen as distance function but [other
 distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point, e.g. `(0.17,
 0.33, ...)`, and `N` limits the number of search results.
 
@@ -109,7 +109,7 @@ clickhouse-client --param_vec='hello' --query="SELECT * FROM table_with_ann_inde
 
 **Restrictions**: Queries that contain both a `WHERE Distance(vectors, Point) < MaxDistance` and an `ORDER BY Distance(vectors, Point)`
 clause cannot use ANN indexes. Also, the approximate algorithms used to determine the nearest neighbors require a limit, hence queries
-without `LIMIT` clause cannot utilize ANN indexes. Also ANN indexes are only used if the query has a `LIMIT` value smaller than setting
+without `LIMIT` clause cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
 `max_limit_for_ann_queries` (default: 1 million rows). This is a safeguard to prevent large memory allocations by external libraries for
 approximate neighbor search.
 
@@ -120,9 +120,9 @@ then each indexed block will contain 16384 rows. However, data structures and al
 provided by external libraries) are inherently row-oriented. They store a compact representation of a set of rows and also return rows for
 ANN queries. This causes some rather unintuitive differences in the way ANN indexes behave compared to normal skip indexes.
 
-When a user defines a ANN index on a column, ClickHouse internally creates a ANN "sub-index" for each index block. The sub-index is "local"
+When a user defines an ANN index on a column, ClickHouse internally creates an ANN "sub-index" for each index block. The sub-index is "local"
 in the sense that it only knows about the rows of its containing index block. In the previous example and assuming that a column has 65536
-rows, we obtain four index blocks (spanning eight granules) and a ANN sub-index for each index block. A sub-index is theoretically able to
+rows, we obtain four index blocks (spanning eight granules) and an ANN sub-index for each index block. A sub-index is theoretically able to
 return the rows with the N closest points within its index block directly. However, since ClickHouse loads data from disk to memory at the
 granularity of granules, sub-indexes extrapolate matching rows to granule granularity. This is different from regular skip indexes which
 skip data at the granularity of index blocks.
@@ -231,7 +231,7 @@ The Annoy index currently does not work with per-table, non-default `index_granu
 
 ## USearch {#usearch}
 
-This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
+This type of ANN index is based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
 algorithm](https://arxiv.org/abs/1603.09320), i.e., builds a hierarchical graph where each point represents a vector and the edges represent
 similarity. Such hierarchical structures can be very efficient on large collections. They may often fetch 0.05% or less data from the
 overall dataset, while still providing 99% recall. This is especially useful when working with high-dimensional vectors,
