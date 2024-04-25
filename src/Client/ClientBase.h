@@ -174,7 +174,6 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void verboseHelpMessageIfNeeded(OptionsDescription & options_description);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);

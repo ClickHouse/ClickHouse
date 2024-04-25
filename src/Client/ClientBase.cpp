@@ -2844,33 +2844,13 @@ private:
 }
 
 
-void ClientBase::verboseHelpMessageIfNeeded(OptionsDescription & options_description)
-{
-    if (config().getBool("verbose", false))
-    {
-        auto getter = [](const auto & op)
-        {
-            String op_long_name = op->long_name();
-            return "--" + String(op_long_name);
-        };
-
-        if (options_description.main_description)
-        {
-            const auto & main_options = options_description.main_description->options();
-            std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
-        }
-
-        if (options_description.external_description)
-        {
-            const auto & external_options = options_description.external_description->options();
-            std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
-        }
-    }
-}
-
-
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
+    if (allow_repeated_settings)
+        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
+    else
+        addProgramOptions(cmd_settings, options_description.main_description.value());
+
     if (allow_merge_tree_settings)
     {
         /// Add merge tree settings manually, because names of some settings
@@ -3028,6 +3008,25 @@ void ClientBase::init(int argc, char ** argv)
 
     addOptions(options_description);
 
+    OptionsDescription options_description_not_verbose = options_description;
+    auto getter = [](const auto & op)
+    {
+        String op_long_name = op->long_name();
+        return "--" + String(op_long_name);
+    };
+
+    if (options_description.main_description)
+    {
+        const auto & main_options = options_description.main_description->options();
+        std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
+    if (options_description.external_description)
+    {
+        const auto & external_options = options_description.external_description->options();
+        std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
     po::variables_map options;
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
@@ -3044,20 +3043,17 @@ void ClientBase::init(int argc, char ** argv)
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
-    if ((options.count("verbose") && options.count("help")) || !options.count("help"))
-    {
-        config().setBool("verbose", options.count("verbose"));
-        if (allow_repeated_settings)
-            addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
-        else
-            addProgramOptions(cmd_settings, options_description.main_description.value());
-    }
+    if (options.count("verbose"))
+        config().setBool("verbose", true);
+
     /// Output of help message.
     if (options.count("help")
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
-        verboseHelpMessageIfNeeded(options_description);
-        printHelpMessage(options_description);
+        if (config().getBool("verbose", false))
+            printHelpMessage(options_description);
+        else
+            printHelpMessage(options_description_not_verbose);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
