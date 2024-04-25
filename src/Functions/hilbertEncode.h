@@ -92,39 +92,21 @@ class FunctionHilbertEncode2DWIthLookupTableImpl
 public:
     static UInt64 encode(UInt64 x, UInt64 y)
     {
-        return encodeImpl(x, y, std::nullopt).hilbert_code;
-    }
-
-
-    struct EncodeResult
-    {
         UInt64 hilbert_code = 0;
-        UInt64 state = 0;
-    };
-
-    static EncodeResult encodeImpl(UInt64 x, UInt64 y, std::optional<UInt8> start_state)
-    {
-        EncodeResult encode_result;
         const auto leading_zeros_count = getLeadingZeroBits(x | y);
         const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
 
         auto [current_shift, state] = getInitialShiftAndState(used_bits);
-        if (start_state.has_value())
-        {
-            state = *start_state;
-        }
-
         while (current_shift >= 0)
         {
             const UInt8 x_bits = (x >> current_shift) & STEP_MASK;
             const UInt8 y_bits = (y >> current_shift) & STEP_MASK;
             const auto hilbert_bits = getCodeAndUpdateState(x_bits, y_bits, state);
-            encode_result.hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
+            hilbert_code |= (hilbert_bits << getHilbertShift(current_shift));
             current_shift -= bit_step;
         }
 
-        encode_result.state = state;
-        return encode_result;
+        return hilbert_code;
     }
 
 private:
