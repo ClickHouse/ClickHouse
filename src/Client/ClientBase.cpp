@@ -3044,10 +3044,19 @@ void ClientBase::init(int argc, char ** argv)
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
+    if ((options.count("verbose") && options.count("help")) || !options.count("help"))
+    {
+        config().setBool("verbose", options.count("verbose"));
+        if (allow_repeated_settings)
+            cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+        else
+            cmd_settings.addProgramOptions(options_description.main_description.value());
+    }
     /// Output of help message.
     if (options.count("help")
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
+        verboseHelpMessageIfNeeded(options_description);
         printHelpMessage(options_description);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
@@ -3115,8 +3124,6 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
         config().setString("history_file", options["history_file"].as<std::string>());
-    if (options.count("verbose"))
-        config().setBool("verbose", true);
     if (options.count("interactive"))
         config().setBool("interactive", true);
     if (options.count("pager"))
