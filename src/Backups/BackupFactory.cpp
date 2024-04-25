@@ -21,7 +21,10 @@ BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const
     auto it = creators.find(engine_name);
     if (it == creators.end())
         throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
-    return (it->second)(params);
+
+    auto backup = (it->second)(params);
+    backup->open();
+    return backup;
 }
 
 void BackupFactory::registerBackupEngine(const String & engine_name, const CreatorFn & creator_fn)

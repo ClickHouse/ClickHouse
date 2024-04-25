@@ -24,6 +24,11 @@ class IBackup : public std::enable_shared_from_this<IBackup>
 public:
     virtual ~IBackup() = default;
 
+    // Open the backup for reading and create a lock file.
+    // This needs to be called explicitly, and is not handled by the constructor,
+    // to avoid leaving lock files around if the constructor throws an exception.
+    virtual void open() = 0;
+
     /// Name of the backup.
     //virtual const String & getName() const = 0;
     virtual const String & getNameForLogging() const = 0;

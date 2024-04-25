@@ -56,6 +56,7 @@ public:
 
     ~BackupImpl() override;
 
+    void open() override;
     const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override { return timestamp; }
@@ -86,7 +87,6 @@ public:
     void tryRemoveAllFiles() override;
 
 private:
-    void open();
     void close();
 
     void openArchive();
