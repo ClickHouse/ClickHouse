@@ -1,4 +1,6 @@
+#include <Common/CurrentThread.h>
 #include <Common/PageCache.h>
+
 #include <gtest/gtest.h>
 #include <thread>
 

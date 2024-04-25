@@ -592,7 +592,7 @@ String RecalculateCommand::run()
 
 String CleanResourcesCommand::run()
 {
-    keeper_dispatcher.cleanResources();
+    KeeperDispatcher::cleanResources();
     return "ok";
 }
 

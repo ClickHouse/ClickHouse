@@ -342,21 +342,23 @@ getColumnsForNewDataPart(
         }
     }
 
-    if (!storage_columns_set.contains(RowExistsColumn::name))
-    {
-        if (deleted_mask_updated || (part_columns.has(RowExistsColumn::name) && !has_delete_command))
-        {
-            storage_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
-            storage_columns_set.insert(RowExistsColumn::name);
-        }
-    }
+    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
 
-    if (!storage_columns_set.contains(BlockNumberColumn::name))
+    for (const auto & [name, type] : persistent_virtuals)
     {
-        if (source_part->tryGetSerialization(BlockNumberColumn::name) != nullptr)
+        if (storage_columns_set.contains(name))
+            continue;
+
+        bool need_column = false;
+        if (name == RowExistsColumn::name)
+            need_column = deleted_mask_updated || (part_columns.has(name) && !has_delete_command);
+        else
+            need_column = part_columns.has(name);
+
+        if (need_column)
         {
-            storage_columns.push_back({BlockNumberColumn::name, BlockNumberColumn::type});
-            storage_columns_set.insert(BlockNumberColumn::name);
+            storage_columns.emplace_back(name, type);
+            storage_columns_set.insert(name);
         }
     }
 
@@ -592,7 +594,9 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage && source_part->hasProjection(projection.name));
+            || (!is_full_part_storage
+                && source_part->hasProjection(projection.name)
+                && !source_part->hasBrokenProjection(projection.name));
 
         if (need_recalculate)
             projections_to_recalc.insert(&projection);
@@ -936,7 +940,8 @@ void finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
 
     /// Load rest projections which are hardlinked
-    new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+    bool noop;
+    new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
@@ -975,13 +980,13 @@ struct MutationContext
 
     QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor{nullptr};
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
     ProgressCallback progress_callback;
     Block updated_header;
 
     std::unique_ptr<MutationsInterpreter> interpreter;
-    UInt64 watch_prev_elapsed{0};
-    std::unique_ptr<MergeStageProgress> stage_progress{nullptr};
+    UInt64 watch_prev_elapsed = 0;
+    std::unique_ptr<MergeStageProgress> stage_progress;
 
     MutationCommands commands_for_part;
     MutationCommands for_interpreter;
@@ -993,12 +998,12 @@ struct MutationContext
     NameSet materialized_statistics;
 
     MergeTreeData::MutableDataPartPtr new_data_part;
-    IMergedBlockOutputStreamPtr out{nullptr};
+    IMergedBlockOutputStreamPtr out;
 
     String mrk_extension;
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<StatisticPtr> stats_to_recalc;
@@ -1278,7 +1283,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
         ctx->out->write(cur_block);
 
@@ -1534,7 +1539,9 @@ private:
 
             bool need_recalculate =
                 ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
+                || (!is_full_part_storage
+                    && ctx->source_part->hasProjection(projection.name)
+                    && !ctx->source_part->hasBrokenProjection(projection.name));
 
             if (need_recalculate)
             {
@@ -1671,8 +1678,9 @@ private:
 
     void finalize()
     {
+        bool noop;
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
-        ctx->new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
@@ -2138,7 +2146,7 @@ bool MutateTask::prepare()
         scope_guard lock;
 
         {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
+            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
                 ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
