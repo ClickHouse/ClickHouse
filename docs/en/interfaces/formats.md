@@ -75,7 +75,7 @@ The supported formats are:
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
 | [One](#data-format-one)                                                                   | ✔    | ✗     |
-| [Npy](#data-format-npy)                                                                   | ✔    | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔    | ✔     |
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
