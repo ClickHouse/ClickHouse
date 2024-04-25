@@ -231,7 +231,7 @@ public:
 
     bool hasMore()
     {
-        if (!buffer.size())
+        if (buffer.empty())
             return !(expanded_keys_iter == expanded_keys.end() && is_finished_for_key);
         else
             return true;
@@ -1286,19 +1286,21 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
     createIterator(nullptr);
 
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
-    if (estimated_keys_count > 1)
-        num_streams = std::min(num_streams, estimated_keys_count);
-    else
+    const auto glob_iter = std::dynamic_pointer_cast<StorageS3Source::DisclosedGlobIterator>(iterator_wrapper);
+
+    if (!(glob_iter && glob_iter->hasMore()))
     {
-        const auto glob_iter = std::dynamic_pointer_cast<StorageS3Source::DisclosedGlobIterator>(iterator_wrapper);
-        if (!(glob_iter && glob_iter->hasMore()))
+        if (estimated_keys_count > 1)
+            num_streams = std::min(num_streams, estimated_keys_count);
+        else
         {
-            /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
+            /// The amount of keys (zero) was probably underestimated. We will keep one stream for this particular case.
             num_streams = 1;
         }
-        /// Otherwise, 1000 files were already listed, but none of them is actually what we are looking for.
-        /// We cannot estimate _how many_ there are left, but if there are more files to list, it's faster to do it in many streams.
     }
+     /// OTHERWISE, 1000 files were listed, but we cannot make any estimation of _how many_ there are (because we list bucket lazily);
+     /// If there are more objects in the bucket, limiting the number of streams is the last thing we may want to do
+     /// as it would lead to serious (up to <max_threads> times) reading performance degradation.
 
     const size_t max_threads = context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
