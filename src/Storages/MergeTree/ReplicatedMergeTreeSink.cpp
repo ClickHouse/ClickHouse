@@ -267,9 +267,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-    if (storage_settings->queue_mode)
-        materializeQueuePartitionColumns(block, storage.replica_name);
-
     const auto & settings = context->getSettingsRef();
 
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
@@ -338,7 +335,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         if (storage_settings->queue_mode)
         {
-            /// _queue_replica column is already configured in block
             auto partition_id = MergeTreePartition(current_block.partition).getID(metadata_snapshot->getPartitionKey().sample_block);
 
             /// turn off deduplication at this point, it will be performed in commitPart
