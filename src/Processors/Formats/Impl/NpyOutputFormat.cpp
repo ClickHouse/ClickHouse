@@ -165,7 +165,7 @@ void NpyOutputFormat::checkShape(ColumnPtr & column)
     {
         const auto & array_offset = array_column->getOffsets();
 
-        for (size_t i = 1; i < array_offset.size(); ++i)
+        for (size_t i = 0; i < array_offset.size(); ++i)
             if (array_offset[i] - array_offset[i - 1] != numpy_shape[dim])
             {
                 invalid_shape = true;
