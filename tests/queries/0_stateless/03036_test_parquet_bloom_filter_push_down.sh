@@ -33,19 +33,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # house_df.coalesce(1).write.mode('overwrite').option('parquet.bloom.filter.enabled#f32', "true").option('parquet.bloom.filter.enabled#f64', "true").option("parquet.block.size", 1024*1024).parquet("simple-fd-bf.parquet")
 
-#make_query=$(${CLICKHOUSE_CLIENT} --query=)
-#jq_query="del(.meta,.statistics.elapsed)"
+fd_filename="simple-fd-bf.parquet"
 
-${CLICKHOUSE_CLIENT} --query="select count(*) from file('simple-fd-bf.parquet', Parquet) SETTINGS use_cache_for_count_from_files=false;"
+${CLICKHOUSE_CLIENT} --query="select count(*) from file('${fd_filename}', Parquet) SETTINGS use_cache_for_count_from_files=false;"
 # bloom filter is off, all row groups should be read
 # expect rows_read = select count()
-${CLICKHOUSE_CLIENT} --query="select * from file('simple-fd-bf.parquet', Parquet) where f32=toFloat32(1.3040012) or f64=toFloat64(0.631960187601809) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+${CLICKHOUSE_CLIENT} --query="select * from file('${fd_filename}', Parquet) where f32=toFloat32(1.3040012) or f64=toFloat64(0.631960187601809) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
 # bloom filter is on, some row groups should be skipped
 # expect rows_read much less than select count()
-${CLICKHOUSE_CLIENT} --query="select * from file('simple-fd-bf.parquet', Parquet) where f32=toFloat32(1.3040012) or f64=toFloat64(0.631960187601809) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+${CLICKHOUSE_CLIENT} --query="select * from file('${fd_filename}', Parquet) where f32=toFloat32(1.3040012) or f64=toFloat64(0.631960187601809) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
 # bloom filter is on and it is filtering by data in the other row group, which is bigger than the former. Expect most row groups to be read, but not all
 # expect rows_read less than select count(), but higher than previous query
-${CLICKHOUSE_CLIENT} --query="select * from file('simple-fd-bf.parquet', Parquet) where f32 = toFloat32(1.7640524) and f64 = toFloat64(-0.48379749195754734) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+${CLICKHOUSE_CLIENT} --query="select * from file('${fd_filename}', Parquet) where f32 = toFloat32(1.7640524) and f64 = toFloat64(-0.48379749195754734) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
 # bloom filter is on, but includes data from both (all row groups), all row groups should be read
 # expect rows_read = select count()
-${CLICKHOUSE_CLIENT} --query="select * from file('simple-fd-bf.parquet', Parquet) where f32=toFloat32(1.3040012) or f64=toFloat64(0.631960187601809) or f32 = toFloat32(1.7640524) and f64 = toFloat64(-0.48379749195754734) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+${CLICKHOUSE_CLIENT} --query="select * from file('${fd_filename}', Parquet) where f32=toFloat32(1.3040012) or f64=toFloat64(0.631960187601809) or f32 = toFloat32(1.7640524) and f64 = toFloat64(-0.48379749195754734) Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+
