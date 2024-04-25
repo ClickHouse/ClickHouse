@@ -598,6 +598,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
+            ("verbose",                                                         "print more detailed message")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
@@ -629,13 +630,19 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
 
+        if (options.count("verbose"))
+            settings.addProgramOptions(desc);
+
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+        boost::program_options::notify(options);
+
         clearPasswordFromCommandLine(argc, argv);
 
         if (options.count("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            std::cout << "All setting parameters are documented in detail at https://clickhouse.com/docs/\n";
+            std::cout << "All setting parameters are documented in detail at https://clickhouse.com/docs/ or you can access them in `system.settings` table.\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }

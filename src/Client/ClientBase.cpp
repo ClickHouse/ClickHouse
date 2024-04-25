@@ -2844,6 +2844,31 @@ private:
 }
 
 
+void ClientBase::verboseHelpMessageIfNeeded(OptionsDescription & options_description)
+{
+    if (config().getBool("verbose", false))
+    {
+        auto getter = [](const auto & op)
+        {
+            String op_long_name = op->long_name();
+            return "--" + String(op_long_name);
+        };
+
+        if (options_description.main_description)
+        {
+            const auto & main_options = options_description.main_description->options();
+            std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
+        }
+
+        if (options_description.external_description)
+        {
+            const auto & external_options = options_description.external_description->options();
+            std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+        }
+    }
+}
+
+
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_merge_tree_settings)
