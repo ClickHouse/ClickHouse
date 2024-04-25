@@ -37,19 +37,7 @@ class DiagramOutputFormat : public IOutputFormat
            {"LINEPLOT", DiagramType::LINEPLOT},
            {"HEAT_MAP", DiagramType::HEAT_MAP}};
 
-    static inline const std::unordered_map<String, String> color_mapping
-        = {{"RED", "\033[31m"},
-           {"GREEN", "\033[32m"},
-           {"YELLOW", "\033[33m"},
-           {"BLUE", "\033[34m"},
-           {"MAGENTA", "\033[35m"},
-           {"CYAN", "\033[36m"},
-           {"BRIGHT_RED", "\033[91m"},
-           {"BRIGHT_GREEN", "\033[92m"},
-           {"BRIGHT_YELLOW", "\033[93m"},
-           {"BRIGHT_BLUE", "\033[94m"},
-           {"BRIGHT_MAGENTA", "\033[95m"},
-           {"BRIGHT_CYAN", "\033[96m"}};
+
     static inline const String color_reset = "\033[0m";
     std::vector<Chunk> chunks;
     size_t height = 30;
