@@ -13,7 +13,6 @@ namespace ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int FILE_ALREADY_EXISTS;
 extern const int INCORRECT_DATA;
-;
 };
 
 namespace
