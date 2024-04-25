@@ -923,7 +923,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
-    std::cout << "All setting parameters are documented in detail at https://clickhouse.com/docs/ or you can also access them in `system.settings` table.\n\n";
+    std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings and readable from system.settings.\n\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }

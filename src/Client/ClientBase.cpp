@@ -2976,6 +2976,7 @@ void ClientBase::init(int argc, char ** argv)
     /// Common options for clickhouse-client and clickhouse-local.
     options_description.main_description->add_options()
         ("help", "produce help message")
+        ("verbose", "print query and other debugging info")
         ("version,V", "print version information and exit")
         ("version-clean", "print version in machine-readable format and exit")
 
@@ -2999,7 +3000,6 @@ void ClientBase::init(int argc, char ** argv)
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
 
         ("echo", "in batch mode, print query before execution")
-        ("verbose", "print query and other debugging info")
 
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
@@ -3048,9 +3048,9 @@ void ClientBase::init(int argc, char ** argv)
     {
         config().setBool("verbose", options.count("verbose"));
         if (allow_repeated_settings)
-            cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+            addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
         else
-            cmd_settings.addProgramOptions(options_description.main_description.value());
+            addProgramOptions(cmd_settings, options_description.main_description.value());
     }
     /// Output of help message.
     if (options.count("help")
