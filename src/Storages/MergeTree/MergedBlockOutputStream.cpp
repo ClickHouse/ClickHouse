@@ -181,17 +181,12 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-    new_part->setIndex(writer->releaseIndexColumns());
+    new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
-
-    /// In mutation, existing_rows_count is already calculated in PartMergerWriter
-    /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
-    if (!new_part->existing_rows_count.has_value())
-        new_part->existing_rows_count = rows_count;
 
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;

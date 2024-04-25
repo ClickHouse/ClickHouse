@@ -3,8 +3,8 @@ import argparse
 import json
 import logging
 import os
-import sys
 import time
+import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -12,15 +12,15 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
-from env_helper import GITHUB_RUN_URL, RUNNER_TEMP
+from env_helper import RUNNER_TEMP, GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, StatusType, TestResult, TestResults
+from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
+from docker_images_helper import DockerImageData, docker_login, get_images_oredered_list
 
 TEMP_PATH = Path(RUNNER_TEMP) / "docker_images_check"
 TEMP_PATH.mkdir(parents=True, exist_ok=True)
@@ -191,22 +191,19 @@ def main():
     #     additional_cache.append(str(pr_info.merged_pr))
 
     ok_cnt = 0
-    status = SUCCESS  # type: StatusType
-
-    if os.path.isfile(args.image_tags):
-        with open(args.image_tags, "r", encoding="utf-8") as jfd:
-            image_tags = json.load(jfd)
-    else:
-        image_tags = json.loads(args.image_tags)
-
-    if args.missing_images == "all":
-        missing_images = image_tags
-    elif os.path.isfile(args.missing_images):
-        with open(args.missing_images, "r", encoding="utf-8") as jfd:
-            missing_images = json.load(jfd)
-    else:
-        missing_images = json.loads(args.missing_images)
-
+    status = "success"
+    image_tags = (
+        json.loads(args.image_tags)
+        if not os.path.isfile(args.image_tags)
+        else json.load(open(args.image_tags))
+    )
+    missing_images = (
+        image_tags
+        if args.missing_images == "all"
+        else json.loads(args.missing_images)
+        if not os.path.isfile(args.missing_images)
+        else json.load(open(args.missing_images))
+    )
     images_build_list = get_images_oredered_list()
 
     for image in images_build_list:
@@ -222,11 +219,9 @@ def main():
         parent_version = (
             None
             if not image.parent
-            else (
-                image_tags[image.parent]
-                if not args.suffix
-                else f"{image_tags[image.parent]}-{args.suffix}"
-            )
+            else image_tags[image.parent]
+            if not args.suffix
+            else f"{image_tags[image.parent]}-{args.suffix}"
         )
 
         res = process_single_image(
@@ -240,7 +235,7 @@ def main():
         if all(x.status == "OK" for x in res):
             ok_cnt += 1
         else:
-            status = FAILURE
+            status = "failure"
             break  # No need to continue with next images
 
     description = format_description(
@@ -275,7 +270,7 @@ def main():
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if status == FAILURE:
+    if status == "failure":
         sys.exit(1)
 
 

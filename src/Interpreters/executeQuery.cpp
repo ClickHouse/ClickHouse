@@ -4,7 +4,6 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/FailPoint.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -97,22 +96,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
-    extern const int SYNTAX_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
 }
 
-namespace FailPoints
-{
-    extern const char execute_query_calling_empty_set_result_func_on_exception[];
-}
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
@@ -200,7 +192,6 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     /// so we pass elem.exception_format_string as format string instead.
     PreformattedMessage message;
     message.format_string = elem.exception_format_string;
-    message.format_string_args = elem.exception_format_string_args;
 
     if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
@@ -505,7 +496,6 @@ void logQueryException(
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
-    elem.exception_format_string_args = exception_message.format_string_args;
 
     QueryStatusPtr process_list_elem = context->getProcessListElement();
 
@@ -599,7 +589,6 @@ void logExceptionBeforeStart(
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
-    elem.exception_format_string_args = exception_message.format_string_args;
 
     elem.client_info = context->getClientInfo();
 
@@ -609,9 +598,6 @@ void logExceptionBeforeStart(
 
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
-
-    if (settings.log_query_settings)
-        elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
 
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
@@ -645,6 +631,15 @@ void logExceptionBeforeStart(
         {
             ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
         }
+    }
+}
+
+static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
+{
+    if (auto * ast_insert_into = ast->as<ASTInsertQuery>())
+    {
+        if (ast_insert_into->watch)
+            context->setSetting("output_format_enable_streaming", 1);
     }
 }
 
@@ -741,55 +736,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
-
-#ifndef NDEBUG
-            /// Verify that AST formatting is consistent:
-            /// If you format AST, parse it back, and format it again, you get the same string.
-
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
-
-            /// The query can become more verbose after formatting, so:
-            size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
-
-            ASTPtr ast2;
-            try
-            {
-                ast2 = parseQuery(parser,
-                    formatted1.data(),
-                    formatted1.data() + formatted1.size(),
-                    "", new_max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
-                        formatted1);
-                else
-                    throw;
-            }
-
-            chassert(ast2);
-
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
-
-            if (formatted1 != formatted2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                    formatted1, formatted2);
-#endif
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
 
         const char * query_end = end;
@@ -893,6 +851,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
 
+        setQuerySpecificSettings(ast, context);
+
         /// There is an option of probabilistic logging of queries.
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
@@ -916,7 +876,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
         {
-            ApplyWithGlobalVisitor::visit(ast);
+            ApplyWithGlobalVisitor().visit(ast);
         }
 
         {
@@ -989,7 +949,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         std::unique_ptr<IInterpreter> interpreter;
 
         bool async_insert = false;
-        auto * queue = context->tryGetAsynchronousInsertQueue();
+        auto * queue = context->getAsynchronousInsertQueue();
         auto logger = getLogger("executeQuery");
 
         if (insert_query && async_insert_enabled)
@@ -1016,21 +976,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
             if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-
-            /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
-            /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
-            /// which was formed by concatenating several mini-INSERTs together.
-            /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
-            /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
-            /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
-            /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
-            /// block may be concatenated differently.
-            /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
-            if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
-                settings.deduplicate_blocks_in_dependent_materialized_views)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Deduplication is dependent materialized view cannot work together with async inserts. "\
-                        "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)
@@ -1191,26 +1136,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// top of the pipeline which stores the result in the query cache.
                     if (can_use_query_cache && settings.enable_writes_to_query_cache)
                     {
-                        /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-
                         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
-                        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
-
                         const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
-                        const QueryCacheSystemTableHandling system_table_handling = settings.query_cache_system_table_handling;
 
                         if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
                             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
                                 "The query result was not cached because the query contains a non-deterministic function."
                                 " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
-                                "The query result was not cached because the query contains a system table."
-                                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
-                            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
+                        if (!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
                         {
                             QueryCache::Key key(
                                 ast, res.pipeline.getHeader(),
@@ -1219,7 +1153,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
-                            const size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+                            const size_t num_query_runs = query_cache->recordQueryRun(key);
                             if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
                                 LOG_TRACE(getLogger("QueryCache"),
@@ -1457,35 +1391,22 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
     OutputFormatPtr output_format;
-    String format_name;
 
-    auto update_format_on_exception_if_needed = [&]()
+    auto update_format_for_exception_if_needed = [&]()
     {
         if (!output_format)
         {
             try
             {
-                format_name = context->getDefaultFormat();
+                String format_name = context->getDefaultFormat();
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
                 {
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
-                        // it will throw std::bad_function_call
-                        set_result_details = nullptr;
-                        set_result_details(result_details);
-                    });
-
-                    if (set_result_details)
-                    {
-                        /// reset set_result_details func to avoid calling in SCOPE_EXIT()
-                        auto set_result_details_copy = set_result_details;
-                        set_result_details = nullptr;
-                        set_result_details_copy(result_details);
-                    }
+                    set_result_details(result_details);
+                    set_result_details = nullptr;
                 }
             }
             catch (const DB::Exception & e)
@@ -1504,9 +1425,9 @@ void executeQuery(
     {
         if (handle_exception_in_output_format)
         {
-            update_format_on_exception_if_needed();
+            update_format_for_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+                handle_exception_in_output_format(*output_format);
         }
         throw;
     }
@@ -1548,7 +1469,7 @@ void executeQuery(
                 );
             }
 
-            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
@@ -1605,17 +1526,13 @@ void executeQuery(
     }
     catch (...)
     {
-        /// first execute on exception callback, it includes updating query_log
-        /// otherwise closing record ('ExceptionWhileProcessing') can be not appended in query_log
-        /// due to possible exceptions in functions called below (passed as parameter here)
-        streams.onException();
-
         if (handle_exception_in_output_format)
         {
-            update_format_on_exception_if_needed();
+            update_format_for_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+                handle_exception_in_output_format(*output_format);
         }
+        streams.onException();
         throw;
     }
 

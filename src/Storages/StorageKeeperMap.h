@@ -50,6 +50,8 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
     void drop() override;
 
+    NamesAndTypesList getVirtuals() const override;
+
     std::string getName() const override { return "KeeperMap"; }
     Names getPrimaryKey() const override { return {primary_key}; }
 
@@ -123,10 +125,10 @@ private:
     std::string primary_key;
 
     std::string zk_data_path;
-    std::string zk_metadata_path;
-    std::string zk_tables_path;
 
-    std::string table_unique_id;
+    std::string zk_metadata_path;
+
+    std::string zk_tables_path;
     std::string zk_table_path;
 
     std::string zk_dropped_path;

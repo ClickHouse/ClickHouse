@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
@@ -47,7 +48,7 @@ Suggest::Suggest()
               "GRANT",        "REVOKE",        "OPTION",       "ADMIN",      "EXCEPT",   "REPLACE",     "IDENTIFIED", "HOST",
               "NAME",         "READONLY",      "WRITABLE",     "PERMISSIVE", "FOR",      "RESTRICTIVE", "RANDOMIZED", "INTERVAL",
               "LIMITS",       "ONLY",          "TRACKING",     "IP",         "REGEXP",   "ILIKE",       "CLEANUP",    "APPEND",
-              "IGNORE NULLS", "RESPECT NULLS", "OVER",         "PASTE",      "WINDOW",   "QUALIFY"});
+              "IGNORE NULLS", "RESPECT NULLS", "OVER",         "PASTE"});
 }
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
@@ -110,7 +111,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 }
 
 template <typename ConnectionType>
-void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
+void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
 {
     loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
@@ -152,9 +153,6 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
     });
-
-    if (wait_for_load)
-        loading_thread.join();
 }
 
 void Suggest::load(IServerConnection & connection,
@@ -231,8 +229,8 @@ void Suggest::fillWordsFromBlock(const Block & block)
 }
 
 template
-void Suggest::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
+void Suggest::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 
 template
-void Suggest::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
+void Suggest::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 }

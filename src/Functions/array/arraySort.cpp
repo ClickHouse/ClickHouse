@@ -46,10 +46,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
                     ErrorCodes::LOGICAL_ERROR,
                     "Expected fixed arguments to get the limit for partial array sort"
                 );
-
-            /// During dryRun the input column might be empty
-            if (!fixed_arguments[0].column->empty())
-                return fixed_arguments[0].column->getUInt(0);
+            return fixed_arguments[0].column.get()->getUInt(0);
         }
         return 0;
     }();

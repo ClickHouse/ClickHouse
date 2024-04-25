@@ -37,7 +37,7 @@ struct SessionLogElement
     SessionLogElement(const UUID & auth_id_, Type type_);
     SessionLogElement(const SessionLogElement &) = default;
     SessionLogElement & operator=(const SessionLogElement &) = default;
-    SessionLogElement(SessionLogElement &&) = default; /// NOLINT(performance-noexcept-move-constructor,hicpp-noexcept-move)
+    SessionLogElement(SessionLogElement &&) = default;
     SessionLogElement & operator=(SessionLogElement &&) = default;
 
     UUID auth_id;
@@ -64,6 +64,7 @@ struct SessionLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

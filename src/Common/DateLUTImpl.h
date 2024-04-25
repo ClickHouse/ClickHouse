@@ -9,6 +9,7 @@
 #include <string>
 #include <type_traits>
 
+
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
@@ -48,11 +49,6 @@ enum class WeekDayMode
     WeekStartsSunday0 = 2,
     WeekStartsSunday1 = 3
 };
-
-namespace DB
-{
-class DateTime64;
-}
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -259,7 +255,7 @@ private:
 
     static LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch)); /// NOLINT
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch));
     }
 
     LUTIndex toLUTIndex(Time t) const
@@ -284,9 +280,9 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
+        if (likely(offset_is_whole_number_of_hours_during_epoch))
         {
-            if (x >= 0) [[likely]]
+            if (likely(x >= 0))
                 return static_cast<DateOrTime>(x / divisor * divisor);
 
             /// Integer division for negative numbers rounds them towards zero (up).
@@ -580,10 +576,10 @@ public:
 
     unsigned toSecond(Time t) const
     {
-        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
         {
             Time res = t % 60;
-            if (res >= 0) [[likely]]
+            if (likely(res >= 0))
                 return static_cast<unsigned>(res);
             return static_cast<unsigned>(res) + 60;
         }
@@ -596,8 +592,6 @@ public:
 
         return time % 60;
     }
-
-    unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
 
     unsigned toMinute(Time t) const
     {
@@ -1048,20 +1042,16 @@ public:
 
     template <typename Date>
     requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
-    auto toStartOfWeekInterval(Date d, UInt64 weeks, UInt8 week_mode) const
+    auto toStartOfWeekInterval(Date d, UInt64 weeks) const
     {
         if (weeks == 1)
-            return toFirstDayNumOfWeek(d, week_mode);
-
-        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
-        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday, or
-        // 3 days to start on Sunday.
-        auto offset = monday_first_mode ? 4 : 3;
+            return toFirstDayNumOfWeek(d);
         UInt64 days = weeks * 7;
+        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(offset + (d - offset) / days * days);
+            return DayNum(4 + (d - 4) / days * days);
         else
-            return ExtendedDayNum(static_cast<Int32>(offset + (d - offset) / days * days));
+            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
     }
 
     template <typename Date>
@@ -1132,9 +1122,9 @@ public:
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
         Int64 divisor = 60 * minutes;
-        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
         {
-            if (t >= 0) [[likely]]
+            if (likely(t >= 0))
                 return static_cast<DateOrTime>(t / divisor * divisor);
             return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
         }
@@ -1349,7 +1339,7 @@ public:
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (day_of_month <= 28) [[likely]]
+        if (likely(day_of_month <= 28))
             return day_of_month;
 
         UInt8 days_in_month = daysInMonth(year, month);

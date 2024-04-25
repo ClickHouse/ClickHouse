@@ -9,7 +9,6 @@ enum class LeastSupertypeOnError
     Throw,
     String,
     Null,
-    Variant,
 };
 
 /** Get data type that covers all possible values of passed data types.

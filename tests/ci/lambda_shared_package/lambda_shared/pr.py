@@ -43,8 +43,6 @@ TRUSTED_CONTRIBUTORS = {
         "tsolodov",  # ClickHouse, Inc
         "kitaisreal",
         "k-morozov",  # Konstantin Morozov, Yandex Cloud
-        "justindeguzman",  # ClickHouse, Inc
-        "jrdi",  # ClickHouse contributor, TinyBird
     ]
 }
 
@@ -78,7 +76,6 @@ LABELS = {
         "Not for changelog",
     ],
     "pr-performance": ["Performance Improvement"],
-    "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
 }
 
 CATEGORY_TO_LABEL = {c: lb for lb, categories in LABELS.items() for c in categories}
@@ -150,7 +147,10 @@ def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
     if not category:
         description_error = "Changelog category is empty"
     # Filter out the PR categories that are not for changelog.
-    elif "(changelog entry is not required)" in category:
+    elif re.match(
+        r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
+        category,
+    ):
         pass  # to not check the rest of the conditions
     elif category not in CATEGORY_TO_LABEL:
         description_error, category = f"Category '{category}' is not valid", ""

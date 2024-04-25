@@ -30,7 +30,7 @@ if (SANITIZE)
     elseif (SANITIZE STREQUAL "thread")
         set (TSAN_FLAGS "-fsanitize=thread")
         if (COMPILER_CLANG)
-            set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/tsan_ignorelist.txt")
+            set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/tests/tsan_suppressions.txt")
         endif()
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
@@ -48,7 +48,7 @@ if (SANITIZE)
             set(UBSAN_FLAGS "${UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
         if (COMPILER_CLANG)
-            set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
+            set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/tests/ubsan_suppressions.txt")
         endif()
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
@@ -63,14 +63,14 @@ endif()
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
 if (WITH_COVERAGE)
-    message (STATUS "Enabled instrumentation for code coverage")
+    message (INFORMATION "Enabled instrumentation for code coverage")
     set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
 endif()
 
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
 
 if (SANITIZE_COVERAGE)
-    message (STATUS "Enabled instrumentation for code coverage")
+    message (INFORMATION "Enabled instrumentation for code coverage")
 
     # We set this define for whole build to indicate that at least some parts are compiled with coverage.
     # And to expose it in system.build_options.

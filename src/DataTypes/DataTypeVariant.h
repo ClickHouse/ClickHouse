@@ -42,7 +42,6 @@ public:
     bool equals(const IDataType & rhs) const override;
 
     bool isParametric() const override { return true; }
-    bool isComparable() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
@@ -53,9 +52,7 @@ public:
     const DataTypes & getVariants() const { return variants; }
 
     /// Check if Variant has provided type in the list of variants and return its discriminator.
-    std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const IDataType & type) const;
-
-    void forEachChild(const ChildCallback & callback) const override;
+    std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const DataTypePtr & type) const;
 
 private:
     std::string doGetName() const override;

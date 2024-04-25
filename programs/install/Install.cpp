@@ -46,12 +46,12 @@ INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
   *
   * The following steps are performed:
   *
-  * - copying the binary to binary directory (/usr/bin/)
+  * - copying the binary to binary directory (/usr/bin).
   * - creation of symlinks for tools.
   * - creation of clickhouse user and group.
-  * - creation of config directory (/etc/clickhouse-server/).
+  * - creation of config directory (/etc/clickhouse-server).
   * - creation of default configuration files.
-  * - creation of a directory for logs (/var/log/clickhouse-server/).
+  * - creation of a directory for logs (/var/log/clickhouse-server).
   * - creation of a data directory if not exists.
   * - setting a password for default user.
   * - choose an option to listen connections.
@@ -78,6 +78,10 @@ namespace ErrorCodes
 }
 
 }
+
+/// ANSI escape sequence for intense color in terminal.
+#define HILITE "\033[1m"
+#define END_HILITE "\033[0m"
 
 #if defined(OS_DARWIN)
 /// Until createUser() and createGroup() are implemented, only sudo-less installations are supported/default for macOS.
@@ -212,26 +216,11 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 {
     try
     {
-        const char * start_hilite = "";
-        const char * end_hilite = "";
-
-        if (isatty(STDOUT_FILENO))
-        {
-            /// ANSI escape sequence for intense color in terminal.
-            start_hilite = "\033[1m";
-            end_hilite = "\033[0m";
-        }
-
         po::options_description desc;
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-#if defined (OS_DARWIN)
-            /// https://stackoverflow.com/a/36734569/22422288
-            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "where to install binaries")
-#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "where to install binaries")
-#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "where to install configs")
             ("log-path", po::value<std::string>()->default_value("var/log/clickhouse-server"), "where to create log directory")
             ("data-path", po::value<std::string>()->default_value("var/lib/clickhouse"), "directory for data")
@@ -247,10 +236,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)\n\n";
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
             std::cout << desc << '\n';
-            return 0;
+            return 1;
         }
 
         /// We need to copy binary to the binary directory.
@@ -438,6 +426,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-client",
             "clickhouse-local",
             "clickhouse-benchmark",
+            "clickhouse-copier",
             "clickhouse-obfuscator",
             "clickhouse-git-import",
             "clickhouse-compressor",
@@ -667,6 +656,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "        <server>\n"
                     "            <certificateFile>" << (config_dir / "server.crt").string() << "</certificateFile>\n"
                     "            <privateKeyFile>" << (config_dir / "server.key").string() << "</privateKeyFile>\n"
+                    "            <dhParamsFile>" << (config_dir / "dhparam.pem").string() << "</dhParamsFile>\n"
                     "        </server>\n"
                     "    </openSSL>\n"
                     "</clickhouse>\n";
@@ -717,7 +707,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
 
-            /// Check if password for the default user already specified.
+            /// Check if password for default user already specified.
             ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
             ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
@@ -809,13 +799,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Set up password for default user.
         if (has_password_for_default_user)
         {
-            fmt::print("{}Password for the default user is already specified. To remind or reset, see {} and {}.{}\n",
-                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
+                       users_config_file.string(), users_d.string());
         }
         else if (!can_ask_password)
         {
-            fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
-                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                       users_config_file.string(), users_d.string());
         }
         else
         {
@@ -824,7 +814,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             char buf[1000] = {};
             std::string password;
-            if (auto * result = readpassphrase("Enter password for the default user: ", buf, sizeof(buf), 0))
+            if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
                 password = result;
 
             if (!password.empty())
@@ -849,7 +839,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                 out.sync();
                 out.finalize();
-                fmt::print("{}Password for the default user is saved in file {}.{}\n", start_hilite, password_file, end_hilite);
+                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
 #else
                 out << "<clickhouse>\n"
                     "    <users>\n"
@@ -860,13 +850,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                 out.sync();
                 out.finalize();
-                fmt::print("{}Password for the default user is saved in plaintext in file {}.{}\n", start_hilite, password_file, end_hilite);
+                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
-                    start_hilite, users_config_file.string(), users_d.string(), end_hilite);
+                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                           users_config_file.string(), users_d.string());
         }
 
         /** Set capabilities for the binary.
@@ -1221,12 +1211,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-#if defined (OS_DARWIN)
-            /// https://stackoverflow.com/a/36734569/22422288
-            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
-#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
-#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
@@ -1342,12 +1327,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-#if defined (OS_DARWIN)
-            /// https://stackoverflow.com/a/36734569/22422288
-            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
-#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
-#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")

@@ -68,14 +68,8 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     }
     else
     {
-        if (database)
-        {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
-        }
-
-        chassert(table);
-        table->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_none : "")
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
     }
 
     if (columns)
@@ -123,8 +117,13 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         settings.ostr << delim;
         select->formatImpl(settings, state, frame);
     }
+    else if (watch)
+    {
+        settings.ostr << delim;
+        watch->formatImpl(settings, state, frame);
+    }
 
-    if (!select)
+    if (!select && !watch)
     {
         if (!format.empty())
         {

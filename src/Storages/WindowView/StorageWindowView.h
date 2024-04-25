@@ -111,7 +111,7 @@ public:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        LoadingStrictnessLevel mode);
+        bool attach_);
 
     String getName() const override { return "WindowView"; }
 
@@ -271,9 +271,5 @@ private:
     StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
-
-    bool disabled_due_to_analyzer = false;
-
-    void throwIfWindowViewIsDisabled(ContextPtr local_context = nullptr) const;
 };
 }

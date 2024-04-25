@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Common/PipeFDs.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <atomic>
 #include <memory>
@@ -87,6 +85,10 @@ public:
 
     void watchFunc();
 
+protected:
+    void start();
+    void stop();
+
 private:
     FileLogDirectoryWatcher & owner;
 
@@ -100,11 +102,7 @@ private:
     int event_mask;
     uint64_t milliseconds_to_wait;
 
-    int inotify_fd;
-    PipeFDs event_pipe;
-
-    void start();
-    void stop();
+    int fd;
 };
 
 }

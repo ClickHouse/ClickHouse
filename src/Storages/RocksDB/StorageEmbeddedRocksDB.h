@@ -32,14 +32,12 @@ public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextPtr context_,
         const String & primary_key_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
         bool read_only_ = false);
-
-    ~StorageEmbeddedRocksDB() override;
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
@@ -93,7 +91,7 @@ public:
     bool supportsDelete() const override { return true; }
 
     /// To turn on the optimization optimize_trivial_approximate_count_query=1 should be set for a query.
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
 

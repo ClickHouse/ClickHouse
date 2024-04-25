@@ -65,9 +65,9 @@ public:
     size_t size() const;
 
     /// Check part by name
-    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr, bool throw_on_broken_projection = true);
+    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr);
 
-    ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
+    ReplicatedCheckResult checkPartImpl(const String & part_name);
 
     std::unique_lock<std::mutex> pausePartsCheck();
 

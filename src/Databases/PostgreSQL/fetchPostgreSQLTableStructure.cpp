@@ -213,9 +213,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                         PostgreSQLTableStructure::PGAttribute{
                             .atttypid = parse<int>(std::get<4>(row)),
                             .atttypmod = parse<int>(std::get<5>(row)),
-                            .atthasdef = false,
-                            .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0]),
-                            .attr_def = {}
+                            .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0])
                     });
 
                     ++i;

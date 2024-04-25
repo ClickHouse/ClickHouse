@@ -48,6 +48,8 @@ public:
 
     StoredObjects getStorageObjects(const String & local_path) const override;
 
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
+
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
     std::optional<UInt64> getTotalSpace() const override { return {}; }

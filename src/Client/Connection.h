@@ -1,9 +1,10 @@
 #pragma once
 
+
 #include <Poco/Net/StreamSocket.h>
 
+#include <Common/SSH/Wrappers.h>
 #include <Common/callOnce.h>
-#include <Common/SSHWrapper.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -18,6 +19,7 @@
 
 #include <Storages/MergeTree/RequestResponse.h>
 
+#include <atomic>
 #include <optional>
 
 #include "config.h"
@@ -52,7 +54,7 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const SSHKey & ssh_private_key_,
+        const ssh::SSHKey & ssh_private_key_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
@@ -88,7 +90,7 @@ public:
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
     /// For log and exception messages.
-    const String & getDescription(bool with_extra = false) const override; /// NOLINT
+    const String & getDescription() const override;
     const String & getHost() const;
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
@@ -169,9 +171,7 @@ private:
     String default_database;
     String user;
     String password;
-#if USE_SSH
-    SSHKey ssh_private_key;
-#endif
+    ssh::SSHKey ssh_private_key;
     String quota_key;
 
     /// For inter-server authorization
@@ -188,7 +188,6 @@ private:
 
     /// For messages in log and in exceptions.
     String description;
-    String full_description;
     void setDescription();
 
     /// Returns resolved address if it was resolved.
@@ -267,10 +266,9 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+    String packStringForSshSign(String challenge);
 
-#if USE_SSH
     void performHandshakeForSSHAuth();
-#endif
 
     void sendAddendum();
     void receiveHello(const Poco::Timespan & handshake_timeout);

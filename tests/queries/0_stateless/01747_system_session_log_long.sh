@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest, no-debug
+# Tags: long, no-parallel, no-fasttest
 
 ##################################################################################################
 # Verify that login, logout, and login failure events are properly stored in system.session_log

@@ -1,5 +1,4 @@
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
@@ -131,12 +130,13 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     if (last_time + interval_s_ <= now)
     {
         debug_message = fmt::format(
-            " (LogSeriesLimiter: on interval from {} to {} accepted series {} / {} for the logger {})",
+            " (LogSeriesLimiter: on interval from {} to {} accepted series {} / {} for the logger {} : {})",
             DateLUT::instance().timeToString(last_time),
             DateLUT::instance().timeToString(now),
             accepted_count,
             total_count,
-            logger->name());
+            logger->name(),
+            double(name_hash));
 
         register_as_first();
         return;

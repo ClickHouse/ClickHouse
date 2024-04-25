@@ -2,6 +2,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+// #include <base/Decimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -9,7 +10,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
-#include <Common/DateLUTImpl.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -128,11 +128,6 @@ namespace DB
         if constexpr (std::is_same_v<NumericType, UInt8>)
             status = builder.AppendValues(
                 reinterpret_cast<const uint8_t *>(internal_data.data() + start),
-                end - start,
-                reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
-        else if constexpr (std::is_same_v<NumericType, Int8>)
-            status = builder.AppendValues(
-                reinterpret_cast<const int8_t *>(internal_data.data() + start),
                 end - start,
                 reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         else

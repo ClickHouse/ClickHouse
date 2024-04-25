@@ -145,7 +145,7 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const UnionNode &>(rhs);
 
@@ -153,7 +153,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         union_mode == rhs_typed.union_mode;
 }
 
-void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void UnionNode::updateTreeHashImpl(HashState & state) const
 {
     state.update(is_subquery);
     state.update(is_cte);
@@ -185,8 +185,11 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (is_subquery)
     {
-        auto subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
+        auto subquery = std::make_shared<ASTSubquery>();
+
         subquery->cte_name = cte_name;
+        subquery->children.push_back(std::move(select_with_union_query));
+
         return subquery;
     }
 
