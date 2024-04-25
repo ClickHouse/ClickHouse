@@ -1,8 +1,6 @@
 #include <any>
 #include <limits>
-#include <memory>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <Columns/ColumnConst.h>
@@ -1505,19 +1503,13 @@ ColumnPtr buildAdditionalFilter(
     if (selected_rows.empty())
         return ColumnUInt8::create();
     const Block & sample_right_block = *selected_rows.begin()->block;
-    if (!sample_right_block)
+    if (!sample_right_block || !added_columns.additional_filter_expression)
     {
         auto filter = ColumnUInt8::create();
         filter->insertMany(1, selected_rows.size());
         return filter;
     }
 
-    if (!added_columns.additional_filter_expression)
-    {
-        auto filter = ColumnUInt8::create();
-        filter->insertMany(1, selected_rows.size());
-        return filter;
-    }
     auto required_cols = added_columns.additional_filter_expression->getRequiredColumnsWithTypes();
     if (required_cols.empty())
     {
