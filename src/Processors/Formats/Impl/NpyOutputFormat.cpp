@@ -155,7 +155,7 @@ void NpyOutputFormat::initShape(const ColumnPtr & column)
     }
 
     if (invalid_shape)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Shape ({}) is an invalid shape, as dimension size cannot be 0", shapeStr());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Shape ({}) is invalid, as dimension size cannot be 0", shapeStr());
 }
 
 void NpyOutputFormat::checkShape(ColumnPtr & column)
