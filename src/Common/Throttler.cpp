@@ -61,7 +61,7 @@ UInt64 Throttler::add(size_t amount)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
-    Int64 sleep_time_ns = 0;
+    UInt64 sleep_time_ns = 0;
     if (max_speed && tokens_value < 0)
     {
         sleep_time_ns = static_cast<Int64>(-tokens_value / max_speed * NS);
@@ -72,7 +72,7 @@ UInt64 Throttler::add(size_t amount)
     }
 
     if (parent)
-        sleep_time_ns += parent->add(amount);
+        sleep_time_ns = std::max(sleep_time_ns, parent->add(amount));
 
     return static_cast<UInt64>(sleep_time_ns);
 }
