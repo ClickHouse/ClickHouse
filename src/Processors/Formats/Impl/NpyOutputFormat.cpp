@@ -45,16 +45,6 @@ void writeNumpyStrings(const ColumnPtr & column, size_t length, WriteBuffer & bu
 
 }
 
-String NpyOutputFormat::NumpyDataType::str() const
-{
-    WriteBufferFromOwnString dtype;
-    writeChar(endianness, dtype);
-    writeChar(type, dtype);
-    writeIntText(size, dtype);
-
-    return dtype.str();
-}
-
 String NpyOutputFormat::shapeStr() const
 {
     WriteBufferFromOwnString shape;
@@ -85,20 +75,48 @@ bool NpyOutputFormat::getNumpyDataType(const DataTypePtr & type)
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::Int8: numpy_data_type = NumpyDataType('<', 'i', sizeof(Int8)); break;
-        case TypeIndex::Int16: numpy_data_type = NumpyDataType('<', 'i', sizeof(Int16)); break;
-        case TypeIndex::Int32: numpy_data_type = NumpyDataType('<', 'i', sizeof(Int32)); break;
-        case TypeIndex::Int64: numpy_data_type = NumpyDataType('<', 'i', sizeof(Int64)); break;
-        case TypeIndex::UInt8: numpy_data_type = NumpyDataType('<', 'u', sizeof(UInt8)); break;
-        case TypeIndex::UInt16: numpy_data_type = NumpyDataType('<', 'u', sizeof(UInt16)); break;
-        case TypeIndex::UInt32: numpy_data_type = NumpyDataType('<', 'u', sizeof(UInt32)); break;
-        case TypeIndex::UInt64: numpy_data_type = NumpyDataType('<', 'u', sizeof(UInt64)); break;
-        case TypeIndex::Float32: numpy_data_type = NumpyDataType('<', 'f', sizeof(Float32)); break;
-        case TypeIndex::Float64: numpy_data_type = NumpyDataType('<', 'f', sizeof(Float64)); break;
-        case TypeIndex::FixedString: numpy_data_type = NumpyDataType('|', 'S', assert_cast<const DataTypeFixedString *>(type.get())->getN()); break;
-        case TypeIndex::String: numpy_data_type = NumpyDataType('|', 'S', 0); break;
-        case TypeIndex::Array: return getNumpyDataType(assert_cast<const DataTypeArray *>(type.get())->getNestedType());
-        default: nested_data_type = type; return false;
+        case TypeIndex::Int8:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(Int8), true);
+            break;
+        case TypeIndex::Int16:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(Int16), true);
+            break;
+        case TypeIndex::Int32:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(Int32), true);
+            break;
+        case TypeIndex::Int64:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(Int64), true);
+            break;
+        case TypeIndex::UInt8:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(UInt8), false);
+            break;
+        case TypeIndex::UInt16:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(UInt16), false);
+            break;
+        case TypeIndex::UInt32:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(UInt32), false);
+            break;
+        case TypeIndex::UInt64:
+            numpy_data_type = std::make_shared<NumpyDataTypeInt>(NumpyDataType::Endianness::LITTLE, sizeof(UInt64), false);
+            break;
+        case TypeIndex::Float32:
+            numpy_data_type = std::make_shared<NumpyDataTypeFloat>(NumpyDataType::Endianness::LITTLE, sizeof(Float32));
+            break;
+        case TypeIndex::Float64:
+            numpy_data_type = std::make_shared<NumpyDataTypeFloat>(NumpyDataType::Endianness::LITTLE, sizeof(Float64));
+            break;
+        case TypeIndex::FixedString:
+            numpy_data_type = std::make_shared<NumpyDataTypeString>(
+                NumpyDataType::Endianness::NONE, assert_cast<const DataTypeFixedString *>(type.get())->getN());
+            break;
+        case TypeIndex::String:
+            numpy_data_type = std::make_shared<NumpyDataTypeString>(NumpyDataType::Endianness::NONE, 0);
+            break;
+        case TypeIndex::Array:
+            return getNumpyDataType(assert_cast<const DataTypeArray *>(type.get())->getNestedType());
+        default:
+            nested_data_type = type;
+            return false;
     }
 
     nested_data_type = type;
@@ -117,6 +135,9 @@ void NpyOutputFormat::consume(Chunk chunk)
             initShape(column);
             is_initialized = true;
         }
+        // ColumnPtr checkShape, if nullptr?
+        // updateSizeIfTypeString
+        // columns.push_back()
 
         if (!checkShape(column))
         {
@@ -130,13 +151,9 @@ void NpyOutputFormat::initShape(const ColumnPtr & column)
 {
     auto type = data_type;
     ColumnPtr nested_column = column;
-    while (type->getTypeId() == TypeIndex::Array)
+    while (const auto * array_column = typeid_cast<const ColumnArray *>(nested_column.get()))
     {
-        const auto * array_column = assert_cast<const ColumnArray *>(nested_column.get());
-
         numpy_shape.push_back(array_column->getOffsets()[0]);
-
-        type = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
         nested_column = array_column->getDataPtr();
     }
 }
@@ -166,7 +183,8 @@ bool NpyOutputFormat::checkShape(const ColumnPtr & column)
         for (size_t i = 0; i < string_offsets.size(); ++i)
         {
             size_t string_length = static_cast<size_t>(string_offsets[i] - 1 - string_offsets[i - 1]);
-            numpy_data_type.size = numpy_data_type.size > string_length ? numpy_data_type.size : string_length;
+            if (numpy_data_type->getSize() < string_length)
+                numpy_data_type->setSize(string_length);
         }
     }
 
@@ -185,7 +203,7 @@ void NpyOutputFormat::finalizeImpl()
 
 void NpyOutputFormat::writeHeader()
 {
-    String dict = "{'descr':'" + numpy_data_type.str() + "','fortran_order':False,'shape':(" + shapeStr() + "),}";
+    String dict = "{'descr':'" + numpy_data_type->str() + "','fortran_order':False,'shape':(" + shapeStr() + "),}";
     String padding = "\n";
 
     /// completes the length of the header, which is divisible by 64.
@@ -221,9 +239,14 @@ void NpyOutputFormat::writeColumns()
             case TypeIndex::UInt64: writeNumpyNumbers<ColumnUInt64, UInt64>(column, out); break;
             case TypeIndex::Float32: writeNumpyNumbers<ColumnFloat32, Float32>(column, out); break;
             case TypeIndex::Float64: writeNumpyNumbers<ColumnFloat64, Float64>(column, out); break;
-            case TypeIndex::FixedString: writeNumpyStrings<ColumnFixedString>(column, numpy_data_type.size, out); break;
-            case TypeIndex::String: writeNumpyStrings<ColumnString>(column, numpy_data_type.size, out); break;
-            default: break;
+            case TypeIndex::FixedString:
+                writeNumpyStrings<ColumnFixedString>(column, numpy_data_type->getSize(), out);
+                break;
+            case TypeIndex::String:
+                writeNumpyStrings<ColumnString>(column, numpy_data_type->getSize(), out);
+                break;
+            default:
+                break;
         }
     }
 }

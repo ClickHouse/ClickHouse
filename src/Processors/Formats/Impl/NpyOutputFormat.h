@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/NumpyDataTypes.h>
 #include <Columns/IColumn.h>
 #include <Common/PODArray_fwd.h>
 
@@ -28,18 +29,6 @@ public:
     String getContentType() const override { return "application/octet-stream"; }
 
 private:
-    struct NumpyDataType
-    {
-      char endianness;
-      char type;
-      size_t size;
-
-      NumpyDataType() = default;
-      NumpyDataType(char endianness_, char type_, size_t size_)
-        : endianness(endianness_), type(type_), size(size_) {}
-      String str() const;
-    };
-
     String shapeStr() const;
 
     bool getNumpyDataType(const DataTypePtr & type);
@@ -57,7 +46,7 @@ private:
 
     DataTypePtr data_type;
     DataTypePtr nested_data_type;
-    NumpyDataType numpy_data_type;
+    std::shared_ptr<NumpyDataType> numpy_data_type;
     UInt64 num_rows = 0;
     std::vector<UInt64> numpy_shape;
     Columns columns;
