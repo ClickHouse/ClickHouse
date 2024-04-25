@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageFactory.h>
@@ -129,10 +130,19 @@ void StorageStreamQueue::move_data()
         select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
+    auto order_by = std::make_shared<ASTExpressionList>();
+    auto order_by_elem = std::make_shared<ASTOrderByElement>();
+    order_by_elem->children.push_back(std::make_shared<ASTIdentifier>(key_column));
+    order_by_elem->direction = 1;
+    order_by->children.push_back(order_by_elem);
+    select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
+
+    ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(settings->streamqueue_max_rows_per_iter);
+    select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(new_limit_offset_ast));
+
     InterpreterSelectQuery select_interpreter(select, queue_context, SelectQueryOptions());
     auto select_block_io = select_interpreter.execute();
     PullingPipelineExecutor pulling_executor(select_block_io.pipeline);
-
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
@@ -140,7 +150,6 @@ void StorageStreamQueue::move_data()
     InterpreterInsertQuery insert_interpreter(insert, queue_context, false, true, true);
     auto insert_block_io = insert_interpreter.execute();
     PushingPipelineExecutor pushing_executor(insert_block_io.pipeline);
-
 
     Block block;
     while (pulling_executor.pull(block))
