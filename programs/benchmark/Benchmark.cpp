@@ -630,7 +630,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::notify(options);
 
         if (options.count("verbose"))
-            settings.addProgramOptions(desc);
+            addProgramOptions(settings, desc);
 
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
