@@ -955,7 +955,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     std::optional<ActiveDataPartSet> data_parts_snapshot;
 
     /// if storage in queue mode, make actual snapshot of state.
-    /// logic is simmilar to ReplicatedMergeRree merge predicate.
+    /// logic is similar to ReplicatedMergeRree merge predicate.
     if (data_settings->queue_mode)
     {
         DataPartsVector data_parts;

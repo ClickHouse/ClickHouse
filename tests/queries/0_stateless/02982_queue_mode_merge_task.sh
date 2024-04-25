@@ -10,7 +10,7 @@ insert_opts=(
     "--max_block_size=1"
 )
 
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "DROP TABLE IF EXISTS test_q"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_q"
 $CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "CREATE TABLE test_q (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS queue_mode=1"
 
 echo "start parallel insert"
@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO test_q (*) select number,
 $CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO test_q (*) select number, number from numbers(100)" &
 
 echo "waiting insert jobs completion"
-wait $(jobs -p)
+wait
 
 $CLICKHOUSE_CLIENT -q "SELECT count(*) FROM test_q"
 $CLICKHOUSE_CLIENT -q "SELECT min(_queue_block_number), max(_queue_block_number) FROM test_q"
