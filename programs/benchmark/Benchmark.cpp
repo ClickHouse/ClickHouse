@@ -34,7 +34,6 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
-#include <Core/BaseSettingsProgramOptions.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -642,7 +641,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            std::cout << "All setting parameters are documented in detail at https://clickhouse.com/docs/ or you can access them in `system.settings` table.\n";
+            std::cout << "All setting parameters are documented in detail at https://clickhouse.com/docs/ or you can also access them in `system.settings` table.\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
