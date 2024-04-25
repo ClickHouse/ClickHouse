@@ -226,6 +226,7 @@ struct ExpressionAnalysisResult
 
     String where_column_name;
     bool remove_where_filter = false;
+    bool remove_inrange_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
