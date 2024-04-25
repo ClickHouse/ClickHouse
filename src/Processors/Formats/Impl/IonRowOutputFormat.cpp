@@ -88,7 +88,7 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
             writer->writeBigUInt(assert_cast<const ColumnUInt64 &>(column).getDataAt(row_num).data, sizeof(UInt64));
             return;
         }
-        case TypeIndex::Enum: [[fallthrough]];
+        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8: {
             writer->writeInt(assert_cast<const ColumnInt8 &>(column).getElement(row_num));
             return;
