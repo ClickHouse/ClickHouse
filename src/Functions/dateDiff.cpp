@@ -6,7 +6,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <Formats/FormatSettings.h>
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -177,10 +177,10 @@ public:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
             Int64 adjust_value;
-            auto x_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-            auto y_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+            auto x_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+            auto y_microseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
 
-            if (x_nanoseconds <= y_nanoseconds)
+            if (x_microseconds <= y_microseconds)
             {
                 a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
                 b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
@@ -193,6 +193,7 @@ public:
                 adjust_value = 1;
             }
 
+
             if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
             {
                 if ((a_comp.date.month > b_comp.date.month)
@@ -201,8 +202,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>>)
@@ -215,8 +215,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMonthNumImpl<ResultPrecision::Extended>>>)
@@ -226,8 +225,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
@@ -239,8 +237,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
@@ -249,8 +246,7 @@ public:
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeHourNumImpl<ResultPrecision::Extended>>>)
@@ -258,34 +254,25 @@ public:
                 if ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>>)
             {
                 if ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>>)
             {
                 if ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))
+                    || ((a_comp.millisecond == b_comp.millisecond) && (a_comp.microsecond > b_comp.microsecond)))
                     res += adjust_value;
             }
-            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<millisecond_multiplier>>>)
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<1000>>>)
             {
-                if ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))
-                    res += adjust_value;
-            }
-            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<microsecond_multiplier>>>)
-            {
-                if (a_comp.nanosecond > b_comp.nanosecond)
+                if (a_comp.microsecond > b_comp.microsecond)
                     res += adjust_value;
             }
             return res;
@@ -394,28 +381,26 @@ public:
         const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
-        if (unit == "year" || unit == "years" || unit == "yy" || unit == "yyyy")
+        if (unit == "year" || unit == "yy" || unit == "yyyy")
             impl.template dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "quarter" || unit == "quarters" || unit == "qq" || unit == "q")
+        else if (unit == "quarter" || unit == "qq" || unit == "q")
             impl.template dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "month" || unit == "months" || unit == "mm" || unit == "m")
+        else if (unit == "month" || unit == "mm" || unit == "m")
             impl.template dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "week" || unit == "weeks" || unit == "wk" || unit == "ww")
+        else if (unit == "week" || unit == "wk" || unit == "ww")
             impl.template dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "day" || unit == "days" || unit == "dd" || unit == "d")
+        else if (unit == "day" || unit == "dd" || unit == "d")
             impl.template dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "hour" || unit == "hours" || unit == "hh" || unit == "h")
+        else if (unit == "hour" || unit == "hh" || unit == "h")
             impl.template dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "minute" || unit == "minutes" || unit == "mi" || unit == "n")
+        else if (unit == "minute" || unit == "mi" || unit == "n")
             impl.template dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "second" || unit == "seconds" || unit == "ss" || unit == "s")
+        else if (unit == "second" || unit == "ss" || unit == "s")
             impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "millisecond" || unit == "milliseconds" || unit == "ms")
+        else if (unit == "millisecond" || unit == "ms")
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<millisecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "microsecond" || unit == "microseconds" || unit == "us" || unit == "u")
+        else if (unit == "microsecond" || unit == "us" || unit == "u")
             impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<microsecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "nanosecond" || unit == "nanoseconds" || unit == "ns")
-            impl.template dispatchForColumns<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);
@@ -427,14 +412,14 @@ private:
 };
 
 
-/** timeDiff(t1, t2)
+/** TimeDiff(t1, t2)
   * t1 and t2 can be Date or DateTime
   */
 class FunctionTimeDiff : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
-    static constexpr auto name = "timeDiff";
+    static constexpr auto name = "TimeDiff";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeDiff>(); }
 
     String getName() const override

@@ -129,12 +129,6 @@ public:
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
-
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
-
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::UNION;
@@ -143,9 +137,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    void updateTreeHashImpl(HashState &) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

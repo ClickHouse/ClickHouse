@@ -10,8 +10,6 @@
 #include <IO/ReadHelpers.h>
 #include <base/JSON.h>
 
-#include <boost/range/adaptor/map.hpp>
-
 
 namespace fs = std::filesystem;
 
@@ -31,7 +29,7 @@ FileChecker::FileChecker(const String & file_info_path_) : FileChecker(nullptr, 
 
 FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_)
     : disk(std::move(disk_))
-    , log(getLogger("FileChecker"))
+    , log(&Poco::Logger::get("FileChecker"))
 {
     setPath(file_info_path_);
     try
@@ -84,32 +82,33 @@ size_t FileChecker::getTotalSize() const
 }
 
 
-FileChecker::DataValidationTasksPtr FileChecker::getDataValidationTasks()
+CheckResults FileChecker::check() const
 {
-    return std::make_unique<DataValidationTasks>(map);
-}
-
-std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks) const
-{
-    String name;
-    size_t expected_size;
-    bool is_finished = check_data_tasks->next(name, expected_size);
-    if (is_finished)
+    if (map.empty())
         return {};
 
-    String path = parentPath(files_info_path) + name;
-    bool exists = fileReallyExists(path);
-    auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
+    CheckResults results;
 
-    if (real_size != expected_size)
+    for (const auto & name_size : map)
     {
-        String failure_message = exists
-            ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(expected_size))
-            : ("File " + path + " doesn't exist");
-        return CheckResult(name, false, failure_message);
+        const String & name = name_size.first;
+        String path = parentPath(files_info_path) + name;
+        bool exists = fileReallyExists(path);
+        auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
+
+        if (real_size != name_size.second)
+        {
+            String failure_message = exists
+                ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second))
+                : ("File " + path + " doesn't exist");
+            results.emplace_back(name, false, failure_message);
+            break;
+        }
+
+        results.emplace_back(name, true, "");
     }
 
-    return CheckResult(name, true, "");
+    return results;
 }
 
 void FileChecker::repair()

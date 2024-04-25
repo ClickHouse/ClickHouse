@@ -114,7 +114,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     }
 
     current_column_name.resize(nested_prefix_length);
-    readJSONStringInto(current_column_name, buf, format_settings.json);
+    readJSONStringInto(current_column_name, buf);
     return current_column_name;
 }
 
@@ -123,7 +123,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, name_ref, format_settings.json);
+    skipJSONField(*in, name_ref);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -132,7 +132,6 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
-    seen_columns_count++;
     const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
     read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
@@ -143,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
     else if (*in->position() == '}')
     {
         ++in->position();
@@ -162,14 +161,6 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(*in);
-        if (seen_columns_count >= total_columns && format_settings.json.ignore_unnecessary_fields)
-        {
-            // Keep parsing the remaining fields in case of the json is invalid.
-            // But not look up the name in the name_map since the cost cannot be ignored
-            JSONUtils::skipColon(*in);
-            skipUnknownField(name_ref);
-            continue;
-        }
         const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
@@ -188,7 +179,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             else if (column_index == NESTED_FIELD)
                 readNestedData(name_ref.toString(), columns);
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value of column_index");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
         }
         else
         {
@@ -214,13 +205,11 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    bool is_first_row = getRowNum() == 0;
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
     if (checkEndOfData(is_first_row))
         return false;
 
     size_t num_columns = columns.size();
-    total_columns = num_columns;
-    seen_columns_count = 0;
 
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
@@ -319,7 +308,7 @@ size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
         return 0;
 
     size_t num_rows = 0;
-    bool is_first_row = getRowNum() == 0;
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 0;
     skipWhitespaceIfAny(*in);
     while (num_rows < max_block_size && !checkEndOfData(is_first_row))
     {
@@ -376,14 +365,9 @@ void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTyp
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
-void JSONEachRowSchemaReader::transformTypesFromDifferentFilesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);
-}
-
 void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)

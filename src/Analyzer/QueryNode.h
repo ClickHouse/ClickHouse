@@ -99,11 +99,6 @@ public:
         return settings_changes;
     }
 
-    void clearSettingsChanges()
-    {
-        settings_changes.clear();
-    }
-
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
     {
@@ -222,18 +217,6 @@ public:
     void setIsGroupByAll(bool is_group_by_all_value)
     {
         is_group_by_all = is_group_by_all_value;
-    }
-
-    /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
-    bool isOrderByAll() const
-    {
-        return is_order_by_all;
-    }
-
-    /// Set query node ORDER BY ALL modifier value
-    void setIsOrderByAll(bool is_order_by_all_value)
-    {
-        is_order_by_all = is_order_by_all_value;
     }
 
     /// Returns true if query node WITH section is not empty, false otherwise
@@ -416,24 +399,6 @@ public:
         return children[window_child_index];
     }
 
-    /// Returns true if query node QUALIFY section is not empty, false otherwise
-    bool hasQualify() const
-    {
-        return getQualify() != nullptr;
-    }
-
-    /// Get QUALIFY section node
-    const QueryTreeNodePtr & getQualify() const
-    {
-        return children[qualify_child_index];
-    }
-
-    /// Get QUALIFY section node
-    QueryTreeNodePtr & getQualify()
-    {
-        return children[qualify_child_index];
-    }
-
     /// Returns true if query node ORDER BY section is not empty, false otherwise
     bool hasOrderBy() const
     {
@@ -591,13 +556,10 @@ public:
     }
 
     /// Resolve query node projection columns
-    void resolveProjectionColumns(NamesAndTypes projection_columns_value);
-
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
-
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+    void resolveProjectionColumns(NamesAndTypes projection_columns_value)
+    {
+        projection_columns = std::move(projection_columns_value);
+    }
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -607,9 +569,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    void updateTreeHashImpl(HashState &) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -625,7 +587,6 @@ private:
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
-    bool is_order_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
@@ -640,14 +601,13 @@ private:
     static constexpr size_t group_by_child_index = 5;
     static constexpr size_t having_child_index = 6;
     static constexpr size_t window_child_index = 7;
-    static constexpr size_t qualify_child_index = 8;
-    static constexpr size_t order_by_child_index = 9;
-    static constexpr size_t interpolate_child_index = 10;
-    static constexpr size_t limit_by_limit_child_index = 11;
-    static constexpr size_t limit_by_offset_child_index = 12;
-    static constexpr size_t limit_by_child_index = 13;
-    static constexpr size_t limit_child_index = 14;
-    static constexpr size_t offset_child_index = 15;
+    static constexpr size_t order_by_child_index = 8;
+    static constexpr size_t interpolate_child_index = 9;
+    static constexpr size_t limit_by_limit_child_index = 10;
+    static constexpr size_t limit_by_offset_child_index = 11;
+    static constexpr size_t limit_by_child_index = 12;
+    static constexpr size_t limit_child_index = 13;
+    static constexpr size_t offset_child_index = 14;
     static constexpr size_t children_size = offset_child_index + 1;
 };
 

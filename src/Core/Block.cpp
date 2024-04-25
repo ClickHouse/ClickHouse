@@ -1,17 +1,19 @@
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
+
+#include <Core/Block.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
+#include <Common/assert_cast.h>
+
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
-#include <Core/Block.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <base/sort.h>
-#include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/assert_cast.h>
 
 #include <iterator>
-
+#include <base/sort.h>
 #include <boost/algorithm/string.hpp>
 
 
@@ -593,14 +595,6 @@ Block Block::sortColumns() const
         sorted_block.insert(data[it->second]);
 
     return sorted_block;
-}
-
-Block Block::shrinkToFit() const
-{
-    Columns new_columns(data.size(), nullptr);
-    for (size_t i = 0; i < data.size(); ++i)
-        new_columns[i] = data[i].column->cloneResized(data[i].column->size());
-    return cloneWithColumns(new_columns);
 }
 
 

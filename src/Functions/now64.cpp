@@ -30,7 +30,7 @@ Field nowSubsecond(UInt32 scale)
 
     timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
-        throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+        throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
     DecimalUtils::DecimalComponents<DateTime64> components{spec.tv_sec, spec.tv_nsec};
 

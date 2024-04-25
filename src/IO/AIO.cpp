@@ -46,7 +46,7 @@ AIOContext::AIOContext(unsigned int nr_events)
 {
     ctx = 0;
     if (io_setup(nr_events, &ctx) < 0)
-        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
+        DB::throwFromErrno("io_setup failed", DB::ErrorCodes::CANNOT_IOSETUP);
 }
 
 AIOContext::~AIOContext()
@@ -137,7 +137,7 @@ AIOContext::AIOContext(unsigned int)
 {
     ctx = io_setup();
     if (ctx < 0)
-        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
+        DB::throwFromErrno("io_setup failed", DB::ErrorCodes::CANNOT_IOSETUP);
 }
 
 AIOContext::~AIOContext()

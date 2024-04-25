@@ -5,7 +5,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -28,7 +27,7 @@ struct ZooKeeperLogElement
     Poco::Net::SocketAddress address;
     Int64 session_id = 0;
 
-    UInt64 duration_microseconds = 0;
+    UInt64 duration_ms = 0;
 
     /// Common request info
     Int32 xid = 0;
@@ -69,9 +68,10 @@ struct ZooKeeperLogElement
 
 
     static std::string name() { return "ZooKeeperLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>

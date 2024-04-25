@@ -48,8 +48,7 @@ SELECT
     intDiv(number, 25) AS n,
     avgState(number) AS s
 FROM numbers(2500)
-GROUP BY n
-ORDER BY n;
+GROUP BY n;
 
 SET force_primary_key = 1, enable_optimize_predicate_expression = 1;
 
@@ -61,8 +60,7 @@ FROM
         finalizeAggregation(s)
     FROM test_00808_push_down_with_finalizeAggregation
 )
-WHERE (n >= 2) AND (n <= 5)
-ORDER BY n;
+WHERE (n >= 2) AND (n <= 5);
 
 EXPLAIN SYNTAX SELECT *
 FROM

@@ -74,10 +74,11 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Create "active" node (remove previous one if necessary)
     String active_path = fs::path(database->replica_path) / "active";
     String active_id = toString(ServerUUID::get());
-    zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
-    if (active_node_holder)
-        active_node_holder->setAlreadyRemoved();
+    zookeeper->handleEphemeralNodeExistence(active_path, active_id);
+    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
     active_node_holder.reset();
+    active_node_holder_zookeeper = zookeeper;
+    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
@@ -126,15 +127,9 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         initializeLogPointer(log_entry_name);
     }
 
-    {
-        std::lock_guard lock{database->metadata_mutex};
-        if (!database->checkDigestValid(context, false))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
-    }
-
-    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
-    active_node_holder_zookeeper = zookeeper;
-    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+    std::lock_guard lock{database->metadata_mutex};
+    if (!database->checkDigestValid(context))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)

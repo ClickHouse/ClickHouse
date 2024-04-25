@@ -1,7 +1,7 @@
 set (SRCS
     AbstractConfigurationComparison.cpp
     ConfigProcessor.cpp
-    getClientConfigPath.cpp
+    configReadClient.cpp
     ConfigReloader.cpp
     YAMLParser.cpp
     ConfigHelper.cpp

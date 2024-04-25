@@ -46,7 +46,7 @@ void JSONObjectEachRowInputFormat::readPrefix()
 
 void JSONObjectEachRowInputFormat::readRowStart(MutableColumns & columns)
 {
-    auto object_name = JSONUtils::readFieldName(*in, format_settings.json);
+    auto object_name = JSONUtils::readFieldName(*in);
     if (field_index_for_object_name)
     {
         columns[*field_index_for_object_name]->insertData(object_name.data(), object_name.size());
@@ -57,7 +57,7 @@ void JSONObjectEachRowInputFormat::readRowStart(MutableColumns & columns)
 
 void JSONObjectEachRowInputFormat::skipRowStart()
 {
-    JSONUtils::readFieldName(*in, format_settings.json);
+    JSONUtils::readFieldName(*in);
 }
 
 bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
@@ -90,7 +90,7 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
     else
         JSONUtils::skipComma(in);
 
-    JSONUtils::readFieldName(in, format_settings.json);
+    JSONUtils::readFieldName(in);
     return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
 }
 
@@ -109,7 +109,7 @@ void JSONObjectEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, D
 
 void JSONObjectEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
