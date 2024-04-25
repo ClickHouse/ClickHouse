@@ -41,7 +41,7 @@ def test_memory_tracking_total():
         [
             "bash",
             "-c",
-            "clickhouse local -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') from numbers(10000)\" > data.json",
+            "clickhouse local -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') from numbers(10000)\" > data.jsonl",
         ]
     )
 
@@ -56,7 +56,7 @@ def test_memory_tracking_total():
                     "--show-error",
                     "--data-binary",
                     "@data.json",
-                    "http://127.1:8123/?query=INSERT%20INTO%20null%20FORMAT%20TSV",
+                    "http://127.1:8123/?query=INSERT%20INTO%20null%20FORMAT%20JSONEachRow",
                 ]
             )
             == ""

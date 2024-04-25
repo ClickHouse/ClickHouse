@@ -149,7 +149,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = !storage.getSettings()->force_read_through_cache_for_merges;
+
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
     read_settings.local_fs_method = LocalFSReadMethod::pread;
@@ -195,6 +196,7 @@ static void fillBlockNumberColumns(
     Columns & res_columns,
     const NamesAndTypesList & columns_list,
     UInt64 block_number,
+    UInt64 block_offset,
     UInt64 num_rows)
 {
     chassert(res_columns.size() == columns_list.size());
@@ -208,6 +210,16 @@ static void fillBlockNumberColumns(
         if (it->name == BlockNumberColumn::name)
         {
             res_columns[i] = BlockNumberColumn::type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
+        }
+        else if (it->name == BlockOffsetColumn::name)
+        {
+            auto column = BlockOffsetColumn::type->createColumn();
+            auto & block_offset_data = assert_cast<ColumnUInt64 &>(*column).getData();
+
+            block_offset_data.resize(num_rows);
+            std::iota(block_offset_data.begin(), block_offset_data.end(), block_offset);
+
+            res_columns[i] = std::move(column);
         }
     }
 }
@@ -230,7 +242,7 @@ try
 
         if (rows_read)
         {
-            fillBlockNumberColumns(columns, sample, data_part->info.min_block, rows_read);
+            fillBlockNumberColumns(columns, sample, data_part->info.min_block, current_row, rows_read);
             reader->fillVirtualColumns(columns, rows_read);
 
             current_row += rows_read;

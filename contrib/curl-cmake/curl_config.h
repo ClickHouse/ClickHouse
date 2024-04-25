@@ -51,3 +51,8 @@
 #define USE_OPENSSL
 #define USE_THREADS_POSIX
 #define USE_ARES
+
+#ifdef __illumos__
+#define HAVE_POSIX_STRERROR_R 1
+#define HAVE_STRERROR_R 1
+#endif

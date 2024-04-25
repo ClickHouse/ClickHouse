@@ -1,5 +1,6 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -7,6 +8,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/escapeForFileName.h>
@@ -53,16 +55,27 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMut
 {
 }
 
-
 BlockIO InterpreterDropQuery::execute()
 {
+    BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
+    ASTs drops = drop.getRewrittenASTsOfSingleTable();
+    for (const auto & drop_query_ptr : drops)
+    {
+        current_query_ptr = drop_query_ptr;
+        res = executeSingleDropQuery(drop_query_ptr);
+    }
+    return res;
+}
 
-    if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(query_ptr, getContext()))
+BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
+{
+    auto & drop = drop_query_ptr->as<ASTDropQuery &>();
+    if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
     }
 
     if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
@@ -70,18 +83,17 @@ BlockIO InterpreterDropQuery::execute()
 
     if (drop.table)
         return executeToTable(drop);
-    else if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    else if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
-            DDLQueryOnClusterParams params;
-            params.access_to_check = getRequiredAccessForDDLOnCluster();
-            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccessForDDLOnCluster();
+        return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
     }
     else if (drop.database)
         return executeToDatabase(drop);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
 }
-
 
 void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait)
 {
@@ -104,7 +116,7 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     return res;
 }
 
-BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
+BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
@@ -151,11 +163,24 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
+        if (settings.ignore_drop_queries_probability != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings.ignore_drop_queries_probability)
+        {
+            ast_drop_query.sync = false;
+            if (table->storesDataOnDisk())
+            {
+                LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
+                return {};
+            }
+
+            LOG_TEST(getLogger("InterpreterDropQuery"), "Replace DROP TABLE query to TRUNCATE TABLE for table {}.{}", table_id.database_name, table_id.table_name);
+            ast_drop_query.kind = ASTDropQuery::Truncate;
+        }
+
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
         /// Prevents recursive drop from drop database query. The original query must specify a table.
-        bool is_drop_or_detach_database = !query_ptr->as<ASTDropQuery>()->table;
+        bool is_drop_or_detach_database = !current_query_ptr->as<ASTDropQuery>()->table;
 
         AccessFlags drop_storage;
 
@@ -178,7 +203,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
         }
 
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
+        if (database->shouldReplicateQuery(getContext(), current_query_ptr))
         {
             if (query.kind == ASTDropQuery::Kind::Detach)
                 context_->checkAccess(drop_storage, table_id);
@@ -248,7 +273,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            table->truncate(query_ptr, metadata_snapshot, context_, table_excl_lock);
+            table->truncate(current_query_ptr, metadata_snapshot, context_, table_excl_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -307,7 +332,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                     = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
                 /// Drop table data, don't touch metadata
                 auto metadata_snapshot = table->getInMemoryMetadataPtr();
-                table->truncate(query_ptr, metadata_snapshot, getContext(), table_lock);
+                table->truncate(current_query_ptr, metadata_snapshot, getContext(), table_lock);
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {
@@ -387,7 +412,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.kind = query.kind;
                 // For truncate operation on database, drop the tables
                 if (truncate)
-                    query_for_table.kind = ASTDropQuery::Kind::Drop;
+                    query_for_table.kind = query.has_all_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
                 query_for_table.if_exists = true;
                 query_for_table.if_empty = false;
                 query_for_table.setDatabase(database_name);
@@ -400,6 +425,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 table_context->setInternalQuery(true);
                 /// Do not hold extra shared pointers to tables
                 std::vector<std::pair<String, bool>> tables_to_drop;
+                // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
@@ -417,7 +443,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     uuids_to_wait.push_back(table_to_wait);
                 }
             }
-           // only if operation is DETACH
+            // only if operation is DETACH
             if ((!drop || !truncate) && query.sync)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
@@ -440,11 +466,39 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     return {};
 }
 
+void InterpreterDropQuery::extendQueryLogElemImpl(DB::QueryLogElement & elem, const DB::ASTPtr & ast, DB::ContextPtr context_) const
+{
+    auto & drop = ast->as<ASTDropQuery &>();
+    if (drop.database_and_tables)
+    {
+        auto & list = drop.database_and_tables->as<ASTExpressionList &>();
+        for (auto & child : list.children)
+        {
+            auto identifier = dynamic_pointer_cast<ASTTableIdentifier>(child);
+            if (!identifier)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
+
+            String query_database = identifier->getDatabaseName();
+            String query_table = identifier->shortName();
+            if (!query_database.empty() && query_table.empty())
+            {
+                elem.query_databases.insert(backQuoteIfNeed(query_database));
+            }
+            else if (!query_table.empty())
+            {
+                auto quoted_database = query_database.empty() ? backQuoteIfNeed(context_->getCurrentDatabase())
+                                                              : backQuoteIfNeed(query_database);
+                elem.query_databases.insert(quoted_database);
+                elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(query_table));
+            }
+        }
+    }
+}
 
 AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() const
 {
     AccessRightsElements required_access;
-    const auto & drop = query_ptr->as<const ASTDropQuery &>();
+    const auto & drop = current_query_ptr->as<const ASTDropQuery &>();
 
     if (!drop.table)
     {
@@ -517,7 +571,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     return drop.cluster.empty()
             && !drop.temporary
             && drop.kind == ASTDropQuery::Kind::Truncate
-            && drop.table;
+            && drop.database_and_tables;
 }
 
 void registerInterpreterDropQuery(InterpreterFactory & factory)

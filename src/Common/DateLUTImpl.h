@@ -3,7 +3,6 @@
 #include <base/DayNum.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Core/DecimalFunctions.h>
 
 #include <ctime>
 #include <cassert>
@@ -49,6 +48,11 @@ enum class WeekDayMode
     WeekStartsSunday0 = 2,
     WeekStartsSunday1 = 3
 };
+
+namespace DB
+{
+class DateTime64;
+}
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -255,7 +259,7 @@ private:
 
     static LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch));
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch)); /// NOLINT
     }
 
     LUTIndex toLUTIndex(Time t) const
@@ -593,29 +597,7 @@ public:
         return time % 60;
     }
 
-    template <typename DateOrTime>
-    unsigned toMillisecond(const DateOrTime & datetime, Int64 scale_multiplier) const
-    {
-        constexpr Int64 millisecond_multiplier = 1'000;
-        constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
-        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
-
-        auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-        if (datetime.value < 0 && components.fractional)
-        {
-            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-            --components.whole;
-        }
-        Int64 fractional = components.fractional;
-        if (scale_multiplier > microsecond_multiplier)
-            fractional = fractional / (scale_multiplier / microsecond_multiplier);
-        else if (scale_multiplier < microsecond_multiplier)
-            fractional = fractional * (microsecond_multiplier / scale_multiplier);
-
-        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
-        return millisecond;
-    }
+    unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
 
     unsigned toMinute(Time t) const
     {
@@ -1066,16 +1048,20 @@ public:
 
     template <typename Date>
     requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
-    auto toStartOfWeekInterval(Date d, UInt64 weeks) const
+    auto toStartOfWeekInterval(Date d, UInt64 weeks, UInt8 week_mode) const
     {
         if (weeks == 1)
-            return toFirstDayNumOfWeek(d);
+            return toFirstDayNumOfWeek(d, week_mode);
+
+        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
+        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday, or
+        // 3 days to start on Sunday.
+        auto offset = monday_first_mode ? 4 : 3;
         UInt64 days = weeks * 7;
-        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(4 + (d - 4) / days * days);
+            return DayNum(offset + (d - offset) / days * days);
         else
-            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
+            return ExtendedDayNum(static_cast<Int32>(offset + (d - offset) / days * days));
     }
 
     template <typename Date>
