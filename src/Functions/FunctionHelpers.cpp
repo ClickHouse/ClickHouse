@@ -285,9 +285,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnPtr & null_map)
     /// If result is already nullable.
     ColumnPtr src_not_nullable = src;
 
-    if (src->onlyNull())
-        return src;
-    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();

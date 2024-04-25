@@ -223,7 +223,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
             return false;
 
         FileSegmentPtr file_segment;
-        if (!file_segment_metadata.isEvicting(locked_key))
+        if (!file_segment_metadata.isEvictingOrRemoved(locked_key))
         {
             file_segment = file_segment_metadata.file_segment;
         }
@@ -1414,19 +1414,49 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */,
                     stat, eviction_candidates, cache_lock))
             {
-                /// Remove only queue entries of eviction candidates.
-                eviction_candidates.removeQueueEntries(cache_lock);
-                /// Note that (in-memory) metadata about corresponding file segments
-                /// (e.g. file segment info in CacheMetadata) will be removed
-                /// only after eviction from filesystem. This is needed to avoid
-                /// a race on removal of file from filesystsem and
-                /// addition of the same file as part of a newly cached file segment.
+                if (eviction_candidates.size() == 0)
+                {
+                    main_priority->modifySizeLimits(
+                        new_settings.max_size, new_settings.max_elements,
+                        new_settings.slru_size_ratio, cache_lock);
+                }
+                else
+                {
+                    /// Remove only queue entries of eviction candidates.
+                    eviction_candidates.removeQueueEntries(cache_lock);
+                    /// Note that (in-memory) metadata about corresponding file segments
+                    /// (e.g. file segment info in CacheMetadata) will be removed
+                    /// only after eviction from filesystem. This is needed to avoid
+                    /// a race on removal of file from filesystsem and
+                    /// addition of the same file as part of a newly cached file segment.
 
-                /// Modify cache size limits.
-                /// From this point cache eviction will follow them.
-                main_priority->modifySizeLimits(
-                    new_settings.max_size, new_settings.max_elements,
-                    new_settings.slru_size_ratio, cache_lock);
+                    /// Modify cache size limits.
+                    /// From this point cache eviction will follow them.
+                    main_priority->modifySizeLimits(
+                        new_settings.max_size, new_settings.max_elements,
+                        new_settings.slru_size_ratio, cache_lock);
+
+                    cache_lock.unlock();
+
+                    SCOPE_EXIT({
+                        try
+                        {
+                            if (eviction_candidates.needFinalize())
+                            {
+                                cache_lock.lock();
+                                eviction_candidates.finalize(nullptr, cache_lock);
+                            }
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                            chassert(false);
+                        }
+                    });
+
+                    /// Do actual eviction from filesystem.
+                    eviction_candidates.evict();
+                }
 
                 modified_size_limit = true;
             }
@@ -1434,24 +1464,12 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
         if (modified_size_limit)
         {
-            try
-            {
-                /// Do actual eviction from filesystem.
-                eviction_candidates.evict();
-            }
-            catch (...)
-            {
-                if (eviction_candidates.needFinalize())
-                    eviction_candidates.finalize(nullptr, lockCache());
-                throw;
-            }
-
-            if (eviction_candidates.needFinalize())
-                eviction_candidates.finalize(nullptr, lockCache());
-
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                     actual_settings.max_size, new_settings.max_size,
                     actual_settings.max_elements, new_settings.max_elements);
+
+            chassert(main_priority->getSizeApprox() <= new_settings.max_size);
+            chassert(main_priority->getElementsCountApprox() <= new_settings.max_elements);
 
             actual_settings.max_size = new_settings.max_size;
             actual_settings.max_elements = new_settings.max_elements;

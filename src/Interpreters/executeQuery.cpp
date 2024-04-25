@@ -200,6 +200,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     /// so we pass elem.exception_format_string as format string instead.
     PreformattedMessage message;
     message.format_string = elem.exception_format_string;
+    message.format_string_args = elem.exception_format_string_args;
 
     if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
@@ -504,6 +505,7 @@ void logQueryException(
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
+    elem.exception_format_string_args = exception_message.format_string_args;
 
     QueryStatusPtr process_list_elem = context->getProcessListElement();
 
@@ -597,6 +599,7 @@ void logExceptionBeforeStart(
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
+    elem.exception_format_string_args = exception_message.format_string_args;
 
     elem.client_info = context->getClientInfo();
 
