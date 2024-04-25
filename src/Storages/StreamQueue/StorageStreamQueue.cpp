@@ -12,6 +12,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StreamQueue/StorageStreamQueue.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include "Common/ZooKeeper/Types.h"
 
 namespace DB
 {
@@ -23,6 +24,8 @@ extern const int BAD_ARGUMENTS;
 }
 namespace
 {
+
+
 StorageID getSourceStorage(ContextPtr context, const ASTIdentifier & arg)
 {
     std::string database_name;
@@ -50,6 +53,10 @@ ColumnsDescription getColumns(ContextPtr context, const StorageID & table_id)
 }
 }
 
+zkutil::ZooKeeperPtr StorageStreamQueue::getZooKeeper() const
+{
+    return getContext()->getZooKeeper();
+}
 
 StorageStreamQueue::StorageStreamQueue(
     std::unique_ptr<StreamQueueSettings> settings_,
@@ -96,10 +103,31 @@ void StorageStreamQueue::shutdown(bool)
     LOG_TRACE(log, "Shut down storage");
 }
 
+std::string StorageStreamQueue::createZooKeeperPath() {
+    return "/storage/stream/queue/test/path";
+}
+
+bool StorageStreamQueue::createZooKeeperNode() {
+    auto zookeeper = getZooKeeper();
+    auto path = createZooKeeperPath();
+    zookeeper->createAncestors(path);
+    auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
+    if (code == Coordination::Error::ZNODEEXISTS) {
+        return false;
+    }
+
+    downloading = true;
+    return true;
+}
+
 void StorageStreamQueue::threadFunc()
 {
     if (shutdown_called)
         return;
+
+    if (!(downloading || createZooKeeperNode())) {
+        return;
+    }
 
     const size_t dependencies_count = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
     if (dependencies_count)
@@ -144,7 +172,8 @@ void StorageStreamQueue::move_data()
     order_by->children.push_back(order_by_elem);
     select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
 
-    ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(settings->streamqueue_max_rows_per_iter);
+    UInt64 limit_offset = settings->streamqueue_max_rows_per_iter;
+    ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(limit_offset);
     select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(new_limit_offset_ast));
 
     InterpreterSelectQuery select_interpreter(select, queue_context, SelectQueryOptions());

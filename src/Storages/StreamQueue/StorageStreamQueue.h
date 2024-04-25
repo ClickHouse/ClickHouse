@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/StreamQueue/StreamQueueSettings.h>
@@ -27,9 +28,14 @@ public:
         const String & comment);
     String getName() const override { return StreamQueueStorageName; }
 
+    zkutil::ZooKeeperPtr getZooKeeper() const;
+
 private:
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    std::string createZooKeeperPath();
+    bool createZooKeeperNode();
 
     void threadFunc();
     void move_data();
@@ -42,6 +48,8 @@ private:
 
     BackgroundSchedulePool::TaskHolder task;
     bool shutdown_called = false;
+
+    bool downloading = false;
 
     LoggerPtr log;
 };
