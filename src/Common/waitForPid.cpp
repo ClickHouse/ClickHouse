@@ -133,6 +133,8 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
         return PollPidResult::FAILED;
 
     struct kevent change{};
+    change.ident = 0;
+
     EV_SET(&change, pid, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
 
     int event_add_result = HANDLE_EINTR(kevent(kq, &change, 1, NULL, 0, NULL));
@@ -145,6 +147,8 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     }
 
     struct kevent event{};
+    event.ident = 0;
+
     struct timespec remaining_timespec = {.tv_sec = timeout_in_ms / 1000, .tv_nsec = (timeout_in_ms % 1000) * 1000000};
     int ready = HANDLE_EINTR(kevent(kq, nullptr, 0, &event, 1, &remaining_timespec));
     PollPidResult result = ready < 0 ? PollPidResult::FAILED : PollPidResult::RESTART;

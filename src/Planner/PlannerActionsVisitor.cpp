@@ -160,7 +160,17 @@ public:
                 const auto & function_node = node->as<FunctionNode &>();
                 if (function_node.getFunctionName() == "__actionName")
                 {
-                    result = toString(function_node.getArguments().getNodes().at(1)->as<ConstantNode>()->getValue());
+                    /// Perform sanity check, because user may call this function with unexpected arguments
+                    const auto & function_argument_nodes = function_node.getArguments().getNodes();
+                    if (function_argument_nodes.size() == 2)
+                    {
+                        if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
+                            result = toString(second_argument->getValue());
+                    }
+
+                    /// Empty node name is not allowed and leads to logical errors
+                    if (result.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
                     break;
                 }
 

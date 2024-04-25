@@ -4384,6 +4384,17 @@ Possible values:
 
 Default value: `ignore`.
 
+## first_day_of_week
+
+The first day of the week assumed by [`toStartOfInterval`](../../sql-reference/functions/date-time-functions.md#toStartOfInterval) function when using weeks as unit.
+
+Possible values:
+
+- Monday - Week starts on Monday
+- Sunday - Week starts on Sunday
+
+Default value: 'Monday'.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
@@ -5469,3 +5480,11 @@ Default value: 'false'.
 ## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
+
+## mysql_datatypes_support_level
+
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+- `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
+- `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
+- `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
+- `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.

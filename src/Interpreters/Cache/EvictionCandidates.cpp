@@ -76,12 +76,22 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
 
     for (const auto & [key, key_candidates] : candidates)
     {
+        auto locked_key = key_candidates.key_metadata->lock();
         for (const auto & candidate : key_candidates.candidates)
         {
             auto queue_iterator = candidate->getQueueIterator();
             queue_iterator->invalidate();
 
             candidate->file_segment->resetQueueIterator();
+            /// We need to set removed flag in file segment metadata,
+            /// because in dynamic cache resize we first remove queue entries,
+            /// then evict which also removes file segment metadata,
+            /// but we need to make sure that this file segment is not requested from cache in the meantime.
+            /// In ordinary eviction we use `evicting` flag for this purpose,
+            /// but here we cannot, because `evicting` is a property of a queue entry,
+            /// but at this point for dynamic cache resize we have already deleted all queue entries.
+            candidate->setRemovedFlag(*locked_key, lock);
+
             queue_iterator->remove(lock);
         }
     }
@@ -157,6 +167,30 @@ void EvictionCandidates::evict()
     }
 }
 
+bool EvictionCandidates::needFinalize() const
+{
+    /// finalize() does the following:
+    /// 1. Release space holder in case if exists.
+    ///    (Space holder is created if some space needs to be hold
+    ///    while were are doing eviction from filesystem without which is done without a lock)
+    ///    Note: this step is not needed in case of dynamic cache resize,
+    ///          because space holders are not used.
+    /// 2. Delete queue entries from IFileCachePriority queue.
+    ///    These queue entries were invalidated during lock-free eviction phase,
+    ///    so on finalize() we just remove them (not to let the queue grow too much).
+    ///    Note: this step can in fact be removed as we do this cleanup
+    ///    (removal of invalidated queue entries)
+    ///    when we iterate the queue and see such entries along the way.
+    ///    Note: this step is not needed in case of dynamic cache resize,
+    ///          because we remove queue entries in advance, before actual eviction.
+    /// 3. Execute on_finalize functions.
+    ///    These functions are set only for SLRU eviction policy,
+    ///    where we need to do additional work after eviction.
+    ///    Note: this step is not needed in case of dynamic cache resize even for SLRU.
+
+    return !on_finalize.empty() || !queue_entries_to_invalidate.empty();
+}
+
 void EvictionCandidates::finalize(
     FileCacheQueryLimit::QueryContext * query_context,
     const CachePriorityGuard::Lock & lock)
@@ -191,12 +225,6 @@ void EvictionCandidates::finalize(
     /// Finalize functions might hold something (like HoldSpace object),
     /// so we need to clear them now.
     on_finalize.clear();
-}
-
-bool EvictionCandidates::needFinalize() const
-{
-    /// Do we need to call finalize()?
-    return !on_finalize.empty() || !queue_entries_to_invalidate.empty();
 }
 
 void EvictionCandidates::setSpaceHolder(
