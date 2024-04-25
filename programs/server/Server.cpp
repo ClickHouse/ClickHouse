@@ -136,6 +136,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if defined(USE_HUALLOC)
+#    include <hualloc/hu_alloc.h>
+#endif
+
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
@@ -192,6 +196,10 @@ static bool jemallocOptionEnabled(const char *) { return false; }
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
+#if defined(USE_HUALLOC)
+    RunHuReclaim();
+#endif
+
     DB::Server app;
 
     if (jemallocOptionEnabled("opt.background_thread"))

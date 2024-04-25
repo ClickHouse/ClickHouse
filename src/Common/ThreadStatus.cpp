@@ -19,7 +19,7 @@ namespace DB
 
 thread_local ThreadStatus constinit * current_thread = nullptr;
 
-#if !defined(SANITIZER)
+#if !defined(SANITIZER) && !defined(USE_HUALLOC) /// hualloc does not support thread_local
 namespace
 {
 
@@ -86,7 +86,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
     /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
-#if !defined(SANITIZER)
+#if !defined(SANITIZER) && !defined(USE_HUALLOC)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
