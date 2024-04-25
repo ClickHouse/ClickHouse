@@ -1662,8 +1662,14 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
         {
+            /// Add back "config-file" key which is absent in the reloaded config.
+            config->setString("config-file", config_file);
+
+            /// Apply config updates in global context.
+            global_context->setConfig(config);
+
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
             ServerSettings new_server_settings;
@@ -1923,9 +1929,6 @@ try
 #endif
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
-
-            /// Apply config updates in global context
-            global_context->setConfig(config);
 
             /// Must be the last.
             latest_config = config;
