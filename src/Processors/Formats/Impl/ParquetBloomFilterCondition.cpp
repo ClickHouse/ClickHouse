@@ -8,10 +8,16 @@
 #include <Columns/ColumnConst.h>
 #include <parquet/bloom_filter.h>
 
-
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_QUERY;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 namespace
 {
@@ -36,7 +42,8 @@ bool maybeTrueOnBloomFilter(const IColumn * data_column, const std::unique_ptr<p
     static constexpr uint32_t buffer_size = 32;
     uint8_t buffer[buffer_size] = {0};
 
-    for (size_t i = 0; i < data_column->size(); ++i) {
+    for (size_t i = 0; i < data_column->size(); ++i)
+    {
         const auto data_view = data_column->getDataAt(i).toView();
 
         const auto ba = createByteArray(data_view, data_column->getDataType(), buffer, buffer_size);
@@ -270,7 +277,7 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
     const DataTypePtr & value_type,
     const Field & value_field,
     ParquetBloomFilterCondition::RPNElement & out,
-    const RPNBuilderTreeNode * )
+    const RPNBuilderTreeNode *)
 {
     auto key_column_name = key_node.getColumnName();
 
