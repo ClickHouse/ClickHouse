@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -16,6 +17,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
@@ -55,7 +57,6 @@ protected:
     Chunk generate() override;
 
 private:
-
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
 
@@ -68,7 +69,7 @@ private:
     /// Should read using direct IO
     bool read_with_direct_io;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeSequentialSource");
+    LoggerPtr log = getLogger("MergeTreeSequentialSource");
 
     std::optional<MarkRanges> mark_ranges;
 
@@ -85,7 +86,6 @@ private:
     /// Closes readers and unlock part locks
     void finish();
 };
-
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
@@ -136,10 +136,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     {
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
-            .withSystemColumns();
+            .withVirtuals()
+            .withSubcolumns(storage.supportsSubcolumns());
 
-        if (storage.supportsSubcolumns())
-            options.withSubcolumns();
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
@@ -150,12 +149,14 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = !storage.getSettings()->force_read_through_cache_for_merges;
+
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
+
     /// Configure throttling
     switch (type)
     {
@@ -179,9 +180,48 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         mark_ranges.emplace(MarkRanges{MarkRange(0, data_part->getMarksCount())});
 
     reader = data_part->getReader(
-        columns_for_reader, storage_snapshot,
-        *mark_ranges, /* uncompressed_cache = */ nullptr,
-        mark_cache.get(), alter_conversions, reader_settings, {}, {});
+        columns_for_reader,
+        storage_snapshot,
+        *mark_ranges,
+        /*virtual_fields=*/ {},
+        /*uncompressed_cache=*/{},
+        mark_cache.get(),
+        alter_conversions,
+        reader_settings,
+        {},
+        {});
+}
+
+static void fillBlockNumberColumns(
+    Columns & res_columns,
+    const NamesAndTypesList & columns_list,
+    UInt64 block_number,
+    UInt64 block_offset,
+    UInt64 num_rows)
+{
+    chassert(res_columns.size() == columns_list.size());
+
+    auto it = columns_list.begin();
+    for (size_t i = 0; i < res_columns.size(); ++i, ++it)
+    {
+        if (res_columns[i])
+            continue;
+
+        if (it->name == BlockNumberColumn::name)
+        {
+            res_columns[i] = BlockNumberColumn::type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
+        }
+        else if (it->name == BlockOffsetColumn::name)
+        {
+            auto column = BlockOffsetColumn::type->createColumn();
+            auto & block_offset_data = assert_cast<ColumnUInt64 &>(*column).getData();
+
+            block_offset_data.resize(num_rows);
+            std::iota(block_offset_data.begin(), block_offset_data.end(), block_offset);
+
+            res_columns[i] = std::move(column);
+        }
+    }
 }
 
 Chunk MergeTreeSequentialSource::generate()
@@ -202,16 +242,17 @@ try
 
         if (rows_read)
         {
+            fillBlockNumberColumns(columns, sample, data_part->info.min_block, current_row, rows_read);
+            reader->fillVirtualColumns(columns, rows_read);
+
             current_row += rows_read;
             current_mark += (rows_to_read == rows_read);
 
             bool should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
 
             if (should_evaluate_missing_defaults)
-            {
                 reader->evaluateMissingDefaults({}, columns);
-            }
 
             reader->performRequiredConversions(columns);
 
@@ -224,7 +265,10 @@ try
             for (size_t i = 0; i < num_columns; ++i)
             {
                 if (header.has(it->name))
+                {
+                    columns[i]->assumeMutableRef().shrinkToFit();
                     res_columns.emplace_back(std::move(columns[i]));
+                }
 
                 ++it;
             }
@@ -273,14 +317,13 @@ Pipe createMergeTreeSequentialSource(
     bool quiet,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count)
 {
-    const auto & filter_column = LightweightDeleteDescription::FILTER_COLUMN;
 
     /// The part might have some rows masked by lightweight deletes
     const bool need_to_filter_deleted_rows = apply_deleted_mask && data_part->hasLightweightDelete();
-    const bool has_filter_column = std::ranges::find(columns_to_read, filter_column.name) != columns_to_read.end();
+    const bool has_filter_column = std::ranges::find(columns_to_read, RowExistsColumn::name) != columns_to_read.end();
 
     if (need_to_filter_deleted_rows && !has_filter_column)
-        columns_to_read.emplace_back(filter_column.name);
+        columns_to_read.emplace_back(RowExistsColumn::name);
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(type,
         storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
@@ -294,7 +337,7 @@ Pipe createMergeTreeSequentialSource(
         pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const Block & header)
         {
             return std::make_shared<FilterTransform>(
-                header, nullptr, filter_column.name, !has_filter_column, false, filtered_rows_count);
+                header, nullptr, RowExistsColumn::name, !has_filter_column, false, filtered_rows_count);
         });
     }
 
@@ -318,7 +361,7 @@ public:
         bool apply_deleted_mask_,
         ActionsDAGPtr filter_,
         ContextPtr context_,
-        Poco::Logger * log_)
+        LoggerPtr log_)
         : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
         , type(type_)
         , storage(storage_)
@@ -381,7 +424,7 @@ private:
     bool apply_deleted_mask;
     ActionsDAGPtr filter;
     ContextPtr context;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 void createReadFromPartStep(
@@ -394,7 +437,7 @@ void createReadFromPartStep(
     bool apply_deleted_mask,
     ActionsDAGPtr filter,
     ContextPtr context,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto reading = std::make_unique<ReadFromPart>(type,
         storage, storage_snapshot, std::move(data_part),

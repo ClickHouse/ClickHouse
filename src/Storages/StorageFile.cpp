@@ -25,6 +25,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/PeekableReadBuffer.h>
+#include <IO/AsynchronousReadBufferFromFile.h>
+#include <Disks/IO/IOUringReader.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -89,7 +92,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -274,6 +279,22 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }
+    else if (read_method == LocalFSReadMethod::io_uring && !use_table_fd)
+    {
+#if USE_LIBURING
+        auto & reader = context->getIOURingReader();
+        if (!reader.isSupported())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
+
+        res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+            reader,
+            Priority{},
+            current_path,
+            context->getSettingsRef().max_read_buffer_size);
+#else
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
+#endif
+    }
     else
     {
         if (use_table_fd)
@@ -327,7 +348,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
 
 }
 
-Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read)
+Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_table_path(table_path);
@@ -374,27 +395,44 @@ namespace
     public:
         ReadBufferFromFileIterator(
             const std::vector<String> & paths_,
-            const String & format_,
+            std::optional<String> format_,
             const String & compression_method_,
             const std::optional<FormatSettings> & format_settings_,
-            ContextPtr context_)
+            const ContextPtr & context_)
             : WithContext(context_)
             , paths(paths_)
-            , format(format_)
+            , format(std::move(format_))
             , compression_method(compression_method_)
             , format_settings(format_settings_)
         {
         }
 
-        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
+        Data next() override
         {
             bool is_first = current_index == 0;
-            /// For default mode check cached columns for all paths on first iteration.
-            /// If we have cached columns, next() won't be called again.
-            if (is_first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            if (is_first)
             {
-                if (auto cached_columns = tryGetColumnsFromCache(paths))
-                    return {nullptr, cached_columns};
+                /// If format is unknown we iterate through all paths on first iteration and
+                /// try to determine format by file name.
+                if (!format)
+                {
+                    for (const auto & path : paths)
+                    {
+                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
+                        {
+                            format = format_from_path;
+                            break;
+                        }
+                    }
+                }
+
+                /// For default mode check cached columns for all paths on first iteration.
+                /// If we have cached columns, next() won't be called again.
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+                {
+                    if (auto cached_columns = tryGetColumnsFromCache(paths))
+                        return {nullptr, cached_columns, format};
+                }
             }
 
             String path;
@@ -405,11 +443,18 @@ namespace
                 if (current_index == paths.size())
                 {
                     if (is_first)
+                    {
+                        if (format)
+                            throw Exception(
+                                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                "The table structure cannot be extracted from a {} format file, because all files are empty. You can specify the format manually",
+                                *format);
+
                         throw Exception(
-                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
-                            format);
-                    return {nullptr, std::nullopt};
+                            ErrorCodes::CANNOT_DETECT_FORMAT,
+                            "The data format cannot be detected by the contents of the files, because all files are empty. You can specify table structure manually");
+                    }
+                    return {nullptr, std::nullopt, std::nullopt};
                 }
 
                 path = paths[current_index++];
@@ -420,10 +465,10 @@ namespace
             if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
             {
                 if (auto cached_columns = tryGetColumnsFromCache({path}))
-                    return {nullptr, cached_columns};
+                    return {nullptr, cached_columns, format};
             }
 
-            return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt};
+            return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -431,7 +476,7 @@ namespace
             if (!getContext()->getSettingsRef().use_cache_for_count_from_files)
                 return;
 
-            auto key = getKeyForSchemaCache(paths[current_index - 1], format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -443,7 +488,7 @@ namespace
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
-            auto cache_key = getKeyForSchemaCache(paths[current_index - 1], format, format_settings, getContext());
+            auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
@@ -454,7 +499,7 @@ namespace
                 return;
 
             /// For default mode we cache resulting schema for all paths.
-            auto cache_keys = getKeysForSchemaCache(paths, format, format_settings, getContext());
+            auto cache_keys = getKeysForSchemaCache(paths, *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
@@ -465,14 +510,30 @@ namespace
             return "";
         }
 
+        void setFormatName(const String & format_name) override
+        {
+            format = format_name;
+        }
+
+        bool supportsLastReadBufferRecreation() const override { return true; }
+
+        std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
+        {
+            chassert(current_index > 0 && current_index <= paths.size());
+            auto path = paths[current_index - 1];
+            auto file_stat = getFileStat(path, false, -1, "File");
+            return createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
+        }
+
     private:
         std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & paths_)
         {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_file)
+            auto context = getContext();
+            if (!context->getSettingsRef().schema_inference_use_cache_for_file)
                 return std::nullopt;
 
             /// Check if the cache contains one of the paths.
-            auto & schema_cache = StorageFile::getSchemaCache(getContext());
+            auto & schema_cache = StorageFile::getSchemaCache(context);
             struct stat file_stat{};
             for (const auto & path : paths_)
             {
@@ -484,10 +545,28 @@ namespace
                     return file_stat.st_mtime;
                 };
 
-                auto cache_key = getKeyForSchemaCache(path, format, format_settings, getContext());
-                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-                if (columns)
-                    return columns;
+                if (format)
+                {
+                    auto cache_key = getKeyForSchemaCache(path, *format, format_settings, context);
+                    if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
+                        return columns;
+                }
+                else
+                {
+                    /// If format is unknown, we can iterate through all possible input formats
+                    /// and check if we have an entry with this format and this file in schema cache.
+                    /// If we have such entry for some format, we can use this format to read the file.
+                    for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
+                    {
+                        auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);
+                        if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
+                        {
+                            /// Now format is known. It should be the same for all files.
+                            format = format_name;
+                            return columns;
+                        }
+                    }
+                }
             }
 
             return std::nullopt;
@@ -496,7 +575,7 @@ namespace
         const std::vector<String> & paths;
 
         size_t current_index = 0;
-        String format;
+        std::optional<String> format;
         String compression_method;
         const std::optional<FormatSettings> & format_settings;
     };
@@ -506,17 +585,17 @@ namespace
     public:
         ReadBufferFromArchiveIterator(
             const StorageFile::ArchiveInfo & archive_info_,
-            const String & format_,
+            std::optional<String> format_,
             const std::optional<FormatSettings> & format_settings_,
-            ContextPtr context_)
+            const ContextPtr & context_)
             : WithContext(context_)
             , archive_info(archive_info_)
-            , format(format_)
+            , format(std::move(format_))
             , format_settings(format_settings_)
         {
         }
 
-        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
+        Data next() override
         {
             /// For default mode check cached columns for all initial archive paths (maybe with globs) on first iteration.
             /// If we have cached columns, next() won't be called again.
@@ -524,8 +603,8 @@ namespace
             {
                 for (const auto & archive : archive_info.paths_to_archives)
                 {
-                    if (auto cached_columns = tryGetColumnsFromSchemaCache(archive, archive_info.path_in_archive))
-                        return {nullptr, cached_columns};
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, fmt::format("{}::{}", archive, archive_info.path_in_archive)))
+                        return {nullptr, cached_schema, format};
                 }
             }
 
@@ -535,12 +614,19 @@ namespace
                 if (current_archive_index == archive_info.paths_to_archives.size())
                 {
                     if (is_first)
-                        throw Exception(
-                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
-                            format);
+                    {
+                        if (format)
+                            throw Exception(
+                                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                "The table structure cannot be extracted from a {} format file, because all files are empty. You can specify table structure manually",
+                                *format);
 
-                    return {nullptr, std::nullopt};
+                        throw Exception(
+                            ErrorCodes::CANNOT_DETECT_FORMAT,
+                            "The data format cannot be detected by the contents of the files, because all files are empty. You can specify the format manually");
+                    }
+
+                    return {nullptr, std::nullopt, format};
                 }
 
                 const auto & archive = archive_info.paths_to_archives[current_archive_index];
@@ -554,11 +640,18 @@ namespace
                         continue;
                     }
 
+                    if (format)
+                        throw Exception(
+                            ErrorCodes::CANNOT_DETECT_FORMAT,
+                            "The table structure cannot be extracted from a {} format file, because the archive {} is empty. "
+                            "You can specify table structure manually",
+                            *format,
+                            archive);
+
                     throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Cannot extract table structure from {} format file, because the archive {} is empty. "
-                        "You must specify table structure manually",
-                        format,
+                        ErrorCodes::CANNOT_DETECT_FORMAT,
+                        "The data format cannot be detected by the contents of the files, because the archive {} is empty. "
+                        "You can specify the format manually",
                         archive);
                 }
 
@@ -574,8 +667,8 @@ namespace
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
                     is_first = false;
 
-                    if (auto cached_columns = tryGetColumnsFromSchemaCache(archive, last_read_file_path))
-                        return {nullptr, cached_columns};
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
+                        return {nullptr, cached_schema, format};
                 }
                 else
                 {
@@ -611,13 +704,20 @@ namespace
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
                     is_first = false;
 
-                    if (auto cached_columns = tryGetColumnsFromSchemaCache(archive, last_read_file_path))
+                    /// If format is unknown we can try to determine it by the file name.
+                    if (!format)
+                    {
+                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
+                            format = format_from_file;
+                    }
+
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
                     {
                         /// For union mode next() will be called again even if we found cached columns,
                         /// so we need to remember last_read_buffer to continue iterating through files in archive.
                         if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
                             last_read_buffer = archive_reader->readFile(std::move(file_enumerator));
-                        return {nullptr, cached_columns};
+                        return {nullptr, cached_schema, format};
                     }
 
                     read_buf = archive_reader->readFile(std::move(file_enumerator));
@@ -626,7 +726,7 @@ namespace
                 break;
             }
 
-            return {std::move(read_buf), std::nullopt};
+            return {std::move(read_buf), std::nullopt, format};
         }
 
         void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> buffer) override
@@ -640,7 +740,7 @@ namespace
             if (!getContext()->getSettingsRef().use_cache_for_count_from_files)
                 return;
 
-            auto key = getKeyForSchemaCache(last_read_file_path, format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -653,7 +753,7 @@ namespace
             /// For union mode, schema can be different for different files in archive, so we need to
             /// cache last inferred schema only for last processed file.
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_key = getKeyForSchemaCache(last_read_file_path, format, format_settings, getContext());
+            auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
         }
 
@@ -669,8 +769,13 @@ namespace
             for (const auto & archive : archive_info.paths_to_archives)
                 paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, format, format_settings, getContext());
+            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, *format, format_settings, getContext());
             schema_cache.addManyColumns(cache_keys, columns);
+        }
+
+        void setFormatName(const String & format_name) override
+        {
+            format = format_name;
         }
 
         String getLastFileName() const override
@@ -678,8 +783,28 @@ namespace
             return last_read_file_path;
         }
 
+        bool supportsLastReadBufferRecreation() const override { return true; }
+
+        std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
+        {
+            if (archive_info.isSingleFileRead())
+            {
+                chassert(current_archive_index > 0 && current_archive_index <= archive_info.paths_to_archives.size());
+                const auto & archive = archive_info.paths_to_archives[current_archive_index - 1];
+                auto archive_reader = createArchiveReader(archive);
+                return archive_reader->readFile(archive_info.path_in_archive, false);
+            }
+
+            chassert(current_archive_index >= 0 && current_archive_index < archive_info.paths_to_archives.size());
+            const auto & archive = archive_info.paths_to_archives[current_archive_index];
+            auto archive_reader = createArchiveReader(archive);
+            chassert(last_read_buffer);
+            file_enumerator = archive_reader->currentFile(std::move(last_read_buffer));
+            return archive_reader->readFile(std::move(file_enumerator));
+        }
+
     private:
-        std::optional<ColumnsDescription> tryGetColumnsFromSchemaCache(const std::string & archive_path, const std::string & full_path)
+        std::optional<ColumnsDescription> tryGetSchemaFromCache(const std::string & archive_path, const std::string & full_path)
         {
             auto context = getContext();
             if (!context->getSettingsRef().schema_inference_use_cache_for_file)
@@ -695,11 +820,28 @@ namespace
                 return file_stat.st_mtime;
             };
 
-            auto cache_key = getKeyForSchemaCache(full_path, format, format_settings, context);
-            auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-
-            if (columns)
-                return columns;
+            if (format)
+            {
+                auto cache_key = getKeyForSchemaCache(full_path, *format, format_settings, context);
+                if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
+                    return columns;
+            }
+            else
+            {
+                /// If format is unknown, we can iterate through all possible input formats
+                /// and check if we have an entry with this format and this file in schema cache.
+                /// If we have such entry for some format, we can use this format to read the file.
+                for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
+                {
+                    auto cache_key = getKeyForSchemaCache(full_path, format_name, format_settings, context);
+                    if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
+                    {
+                        /// Now format is known. It should be the same for all files.
+                        format = format_name;
+                        return columns;
+                    }
+                }
+            }
 
             return std::nullopt;
         }
@@ -715,13 +857,13 @@ namespace
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
         std::unique_ptr<ReadBuffer> last_read_buffer;
 
-        String format;
+        std::optional<String> format;
         const std::optional<FormatSettings> & format_settings;
         std::vector<std::string> paths_for_schema_cache;
     };
 }
 
-ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr context)
+std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context)
 {
     /// If we want to read schema from file descriptor we should create
     /// a read buffer from fd, create a checkpoint, read some data required
@@ -738,22 +880,29 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     read_buf->setCheckpoint();
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
 
-    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, false, context, peekable_read_buffer_from_fd);
+    ColumnsDescription columns;
+    if (format)
+        columns = readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context);
+    else
+        std::tie(columns, format) = detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+
+    peekable_read_buffer_from_fd = read_buffer_iterator.releaseBuffer();
     if (peekable_read_buffer_from_fd)
     {
         /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
         assert_cast<PeekableReadBuffer *>(peekable_read_buffer_from_fd.get())->rollbackToCheckpoint();
         has_peekable_read_buffer_from_fd = true;
     }
-    return columns;
+
+    return {columns, *format};
 }
 
-ColumnsDescription StorageFile::getTableStructureFromFile(
-    const String & format,
+std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFileImpl(
+    std::optional<String> format,
     const std::vector<String> & paths,
     const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr context,
+    const ContextPtr & context,
     const std::optional<ArchiveInfo> & archive_info)
 {
     if (format == "Distributed")
@@ -761,29 +910,60 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         if (paths.empty())
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
 
-        return ColumnsDescription(DistributedAsyncInsertSource(paths[0]).getOutputs().front().getHeader().getNamesAndTypesList());
+        return {ColumnsDescription(DistributedAsyncInsertSource(paths[0]).getOutputs().front().getHeader().getNamesAndTypesList()), *format};
     }
 
     if (((archive_info && archive_info->paths_to_archives.empty()) || (!archive_info && paths.empty()))
-        && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+        && (!format || !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(*format)))
+    {
+        if (format)
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "The table structure cannot be extracted from a {} format file, because there are no files with provided path. "
+                "You can specify table structure manually", *format);
+
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files with provided path. "
-            "You must specify table structure manually", format);
+            "The data format cannot be detected by the contents of the files, because there are no files with provided path. "
+            "You can specify the format manually");
+
+    }
 
     if (archive_info)
     {
         ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, format_settings, context);
-        return readSchemaFromFormat(
-            format,
-            format_settings,
-            read_buffer_iterator,
-            /*retry=*/archive_info->paths_to_archives.size() > 1 || !archive_info->isSingleFileRead(),
-            context);
+        if (format)
+            return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
+
+        return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
     }
 
     ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context);
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
+    if (format)
+        return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
+
+    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+}
+
+ColumnsDescription StorageFile::getTableStructureFromFile(
+    const DB::String & format,
+    const std::vector<String> & paths,
+    const DB::String & compression_method,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context,
+    const std::optional<ArchiveInfo> & archive_info)
+{
+    return getTableStructureAndFormatFromFileImpl(format, paths, compression_method, format_settings, context, archive_info).first;
+}
+
+std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFile(
+    const std::vector<String> & paths,
+    const DB::String & compression_method,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context,
+    const std::optional<ArchiveInfo> & archive_info)
+{
+    return getTableStructureAndFormatFromFileImpl(std::nullopt, paths, compression_method, format_settings, context, archive_info);
 }
 
 bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -874,7 +1054,7 @@ StorageFile::StorageFile(CommonArguments args)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
 {
-    if (format_name != "Distributed")
+    if (format_name != "Distributed" && format_name != "auto")
         FormatFactory::instance().checkFormatName(format_name);
 }
 
@@ -886,16 +1066,19 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     {
         ColumnsDescription columns;
         if (use_table_fd)
-            columns = getTableStructureFromFileDescriptor(args.getContext());
+        {
+            if (format_name == "auto")
+                std::tie(columns, format_name) = getTableStructureAndFormatFromFileDescriptor(std::nullopt, args.getContext());
+            else
+                columns = getTableStructureAndFormatFromFileDescriptor(format_name, args.getContext()).first;
+        }
         else
         {
-            columns = getTableStructureFromFile(
-                format_name,
-                paths,
-                compression_method,
-                format_settings,
-                args.getContext(),
-                archive_info);
+            if (format_name == "auto")
+                std::tie(columns, format_name) = getTableStructureAndFormatFromFile(paths, compression_method, format_settings, args.getContext(), archive_info);
+            else
+                columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext(), archive_info);
+
             if (!args.columns.empty() && args.columns != columns)
                 throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Table structure and file structure are different");
         }
@@ -903,6 +1086,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     }
     else
     {
+        if (format_name == "auto")
+            format_name = getTableStructureAndFormatFromFile(paths, compression_method, format_settings, args.getContext(), archive_info).second;
         /// We don't allow special columns in File storage.
         if (!args.columns.hasOnlyOrdinary())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine File doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
@@ -912,12 +1097,11 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 
-static std::chrono::seconds getLockTimeout(ContextPtr context)
+static std::chrono::seconds getLockTimeout(const ContextPtr & context)
 {
     const Settings & settings = context->getSettingsRef();
     Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
@@ -933,9 +1117,9 @@ StorageFileSource::FilesIterator::FilesIterator(
     std::optional<StorageFile::ArchiveInfo> archive_info_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
-    ContextPtr context_,
+    const ContextPtr & context_,
     bool distributed_processing_)
-    : files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_), context(context_)
+    : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
 {
     ActionsDAGPtr filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
@@ -948,7 +1132,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
-        return context->getReadTaskCallback()();
+        return getContext()->getReadTaskCallback()();
     else
     {
         const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
@@ -972,12 +1156,12 @@ const String & StorageFileSource::FilesIterator::getFileNameInArchive()
 StorageFileSource::StorageFileSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageFile> storage_,
-    ContextPtr context_,
+    const ContextPtr & context_,
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false)
+    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
     , storage(std::move(storage_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
@@ -985,13 +1169,12 @@ StorageFileSource::StorageFileSource(
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
-    , context(context_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
     if (!storage->use_table_fd)
     {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
+        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
         if (!shared_lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         storage->readers_counter.fetch_add(1, std::memory_order_release);
@@ -1008,7 +1191,7 @@ void StorageFileSource::beforeDestroy()
     if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
     {
         shared_lock.unlock();
-        auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(context)};
+        auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(getContext())};
 
         if (!exclusive_lock)
             return;
@@ -1027,7 +1210,7 @@ void StorageFileSource::beforeDestroy()
                 file_path = file_path.lexically_normal();
 
                 // Checking access rights
-                checkCreationIsAllowed(context, context->getUserFilesPath(), file_path, true);
+                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
@@ -1040,7 +1223,7 @@ void StorageFileSource::beforeDestroy()
             catch (const std::exception & e)
             {
                 // Cannot throw exception from destructor, will write only error
-                LOG_ERROR(&Poco::Logger::get("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
+                LOG_ERROR(getLogger("~StorageFileSource"), "Failed to rename file {}: {}", file_path_ref, e.what());
                 continue;
             }
         }
@@ -1052,15 +1235,15 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
 {
-    setKeyConditionImpl(nodes, context_, block_for_format);
+    setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
 
 
 bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 {
-    if (!context->getSettingsRef().use_cache_for_count_from_files)
+    if (!getContext()->getSettingsRef().use_cache_for_count_from_files)
         return false;
 
     auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
@@ -1102,7 +1285,7 @@ Chunk StorageFileSource::generate()
                             return {};
 
                         auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
-                        if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                        if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                             continue;
 
                         archive_reader = createArchiveReader(archive);
@@ -1116,7 +1299,7 @@ Chunk StorageFileSource::generate()
                         if (!read_buf)
                             continue;
 
-                        if (auto progress_callback = context->getFileProgressCallback())
+                        if (auto progress_callback = getContext()->getFileProgressCallback())
                             progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                     }
                     else
@@ -1130,7 +1313,7 @@ Chunk StorageFileSource::generate()
                                     return {};
 
                                 current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
-                                if (context->getSettingsRef().engine_file_skip_empty_files && current_archive_stat.st_size == 0)
+                                if (getContext()->getSettingsRef().engine_file_skip_empty_files && current_archive_stat.st_size == 0)
                                     continue;
 
                                 archive_reader = createArchiveReader(archive);
@@ -1164,7 +1347,7 @@ Chunk StorageFileSource::generate()
                             continue;
 
                         read_buf = archive_reader->readFile(std::move(file_enumerator));
-                        if (auto progress_callback = context->getFileProgressCallback())
+                        if (auto progress_callback = getContext()->getFileProgressCallback())
                             progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                     }
                 }
@@ -1190,16 +1373,16 @@ Chunk StorageFileSource::generate()
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
 
-                if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                     continue;
 
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
-                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
+                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
-            const Settings & settings = context->getSettingsRef();
+            const Settings & settings = getContext()->getSettingsRef();
 
             size_t file_num = 0;
             if (storage->archive_info)
@@ -1211,7 +1394,7 @@ Chunk StorageFileSource::generate()
 
             const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
-                storage->format_name, *read_buf, block_for_format, context, max_block_size, storage->format_settings,
+                storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
 
             if (key_condition)
@@ -1227,7 +1410,7 @@ Chunk StorageFileSource::generate()
             {
                 builder.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, context);
+                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                 });
             }
 
@@ -1264,7 +1447,7 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && context->getSettingsRef().use_cache_for_count_from_files)
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef().use_cache_for_count_from_files)
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1295,14 +1478,14 @@ Chunk StorageFileSource::generate()
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
-    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, context);
-    StorageFile::getSchemaCache(context).addNumRows(key, num_rows);
+    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
+    StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
 }
 
 std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const
 {
-    auto & schema_cache = StorageFile::getSchemaCache(context);
-    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, context);
+    auto & schema_cache = StorageFile::getSchemaCache(getContext());
+    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
         return last_mod_time;
@@ -1316,21 +1499,23 @@ class ReadFromFile : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromFile"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromFile(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<StorageFile> storage_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , max_num_streams(num_streams_)
     {
@@ -1341,7 +1526,6 @@ private:
     ReadFromFormatInfo info;
     const bool need_only_count;
 
-    ContextPtr context;
     size_t max_block_size;
     const size_t max_num_streams;
 
@@ -1350,9 +1534,9 @@ private:
     void createIterator(const ActionsDAG::Node * predicate);
 };
 
-void ReadFromFile::applyFilters()
+void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1396,16 +1580,19 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef().optimize_count_from_files;
 
     auto reading = std::make_unique<ReadFromFile>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context,
         read_from_format_info.source_header,
         std::move(this_ptr),
         std::move(read_from_format_info),
         need_only_count,
-        context,
         max_block_size,
         num_streams);
 
@@ -1421,7 +1608,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage->virtual_columns,
+        storage->getVirtualsList(),
         context,
         storage->distributed_processing);
 }
@@ -1444,8 +1631,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     Pipes pipes;
     pipes.reserve(num_streams);
 
+    auto ctx = getContext();
+
     /// Set total number of bytes to process. For progress bar.
-    auto progress_callback = context->getFileProgressCallback();
+    auto progress_callback = ctx->getFileProgressCallback();
 
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
@@ -1463,20 +1652,20 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         auto source = std::make_shared<StorageFileSource>(
             info,
             storage,
-            context,
+            ctx,
             max_block_size,
             files_iterator,
             std::move(read_buffer),
             need_only_count);
 
-        source->setKeyCondition(filter_nodes.nodes, context);
+        source->setKeyCondition(filter_actions_dag, ctx);
         pipes.emplace_back(std::move(source));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
-    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
+    const bool parallelize_output = ctx->getSettingsRef().parallelize_output_from_storages;
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
@@ -1489,7 +1678,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 }
 
 
-class StorageFileSink final : public SinkToStorage
+class StorageFileSink final : public SinkToStorage, WithContext
 {
 public:
     StorageFileSink(
@@ -1502,9 +1691,9 @@ public:
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         int flags_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
@@ -1514,7 +1703,6 @@ public:
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
-        , context(context_)
         , flags(flags_)
     {
         initialize();
@@ -1531,9 +1719,9 @@ public:
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         int flags_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
@@ -1543,7 +1731,6 @@ public:
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
-        , context(context_)
         , flags(flags_)
         , lock(std::move(lock_))
     {
@@ -1554,7 +1741,7 @@ public:
 
     void initialize()
     {
-        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
+        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
         if (use_table_fd)
         {
             naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
@@ -1567,7 +1754,7 @@ public:
 
         /// In case of formats with prefixes if file is not empty we have already written prefix.
         bool do_not_write_prefix = naked_buffer->size();
-        const auto & settings = context->getSettingsRef();
+        const auto & settings = getContext()->getSettingsRef();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
             compression_method,
@@ -1575,7 +1762,7 @@ public:
             static_cast<int>(settings.output_format_compression_zstd_window_log));
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-                                                                             *write_buf, metadata_snapshot->getSampleBlock(), context, format_settings);
+                                                                             *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();
@@ -1658,7 +1845,6 @@ private:
     std::string format_name;
     std::optional<FormatSettings> format_settings;
 
-    ContextPtr context;
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
 
@@ -1782,22 +1968,22 @@ SinkToStoragePtr StorageFile::write(
                                 "Table '{}' is in readonly mode because of globs in filepath",
                                 getStorageID().getNameForLogs());
 
-            path = paths.back();
+            path = paths.front();
             fs::create_directories(fs::path(path).parent_path());
 
             std::error_code error_code;
             if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
                 && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
-                && fs::file_size(paths.back(), error_code) != 0 && !error_code)
+                && fs::file_size(path, error_code) != 0 && !error_code)
             {
                 if (context->getSettingsRef().engine_file_allow_create_multiple_files)
                 {
-                    auto pos = paths[0].find_first_of('.', paths[0].find_last_of('/'));
+                    auto pos = path.find_first_of('.', path.find_last_of('/'));
                     size_t index = paths.size();
                     String new_path;
                     do
                     {
-                        new_path = paths[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : paths[0].substr(pos));
+                        new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                         ++index;
                     }
                     while (fs::exists(new_path));
@@ -2043,7 +2229,7 @@ StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
     const std::string & path_to_archive,
     const std::string & file_in_archive,
     const std::string & user_files_path,
-    ContextPtr context,
+    const ContextPtr & context,
     size_t & total_bytes_to_read
 )
 {
@@ -2067,11 +2253,6 @@ StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
     archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
 
     return archive_info;
-}
-
-Names StorageFile::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 }

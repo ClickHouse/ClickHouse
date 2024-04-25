@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Poco/Message.h>
+#include <Storages/ColumnsDescription.h>
 #include <chrono>
 
 namespace DB
@@ -11,7 +12,7 @@ namespace DB
 
 struct BlobStorageLogElement
 {
-    enum class EventType : Int8
+    enum class EventType : int8_t
     {
         Upload = 1,
         Delete = 2,
@@ -42,10 +43,9 @@ struct BlobStorageLogElement
 
     static std::string name() { return "BlobStorageLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

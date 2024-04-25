@@ -278,6 +278,7 @@ public:
     static ColumnsWithTypeAndName evaluatePartialResult(
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
+        size_t input_rows_count,
         bool throw_on_error);
 
     /// For apply materialize() function for every output.
@@ -326,13 +327,22 @@ public:
     /// Merge current nodes with specified dag nodes
     void mergeNodes(ActionsDAG && second);
 
-    using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
+    struct SplitResult
+    {
+        ActionsDAGPtr first;
+        ActionsDAGPtr second;
+        std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+    };
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
-    /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal outputs.
-    /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
-    SplitResult split(std::unordered_set<const Node *> split_nodes) const;
+    /// Inputs and outputs of original DAG are split between the first and the second DAGs.
+    /// Intermediate result can apper in first outputs and second inputs.
+    /// Example:
+    ///   initial DAG    : (a, b, c, d, e) -> (w, x, y, z)  | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 3 4 5 6 w x y z
+    ///   split (first)  : (a, c, d) -> (i, j, k, w, y)     | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 b 3 4 5 e 6 i j k w y
+    ///   split (second) : (i, j, k, y, b, e) -> (x, y, z)  | 1 2 b 3 4 5 e 6 i j k w y  ->  1 2 3 4 5 6 w x y z
+    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
@@ -362,11 +372,45 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    ActionsDAGPtr cloneActionsForFilterPushDown(
+    ActionsDAGPtr splitActionsForFilterPushDown(
         const std::string & filter_name,
-        bool can_remove_filter,
+        bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
+
+    struct ActionsForJOINFilterPushDown
+    {
+        ActionsDAGPtr left_stream_filter_to_push_down;
+        bool left_stream_filter_removes_filter;
+        ActionsDAGPtr right_stream_filter_to_push_down;
+        bool right_stream_filter_removes_filter;
+    };
+
+    /** Split actions for JOIN filter push down.
+      *
+      * @param filter_name - name of filter node in current DAG.
+      * @param removes_filter - if filter is removed after it is applied.
+      * @param left_stream_available_columns_to_push_down - columns from left stream that are safe to use in push down conditions
+      * to left stream.
+      * @param left_stream_header - left stream header.
+      * @param right_stream_available_columns_to_push_down - columns from right stream that are safe to use in push down conditions
+      * to right stream.
+      * @param right_stream_header - right stream header.
+      * @param equivalent_columns_to_push_down - columns from left and right streams that are safe to use in push down conditions
+      * to left and right streams.
+      * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
+      * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
+      */
+    ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const Names & left_stream_available_columns_to_push_down,
+        const Block & left_stream_header,
+        const Names & right_stream_available_columns_to_push_down,
+        const Block & right_stream_header,
+        const Names & equivalent_columns_to_push_down,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
     bool
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
@@ -389,8 +433,7 @@ public:
       */
     static ActionsDAGPtr buildFilterActionsDAG(
         const NodeRawConstPtrs & filter_nodes,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-        const ContextPtr & context,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column = {},
         bool single_output_condition_node = true);
 
     /// Check if `predicate` is a combination of AND functions.
@@ -420,7 +463,9 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static ActionsDAGPtr createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
+    void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
 
 class FindOriginalNodeForOutputName

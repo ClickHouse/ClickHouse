@@ -29,6 +29,7 @@ struct HashedArrayDictionaryStorageConfiguration
     size_t shards = 1;
     size_t shard_load_queue_backlog = 10000;
     bool use_async_executor = false;
+    std::chrono::seconds load_timeout{0};
 };
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
@@ -57,14 +58,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
@@ -73,7 +74,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(total_element_count) / bucket_count; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<HashedArrayDictionary<dictionary_key_type, sharded>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
@@ -92,18 +93,18 @@ public:
     DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & result_types,
+        const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const override;
+        DefaultsOrFilter defaults_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -216,7 +217,7 @@ private:
         const Attribute & attribute,
         const DictionaryAttribute & dictionary_attribute,
         size_t keys_size,
-        ColumnPtr default_values_column,
+        DefaultOrFilter default_or_filter,
         KeysProvider && keys_object) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
@@ -226,6 +227,12 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    size_t getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     using KeyIndexToElementIndex = std::conditional_t<sharded, PaddedPODArray<std::pair<ssize_t, UInt8>>, PaddedPODArray<ssize_t>>;
 
@@ -236,6 +243,13 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    size_t getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        const KeyIndexToElementIndex & key_index_to_element_index,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask [[maybe_unused]]) const;
+
     template <typename GetContainerFunc>
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func);
 
@@ -244,7 +258,7 @@ private:
 
     void resize(size_t total_rows);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

@@ -1,15 +1,16 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/TraceSender.h>
+#include <base/defines.h>
+#include <base/errnoToString.h>
+#include <base/phdr_cache.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
-#include <Common/thread_local_rng.h>
+#include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
-#include <base/phdr_cache.h>
-#include <base/errnoToString.h>
+#include <Common/thread_local_rng.h>
 
 #include <random>
 
@@ -105,7 +106,7 @@ namespace ErrorCodes
 
 #ifndef __APPLE__
 Timer::Timer()
-    : log(&Poco::Logger::get("Timer"))
+    : log(getLogger("Timer"))
 {}
 
 void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal)
@@ -210,23 +211,13 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
-    : log(&Poco::Logger::get("QueryProfiler"))
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase([[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
+    : log(getLogger("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif defined(__APPLE__)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     /// Sanity check.
@@ -258,6 +249,20 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         throw;
     }
 #endif
+}
+
+
+template <typename ProfilerImpl>
+void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt32 period_)
+{
+#if defined(SANITIZER)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+#elif defined(__APPLE__)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
+#else
+    timer.set(period_);
+#endif
+
 }
 
 template <typename ProfilerImpl>

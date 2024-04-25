@@ -1,12 +1,14 @@
-#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
+
+#include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 #include <bit>
@@ -130,7 +132,7 @@ StringRef ColumnSparse::getDataAt(size_t n) const
 
 ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
 {
-    return values->createWithOffsets(getOffsetsData(), (*values)[0], _size, /*shift=*/ 1);
+    return values->createWithOffsets(getOffsetsData(), *createColumnConst(values, 0), _size, /*shift=*/ 1);
 }
 
 void ColumnSparse::insertSingleValue(const Inserter & inserter)
@@ -151,9 +153,14 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+}
+
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    return values->serializeValueIntoMemory(getValueIndex(n), memory);
 }
 
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
@@ -233,6 +240,15 @@ void ColumnSparse::insert(const Field & x)
     insertSingleValue([&](IColumn & column) { column.insert(x); });
 }
 
+bool ColumnSparse::tryInsert(const Field & x)
+{
+    if (!values->tryInsert(x))
+        return false;
+
+    insertSingleValue([&](IColumn &) {}); /// Value already inserted, use no-op inserter.
+    return true;
+}
+
 void ColumnSparse::insertFrom(const IColumn & src, size_t n)
 {
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
@@ -301,7 +317,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
     Filter values_filter;
-    values_filter.reserve(values->size());
+    values_filter.reserve_exact(values->size());
     values_filter.push_back(1);
     size_t values_result_size_hint = 1;
 
@@ -330,7 +346,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     }
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
-    return this->create(res_values, std::move(res_offsets), res_offset);
+    return create(res_values, std::move(res_offsets), res_offset);
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -631,7 +647,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
         if (!offset_it.isDefault())
         {
             size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
-            res_offsets_data.reserve(res_offsets_data.size() + replicate_size);
+            res_offsets_data.reserve_exact(res_offsets_data.size() + replicate_size);
             for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
@@ -718,16 +734,6 @@ double ColumnSparse::getRatioOfDefaultRows(double) const
 UInt64 ColumnSparse::getNumberOfDefaultRows() const
 {
     return _size - offsets->size();
-}
-
-MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
-{
-    return scatterImpl<ColumnSparse>(num_columns, selector);
-}
-
-void ColumnSparse::gather(ColumnGathererStream & gatherer_stream)
-{
-    gatherer_stream.gather(*this);
 }
 
 ColumnPtr ColumnSparse::compress() const

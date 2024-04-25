@@ -17,9 +17,14 @@ namespace ErrorCodes
 }
 
 ColumnGathererStream::ColumnGathererStream(
-    size_t num_inputs, ReadBuffer & row_sources_buf_, size_t block_preferred_size_)
-    : sources(num_inputs), row_sources_buf(row_sources_buf_)
-    , block_preferred_size(block_preferred_size_)
+    size_t num_inputs,
+    ReadBuffer & row_sources_buf_,
+    size_t block_preferred_size_rows_,
+    size_t block_preferred_size_bytes_)
+    : sources(num_inputs)
+    , row_sources_buf(row_sources_buf_)
+    , block_preferred_size_rows(block_preferred_size_rows_)
+    , block_preferred_size_bytes(block_preferred_size_bytes_)
 {
     if (num_inputs == 0)
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There are no streams to gather");
@@ -124,11 +129,12 @@ ColumnGathererTransform::ColumnGathererTransform(
     const Block & header,
     size_t num_inputs,
     ReadBuffer & row_sources_buf_,
-    size_t block_preferred_size_)
+    size_t block_preferred_size_rows_,
+    size_t block_preferred_size_bytes_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, row_sources_buf_, block_preferred_size_)
-    , log(&Poco::Logger::get("ColumnGathererStream"))
+        num_inputs, row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_)
+    , log(getLogger("ColumnGathererStream"))
 {
     if (header.columns() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",

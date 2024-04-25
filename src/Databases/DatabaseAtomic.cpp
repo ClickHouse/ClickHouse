@@ -11,6 +11,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
 #include <Interpreters/DDLTask.h>
@@ -76,7 +77,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
@@ -115,7 +116,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
@@ -179,7 +180,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
@@ -416,9 +417,9 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 }
 
 DatabaseTablesIteratorPtr
-DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
+DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name);
+    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
@@ -468,13 +469,30 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
             for (const auto & table : table_names)
                 tryCreateSymlink(table.first, table.second, true);
         });
+    std::scoped_lock lock(mutex);
     return startup_atomic_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseAtomic::waitDatabaseStarted(bool no_throw) const
+void DatabaseAtomic::waitDatabaseStarted() const
 {
-    if (startup_atomic_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_atomic_database_task, no_throw);
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        task = startup_atomic_database_task;
+    }
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task, false);
+}
+
+void DatabaseAtomic::stopLoading()
+{
+    LoadTaskPtr stop_atomic_database;
+    {
+        std::scoped_lock lock(mutex);
+        stop_atomic_database.swap(startup_atomic_database_task);
+    }
+    stop_atomic_database.reset();
+    DatabaseOrdinary::stopLoading();
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
@@ -544,7 +562,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    waitDatabaseStarted(false);
+    waitDatabaseStarted();
 
     bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;

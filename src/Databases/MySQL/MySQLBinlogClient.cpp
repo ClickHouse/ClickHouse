@@ -17,7 +17,7 @@ BinlogClient::BinlogClient(const BinlogFactoryPtr & factory_,
     , binlog_client_name(name)
     , max_bytes_in_buffer(max_bytes_in_buffer_)
     , max_flush_ms(max_flush_ms_)
-    , logger(&Poco::Logger::get("BinlogClient(" + name + ")"))
+    , logger(getLogger("BinlogClient(" + name + ")"))
 {
 }
 

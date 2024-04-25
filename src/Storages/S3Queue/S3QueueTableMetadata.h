@@ -21,8 +21,10 @@ struct S3QueueTableMetadata
     String columns;
     String after_processing;
     String mode;
-    UInt64 s3queue_tracked_files_limit;
-    UInt64 s3queue_tracked_file_ttl_sec;
+    UInt64 s3queue_tracked_files_limit = 0;
+    UInt64 s3queue_tracked_file_ttl_sec = 0;
+    UInt64 s3queue_total_shards_num = 1;
+    UInt64 s3queue_processing_threads_num = 1;
 
     S3QueueTableMetadata() = default;
     S3QueueTableMetadata(const StorageS3::Configuration & configuration, const S3QueueSettings & engine_settings, const StorageInMemoryMetadata & storage_metadata);

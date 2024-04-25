@@ -508,7 +508,9 @@ Possible values:
 - Any positive integer number of hops.
 - 0 — No hops allowed.
 
-Default value: 0.
+Default value: `0`.
+
+Cloud default value: `10`.
 
 ## insert_null_as_default {#insert_null_as_default}
 
@@ -753,7 +755,7 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
 
-The maximum number of simultaneously processed queries related to MergeTree table per user.
+The maximum number of simultaneously processed queries per user.
 
 Possible values:
 
@@ -1126,7 +1128,9 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Default value: 0.
+Default value: `0`.
+
+Cloud default value: from `2` to `4`, depending on the service size.
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
 Higher values will lead to higher memory usage.
@@ -1207,7 +1211,9 @@ Default value: 10000.
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Default value: 0
+Default value: `0`.
+
+Cloud default value: `1`.
 
 ## poll_interval {#poll-interval}
 
@@ -1683,6 +1689,18 @@ Possible values:
 
 Default value: `throw`.
 
+## query_cache_system_table_handling {#query-cache-system-table-handling}
+
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
+
+Possible values:
+
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
+
+Default value: `throw`.
+
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
 Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
@@ -1769,6 +1787,10 @@ Default value: 0 (no restriction).
 
 ## insert_quorum {#insert_quorum}
 
+:::note
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+:::
+
 Enables the quorum writes.
 
 - If `insert_quorum < 2`, the quorum writes are disabled.
@@ -1808,6 +1830,10 @@ See also:
 
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
+:::note
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+:::
+
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
 Possible values:
@@ -1824,6 +1850,10 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## select_sequential_consistency {#select_sequential_consistency}
+
+:::note
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
+:::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
@@ -1922,7 +1952,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `100000`.
+Default value: `1000000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -1935,7 +1965,7 @@ Possible values:
 
 Default value: `450`.
 
-### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+### async_insert_busy_timeout_max_ms {#async-insert-busy-timeout-max-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
 
@@ -1945,6 +1975,63 @@ Possible values:
 - 0 — Timeout disabled.
 
 Default value: `200`.
+
+Cloud default value: `1000`.
+
+### async_insert_poll_timeout_ms {#async-insert-poll-timeout-ms}
+
+Timeout in milliseconds for polling data from asynchronous insert queue.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `10`.
+
+### async_insert_use_adaptive_busy_timeout {#allow-experimental-async-insert-adaptive-busy-timeout}
+
+Use adaptive asynchronous insert timeout.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+
+Default value: `0`.
+
+### async_insert_busy_timeout_min_ms {#async-insert-busy-timeout-min-ms}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the minimum value of the asynchronous insert timeout in milliseconds. It also serves as the initial value, which may be increased later by the adaptive algorithm, up to the [async_insert_busy_timeout_ms](#async_insert_busy_timeout_ms).
+
+Possible values:
+
+- Positive integer.
+
+Default value: `50`.
+
+### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+
+Alias for [`async_insert_busy_timeout_max_ms`](#async_insert_busy_timeout_max_ms).
+
+### async_insert_busy_timeout_increase_rate {#async-insert-busy-timeout-increase-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout increases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
+
+### async_insert_busy_timeout_decrease_rate {#async-insert-busy-timeout-decrease-rate}
+
+If adaptive asynchronous insert timeout is allowed through [async_insert_use_adaptive_busy_timeout](#allow-experimental-async-insert-adaptive-busy-timeout), the setting specifies the exponential growth rate at which the adaptive asynchronous insert timeout decreases.
+
+Possible values:
+
+- A positive floating-point number.
+
+Default value: `0.2`.
 
 ### async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
 
@@ -1966,7 +2053,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 1.
+Default value: 0.
 
 By default, async inserts are inserted into replicated tables by the `INSERT` statement enabling [async_insert](#async-insert) are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
 For the replicated tables, by default, only 10000 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-async-inserts), [replicated_deduplication_window_seconds_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-seconds-async-inserts)).
@@ -2040,6 +2127,32 @@ SELECT * FROM test_table
 └───┘
 ```
 
+## update_insert_deduplication_token_in_dependent_materialized_views {#update-insert-deduplication-token-in-dependent-materialized-views}
+
+Allows to update `insert_deduplication_token` with view identifier during insert in dependent materialized views, if setting `deduplicate_blocks_in_dependent_materialized_views` is enabled and `insert_deduplication_token` is set.
+
+Possible values:
+
+      0 — Disabled.
+      1 — Enabled.
+
+Default value: 0.
+
+Usage:
+
+If setting `deduplicate_blocks_in_dependent_materialized_views` is enabled, `insert_deduplication_token` is passed to dependent materialized views. But in complex INSERT flows it is possible that we want to avoid deduplication for dependent materialized views.
+
+Example:
+```
+landing -┬--> mv_1_1 ---> ds_1_1 ---> mv_2_1 --┬-> ds_2_1 ---> mv_3_1 ---> ds_3_1
+         |                                     |
+         └--> mv_1_2 ---> ds_1_2 ---> mv_2_2 --┘
+```
+
+In this example we want to avoid deduplication for two different blocks generated from `mv_2_1` and `mv_2_2` that will be inserted into `ds_2_1`. Without `update_insert_deduplication_token_in_dependent_materialized_views` setting enabled, those two different blocks will be deduplicated, because different blocks from `mv_2_1` and `mv_2_2` will have the same `insert_deduplication_token`.
+
+If setting `update_insert_deduplication_token_in_dependent_materialized_views` is enabled, during each insert into dependent materialized views `insert_deduplication_token` is updated with table identifier, so block from `mv_2_1` and block from `mv_2_2` will have different `insert_deduplication_token` and will not be deduplicated.
+
 ## insert_keeper_max_retries
 
 The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
@@ -2049,7 +2162,9 @@ Possible values:
 - Positive integer.
 - 0 — Retries are disabled
 
-Default value: 0
+Default value: 20
+
+Cloud default value: `20`.
 
 Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
 The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
@@ -2579,6 +2694,8 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds (once a second).
 
+**Temporarily disabled in ClickHouse Cloud.**
+
 See also:
 
 - System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
@@ -2601,6 +2718,8 @@ Possible values:
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Default value: 1000000000 nanoseconds.
+
+**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -2710,6 +2829,17 @@ Possible values:
 
 Default value: 0.
 
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
+
+Enables skipping read-only replicas for INSERT queries into Distributed.
+
+Possible values:
+
+- 0 — INSERT was as usual, if it will go to read-only replica it will fail
+- 1 — Initiator will skip read-only replicas before sending data to shards.
+
+Default value: `0`
+
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
@@ -2722,6 +2852,8 @@ Possible values:
 - 1 — Data is inserted in synchronous mode.
 
 Default value: `0`.
+
+Cloud default value: `1`.
 
 **See Also**
 
@@ -3238,7 +3370,9 @@ Possible values:
 
 - a string representing any valid table engine name
 
-Default value: `None`
+Default value: `MergeTree`.
+
+Cloud default value: `SharedMergeTree`.
 
 **Example**
 
@@ -3338,7 +3472,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
 
-Default value: `0`.
+Default value: `1`.
 
 ## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
 
@@ -3349,7 +3483,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 0 - Use `BLOB`.
 - 1 - Use `TEXT`.
 
-Default value: `0`.
+Default value: `1`.
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
@@ -3599,7 +3733,7 @@ Default value: `0`.
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Allows creation of experimental [live views](../../sql-reference/statements/create/view.md/#live-view).
+Allows creation of a deprecated LIVE VIEW.
 
 Possible values:
 
@@ -3610,21 +3744,15 @@ Default value: `0`.
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md/#live-view) is alive .
-
-Default value: `15`.
+Deprecated.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md/#live-view) is re-executed.
-
-Default value: `64`.
+Deprecated.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md/#live-view) is forced to refresh.
-
-Default value: `60`.
+Deprecated.
 
 ## http_connection_timeout {#http_connection_timeout}
 
@@ -3814,6 +3942,8 @@ Possible values:
 
 Default value: `0`.
 
+Cloud default value: `1`.
+
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -3847,10 +3977,13 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+- `none_only_active` - similar to `none`, but doesn't wait for inactive replicas of the `Replicated` database. Note: with this mode it's impossible to figure out that the query was not executed on some replica and will be executed in background.
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
 Default value: `throw`.
+
+Cloud default value: `none`.
 
 ## flatten_nested {#flatten-nested}
 
@@ -3986,6 +4119,8 @@ Possible values:
 - 2 — Wait for everyone.
 
 Default value: `1`.
+
+Cloud default value: `0`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
@@ -4168,7 +4303,7 @@ Result:
 
 ## enable_order_by_all {#enable-order-by-all}
 
-Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
+Enables or disables sorting with `ORDER BY ALL` syntax, see [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
 Possible values:
 
@@ -4188,7 +4323,7 @@ INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
 
 SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
 
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
+SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 ```
 
 Result:
@@ -4225,6 +4360,18 @@ Possible values:
 
 Default value: `0`.
 
+
+## function_locate_has_mysql_compatible_argument_order {#function-locate-has-mysql-compatible-argument-order}
+
+Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
+
+Possible values:
+
+- 0 — Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
+- 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
+
+Default value: `1`.
+
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
@@ -4236,6 +4383,17 @@ Possible values:
 - `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
+
+## first_day_of_week
+
+The first day of the week assumed by [`toStartOfInterval`](../../sql-reference/functions/date-time-functions.md#toStartOfInterval) function when using weeks as unit.
+
+Possible values:
+
+- Monday - Week starts on Monday
+- Sunday - Week starts on Sunday
+
+Default value: 'Monday'.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -4641,6 +4799,8 @@ or no data was received within `receive_data_timeout`. Query uses the first conn
 other connections are cancelled. Queries with `max_parallel_replicas > 1` are supported.
 
 Enabled by default.
+
+Disabled by default on Cloud.
 
 ## hedged_connection_timeout {#hedged_connection_timeout}
 
@@ -5165,7 +5325,7 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
 
 When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section. 
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
 
 Default value: `false`.
 
@@ -5176,12 +5336,120 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
+## allow_experimental_variant_type {#allow_experimental_variant_type}
+
+Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
+
+Default value: `false`.
+
+## use_variant_as_common_type {#use_variant_as_common_type}
+
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+
+Example:
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(if(number % 2, number, range(number))) as variant_type FROM numbers(1);
+SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
+```
+
+```text
+┌─variant_type───────────────────┐
+│ Variant(Array(UInt64), UInt64) │
+└────────────────────────────────┘
+┌─variant───┐
+│ []        │
+│ 1         │
+│ [0,1]     │
+│ 3         │
+│ [0,1,2,3] │
+└───────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL)) AS variant_type FROM numbers(1);
+SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
+```
+
+```text
+─variant_type─────────────────────────┐
+│ Variant(Array(UInt8), String, UInt8) │
+└──────────────────────────────────────┘
+
+┌─variant───────┐
+│ 42            │
+│ [1,2,3]       │
+│ Hello, World! │
+│ ᴺᵁᴸᴸ          │
+└───────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(array(range(number), number, 'str_' || toString(number))) as array_of_variants_type from numbers(1);
+SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
+```
+
+```text
+┌─array_of_variants_type────────────────────────┐
+│ Array(Variant(Array(UInt64), String, UInt64)) │
+└───────────────────────────────────────────────┘
+
+┌─array_of_variants─┐
+│ [[],0,'str_0']    │
+│ [[0],1,'str_1']   │
+│ [[0,1],2,'str_2'] │
+└───────────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT toTypeName(map('a', range(number), 'b', number, 'c', 'str_' || toString(number))) as map_of_variants_type from numbers(1);
+SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
+```
+
+```text
+┌─map_of_variants_type────────────────────────────────┐
+│ Map(String, Variant(Array(UInt64), String, UInt64)) │
+└─────────────────────────────────────────────────────┘
+
+┌─map_of_variants───────────────┐
+│ {'a':[],'b':0,'c':'str_0'}    │
+│ {'a':[0],'b':1,'c':'str_1'}   │
+│ {'a':[0,1],'b':2,'c':'str_2'} │
+└───────────────────────────────┘
+```
+
+
+Default value: `false`.
+
+## default_normal_view_sql_security {#default_normal_view_sql_security}
+
+Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+
+The default value is `INVOKER`.
+
+## default_materialized_view_sql_security {#default_materialized_view_sql_security}
+
+Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+
+The default value is `DEFINER`.
+
+## default_view_definer {#default_view_definer}
+
+Allows to set default `DEFINER` option while creating a view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+
+The default value is `CURRENT_USER`.
+
 ## max_partition_size_to_drop
 
-Restriction on dropping partitions in query time.
+Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
 
 Default value: 50 GB.
-The value 0 means that you can drop partitions without any restrictions.
+
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
@@ -5189,11 +5457,34 @@ This query setting overwrites its server setting equivalent, see [max_partition_
 
 ## max_table_size_to_drop
 
-Restriction on deleting tables in query time.
+Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
 
 Default value: 50 GB.
-The value 0 means that you can delete all tables without any restrictions.
+
+Cloud default value: 1 TB.
 
 :::note
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
 :::
+
+## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
+
+Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
+
+:::note
+Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
+:::
+
+Default value: 'false'.
+
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
+
+Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
+
+## mysql_datatypes_support_level
+
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+- `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
+- `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
+- `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
+- `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.

@@ -104,7 +104,7 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     if (version == VERSION_FULL_OBJECT_KEY && !storage_metadata_write_full_object_key)
     {
-        Poco::Logger * logger = &Poco::Logger::get("DiskObjectStorageMetadata");
+        LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
         LOG_WARNING(
             logger,
             "Metadata file {} is written with VERSION_FULL_OBJECT_KEY version"
@@ -192,7 +192,7 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
         bool storage_metadata_write_full_object_key = getWriteFullObjectKeySetting();
         if (!storage_metadata_write_full_object_key)
         {
-            Poco::Logger * logger = &Poco::Logger::get("DiskObjectStorageMetadata");
+            LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
             LOG_WARNING(
                 logger,
                 "Metadata file {} has at least one key {} without fixed common key prefix."

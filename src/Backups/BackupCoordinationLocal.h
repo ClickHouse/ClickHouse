@@ -21,7 +21,7 @@ namespace DB
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
-    BackupCoordinationLocal(bool plain_backup_);
+    explicit BackupCoordinationLocal(bool plain_backup_);
     ~BackupCoordinationLocal() override;
 
     void setStage(const String & new_stage, const String & message) override;
@@ -57,7 +57,7 @@ public:
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     BackupCoordinationReplicatedTables TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
     BackupCoordinationReplicatedAccess TSA_GUARDED_BY(replicated_access_mutex) replicated_access;

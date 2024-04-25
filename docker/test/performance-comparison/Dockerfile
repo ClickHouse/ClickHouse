@@ -37,7 +37,7 @@ RUN apt-get update \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY run.sh /
 

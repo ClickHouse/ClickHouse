@@ -3,15 +3,15 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <base/sort.h>
-#include <Common/WeakHash.h>
-#include <Common/assert_cast.h>
-#include <Common/iota.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -148,6 +148,31 @@ void ColumnTuple::insert(const Field & x)
         columns[i]->insert(tuple[i]);
 }
 
+bool ColumnTuple::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::Tuple)
+        return false;
+
+    const auto & tuple = x.get<const Tuple &>();
+
+    const size_t tuple_size = columns.size();
+    if (tuple.size() != tuple_size)
+        return false;
+
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        if (!columns[i]->tryInsert(tuple[i]))
+        {
+            for (size_t j = 0; j != i; ++j)
+                columns[i]->popBack(1);
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
@@ -158,6 +183,18 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
+}
+
+void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
+{
+    const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(src);
+
+    const size_t tuple_size = columns.size();
+    if (src_tuple.columns.size() != tuple_size)
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
 }
 
 void ColumnTuple::insertDefault()
@@ -172,7 +209,7 @@ void ColumnTuple::popBack(size_t n)
         column->popBack(n);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     StringRef res(begin, 0);
     for (const auto & column : columns)
@@ -183,6 +220,14 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     }
 
     return res;
+}
+
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    for (const auto & column : columns)
+        memory = column->serializeValueIntoMemory(n, memory);
+
+    return memory;
 }
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
@@ -326,22 +371,9 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
     return compareAtImpl(n, m, rhs, nan_direction_hint);
 }
 
-void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnTuple>(assert_cast<const ColumnTuple &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
 int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
-}
-
-bool ColumnTuple::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnTuple>();
 }
 
 template <bool positive>
@@ -432,16 +464,18 @@ void ColumnTuple::updatePermutationWithCollation(const Collator & collator, ICol
     updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, equal_ranges, &collator);
 }
 
-void ColumnTuple::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
 void ColumnTuple::reserve(size_t n)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         getColumn(i).reserve(n);
+}
+
+void ColumnTuple::shrinkToFit()
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).shrinkToFit();
 }
 
 void ColumnTuple::ensureOwnership()
@@ -558,21 +592,6 @@ ColumnPtr ColumnTuple::compress() const
                 column = column->decompress();
             return ColumnTuple::create(my_compressed);
         });
-}
-
-double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
-{
-    return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
-}
-
-UInt64 ColumnTuple::getNumberOfDefaultRows() const
-{
-    return getNumberOfDefaultRowsImpl<ColumnTuple>();
-}
-
-void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
 }
 
 void ColumnTuple::finalize()

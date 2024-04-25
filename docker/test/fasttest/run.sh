@@ -150,6 +150,7 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
+            contrib/expected
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
@@ -211,6 +212,17 @@ function build
         echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
           | ts '%Y-%m-%d %H:%M:%S' \
           | tee "$FASTTEST_OUTPUT/test_result.txt"
+
+        (
+            # This query should fail, and print stacktrace with proper symbol names (even on a stripped binary)
+            clickhouse_output=$(programs/clickhouse-stripped --stacktrace -q 'select' 2>&1 || :)
+            if [[ $clickhouse_output =~ DB::LocalServer::main ]]; then
+                echo "stripped_clickhouse_shows_symbols_names: [ OK ] 0 sec."
+            else
+                echo -e "stripped_clickhouse_shows_symbols_names: [ FAIL ] 0 sec. - clickhouse output:\n\n$clickhouse_output\n"
+            fi
+        ) | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_result.txt"
+
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
             mkdir -p "$FASTTEST_OUTPUT/binaries/"
             cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"

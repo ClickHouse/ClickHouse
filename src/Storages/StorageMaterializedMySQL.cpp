@@ -22,9 +22,8 @@ namespace DB
 StorageMaterializedMySQL::StorageMaterializedMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
     : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
-    StorageInMemoryMetadata in_memory_metadata;
-    in_memory_metadata = nested_storage->getInMemoryMetadata();
-    setInMemoryMetadata(in_memory_metadata);
+    setInMemoryMetadata(nested_storage->getInMemoryMetadata());
+    setVirtuals(*nested_storage->getVirtualsPtr());
 }
 
 bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_names) const
@@ -47,14 +46,6 @@ void StorageMaterializedMySQL::read(
 
     readFinalFromNestedStorage(query_plan, nested_storage, column_names,
             query_info, context, processed_stage, max_block_size, num_streams);
-}
-
-NamesAndTypesList StorageMaterializedMySQL::getVirtuals() const
-{
-    if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
-        db->rethrowExceptionIfNeeded();
-
-    return nested_storage->getVirtuals();
 }
 
 IStorage::ColumnSizeByName StorageMaterializedMySQL::getColumnSizes() const

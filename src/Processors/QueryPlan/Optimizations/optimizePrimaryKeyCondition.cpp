@@ -1,8 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <deque>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -14,6 +14,14 @@ void optimizePrimaryKeyCondition(const Stack & stack)
     auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get());
     if (!source_step_with_filter)
         return;
+
+    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
+    if (storage_prewhere_info)
+    {
+        source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions, storage_prewhere_info->prewhere_column_name);
+        if (storage_prewhere_info->row_level_filter)
+            source_step_with_filter->addFilter(storage_prewhere_info->row_level_filter, storage_prewhere_info->row_level_column_name);
+    }
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
@@ -28,6 +36,8 @@ void optimizePrimaryKeyCondition(const Stack & stack)
         else
             break;
     }
+
+    source_step_with_filter->applyFilters();
 }
 
 }

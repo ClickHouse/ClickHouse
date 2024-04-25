@@ -125,7 +125,7 @@ For each resulting data part ClickHouse saves:
 3.  The first “cancel” row, if there are more “cancel” rows than “state” rows.
 4.  None of the rows, in all other cases.
 
-Also when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
+Also, when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
@@ -196,7 +196,7 @@ What do we see and where is collapsing?
 
 With two `INSERT` queries, we created 2 data parts. The `SELECT` query was performed in 2 threads, and we got a random order of rows. Collapsing not occurred because there was no merge of the data parts yet. ClickHouse merges data part in an unknown moment which we can not predict.
 
-Thus we need aggregation:
+Thus, we need aggregation:
 
 ``` sql
 SELECT

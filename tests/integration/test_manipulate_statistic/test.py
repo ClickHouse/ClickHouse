@@ -6,7 +6,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1", user_configs=["config/config.xml"], with_zookeeper=True
+    "node1", user_configs=["config/config.xml"], with_zookeeper=False
 )
 
 

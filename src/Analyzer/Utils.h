@@ -50,10 +50,13 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
 
-/// Extract table, table function, query, union from join tree
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false);
+/// Extract all TableNodes from the query tree.
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
-/// Extract left table expression from join tree
+/// Extract table, table function, query, union from join tree.
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
+
+/// Extract left table expression from join tree.
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
@@ -101,5 +104,11 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
+
+/// Checks that node has only one source and returns it
+QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
+
+/// Build subquery which we execute for `IN table` function.
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr table_node, const ContextPtr & context);
 
 }

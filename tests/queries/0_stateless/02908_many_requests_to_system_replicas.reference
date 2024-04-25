@@ -1,5 +1,10 @@
 Creating 300 tables
-Making making 200 requests to system.replicas
+900	1	1
+900	1	1
+900	1	1
+900	1	1
+Making 200 requests to system.replicas
 Query system.replicas while waiting for other concurrent requests to finish
 0
 900
+1

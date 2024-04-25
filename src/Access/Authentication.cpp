@@ -4,11 +4,12 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
+#include <Common/Exception.h>
+#include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Common/SSH/Wrappers.h>
 
+#include "config.h"
 
 namespace DB
 {
@@ -73,8 +74,8 @@ namespace
         return checkPasswordDoubleSHA1MySQL(scramble, scrambled_password, Util::encodeDoubleSHA1(password_plaintext));
     }
 
-#if USE_SSL
-    bool checkSshSignature(const std::vector<ssh::SSHKey> & keys, std::string_view signature, std::string_view original)
+#if USE_SSH
+    bool checkSshSignature(const std::vector<SSHKey> & keys, std::string_view signature, std::string_view original)
     {
         for (const auto & key: keys)
             if (key.isPublic() && key.verifySignature(signature, original))
@@ -114,7 +115,11 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
 
             case AuthenticationType::MAX:
                 break;
@@ -145,7 +150,11 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
 
             case AuthenticationType::MAX:
                 break;
@@ -178,7 +187,11 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
 
             case AuthenticationType::BCRYPT_PASSWORD:
                 return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
@@ -216,13 +229,18 @@ bool Authentication::areCredentialsValid(
                 return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
 
             case AuthenticationType::SSH_KEY:
-                throw Authentication::Require<SshCredentials>("Ssh Keys Authentication");
+#if USE_SSH
+                throw Authentication::Require<SshCredentials>("SSH Keys Authentication");
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
 
             case AuthenticationType::MAX:
                 break;
         }
     }
 
+#if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
     {
         switch (auth_data.getType())
@@ -243,15 +261,12 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<SSLCertificateCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-#if USE_SSL
                 return checkSshSignature(auth_data.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
-#else
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
-#endif
             case AuthenticationType::MAX:
                 break;
         }
     }
+#endif
 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;

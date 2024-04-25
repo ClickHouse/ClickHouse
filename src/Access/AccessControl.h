@@ -118,7 +118,7 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
 
     /// Makes a backup of access entities.
     void restoreFromBackup(RestorerFromBackup & restorer) override;
@@ -133,20 +133,20 @@ public:
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);
     void setCustomSettingsPrefixes(const String & comma_separated_prefixes);
-    bool isSettingNameAllowed(const std::string_view name) const;
-    void checkSettingNameIsAllowed(const std::string_view name) const;
+    bool isSettingNameAllowed(std::string_view name) const;
+    void checkSettingNameIsAllowed(std::string_view name) const;
 
     /// Allows implicit user creation without password (by default it's allowed).
     /// In other words, allow 'CREATE USER' queries without 'IDENTIFIED WITH' clause.
-    void setImplicitNoPasswordAllowed(const bool allow_implicit_no_password_);
+    void setImplicitNoPasswordAllowed(bool allow_implicit_no_password_);
     bool isImplicitNoPasswordAllowed() const;
 
     /// Allows users without password (by default it's allowed).
-    void setNoPasswordAllowed(const bool allow_no_password_);
+    void setNoPasswordAllowed(bool allow_no_password_);
     bool isNoPasswordAllowed() const;
 
     /// Allows users with plaintext password (by default it's allowed).
-    void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
+    void setPlaintextPasswordAllowed(bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;
 
     /// Default password type when the user does not specify it.
@@ -164,7 +164,7 @@ public:
     int getBcryptWorkfactor() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
-    /// For example, if there two users A, B and a row policy is defined only for A, then
+    /// For example, if there are two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
     void setEnabledUsersWithoutRowPoliciesCanReadRows(bool enable) { users_without_row_policies_can_read_rows = enable; }
     bool isEnabledUsersWithoutRowPoliciesCanReadRows() const { return users_without_row_policies_can_read_rows; }
@@ -181,6 +181,9 @@ public:
 
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
+
+    void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
+    bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
@@ -205,6 +208,11 @@ public:
         const Poco::Net::IPAddress & address,
         const String & forwarded_address,
         const String & custom_quota_key) const;
+
+    std::shared_ptr<const EnabledQuota> getAuthenticationQuota(
+        const String & user_name,
+        const Poco::Net::IPAddress & address,
+        const std::string & forwarded_address) const;
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
@@ -253,6 +261,7 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
+    std::atomic_bool table_engines_require_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
 };

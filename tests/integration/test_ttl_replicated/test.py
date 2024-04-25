@@ -2,7 +2,7 @@ import time
 
 import helpers.client as client
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.test_tools import TSV, exec_query_with_retry
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
@@ -16,39 +16,36 @@ node3 = cluster.add_instance("node3", with_zookeeper=True)
 node4 = cluster.add_instance(
     "node4",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 node5 = cluster.add_instance(
     "node5",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node6 = cluster.add_instance(
     "node6",
     with_zookeeper=True,
-    image="yandex/clickhouse-server",
-    tag="20.8.11.17",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 
