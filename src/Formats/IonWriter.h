@@ -3,11 +3,11 @@
 #include "config.h"
 
 #if USE_ION
-#    include <Core/Types.h>
-#    include <IO/WriteBuffer.h>
-#    include <Common/PODArray.h>
+#include <Core/Types.h>
+#include <IO/WriteBuffer.h>
+#include <Common/PODArray.h>
 
-#    include <ionc/ion.h>
+#include <ionc/ion.h>
 
 namespace DB
 {
@@ -30,6 +30,7 @@ private:
     std::vector<BYTE> ion_buffer;
     hWRITER ion_writer = nullptr;
     ION_STREAM * ion_stream = nullptr;
+
 
     using IonWriteCallback = std::function<iERR(_ion_user_stream * stream)>;
     IonWriteCallback ion_writer_callback{};

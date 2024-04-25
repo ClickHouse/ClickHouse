@@ -5,10 +5,10 @@
 #if USE_ION
 
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Formats/FormatSettings.h>
-#include <ionc/ion.h>
+
 #include "Formats/IonWriter.h"
 
 namespace DB
@@ -23,7 +23,7 @@ public:
 
 private:
     void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const ISerialization &, size_t) override {}
+    void writeField(const IColumn &, const ISerialization &, size_t) override { }
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
     void writePrefix() override;

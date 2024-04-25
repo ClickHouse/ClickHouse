@@ -2,29 +2,27 @@
 
 #if USE_ION
 
-#    include <iostream>
-#    include <Formats/FormatFactory.h>
-#    include <Common/assert_cast.h>
+#include <Formats/FormatFactory.h>
+#include <Common/assert_cast.h>
 
-#    include <IO/WriteBufferFromString.h>
-#    include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeLowCardinality.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
-#    include <Columns/ColumnArray.h>
-#    include <Columns/ColumnFixedString.h>
-#    include <Columns/ColumnLowCardinality.h>
-#    include <Columns/ColumnMap.h>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/ColumnsNumber.h>
-#    include "Formats/FormatSettings.h"
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include "Formats/FormatSettings.h"
 
 
 namespace DB
@@ -90,14 +88,12 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
             writer->writeBigUInt(assert_cast<const ColumnUInt64 &>(column).getDataAt(row_num).data, sizeof(UInt64));
             return;
         }
-        case TypeIndex::Enum8:
-            [[fallthrough]];
+        case TypeIndex::Enum: [[fallthrough]];
         case TypeIndex::Int8: {
             writer->writeInt(assert_cast<const ColumnInt8 &>(column).getElement(row_num));
             return;
         }
-        case TypeIndex::Enum16:
-            [[fallthrough]];
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16: {
             writer->writeInt(assert_cast<const ColumnInt16 &>(column).getElement(row_num));
             return;
@@ -144,7 +140,6 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
             return;
         }
         case TypeIndex::DateTime64: {
-            // I really don't know how to make it better
             writer->writeBigUInt(assert_cast<const DataTypeDateTime64::ColumnType &>(column).getDataAt(row_num).data, sizeof(DateTime64));
             return;
         }

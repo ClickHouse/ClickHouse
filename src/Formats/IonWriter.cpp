@@ -1,9 +1,8 @@
 #include "IonWriter.h"
 
 #if USE_ION
-#    include <iostream>
-#    include <decNumber/decContext.h>
-#    include <Common/formatIPv6.h>
+#include <decNumber/decContext.h>
+#include <Common/formatIPv6.h>
 
 namespace DB
 {
