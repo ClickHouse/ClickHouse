@@ -2,19 +2,19 @@
 
 #if USE_CBOR
 
-#    include <IO/ReadBufferFromMemory.h>
-#    include <IO/ReadHelpers.h>
-#    include <Common/assert_cast.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <Common/assert_cast.h>
 
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTuple.h>
 
-#    include <Columns/ColumnArray.h>
-#    include <Columns/ColumnMap.h>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 
 namespace DB
 {
@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
 extern const int INCORRECT_DATA;
 extern const int ILLEGAL_COLUMN;
+extern const int NOT_IMPLEMENTED;
 }
 
 static void insertCommonInteger(IColumn & column, DataTypePtr type, UInt64 value)
@@ -354,11 +355,7 @@ void WriteToDBListener::on_array(int size)
     stack_info.pop();
     if (isArray(info.type))
     {
-        auto nested_type = assert_cast<const DataTypeArray &>(*info.type).getNestedType();
-        ColumnArray & column_array = assert_cast<ColumnArray &>(info.column);
-        IColumn & nested_column = column_array.getData();
-        if (size > 0)
-            stack_info.emplace(nested_column, nested_type, false, size);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
     else if (isTuple(info.type))
     {
@@ -387,7 +384,7 @@ void WriteToDBListener::on_map(int)
     stack_info.pop();
     if (!isMap(info.type))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert CBOR map into column with type {}.", info.type->getName());
-    // =ColumnArray & column_array = assert_cast<ColumnMap &>(column).getNestedColumn();
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void WriteToDBListener::on_tag(unsigned int tag)

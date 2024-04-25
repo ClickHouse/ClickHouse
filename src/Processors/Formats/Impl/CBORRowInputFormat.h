@@ -4,9 +4,9 @@
 
 #if USE_CBOR
 
-#    include <Formats/CBORReader.h>
-#    include <Formats/FormatFactory.h>
-#    include <Processors/Formats/IRowInputFormat.h>
+#include <Formats/CBORReader.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IRowInputFormat.h>
 
 namespace DB
 {
@@ -32,7 +32,7 @@ private:
         IColumn & column;
         DataTypePtr type;
         bool is_tuple_element;
-        std::optional<size_t> array_size;
+        std::optional<ssize_t> array_size;
     };
     /// Stack is needed to process arrays and maps
     std::stack<Info> stack_info;

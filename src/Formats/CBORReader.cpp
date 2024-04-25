@@ -2,10 +2,9 @@
 
 #if USE_CBOR
 
-#    include <Columns/ColumnTuple.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <IO/ReadBufferFromMemory.h>
-#    include <Common/assert_cast.h>
+#include <Columns/ColumnTuple.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -18,42 +17,28 @@ extern const int ILLEGAL_COLUMN;
 CBORReader::CBORReader(ReadBuffer & in_)
     : buf(in_), cbor_reader(reinterpret_cast<unsigned char *>(buf.buffer().begin()), static_cast<int>(buf.buffer().size()))
 {
-    std::cout << "Print buffer with size: " << buf.available() << "\n";
-    for (size_t i = 0; i < buf.available(); ++i)
-        std::cout << fmt::format("{:#x} ", *reinterpret_cast<unsigned char *>(buf.buffer().begin() + i));
-    std::cout << "\n";
 }
 
 CBORReader::~CBORReader() = default;
 
 size_t CBORReader::extractBytesCountFromMinorType(unsigned char minor_type)
 {
-    std::cout << fmt::format("extractBytesCountFromMinorType {}\n", minor_type);
     if (minor_type < 24)
         return 0;
     else if (minor_type == 24)
-    {
         return sizeof(unsigned char);
-    }
     else if (minor_type == 25)
-    {
         return sizeof(unsigned short);
-    }
     else if (minor_type == 26)
-    {
         return sizeof(unsigned int);
-    }
     else if (minor_type == 27)
-    {
         return sizeof(unsigned long long);
-    }
     else
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid minor type");
 }
 
 uint64_t CBORReader::extractValueFromMinorType(unsigned char minor_type)
 {
-    //    std::cout << fmt::format("extractValueFromMinorType minor_type: {:#x}\n", minor_type);
     if (minor_type < 24)
         return minor_type;
     else if (minor_type == 24)
@@ -101,10 +86,6 @@ size_t CBORReader::getByteStringBytesCount(unsigned char minor_type)
     if (minor_type > 27)
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid bytes type");
     size_t bytes_count = extractValueFromMinorType(minor_type);
-    std::cout << "getByteStringBytesCount: " << bytes_count << ": ";
-    for (size_t i = 0; i < bytes_count; ++i)
-        std::cout << fmt::format("{:#x}", cbor_reader.get_byte()) << " ";
-    std::cout << std::endl;
     return bytes_count + extractBytesCountFromMinorType(minor_type);
 }
 
@@ -115,10 +96,6 @@ size_t CBORReader::getStringBytesCount(unsigned char minor_type)
     if (minor_type > 27)
         throw Exception(ErrorCodes::INCORRECT_DATA, "CBOR decoder error: invalid string type");
     size_t bytes_count = extractValueFromMinorType(minor_type);
-    std::cout << "getStringBytesCount: " << bytes_count << ": ";
-    for (size_t i = 0; i < bytes_count; ++i)
-        std::cout << fmt::format("{:#x}", cbor_reader.get_byte()) << " ";
-    std::cout << std::endl;
     return bytes_count + extractBytesCountFromMinorType(minor_type);
 }
 
@@ -185,7 +162,6 @@ size_t CBORReader::getTypeBytesCount(unsigned char type)
 {
     unsigned char major_type = type >> 5;
     unsigned char minor_type = static_cast<unsigned char>(type & 31);
-    std::cout << fmt::format("getTypeBytesCount type: {:#x} ; major_type: {} ; minor_type {}\n", type, major_type, minor_type);
     // Result is bytes for object + 1, because in all case it need one byte for type marker
     if (major_type == CBORMajorTypes::POSITIVE_INTEGER)
         return getIntegerBytesCount(minor_type) + 1;
@@ -215,7 +191,6 @@ void CBORReader::readAndCheckPrefix()
     ++buf.position();
     if (byte != 0x9F)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not supported CBOR data schema.");
-    std::cout << "Successfully readAndCheckPrefix\n";
 }
 
 bool CBORReader::readRow(size_t expected_size, cbor::listener & listener)
@@ -231,14 +206,11 @@ bool CBORReader::readRow(size_t expected_size, cbor::listener & listener)
 
     unsigned char major_type = type >> 5;
     unsigned char minor_type = static_cast<unsigned char>(type & 31);
-    std::cout << fmt::format("readRow type: {:#x} ; major_type: {} ; minor_type {}\n", type, major_type, minor_type);
     if (major_type != 4)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not supported CBOR data schema.");
 
     // If it is array, get size of it in elements
     size_t array_size = getArraySize(minor_type);
-
-    std::cout << "Array size: " << array_size << "; Expected size: " << expected_size << std::endl;
 
     // TODO: Perhaps in this case it is worth cutting off unnecessary elements or adding missing ones by default?
     if (array_size != expected_size)
@@ -248,8 +220,6 @@ bool CBORReader::readRow(size_t expected_size, cbor::listener & listener)
 
     size_t offset = getArrayBytesCount(array_size);
     // Count the number of bytes until the next row
-    std::cout << "offset: " << offset << "\n";
-    // std::cout << fmt::format("readRow after offset: {:#x}\n", cbor_reader.get_byte());
     cbor::input input(buf.position(), static_cast<int>(offset));
     cbor::decoder decoder(input, listener);
     decoder.run();
