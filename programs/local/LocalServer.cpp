@@ -778,7 +778,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 {
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
-    std::cout << "All setting parameters are documented in detail at https://clickhouse.com/docs/  or you can also access them in `system.settings` table.\n\n";
+    std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings and readable from system.settings.\n\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
