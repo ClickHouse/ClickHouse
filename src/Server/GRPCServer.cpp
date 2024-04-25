@@ -320,8 +320,14 @@ namespace
 
         Poco::Net::SocketAddress getClientAddress() const
         {
-            String peer = grpc_context.peer();
-            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
+            /// Returns a string like ipv4:127.0.0.1:55930 or ipv6:%5B::1%5D:55930
+            String uri_encoded_peer = grpc_context.peer();
+            uri_encoded_peer = uri_encoded_peer.substr(uri_encoded_peer.find(':') + 1);
+
+            String peer;
+            Poco::URI::decode(uri_encoded_peer, peer);
+
+            return Poco::Net::SocketAddress{peer};
         }
 
         std::optional<String> getClientHeader(const String & key) const
