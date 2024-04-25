@@ -2,10 +2,11 @@
 #include <cstddef>
 #include <limits>
 #include <sstream>
+#include <Core/SortDescription.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/DiagramOutputFormat.h>
 #include <Common/UTF8Helpers.h>
-
+#include "Interpreters/sortBlock.h"
 
 namespace DB
 {
@@ -433,6 +434,17 @@ void DiagramOutputFormat::writeLineplot()
 
         if (!y_column->isNumeric())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Data type of Y column isn't numeric.");
+
+        auto block = getPort(PortKind::Main).getHeader();
+        block.setColumns(chunk.getColumns());
+        SortDescription sort_description;
+        sort_description.reserve(chunk.getNumColumns());
+
+        for (size_t i = 0; i < chunk.getNumColumns(); ++i)
+            sort_description.emplace_back(block.getColumnsWithTypeAndName()[i].name, 1, 1);
+
+        if (!isAlreadySorted(block, sort_description))
+            sortBlock(block, sort_description);
 
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
         {
