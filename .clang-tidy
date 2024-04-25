@@ -96,6 +96,7 @@ Checks: [
   '-modernize-use-default-member-init',
   '-modernize-use-emplace',
   '-modernize-use-nodiscard',
+  '-modernize-use-override',
   '-modernize-use-trailing-return-type',
 
   '-performance-inefficient-string-concatenation',
@@ -119,6 +120,7 @@ Checks: [
   '-readability-named-parameter',
   '-readability-redundant-declaration',
   '-readability-simplify-boolean-expr',
+  '-readability-static-accessed-through-instance',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',

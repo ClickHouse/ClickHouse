@@ -16,7 +16,7 @@ ptr<log_entry> makeClone(const ptr<log_entry> & entry)
 InMemoryLogStore::InMemoryLogStore()
     : start_idx(1)
 {
-    nuraft::ptr<nuraft::buffer> buf = nuraft::buffer::alloc(0);
+    nuraft::ptr<nuraft::buffer> buf = nuraft::buffer::alloc(sizeof(uint64_t));
     logs[0] = nuraft::cs_new<nuraft::log_entry>(0, buf);
 }
 

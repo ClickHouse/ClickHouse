@@ -20,7 +20,6 @@
 #include <Poco/Util/Application.h>
 
 #include <istream>
-#include <sstream>
 #include <unordered_map>
 #include <Common/ProxyConfiguration.h>
 

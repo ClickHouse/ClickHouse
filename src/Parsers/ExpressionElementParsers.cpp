@@ -5,10 +5,9 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Common/BinStringDecodeHelper.h>
-#include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/BinStringDecodeHelper.h>
 #include "Parsers/CommonParsers.h"
 
 #include <Parsers/DumpASTNode.h>
@@ -278,7 +277,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr id_list;
-    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type), std::make_unique<ParserToken>(TokenType::Dot), false)
+    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter), std::make_unique<ParserToken>(TokenType::Dot), false)
              .parse(pos, id_list, expected))
         return false;
 
@@ -1481,7 +1480,6 @@ const char * ParserAlias::restricted_keywords[] =
     "USING",
     "WHERE",
     "WINDOW",
-    "QUALIFY",
     "WITH",
     "INTERSECT",
     "EXCEPT",
@@ -1492,7 +1490,7 @@ const char * ParserAlias::restricted_keywords[] =
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_as(Keyword::AS);
-    ParserIdentifier id_p(false, Highlight::alias);
+    ParserIdentifier id_p;
 
     bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
