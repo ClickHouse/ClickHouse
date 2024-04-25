@@ -429,18 +429,12 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Session::setHTTPClientInfo(const Poco::Net::HTTPRequest & request)
 {
     if (session_context)
-    {
-        session_context->setHTTPClientInfo(http_method, http_user_agent, http_referer);
-    }
+        session_context->setHTTPClientInfo(request);
     else
-    {
-        prepared_client_info->http_method = http_method;
-        prepared_client_info->http_user_agent = http_user_agent;
-        prepared_client_info->http_referer = http_referer;
-    }
+        prepared_client_info->setFromHTTPRequest(request);
 }
 
 void Session::setForwardedFor(const String & forwarded_for)

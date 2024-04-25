@@ -2,11 +2,17 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParser.h>
+#include <Parsers/TokenIterator.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
@@ -52,7 +58,54 @@ struct HasNonDeterministicFunctionsMatcher
     }
 };
 
+struct HasSystemTablesMatcher
+{
+    struct Data
+    {
+        const ContextPtr context;
+        bool has_system_tables = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.has_system_tables)
+            return;
+
+        String database_table; /// or whatever else we get, e.g. just a table
+
+        /// SELECT [...] FROM <table>
+        if (const auto * table_identifier = node->as<ASTTableIdentifier>())
+        {
+            database_table = table_identifier->name();
+        }
+        /// SELECT [...] FROM clusterAllReplicas(<cluster>, <table>)
+        else if (const auto * identifier = node->as<ASTIdentifier>())
+        {
+            database_table = identifier->name();
+        }
+        /// Handle SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
+        else if (const auto * literal = node->as<ASTLiteral>())
+        {
+            const auto & value = literal->value;
+            database_table = toString(value);
+        }
+
+        Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
+        IParser::Pos pos(tokens, /*max_depth*/ 42, /*max_backtracks*/ 42);
+        Expected expected;
+        String database;
+        String table;
+        bool successfully_parsed = parseDatabaseAndTableName(pos, expected, database, table);
+        if (successfully_parsed)
+            if (DatabaseCatalog::isPredefinedDatabase(database))
+                data.has_system_tables = true;
+    }
+};
+
 using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
+using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
@@ -61,6 +114,13 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions;
+}
+
+bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+{
+    HasSystemTablesMatcher::Data finder_data{context};
+    HasSystemTablesVisitor(finder_data).visit(ast);
+    return finder_data.has_system_tables;
 }
 
 namespace
@@ -126,6 +186,9 @@ String queryStringFromAST(ASTPtr ast)
 
 }
 
+/// Hashing of ASTs must consider aliases (issue #56258)
+static constexpr bool ignore_aliases = false;
+
 QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_,
@@ -133,7 +196,7 @@ QueryCache::Key::Key(
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast(removeQueryCacheSettings(ast_))
+    : ast_hash(removeQueryCacheSettings(ast_)->getTreeHash(ignore_aliases))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -149,18 +212,14 @@ QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vecto
 {
 }
 
-/// Hashing of ASTs must consider aliases (issue #56258)
-static constexpr bool ignore_aliases = false;
-
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash(ignore_aliases) == other.ast->getTreeHash(ignore_aliases);
+    return ast_hash == other.ast_hash;
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    IAST::Hash hash = key.ast->getTreeHash(ignore_aliases);
-    return hash.low64;
+    return key.ast_hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const

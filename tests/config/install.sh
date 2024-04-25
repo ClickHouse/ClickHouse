@@ -30,6 +30,7 @@ ln -sf $SRC_PATH/config.d/graphite_alternative.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/backoff_failed_mutation.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
@@ -65,6 +66,8 @@ ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/block_number.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
 if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
@@ -90,7 +93,7 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 
-if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
+if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
 fi
 
@@ -128,6 +131,12 @@ if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 
 else
     rm -f $DEST_SERVER_PATH/config.d/zookeeper_fault_injection.xml ||:
     ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
+fi
+
+if [[ -n "$THREAD_POOL_FAULT_INJECTION" ]] && [[ "$THREAD_POOL_FAULT_INJECTION" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/cannot_allocate_thread_injection.xml $DEST_SERVER_PATH/config.d/
+else
+    rm -f $DEST_SERVER_PATH/config.d/cannot_allocate_thread_injection.xml ||:
 fi
 
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
@@ -184,6 +193,7 @@ if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi

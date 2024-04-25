@@ -159,12 +159,6 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     return parseColumnsListFromString(structure, context);
 }
 
-std::unordered_set<String> TableFunctionURL::getVirtualsToCheckBeforeUsingStructureHint() const
-{
-    auto virtual_column_names = StorageURL::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
-}
-
 std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 {
     return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());

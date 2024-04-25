@@ -6,6 +6,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
@@ -89,13 +90,25 @@ void SquashingTransform::append(ReferenceType input_block)
 
     assert(blocksHaveEqualStructure(input_block, accumulated_block));
 
-    for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
+    try
     {
-        const auto source_column = input_block.getByPosition(i).column;
+        for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
+        {
+            const auto source_column = input_block.getByPosition(i).column;
 
-        auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
-        mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
-        accumulated_block.getByPosition(i).column = std::move(mutable_column);
+            auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
+            mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
+            accumulated_block.getByPosition(i).column = std::move(mutable_column);
+        }
+    }
+    catch (...)
+    {
+        /// add() may be called again even after a previous add() threw an exception.
+        /// Keep accumulated_block in a valid state.
+        /// Seems ok to discard accumulated data because we're throwing an exception, which the caller will
+        /// hopefully interpret to mean "this block and all *previous* blocks are potentially lost".
+        accumulated_block.clear();
+        throw;
     }
 }
 
@@ -107,6 +120,9 @@ bool SquashingTransform::isEnoughSize(const Block & block)
 
     for (const auto & [column, type, name] : block)
     {
+        if (!column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid column in block.");
+
         if (!rows)
             rows = column->size();
         else if (rows != column->size())

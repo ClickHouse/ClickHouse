@@ -80,6 +80,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                     {
                         val = keys.front();
                         keys.pop_front();
+                        chassert(idx == metadata->getProcessingIdForPath(val->key));
                     }
                 }
                 else
@@ -103,7 +104,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                             LOG_TEST(log, "Putting key {} into queue of processor {} (total: {})",
                                      val->key, processing_id_for_key, sharded_keys.size());
 
-                            if (auto it = sharded_keys.find(idx); it != sharded_keys.end())
+                            if (auto it = sharded_keys.find(processing_id_for_key); it != sharded_keys.end())
                             {
                                 it->second.push_back(val);
                             }
@@ -111,7 +112,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                             {
                                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                                 "Processing id {} does not exist (Expected ids: {})",
-                                                idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
+                                                processing_id_for_key, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
                             }
                         }
                         continue;

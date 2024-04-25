@@ -1,0 +1,44 @@
+[tool.pylint.BASIC]
+max-module-lines=2000
+# due to SQL
+max-line-length=200
+# Drop/decrease them one day:
+max-branches=50
+max-nested-blocks=10
+max-statements=200
+
+[tool.isort]
+profile = "black"
+src_paths = ["src", "tests/ci", "tests/sqllogic"]
+
+[tool.pylint.FORMAT]
+#ignore-long-lines = (# )?<?https?://\S+>?$
+
+[tool.pylint.'MESSAGES CONTROL']
+          # pytest.mark.parametrize is not callable (not-callable)
+disable = '''
+          missing-docstring,
+          too-few-public-methods,
+          invalid-name,
+          too-many-arguments,
+          keyword-arg-before-vararg,
+          too-many-locals,
+          too-many-instance-attributes,
+          cell-var-from-loop,
+          fixme,
+          too-many-public-methods,
+          wildcard-import,
+          unused-wildcard-import,
+          singleton-comparison,
+          not-callable,
+          redefined-outer-name,
+          broad-except,
+          bare-except,
+          no-else-return,
+          global-statement
+          '''
+
+[tool.pylint.SIMILARITIES]
+# due to SQL
+min-similarity-lines=1000
+

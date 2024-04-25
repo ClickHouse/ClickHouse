@@ -1,25 +1,24 @@
+#include <filesystem>
+#include <memory>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Coordination/CoordinationSettings.h>
+#include <Core/Field.h>
+#include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <filesystem>
-#include <memory>
-#include <Common/logger_useful.h>
-#include <Coordination/KeeperContext.h>
-#include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Core/Field.h>
-#include <Disks/DiskLocal.h>
-
+#include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -99,9 +98,12 @@ namespace
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
-        String new_data;
-        readBinary(new_data, in);
-        node.setData(new_data);
+        readVarUInt(node.data_size, in);
+        if (node.data_size != 0)
+        {
+            node.data = std::unique_ptr<char[]>(new char[node.data_size]);
+            in.readStrict(node.data.get(), node.data_size);
+        }
 
         if (version >= SnapshotVersion::V1)
         {
@@ -373,25 +375,36 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     size_t snapshot_container_size;
     readBinary(snapshot_container_size, in);
 
+    storage.container.reserve(snapshot_container_size);
+
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
-        std::string path;
-        readBinary(path, in);
+        size_t path_size = 0;
+        readVarUInt(path_size, in);
+        chassert(path_size != 0);
+        auto path_data = storage.container.allocateKey(path_size);
+        in.readStrict(path_data.get(), path_size);
+        std::string_view path{path_data.get(), path_size};
+
         KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
         using enum Coordination::PathMatchResult;
         auto match_result = Coordination::matchPath(path, keeper_system_path);
 
-        const std::string error_msg = fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        const auto get_error_msg = [&]
+        {
+            return fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        };
+
         if (match_result == IS_CHILD)
         {
             if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
             {
-                LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                 continue;
             }
             else
@@ -399,7 +412,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     ErrorCodes::LOGICAL_ERROR,
                     "{}. Ignoring it can lead to data loss. "
                     "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    error_msg);
+                    get_error_msg());
         }
         else if (match_result == EXACT)
         {
@@ -407,7 +420,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             {
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
-                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                     node = KeeperStorage::Node{};
                 }
                 else
@@ -415,17 +428,24 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                         ErrorCodes::LOGICAL_ERROR,
                         "{}. Ignoring it can lead to data loss. "
                         "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                        error_msg);
+                        get_error_msg());
             }
         }
 
-        storage.container.insertOrReplace(path, node);
-        if (node.isEphemeral())
-            storage.ephemerals[node.ephemeralOwner()].insert(path);
+        auto ephemeral_owner = node.ephemeralOwner();
+        if (!node.isEphemeral() && node.numChildren() > 0)
+            node.getChildren().reserve(node.numChildren());
+
+        if (ephemeral_owner != 0)
+            storage.ephemerals[node.ephemeralOwner()].insert(std::string{path});
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
+
+        storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
+
+    LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
     for (const auto & itr : storage.container)
     {
@@ -840,6 +860,32 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
     }
 
     return {snapshot_file_name, disk};
+}
+
+size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
+{
+    if (!existing_snapshots.empty())
+        return existing_snapshots.rbegin()->first;
+    return 0;
+}
+
+SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
+{
+    if (!existing_snapshots.empty())
+    {
+        const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
+
+        try
+        {
+            if (disk->exists(path))
+                return {path, disk};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+    return {"", nullptr};
 }
 
 }

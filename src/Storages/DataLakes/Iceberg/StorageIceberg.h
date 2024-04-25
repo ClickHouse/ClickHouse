@@ -30,7 +30,7 @@ public:
 
     static StoragePtr create(const Configuration & base_configuration,
         ContextPtr context_,
-        bool attach,
+        LoadingStrictnessLevel mode,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,

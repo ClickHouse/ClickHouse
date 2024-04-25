@@ -24,6 +24,7 @@ namespace
 MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeDataPartInfoForReaderPtr data_part_info_,
     NamesAndTypesList columns_,
+    const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
@@ -35,6 +36,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     : IMergeTreeReader(
         data_part_info_,
         columns_,
+        virtual_fields_,
         storage_snapshot_,
         uncompressed_cache_,
         mark_cache_,
@@ -223,18 +225,29 @@ void MergeTreeReaderWide::addStreams(
             return;
         }
 
-        has_any_stream = true;
-        bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
-
         auto context = data_part_info_for_read->getContext();
         auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
-        streams.emplace(*stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part_info_for_read, *stream_name, DATA_FILE_EXTENSION,
-            data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
+        auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+            data_part_info_for_read,
+            mark_cache,
+            data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(*stream_name),
+            data_part_info_for_read->getMarksCount(),
+            data_part_info_for_read->getIndexGranularityInfo(),
+            settings.save_marks_in_cache,
+            settings.read_settings,
+            load_marks_threadpool,
+            /*num_columns_in_mark=*/ 1);
+
+        has_any_stream = true;
+        auto stream_settings = settings;
+        stream_settings.is_low_cardinality_dictionary = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
+
+        streams.emplace(*stream_name, std::make_unique<MergeTreeReaderStreamSingleColumn>(
+            data_part_info_for_read->getDataPartStorage(), *stream_name, DATA_FILE_EXTENSION,
+            data_part_info_for_read->getMarksCount(), all_mark_ranges, stream_settings,
             uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION),
-            &data_part_info_for_read->getIndexGranularityInfo(),
-            profile_callback, clock_type, is_lc_dict, load_marks_threadpool));
+            std::move(marks_loader), profile_callback, clock_type));
     };
 
     serialization->enumerateStreams(callback);

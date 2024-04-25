@@ -34,6 +34,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
+#include <Core/BaseSettingsProgramOptions.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -567,10 +568,6 @@ public:
 }
 
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
-
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
@@ -627,7 +624,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        settings.addProgramOptions(desc);
+        addProgramOptions(settings, desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);

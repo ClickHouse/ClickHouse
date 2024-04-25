@@ -144,7 +144,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             }
             else
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
+                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
@@ -277,7 +277,7 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         if (order_by_elem.with_fill /// Always keep elements WITH FILL as they affects other.
-            || elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+            || elems_set.emplace(name, order_by_elem.getCollation() ? order_by_elem.getCollation()->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
@@ -755,7 +755,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
-    optimizeDateFilters(select_query, tables_with_columns, context);
+    if (settings.optimize_time_filter_with_preimage)
+        optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);

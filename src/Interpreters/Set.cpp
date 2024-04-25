@@ -168,7 +168,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data.init(data.chooseMethod(key_columns, key_sizes));
+    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
 }
 
 void Set::fillSetElements()
@@ -275,7 +275,7 @@ void Set::appendSetElements(SetKeyColumns & holder)
 void Set::checkIsCreated() const
 {
     if (!is_created.load())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Trying to use set before it has been built.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -283,7 +283,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns passed to Set::execute method.");
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();

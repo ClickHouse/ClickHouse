@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT -nq "create view refreshes as select * from system.view_refre
 # Basic refreshing.
 $CLICKHOUSE_CLIENT -nq "
     create materialized view a
-        refresh after 1 second
+        refresh after 2 second
         engine Memory
         empty
         as select number as x from numbers(2) union all select rand64() as x"
@@ -29,6 +29,7 @@ while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $
 do
     sleep 0.1
 done
+start_time="`$CLICKHOUSE_CLIENT -nq "select reinterpret(now64(), 'Int64')"`"
 # Check table contents.
 $CLICKHOUSE_CLIENT -nq "select '<2: refreshed>', count(), sum(x=0), sum(x=1) from a"
 # Wait for table contents to change.
@@ -39,7 +40,6 @@ do
     [ "$res2" == "$res1" ] || break
     sleep 0.1
 done
-time2="`$CLICKHOUSE_CLIENT -nq "select reinterpret(now64(), 'Int64')"`"
 # Wait for another change.
 while :
 do
@@ -47,11 +47,11 @@ do
     [ "$res3" == "$res2" ] || break
     sleep 0.1
 done
-# Check that the two changes were at least 500ms apart, in particular that we're not refreshing
+# Check that the two changes were at least 1 second apart, in particular that we're not refreshing
 # like crazy. This is potentially flaky, but we need at least one test that uses non-mocked timer
 # to make sure the clock+timer code works at all. If it turns out flaky, increase refresh period above.
 $CLICKHOUSE_CLIENT -nq "
-    select '<3: time difference at least>', min2(reinterpret(now64(), 'Int64') - $time2, 500);
+    select '<3: time difference at least>', min2(reinterpret(now64(), 'Int64') - $start_time, 1000);
     select '<4: next refresh in>', next_refresh_time-last_refresh_time from refreshes;"
 
 # Create a source table from which views will read.
@@ -61,7 +61,7 @@ $CLICKHOUSE_CLIENT -nq "
 # Switch to fake clock, change refresh schedule, change query.
 $CLICKHOUSE_CLIENT -nq "
     system test view a set fake time '2050-01-01 00:00:01';"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status, last_refresh_time, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2050-01-01 00:00:01 2050-01-01 00:00:02' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select status, last_refresh_time, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2050-01-01 00:00:01 2050-01-01 00:00:03' ]
 do
     sleep 0.1
 done

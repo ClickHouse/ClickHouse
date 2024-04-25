@@ -1,3 +1,4 @@
+#include "Storages/System/StorageSystemKeywords.h"
 #include "config.h"
 
 #include <Databases/IDatabase.h>
@@ -77,6 +78,7 @@
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
 #include <Storages/System/StorageSystemTransactions.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
+#include <Storages/System/StorageSystemFilesystemCacheSettings.h>
 #include <Storages/System/StorageSystemQueryCache.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
@@ -90,6 +92,7 @@
 #include <Storages/System/StorageSystemS3Queue.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
+#include <Storages/System/StorageSystemDNSCache.h>
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
@@ -117,14 +120,16 @@ namespace DB
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
-    attach<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
-    attach<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false);
-    attach<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true);
-    attach<StorageSystemZeros>(context, system_database, "zeros", "Produces unlimited number of non-materialized zeros.", false);
-    attach<StorageSystemZeros>(context, system_database, "zeros_mt", "Multithreaded version of system.zeros.", true);
+    attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
+    attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
+    attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");
+    attachNoDescription<StorageSystemNumbers>(context, system_database, "generate_series", "Generates arithmetic progression of natural numbers in sorted order in a given segment with a given step", false, "generate_series");
+    attachNoDescription<StorageSystemNumbers>(context, system_database, "generateSeries", "Generates arithmetic progression of natural numbers in sorted order in a given segment with a given step", false, "generate_series");
+    attachNoDescription<StorageSystemZeros>(context, system_database, "zeros", "Produces unlimited number of non-materialized zeros.", false);
+    attachNoDescription<StorageSystemZeros>(context, system_database, "zeros_mt", "Multithreaded version of system.zeros.", true);
     attach<StorageSystemDatabases>(context, system_database, "databases", "Lists all databases of the current server.");
-    attach<StorageSystemTables>(context, system_database, "tables", "Lists all tables of the current server.");
-    attach<StorageSystemColumns>(context, system_database, "columns", "Lists all columns from all tables of the current server.");
+    attachNoDescription<StorageSystemTables>(context, system_database, "tables", "Lists all tables of the current server.");
+    attachNoDescription<StorageSystemColumns>(context, system_database, "columns", "Lists all columns from all tables of the current server.");
     attach<StorageSystemFunctions>(context, system_database, "functions", "Contains a list of all available ordinary and aggregate functions with their descriptions.");
     attach<StorageSystemEvents>(context, system_database, "events", "Contains profiling events and their current value.");
     attach<StorageSystemSettings>(context, system_database, "settings", "Contains a list of all user-level settings (which can be modified in a scope of query or session), their current and default values along with descriptions.");
@@ -158,43 +163,45 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemPrivileges>(context, system_database, "privileges", "Contains a list of all available privileges that could be granted to a user or role.");
     attach<StorageSystemErrors>(context, system_database, "errors", "Contains a list of all errors which have ever happened including the error code, last time and message with unsymbolized stacktrace.");
     attach<StorageSystemWarnings>(context, system_database, "warnings", "Contains warnings about server configuration to be displayed by clickhouse-client right after it connects to the server.");
-    attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
+    attachNoDescription<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
     attach<StorageSystemLicenses>(context, system_database, "licenses", "Contains licenses of third-party libraries that are located in the contrib directory of ClickHouse sources.");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones", "Contains a list of time zones that are supported by the ClickHouse server. This list of timezones might vary depending on the version of ClickHouse.");
     attach<StorageSystemBackups>(context, system_database, "backups", "Contains a list of all BACKUP or RESTORE operations with their current states and other propertis. Note, that table is not persistent and it shows only operations executed after the last server restart.");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache", "Contains information about all cached file schemas.");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables", "Contains a list of tables which were dropped from Atomic databases but not completely removed yet.");
-    attach<StorageSystemDroppedTablesParts>(context, system_database, "dropped_tables_parts", "Contains parts of system.dropped_tables tables ");
+    attachNoDescription<StorageSystemDroppedTablesParts>(context, system_database, "dropped_tables_parts", "Contains parts of system.dropped_tables tables ");
     attach<StorageSystemScheduler>(context, system_database, "scheduler", "Contains information and status for scheduling nodes residing on the local server.");
+    attach<StorageSystemDNSCache>(context, system_database, "dns_cache", "Contains information about cached DNS records.");
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    attach<StorageSystemSymbols>(context, system_database, "symbols", "Contains information for introspection of ClickHouse binary. This table is only useful for C++ experts and ClickHouse engineers.");
+    attachNoDescription<StorageSystemSymbols>(context, system_database, "symbols", "Contains information for introspection of ClickHouse binary. This table is only useful for C++ experts and ClickHouse engineers.");
 #endif
 #if USE_RDKAFKA
     attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers", "Contains information about Kafka consumers. Applicable for Kafka table engine (native ClickHouse integration).");
 #endif
 #ifdef OS_LINUX
-    attach<StorageSystemStackTrace>(context, system_database, "stack_trace", "Allows to obtain an unsymbolized stacktrace from all the threads of the server process.");
+    attachNoDescription<StorageSystemStackTrace>(context, system_database, "stack_trace", "Allows to obtain an unsymbolized stacktrace from all the threads of the server process.");
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb", "Contains a list of metrics exposed from embedded RocksDB.");
 #endif
 #if USE_MYSQL
-    attach<StorageSystemMySQLBinlogs>(context, system_database, "mysql_binlogs", "Shows a list of active binlogs for MaterializedMySQL.");
+    attachNoDescription<StorageSystemMySQLBinlogs>(context, system_database, "mysql_binlogs", "Shows a list of active binlogs for MaterializedMySQL.");
 #endif
 
-    attach<StorageSystemParts>(context, system_database, "parts", "Contains a list of currently existing (both active and inactive) parts of all *-MergeTree tables. Each part is represented by a single row.");
-    attach<StorageSystemProjectionParts>(context, system_database, "projection_parts", "Contains a list of currently existing projection parts (a copy of some part containing aggregated data or just sorted in different order) created for all the projections for all tables within a cluster.");
-    attach<StorageSystemDetachedParts>(context, system_database, "detached_parts", "Contains a list of all parts which are being found in /detached directory along with a reason why it was detached. ClickHouse server doesn't use such parts anyhow.");
-    attach<StorageSystemPartsColumns>(context, system_database, "parts_columns", "Contains a list of columns of all currently existing parts of all MergeTree tables. Each column is represented by a single row.");
-    attach<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "Contains a list of columns of all currently existing projection parts of all MergeTree tables. Each column is represented by a single row.");
-    attach<StorageSystemDisks>(context, system_database, "disks", "Contains information about disks defined in the server configuration.");
-    attach<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "Contains information about storage policies and volumes defined in the server configuration.");
+    attach<StorageSystemKeywords>(context, system_database, "keywords", "Contains a list of all keywords used in ClickHouse parser.");
+    attachNoDescription<StorageSystemParts>(context, system_database, "parts", "Contains a list of currently existing (both active and inactive) parts of all *-MergeTree tables. Each part is represented by a single row.");
+    attachNoDescription<StorageSystemProjectionParts>(context, system_database, "projection_parts", "Contains a list of currently existing projection parts (a copy of some part containing aggregated data or just sorted in different order) created for all the projections for all tables within a cluster.");
+    attachNoDescription<StorageSystemDetachedParts>(context, system_database, "detached_parts", "Contains a list of all parts which are being found in /detached directory along with a reason why it was detached. ClickHouse server doesn't use such parts anyhow.");
+    attachNoDescription<StorageSystemPartsColumns>(context, system_database, "parts_columns", "Contains a list of columns of all currently existing parts of all MergeTree tables. Each column is represented by a single row.");
+    attachNoDescription<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "Contains a list of columns of all currently existing projection parts of all MergeTree tables. Each column is represented by a single row.");
+    attachNoDescription<StorageSystemDisks>(context, system_database, "disks", "Contains information about disks defined in the server configuration.");
+    attachNoDescription<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "Contains information about storage policies and volumes defined in the server configuration.");
     attach<StorageSystemProcesses>(context, system_database, "processes", "Contains a list of currently executing processes (queries) with their progress.");
     attach<StorageSystemMetrics>(context, system_database, "metrics", "Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.");
     attach<StorageSystemMerges>(context, system_database, "merges", "Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.");
     attach<StorageSystemMoves>(context, system_database, "moves", "Contains information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row.");
     attach<StorageSystemMutations>(context, system_database, "mutations", "Contains a list of mutations and their progress. Each mutation command is represented by a single row.");
-    attach<StorageSystemReplicas>(context, system_database, "replicas", "Contains information and status of all table replicas on current server. Each replica is represented by a single row.");
+    attachNoDescription<StorageSystemReplicas>(context, system_database, "replicas", "Contains information and status of all table replicas on current server. Each replica is represented by a single row.");
     attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue", "Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for each table replica.");
     attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue", "Contains information about distributed DDL queries (ON CLUSTER clause) that were executed on a cluster.");
     attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue", "Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.");
@@ -206,21 +213,22 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemReplicatedFetches>(context, system_database, "replicated_fetches", "Contains information about currently running background fetches.");
     attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards", "Contains information about parts which are currently in a process of moving between shards and their progress.");
     attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts", "Contains information about pending asynchronous inserts in queue in server's memory.");
-    attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "Contains information about all entries inside filesystem cache for remote objects.");
-    attach<StorageSystemQueryCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
-    attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
+    attachNoDescription<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "Contains information about all entries inside filesystem cache for remote objects.");
+    attachNoDescription<StorageSystemFilesystemCacheSettings>(context, system_database, "filesystem_cache_settings", "Contains information about all filesystem cache settings");
+    attachNoDescription<StorageSystemQueryCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
+    attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
-    attach<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
+    attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
-    attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
-    attach<StorageSystemS3Queue>(context, system_database, "s3queue", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
+    attachNoDescription<StorageSystemS3Queue>(context, system_database, "s3queue", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attach<StorageSystemDashboards>(context, system_database, "dashboards", "Contains queries used by /dashboard page accessible though HTTP interface. This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.");
     attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes", "Lists all Refreshable Materialized Views of current server.");
 
     if (has_zookeeper)
     {
-        attach<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
+        attachNoDescription<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
         attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
     }
 
@@ -230,7 +238,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)
 {
-    attach<StorageSystemAsynchronousMetrics>(context, system_database, "asynchronous_metrics", "Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.", async_metrics);
+    attachNoDescription<StorageSystemAsynchronousMetrics>(context, system_database, "asynchronous_metrics", "Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.", async_metrics);
 }
 
 }

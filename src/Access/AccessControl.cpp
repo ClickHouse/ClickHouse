@@ -285,6 +285,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
+    setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -606,7 +607,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}",
+                                            std::vector<std::string>{credentials.getUserName()}},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
 }

@@ -26,7 +26,7 @@ struct BackupSettings
     String password;
 
     /// S3 storage class.
-    String s3_storage_class = "";
+    String s3_storage_class;
 
     /// If this is set to true then only create queries will be written to backup,
     /// without the data of tables.
@@ -46,6 +46,9 @@ struct BackupSettings
 
     /// Whether base backup to S3 should inherit credentials from the BACKUP query.
     bool use_same_s3_credentials_for_base_backup = false;
+
+    /// Whether a new Azure container should be created if it does not exist (requires permissions at storage account level)
+    bool azure_attempt_to_create_container = true;
 
     /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
     /// but don't put more entries into the cache.
