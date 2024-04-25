@@ -624,7 +624,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        addProgramOptions(settings, desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -636,6 +635,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
+            std::cout << "All setting parameters are documented in detail at https://clickhouse.com/docs/\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
