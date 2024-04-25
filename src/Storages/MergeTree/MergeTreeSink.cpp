@@ -250,10 +250,10 @@ void MergeTreeSink::finishDelayedChunk()
 
             added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
-
-            /// Explicitly committing block number after commit
-            partition.committing_block_number_tagger.reset();
         }
+
+        /// Explicitly committing block number after commit
+        partition.committing_block_number_tagger.reset();
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
