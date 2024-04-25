@@ -88,19 +88,92 @@ Result:
 
 ## length
 
-Returns the length of a string in bytes (not: in characters or Unicode code points).
-
-The function also works for arrays.
+Returns the length of a string in bytes rather than in characters or Unicode code points. The function also works for arrays.
 
 Alias: `OCTET_LENGTH`
 
+**Syntax**
+
+```sql
+length(s)
+```
+
+**Parameters**
+
+- `s`: An input string or array. [String](../data-types/string)/[Array](../data-types/array).
+
+**Returned value**
+
+- Length of the string or array `s` in bytes. [UInt64](../data-types/int-uint).
+
+**Example**
+
+Query:
+
+```sql
+SELECT length('Hello, world!');
+```
+
+Result: 
+
+```response
+┌─length('Hello, world!')─┐
+│                      13 │
+└─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT length([1, 2, 3, 4]);
+```
+
+Result: 
+
+```response
+┌─length([1, 2, 3, 4])─┐
+│                    4 │
+└──────────────────────┘
+```
+
+
 ## lengthUTF8
 
-Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the length of a string in Unicode code points rather than in bytes or characters. It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-Alias:
+Aliases:
 - `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
+
+**Syntax**
+
+```sql
+lengthUTF8(s)
+```
+
+**Parameters**
+
+- `s`: String containing valid UTF-8 encoded text. [String](../data-types/string).
+
+**Returned value**
+
+- Length of the string `s` in Unicode code points. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT lengthUTF8('Здравствуй, мир!');
+```
+
+Result: 
+
+```response
+┌─lengthUTF8('Здравствуй, мир!')─┐
+│                             16 │
+└────────────────────────────────┘
+```
 
 ## left
 
