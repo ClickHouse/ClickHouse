@@ -17,7 +17,7 @@ namespace DB
 class Suggest : public LineReader::Suggest, boost::noncopyable
 {
 public:
-    Suggest() = default; 
+    Suggest() = default;
 
     ~Suggest()
     {
