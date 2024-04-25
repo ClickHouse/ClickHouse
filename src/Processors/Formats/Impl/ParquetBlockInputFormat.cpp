@@ -291,51 +291,6 @@ static auto bloomFilterMaybeContains(
     return ParquetBloomFilterCondition(filter_dag, context, header).mayBeTrueOnRowGroup(index_to_column_bf);
 }
 
-//static auto bloomFilterMaybeContains(int row_group, std::unordered_map<std::size_t, std::vector<Field>> column_indice_to_values, auto arrow_file, auto metadata)
-//{
-//    std::unique_ptr<parquet::arrow::FileReader> file_reader;
-//
-//    parquet::arrow::FileReaderBuilder builder;
-//    THROW_ARROW_NOT_OK(
-//        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
-//    //        builder.properties(properties);
-//    // TODO: Pass custom memory_pool() to enable memory accounting with non-jemalloc allocators.
-//    THROW_ARROW_NOT_OK(builder.Build(&file_reader));
-//
-//    auto & bf_reader = file_reader->parquet_reader()->GetBloomFilterReader();
-//    auto rg_bf = bf_reader.RowGroup(row_group);
-//
-//    if (!rg_bf)
-//    {
-//        return true;
-//    }
-//
-//    for (auto & [index, values] : column_indice_to_values)
-//    {
-//        auto bf = rg_bf->GetColumnBloomFilter(static_cast<int>(index));
-//
-//        // do all columns need to have bloom filters?
-//        if (!bf)
-//        {
-//            continue;
-//        }
-//
-//        for (const auto & value : values)
-//        {
-//            // convert Field into hashable type
-//            auto str = value.get<std::string>();
-//            parquet::ByteArray ba(str);
-//
-//            if (!bf->FindHash(bf->Hash(&ba)))
-//            {
-//                return false;
-//            }
-//        }
-//    }
-//
-//    return true;
-//}
-
 /// Range of values for each column, based on statistics in the Parquet metadata.
 /// This is lower/upper bounds, not necessarily exact min and max, e.g. the min/max can be just
 /// missing in the metadata.
