@@ -26,7 +26,6 @@ void StorageObjectStorageConfiguration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration.format);
 
-    configuration.check(local_context);
     configuration.initialized = true;
 }
 
