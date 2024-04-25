@@ -83,7 +83,7 @@ void DiagramOutputFormat::write()
         case DiagramType::SCATTER:
             writeScatter();
             break;
-        case DiagramType::LINEPLOT:
+        case DiagramType::LINE:
             writeLineplot();
             break;
         case DiagramType::HISTOGRAM:

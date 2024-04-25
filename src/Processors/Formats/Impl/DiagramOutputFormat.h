@@ -15,7 +15,7 @@ class DiagramOutputFormat : public IOutputFormat
     enum class DiagramType
     {
         SCATTER,
-        LINEPLOT,
+        LINE,
         HISTOGRAM,
         HEAT_MAP,
     };
@@ -34,7 +34,7 @@ class DiagramOutputFormat : public IOutputFormat
     static inline const std::unordered_map<String, DiagramType> diagram_type
         = {{"SCATTER", DiagramType::SCATTER},
            {"HISTOGRAM", DiagramType::HISTOGRAM},
-           {"LINEPLOT", DiagramType::LINEPLOT},
+           {"LINE", DiagramType::LINE},
            {"HEAT_MAP", DiagramType::HEAT_MAP}};
 
 
