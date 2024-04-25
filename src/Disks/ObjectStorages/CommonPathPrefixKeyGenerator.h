@@ -20,6 +20,7 @@ namespace DB
 class CommonPathPrefixKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:
+    /// Local to remote path map.
     using PathMap = std::unordered_map<std::string, std::string>;
 
     explicit CommonPathPrefixKeyGenerator(String key_prefix_, SharedMutex & shared_mutex_, std::weak_ptr<PathMap> path_map_);
