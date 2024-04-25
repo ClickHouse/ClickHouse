@@ -62,18 +62,12 @@ public:
     void set(int value) override { wrapped->set(value); }
 };
 
-void print(const ColumnPtr & x, const ColumnPtr & y)
+template <typename ColPtr>
+void print(const ColumnPtr & x, const ColPtr & y)
 {
-    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
-    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
-    std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
-}
-
-void print(const ColumnPtr & x, const MutableColumnPtr & mut)
-{
-    std::cerr << "values:    " << x->get() << ", " << mut->get() << "\n";
-    std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-    std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
+    std::cerr << "values:    " << x->get()        << ", " << y->get()       << "\n";
+    std::cerr << "refcounts: " << x->use_count()  << ", " << y->use_count() << "\n";
+    std::cerr << "addresses: " << x.get()         << ", " << y.get()        << "\n";
 }
 
 int main(int, char **)
@@ -81,8 +75,8 @@ int main(int, char **)
     ColumnPtr x = ColumnComposition::create(1);
     ColumnPtr y = x;
     print(x, y);
-    chassert(x->get() == y->get() == 1);
-    chassert(x->use_count() == y->use_count() == 2);
+    chassert(x->get() == 1 && y->get() == 1);
+    chassert(x->use_count() == 2 && y->use_count() == 2);
     chassert(x.get() == y.get());
 
     {
@@ -90,20 +84,20 @@ int main(int, char **)
         mut->set(2);
         print(x, mut);
         chassert(x->get() == 1 && mut->get() == 2);
-        chassert(x->use_count() == mut->use_count() == 1);
+        chassert(x->use_count() == 1 && mut->use_count() == 1);
         chassert(x.get() != mut.get());
 
         y = std::move(mut);
     }
     print(x, y);
     chassert(x->get() == 1 && y->get() == 2);
-    chassert(x->use_count() == y->use_count() == 1);
+    chassert(x->use_count() == 1 && y->use_count() == 1);
     chassert(x.get() != y.get());
 
     x = ColumnComposition::create(0);
     print(x, y);
     chassert(x->get() == 0 && y->get() == 2);
-    chassert(x->use_count() == y->use_count() == 1);
+    chassert(x->use_count() == 1 && y->use_count() == 1);
     chassert(x.get() != y.get());
 
     {
@@ -111,14 +105,14 @@ int main(int, char **)
         mut->set(3);
         print(x, mut);
         chassert(x->get() == 0 && mut->get() == 3);
-        chassert(x->use_count() == mut->use_count() == 1);
+        chassert(x->use_count() == 1 && mut->use_count() == 1);
         chassert(x.get() != mut.get());
 
         y = std::move(mut);
     }
     print(x, y);
     chassert(x->get() == 0 && y->get() == 3);
-    chassert(x->use_count() == y->use_count() == 1);
+    chassert(x->use_count() == 1 && y->use_count() == 1);
     chassert(x.get() != y.get());
 
     return 0;
