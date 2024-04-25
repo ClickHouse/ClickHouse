@@ -155,10 +155,6 @@ public:
         return mixed_filter_condition_nodes;
     }
 
-    bool hasMixedFilterCondition() const
-    {
-        return !mixed_filter_condition_nodes.empty();
-    }
     /// Dump clause into buffer
     void dump(WriteBuffer & buffer) const;
 

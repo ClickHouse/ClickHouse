@@ -18,7 +18,6 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
-#include "ExpressionActions.h"
 #include <Core/SettingsEnums.h>
 
 
@@ -617,18 +616,14 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
                 if (res_column.column->getDataType() != res_column.type->getColumnType())
                 {
-                    WriteBufferFromOwnString out;
-                    for (const auto & arg : arguments)
-                        out << arg.dumpStructure() << ",";
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
                         action.node->function->getName(),
-                        res_column.type->getName(), //res_column.type->getColumnType(),
-                        res_column.column->getName(), //res_column.column->getDataType(),
+                        res_column.type->getName(),
+                        res_column.column->getName(),
                         action.toString(),
-                        out.str());
+                        Block(arguments).dumpStructure());
                 }
             }
             break;

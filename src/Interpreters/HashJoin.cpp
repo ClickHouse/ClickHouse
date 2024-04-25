@@ -1573,67 +1573,58 @@ ColumnPtr buildAdditionalFilter(
     }
     if (!executed_block)
     {
-        WriteBufferFromOwnString buf;
-        for (const auto & col : required_cols)
-        {
-            buf << col.name << ", ";
-        }
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "required columns: {}. but not found any in left/right table. right table: {}, left table: {}",
-            buf.str(),
+            "required columns: [{}], but not found any in left/right table. right table: {}, left table: {}",
+            required_cols.toString(),
             sample_right_block.dumpNames(),
             added_columns.left_block.dumpNames());
     }
-    // Debug
+
     for (const auto & col : executed_block.getColumnsWithTypeAndName())
     {
         if (!col.column || !col.type)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null column in input block. {}", executed_block.dumpStructure());
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal nullptr column in input block: {}", executed_block.dumpStructure());
     }
+
     added_columns.additional_filter_expression->execute(executed_block);
-    return executed_block.getByPosition(0).column;
+
+    ColumnPtr result_column = executed_block.getByPosition(0).column->convertToFullColumnIfConst();
+    executed_block.clear();
+
+    if (result_column->isNullable())
+    {
+        /// Convert Nullable(UInt8) to UInt8 ensuring that nulls are zeros
+        /// Trying to avoid copying data, since we are the only owner of the column.
+        ColumnPtr mask_column = assert_cast<const ColumnNullable &>(*result_column).getNullMapColumnPtr();
+
+        MutableColumnPtr mutable_column;
+        {
+            ColumnPtr nested_column = assert_cast<const ColumnNullable &>(*result_column).getNestedColumnPtr();
+            result_column.reset();
+            mutable_column = IColumn::mutate(std::move(nested_column));
+        }
+
+        auto & column_data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+        const auto & mask_column_data = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+        for (size_t i = 0; i < column_data.size(); ++i)
+        {
+            if (mask_column_data[i])
+                column_data[i] = 0;
+        }
+        return mutable_column;
+    }
+    return result_column;
 }
 
-template <bool flag_per_row>
-void addFoundRowRefAll(
-    const RowRefList & row_list,
-    std::vector<RowRef> & selected_rows,
-    IColumn::Offset & current_offset,
-    KnownRowsHolder<flag_per_row> & known_rows [[maybe_unused]])
+/// Adapter class to pass into addFoundRowAll
+/// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
+/// because they need to be filtered by additional_filter_expression.
+class PreSelectedRows : public std::vector<RowRef>
 {
-    if constexpr (flag_per_row)
-    {
-        std::unique_ptr<std::vector<KnownRowsHolder<true>::Type>> new_known_rows_ptr;
-        for (auto it = row_list.begin(); it.ok(); ++it)
-        {
-            auto row_ref = std::make_pair(it->block, it->row_num);
-            if (!known_rows.isKnown(row_ref))
-            {
-                selected_rows.emplace_back(row_ref.first, row_ref.second);
-                ++current_offset;
-                if (!new_known_rows_ptr)
-                {
-                    new_known_rows_ptr = std::make_unique<std::vector<KnownRowsHolder<true>::Type>>();
-                }
-                new_known_rows_ptr->push_back(row_ref);
-            }
-        }
-
-        if (new_known_rows_ptr)
-            known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
-    }
-    else
-    {
-        for (auto it = row_list.begin(); it.ok(); ++it)
-        {
-            selected_rows.emplace_back(it->block, it->row_num);
-            ++current_offset;
-        }
-    }
-}
+public:
+    void appendFromBlock(const Block & block, size_t row_num, bool /* has_default */) { this->emplace_back(&block, row_num); }
+};
 
 /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
 template <
@@ -1666,7 +1657,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     using FindResult = typename KeyGetter::FindResult;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
     size_t left_row_iter = 0;
-    std::vector<RowRef> selected_rows;
+    PreSelectedRows selected_rows;
     selected_rows.reserve(left_block_rows);
     std::vector<FindResult> find_results;
     find_results.reserve(left_block_rows);
@@ -1709,9 +1700,9 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     auto & mapped = find_result.getMapped();
                     find_results.push_back(find_result);
                     if (flag_per_row)
-                        addFoundRowRefAll<true>(mapped, selected_rows, current_added_rows, all_flag_known_rows);
+                        addFoundRowAll<Map, false, true>(mapped, selected_rows, current_added_rows, all_flag_known_rows, nullptr);
                     else
-                        addFoundRowRefAll<false>(mapped, selected_rows, current_added_rows, single_flag_know_rows);
+                        addFoundRowAll<Map, false, false>(mapped, selected_rows, current_added_rows, single_flag_know_rows, nullptr);
                 }
             }
             row_replicate_offset.push_back(current_added_rows);
@@ -1720,17 +1711,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
 
     auto copy_final_matched_rows = [&](size_t left_start_row, ColumnPtr filter_col)
     {
-        const PaddedPODArray<UInt8> * filter_flags = nullptr;
-        filter_col = filter_col->convertToFullIfNeeded();
-        if (filter_col->isNullable())
-        {
-            auto nested_col = typeid_cast<const ColumnNullable &>(*filter_col).getNestedColumnPtr();
-            filter_flags = &(dynamic_cast<const ColumnUInt8 &>(*nested_col).getData());
-        }
-        else
-        {
-            filter_flags = &(dynamic_cast<const ColumnUInt8 &>(*filter_col).getData());
-        }
+        const PaddedPODArray<UInt8> & filter_flags = assert_cast<const ColumnUInt8 &>(*filter_col).getData();
 
         size_t prev_replicated_row = 0;
         auto selected_right_row_it = selected_rows.begin();
@@ -1743,7 +1724,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
-                    if ((*filter_flags)[replicated_row])
+                    if (filter_flags[replicated_row])
                     {
                         any_matched = true;
                         added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
@@ -1758,7 +1739,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
-                    if ((*filter_flags)[replicated_row])
+                    if (filter_flags[replicated_row])
                     {
                         any_matched = true;
                         added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
@@ -1979,48 +1960,30 @@ size_t joinRightColumnsSwitchMultipleDisjuncts(
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    auto join_without_additional_filter = [&]()
-    {
-        return mapv.size() > 1 ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, true>(
-                   std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
-                               : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, false>(
-                                   std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
-    };
-
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
     if constexpr (join_features.is_all_join)
     {
         if (added_columns.additional_filter_expression)
         {
-           constexpr bool mark_per_row_used = join_features.right || join_features.full;
-           return mapv.size() > 1 ? joinRightColumnsWithAddtitionalFilter<KeyGetter, Map, join_features.need_replication>(
-                      std::forward<std::vector<KeyGetter>>(key_getter_vector),
-                      mapv,
-                      added_columns,
-                      used_flags,
-                      need_filter,
-                      join_features.need_flags,
-                      join_features.add_missing,
-                      true)
-                                  : joinRightColumnsWithAddtitionalFilter<KeyGetter, Map, join_features.need_replication>(
-                                      std::forward<std::vector<KeyGetter>>(key_getter_vector),
-                                      mapv,
-                                      added_columns,
-                                      used_flags,
-                                      need_filter,
-                                      join_features.need_flags,
-                                      join_features.add_missing,
-                                      mark_per_row_used);
-        }
-        else
-        {
-            return join_without_additional_filter();
+            bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
+            return joinRightColumnsWithAddtitionalFilter<KeyGetter, Map, join_features.need_replication>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector),
+                mapv,
+                added_columns,
+                used_flags,
+                need_filter,
+                join_features.need_flags,
+                join_features.add_missing,
+                mark_per_row_used);
         }
     }
-    else
-    {
-        return join_without_additional_filter();
-    }
+
+    if (added_columns.additional_filter_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Additional filter expression is not supported for this JOIN");
+
+    return mapv.size() > 1
+        ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
+        : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename KeyGetter, typename Map, typename AddedColumns>
@@ -2796,6 +2759,7 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
 {
     if (!additional_filter_expression)
         return;
+
     Block expression_sample_block = additional_filter_expression->getSampleBlock();
 
     if (expression_sample_block.columns() != 1)
@@ -2818,7 +2782,7 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
     if (!is_supported)
     {
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-            "Non equi condition '{}' from JOIN ON section is supported only for ALL INNER/LEFT/FULL/RIGHT JOINs.",
+            "Non equi condition '{}' from JOIN ON section is supported only for ALL INNER/LEFT/FULL/RIGHT JOINs",
             expression_sample_block.getByPosition(0).name);
     }
 }

@@ -459,7 +459,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
-            is_inequal_join |= result.join_clauses.back().hasMixedFilterCondition();
+            is_inequal_join |= !result.join_clauses.back().getMixedFilterConditionNodes().empty();
         }
     }
     else
@@ -476,7 +476,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
-        is_inequal_join |= result.join_clauses.back().hasMixedFilterCondition();
+        is_inequal_join |= !result.join_clauses.back().getMixedFilterConditionNodes().empty();
     }
 
     auto and_function = FunctionFactory::instance().get("and", planner_context->getQueryContext());
@@ -595,9 +595,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
     result.right_join_tmp_expression_actions = std::move(right_join_actions);
     result.right_join_expressions_actions->removeUnusedActions(join_right_actions_names);
 
-    /// If there is any inequal join condition, we need to build full join expressions actions.
     if (is_inequal_join)
     {
+        /// In case of multiple disjuncts and any inequal join condition, we need to build full join on expression actions.
+        /// So, for each column, we recalculate the value of the whole expression from JOIN ON to check if rows should be joined.
         if (result.join_clauses.size() > 1)
         {
             auto mixed_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
@@ -622,7 +623,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
         auto outputs = result.mixed_join_expressions_actions->getOutputs();
         if (outputs.size() != 1)
         {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only one output is expected. but got:\n{}", result.mixed_join_expressions_actions->dumpDAG());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only one output is expected, got: {}", result.mixed_join_expressions_actions->dumpDAG());
         }
         auto output_type = removeNullable(outputs[0]->result_type);
         WhichDataType which_type(output_type);
@@ -846,11 +847,12 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context)
 {
-    if (table_join->getMixedJoinExpression() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+    if (table_join->getMixedJoinExpression()
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "JOIN with mixed conditions supports only hash join or grace hash join with one disjunct.");
+            "JOIN with mixed conditions supports only hash join or grace hash join");
     }
 
     trySetStorageInTableJoin(right_table_expression, table_join);
