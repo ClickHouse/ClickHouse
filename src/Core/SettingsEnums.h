@@ -378,6 +378,6 @@ enum class FirstDayOfWeek
 };
 
 DECLARE_SETTING_ENUM(FirstDayOfWeek)
-  
+
 DECLARE_SETTING_ENUM_WITH_RENAME(IonOutputWriterType, FormatSettings::IonOutputWriterType)
 }
