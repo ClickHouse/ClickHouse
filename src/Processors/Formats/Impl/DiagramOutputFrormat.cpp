@@ -5,7 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/DiagramOutputFormat.h>
 #include <Common/UTF8Helpers.h>
-#include "base/types.h"
 
 
 namespace DB
@@ -13,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int INCORRECT_NUMBER_OF_COLUMNS;
-extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int UNKNOWN_SETTING;
 }
@@ -42,7 +40,7 @@ struct DiagramSymbols
     const char * bold_bar = "┃";
     const char * bar = "│";
     const char * hist_block = "█";
-    const char * elipsis = "…";
+    const char * ellipsis = "…";
     const char * power = "^";
 };
 
@@ -557,7 +555,7 @@ DiagramOutputFormat::getSerialzedStr(const IColumn & column, const ISerializatio
     {
         serialized_value.resize(
             UTF8::computeBytesBeforeWidth(reinterpret_cast<UInt8 *>(serialized_value.data()), serialized_value.size(), 0, max_size - 1));
-        serialized_value += diagram_symbols.elipsis;
+        serialized_value += diagram_symbols.ellipsis;
         new_size = UTF8::computeWidth(reinterpret_cast<UInt8 *>(serialized_value.data()), serialized_value.size());
     }
     return {new_size, serialized_value};
