@@ -151,6 +151,7 @@ StorageS3Queue::StorageS3Queue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+    setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });

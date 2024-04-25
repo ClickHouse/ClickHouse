@@ -269,20 +269,37 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context)
 {
-    static SchemaCache schema_cache(
-        context->getConfigRef().getUInt(
-            "schema_inference_cache_max_elements_for_" + configuration->getTypeName(),
-            DEFAULT_SCHEMA_CACHE_ELEMENTS));
-    return schema_cache;
+    return getSchemaCache(context, configuration->getTypeName());
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)
 {
-    static SchemaCache schema_cache(
-        context->getConfigRef().getUInt(
-            "schema_inference_cache_max_elements_for_" + storage_type_name,
-            DEFAULT_SCHEMA_CACHE_ELEMENTS));
-    return schema_cache;
+    if (storage_type_name == "s3")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_s3",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    else if (storage_type_name == "hdfs")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_hdfs",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    else if (storage_type_name == "azure")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_azure",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
 }
 
 }
