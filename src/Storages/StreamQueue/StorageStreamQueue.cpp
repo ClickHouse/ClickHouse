@@ -2,10 +2,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageFactory.h>
@@ -118,7 +119,6 @@ void StorageStreamQueue::move_data()
     if (!source_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
@@ -129,6 +129,13 @@ void StorageStreamQueue::move_data()
     for (const auto & name : column_names)
         select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
+
+    auto new_function_and = makeASTFunction("and");
+    auto gt_function = makeASTFunction(">");
+    gt_function->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column));
+    gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(10));
+    new_function_and->arguments->children.push_back(std::move(gt_function));
+    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
 
     auto order_by = std::make_shared<ASTExpressionList>();
     auto order_by_elem = std::make_shared<ASTOrderByElement>();
