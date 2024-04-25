@@ -82,15 +82,17 @@ ${CLICKHOUSE_CLIENT} -n -q "
         s Array(Array(String)),
         unknow Array(Int128),
         ragged_1 Array(Array(Int32)),
-        ragged_2 Array(Array(Int32))
+        ragged_2 Array(Array(Int32)),
+        empty Array(Array(Int32))
     ) Engine = MergeTree ORDER BY i4;
 
-    INSERT INTO npy_output_02895.nested VALUES ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], [['a', 'bb'], ['ccc', 'dddd']], [1, 2], [[1, 2], [3, 4]], [[1, 2], [3]]), ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], [['a', 'bb'], ['ccc', 'dddd']], [1, 2], [[1, 2, 3], [4]], [[1, 2], [3]]), ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], [['a', 'bb'], ['ccc', 'dddd']], [1, 2], [[1], [2, 3, 4]], [[1, 2], [3]]);
+    INSERT INTO npy_output_02895.nested VALUES ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], [['a', 'bb'], ['ccc', 'dddd']], [1, 2], [[1, 2], [3, 4]], [[1, 2], [3]], [[],[]]), ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], [['a', 'bb'], ['ccc', 'dddd']], [1, 2], [[1, 2, 3], [4]], [[1, 2], [3]], [[],[]]), ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], [['a', 'bb'], ['ccc', 'dddd']], [1, 2], [[1], [2, 3, 4]], [[1, 2], [3]], [[],[]]);
 
     SELECT * FROM npy_output_02895.nested FORMAT Npy; -- { clientError TOO_MANY_COLUMNS }
     SELECT unknow FROM npy_output_02895.nested FORMAT Npy; -- { clientError BAD_ARGUMENTS }
     SELECT ragged_1 FROM npy_output_02895.nested FORMAT Npy; -- { clientError ILLEGAL_COLUMN }
     SELECT ragged_2 FROM npy_output_02895.nested FORMAT Npy; -- { clientError ILLEGAL_COLUMN }
+    SELECT empty FROM npy_output_02895.nested FORMAT Npy; -- { clientError ILLEGAL_COLUMN }
 
     INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_int32.npy') SELECT i4 FROM npy_output_02895.nested;
     INSERT INTO TABLE FUNCTION file('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_float64.npy') SELECT f8 FROM npy_output_02895.nested;

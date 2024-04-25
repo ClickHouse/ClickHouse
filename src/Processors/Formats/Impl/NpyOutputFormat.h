@@ -35,7 +35,8 @@ private:
 
     void consume(Chunk) override;
     void initShape(const ColumnPtr & column);
-    bool checkShape(const ColumnPtr & column);
+    void checkShape(ColumnPtr & column);
+    void updateSizeIfTypeString(const ColumnPtr & column);
 
     void finalizeImpl() override;
     void writeHeader();

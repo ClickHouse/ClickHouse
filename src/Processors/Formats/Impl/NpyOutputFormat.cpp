@@ -135,51 +135,53 @@ void NpyOutputFormat::consume(Chunk chunk)
             initShape(column);
             is_initialized = true;
         }
-        // ColumnPtr checkShape, if nullptr?
-        // updateSizeIfTypeString
-        // columns.push_back()
 
-        if (!checkShape(column))
-        {
-            invalid_shape = true;
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse doesn't support object types, cannot format ragged nested sequences (which is a list of arrays with different shapes)");
-        }
+        ColumnPtr nested_column = column;
+        checkShape(nested_column);
+        updateSizeIfTypeString(nested_column);
+        columns.push_back(nested_column);
     }
 }
 
 void NpyOutputFormat::initShape(const ColumnPtr & column)
 {
-    auto type = data_type;
     ColumnPtr nested_column = column;
     while (const auto * array_column = typeid_cast<const ColumnArray *>(nested_column.get()))
     {
-        numpy_shape.push_back(array_column->getOffsets()[0]);
+        auto dim = array_column->getOffsets()[0];
+        invalid_shape = dim == 0;
+        numpy_shape.push_back(dim);
         nested_column = array_column->getDataPtr();
     }
+
+    if (invalid_shape)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Shape ({}) is an invalid shape, as dimension size cannot be 0", shapeStr());
 }
 
-bool NpyOutputFormat::checkShape(const ColumnPtr & column)
+void NpyOutputFormat::checkShape(ColumnPtr & column)
 {
-    auto type = data_type;
-    ColumnPtr nested_column = column;
     int dim = 0;
-    while (type->getTypeId() == TypeIndex::Array)
+    while (const auto * array_column = typeid_cast<const ColumnArray *>(column.get()))
     {
-        const auto * array_column = assert_cast<const ColumnArray *>(nested_column.get());
         const auto & array_offset = array_column->getOffsets();
 
         for (size_t i = 1; i < array_offset.size(); ++i)
             if (array_offset[i] - array_offset[i - 1] != numpy_shape[dim])
-                return false;
+            {
+                invalid_shape = true;
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse doesn't support object types, cannot format ragged nested sequences (which is a list of arrays with different shapes)");
+            }
 
-        type = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
-        nested_column = array_column->getDataPtr();
+        column = array_column->getDataPtr();
         dim += 1;
     }
+}
 
-    if (type->getTypeId() == TypeIndex::String)
+void NpyOutputFormat::updateSizeIfTypeString(const ColumnPtr & column)
+{
+    if (nested_data_type->getTypeId() == TypeIndex::String)
     {
-        const auto & string_offsets = assert_cast<const ColumnString *>(nested_column.get())->getOffsets();
+        const auto & string_offsets = assert_cast<const ColumnString *>(column.get())->getOffsets();
         for (size_t i = 0; i < string_offsets.size(); ++i)
         {
             size_t string_length = static_cast<size_t>(string_offsets[i] - 1 - string_offsets[i - 1]);
@@ -187,9 +189,6 @@ bool NpyOutputFormat::checkShape(const ColumnPtr & column)
                 numpy_data_type->setSize(string_length);
         }
     }
-
-    columns.push_back(nested_column);
-    return true;
 }
 
 void NpyOutputFormat::finalizeImpl()
