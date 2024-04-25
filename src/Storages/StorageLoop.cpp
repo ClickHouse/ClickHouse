@@ -1,17 +1,8 @@
 #include "StorageLoop.h"
-#include <Interpreters/DatabaseCatalog.h>
-#include <Databases/IDatabase.h>
-#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <vector>
 
 
 namespace DB
