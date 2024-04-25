@@ -178,7 +178,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             JSONUtils::skipColon(*in);
             skipUnknownField(name_ref);
             continue;
-	}
+        }
         size_t column_index = 0;
         if (format_settings.json.ignore_key_case)
         {
