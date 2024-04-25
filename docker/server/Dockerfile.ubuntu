@@ -12,18 +12,23 @@ ARG apt_archive="http://archive.ubuntu.com"
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
-RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
-    && groupadd -r clickhouse --gid=101 \
-    && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
-    && apt-get update \
-    && apt-get upgrade -yq \
-    && apt-get install --yes --no-install-recommends \
+RUN set -x; \
+    sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list; \
+    groupadd -r clickhouse --gid=101; \
+    useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse; \
+    apt-get update; \
+    apt-get upgrade -yq; \
+    apt-get install --yes --no-install-recommends \
         ca-certificates \
         locales \
         tzdata \
         wget \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+        ; \
+    apt-get clean; \
+    rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/*;
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
@@ -40,80 +45,78 @@ ARG DIRECT_DOWNLOAD_URLS=""
 # from a single binary url (useful for non-standard builds - with sanitizers, for arm64).
 ARG single_binary_location_url=""
 
-# install from direct URL
-RUN if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
-        echo "installing from custom predefined urls with deb packages: ${DIRECT_DOWNLOAD_URLS}" \
-        && rm -rf /tmp/clickhouse_debs \
-        && mkdir -p /tmp/clickhouse_debs \
-        && for url in $DIRECT_DOWNLOAD_URLS; do \
-            wget --progress=bar:force:noscroll "$url" -P /tmp/clickhouse_debs || exit 1 \
-        ; done \
-        && dpkg -i /tmp/clickhouse_debs/*.deb \
-        && rm -rf /tmp/* ; \
-    fi
-
-# install from a web location with deb packages
-RUN arch="$(dpkg --print-architecture)" \
-    && if [ -n "${deb_location_url}" ]; then \
-        echo "installing from custom url with deb packages: ${deb_location_url}" \
-        && rm -rf /tmp/clickhouse_debs \
-        && mkdir -p /tmp/clickhouse_debs \
-        && for package in ${PACKAGES}; do \
+RUN set -ex; \
+    rm -rf /tmp/clickhouse; \
+    mkdir -p /tmp/clickhouse; \
+    \
+    # install from direct URL
+    if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
+        echo "installing from custom predefined urls with deb packages: ${DIRECT_DOWNLOAD_URLS}"; \
+        for url in $DIRECT_DOWNLOAD_URLS; do \
+            wget --progress=bar:force:noscroll "$url" -P /tmp/clickhouse || exit 1; \
+        done; \
+        dpkg -i /tmp/clickhouse/*.deb; \
+    fi; \
+    \
+    # install from a web location with deb packages
+    if [ -n "${deb_location_url}" ]; then \
+        echo "installing from custom url with deb packages: ${deb_location_url}"; \
+        arch="$(dpkg --print-architecture)"; \
+        for package in ${PACKAGES}; do \
             { wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_${arch}.deb" -P /tmp/clickhouse_debs || \
                 wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_all.deb" -P /tmp/clickhouse_debs ; } \
-            || exit 1 \
-        ; done \
-        && dpkg -i /tmp/clickhouse_debs/*.deb \
-        && rm -rf /tmp/* ; \
-    fi
-
-# install from a single binary
-RUN if [ -n "${single_binary_location_url}" ]; then \
-        echo "installing from single binary url: ${single_binary_location_url}" \
-        && rm -rf /tmp/clickhouse_binary \
-        && mkdir -p /tmp/clickhouse_binary \
-        && wget --progress=bar:force:noscroll "${single_binary_location_url}" -O /tmp/clickhouse_binary/clickhouse \
-        && chmod +x /tmp/clickhouse_binary/clickhouse \
-        && /tmp/clickhouse_binary/clickhouse install --user "clickhouse" --group "clickhouse" \
-        && rm -rf /tmp/* ; \
-    fi
-
-# A fallback to installation from ClickHouse repository
-RUN if ! clickhouse local -q "SELECT ''" > /dev/null 2>&1; then \
-        apt-get update \
-        && apt-get install --yes --no-install-recommends \
+            || exit 1; \
+        done; \
+        dpkg -i /tmp/clickhouse_/*.deb; \
+    fi; \
+    \
+    # install from a single binary
+    if [ -n "${single_binary_location_url}" ]; then \
+        echo "installing from single binary url: ${single_binary_location_url}"; \
+        wget --progress=bar:force:noscroll "${single_binary_location_url}" -O /tmp/clickhouse/clickhouse; \
+        chmod +x /tmp/clickhouse/clickhouse; \
+        /tmp/clickhouse/clickhouse install --user "clickhouse" --group "clickhouse"; \
+    fi; \
+    \
+    # A fallback to installation from ClickHouse repository
+    if ! clickhouse local -q "SELECT ''" > /dev/null 2>&1; then \
+        apt-get update; \
+        apt-get install --yes --no-install-recommends \
             apt-transport-https \
             ca-certificates \
             dirmngr \
             gnupg2 \
-        && mkdir -p /etc/apt/sources.list.d \
-        && GNUPGHOME=$(mktemp -d) \
-        && GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring \
+            ;\
+        mkdir -p /etc/apt/sources.list.d; \
+        GNUPGHOME=$(mktemp -d); \
+        GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring \
             --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754 \
-        && rm -rf "$GNUPGHOME" \
-        && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
-        && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
-        && echo "installing from repository: ${REPOSITORY}" \
-        && apt-get update \
-        && for package in ${PACKAGES}; do \
-            packages="${packages} ${package}=${VERSION}" \
-        ; done \
-        && apt-get install --allow-unauthenticated --yes --no-install-recommends ${packages} || exit 1 \
-        && rm -rf \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754; \
+        rm -rf "$GNUPGHOME"; \
+        chmod +r /usr/share/keyrings/clickhouse-keyring.gpg; \
+        echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list; \
+        echo "installing from repository: ${REPOSITORY}"; \
+        apt-get update; \
+        for package in ${PACKAGES}; do \
+            packages="${packages} ${package}=${VERSION}"; \
+        done; \
+        apt-get install --allow-unauthenticated --yes --no-install-recommends ${packages} || exit 1; \
+        rm -rf \
             /var/lib/apt/lists/* \
-            /var/cache/debconf \
-            /tmp/* \
-        && apt-get autoremove --purge -yq libksba8 \
-        && apt-get autoremove -yq \
-    ; fi
+            /var/cache/debconf; \
+        apt-get autoremove --purge -yq libksba8; \
+        apt-get autoremove -yq; \
+    fi; \
+    \
+    rm -rf /tmp/*;
 
 # post install
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)
-RUN clickhouse-local -q 'SELECT * FROM system.build_options' \
-    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
-    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
+RUN set -ex; \
+    clickhouse-local -q 'SELECT * FROM system.build_options'; \
+    mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
+    chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
 RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
