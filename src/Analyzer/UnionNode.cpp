@@ -145,7 +145,7 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const UnionNode &>(rhs);
 
@@ -153,7 +153,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         union_mode == rhs_typed.union_mode;
 }
 
-void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void UnionNode::updateTreeHashImpl(HashState & state) const
 {
     state.update(is_subquery);
     state.update(is_cte);

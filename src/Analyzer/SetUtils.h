@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Settings.h>
 
-#include <memory>
+#include <DataTypes/IDataType.h>
+
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;

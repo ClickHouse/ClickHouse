@@ -1,8 +1,6 @@
 #include <Access/AccessRights.h>
-#include <base/sort.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
+#include <base/sort.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <unordered_map>
@@ -409,65 +407,6 @@ public:
     }
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
-
-    bool contains(const Node & other)
-    {
-        if (min_flags_with_children.contains(other.max_flags_with_children))
-            return true;
-
-        if (!flags.contains(other.flags))
-            return false;
-
-        /// Let's assume that the current node has the following rights:
-        ///
-        /// SELECT ON *.* TO user1;
-        /// REVOKE SELECT ON system.* FROM user1;
-        /// REVOKE SELECT ON mydb.* FROM user1;
-        ///
-        /// And the other node has the rights:
-        ///
-        /// SELECT ON *.* TO user2;
-        /// REVOKE SELECT ON system.* FROM user2;
-        ///
-        /// First, we check that each child from the other node is present in the current node:
-        ///
-        /// SELECT ON *.* TO user1;  -- checked
-        /// REVOKE SELECT ON system.* FROM user1; -- checked
-        if (other.children)
-        {
-            for (const auto & [name, node] : *other.children)
-            {
-                const auto & child = tryGetChild(name);
-                if (child == nullptr)
-                {
-                    if (!flags.contains(node.flags))
-                        return false;
-                }
-                else
-                {
-                    if (!child->contains(node))
-                        return false;
-                }
-            }
-        }
-
-        if (!children)
-            return true;
-
-        /// Then we check that each of our children has no other rights revoked.
-        ///
-        /// REVOKE SELECT ON mydb.* FROM user1; -- check failed, returning false
-        for (const auto & [name, node] : *children)
-        {
-            if (other.children && other.children->contains(name))
-                continue;
-
-            if (!node.flags.contains(other.flags))
-                return false;
-        }
-
-        return true;
-    }
 
     void makeUnion(const Node & other)
     {
@@ -1066,24 +1005,6 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 }
 
 template <bool grant_option>
-bool AccessRights::containsImpl(const AccessRights & other) const
-{
-    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
-    {
-        if (!root_node)
-            return !other.root;
-        if (!other.root)
-            return true;
-        return root_node->contains(*other.root);
-    };
-    if constexpr (grant_option)
-        return helper(root_with_grant_option);
-    else
-        return helper(root);
-}
-
-
-template <bool grant_option>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
@@ -1147,8 +1068,6 @@ bool AccessRights::hasGrantOption(const AccessFlags & flags, std::string_view da
 bool AccessRights::hasGrantOption(const AccessRightsElement & element) const { return isGrantedImpl<true>(element); }
 bool AccessRights::hasGrantOption(const AccessRightsElements & elements) const { return isGrantedImpl<true>(elements); }
 
-bool AccessRights::contains(const AccessRights & access_rights) const { return containsImpl<false>(access_rights); }
-bool AccessRights::containsWithGrantOption(const AccessRights & access_rights) const { return containsImpl<true>(access_rights); }
 
 bool operator ==(const AccessRights & left, const AccessRights & right)
 {

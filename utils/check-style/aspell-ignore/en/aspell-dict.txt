@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2724
 AArch
 ACLs
 ALTERs
@@ -29,13 +29,6 @@ Alexey
 AnyEvent
 AppleClang
 Approximative
-arrayDotProduct
-arrayEnumerateDenseRanked
-arrayEnumerateUniqRanked
-arrayFirstOrNull
-arrayLastOrNull
-arrayPartialShuffle
-arrayShuffle
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -168,10 +161,7 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
-CloudAvailableBadge
 CloudDetails
-CloudNotSupportedBadge
-CloudStorage
 CodeBlock
 CodeLLDB
 Codecs
@@ -183,8 +173,6 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
-Composable
-composable
 Config
 ConnectionDetails
 Const
@@ -272,7 +260,6 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
-FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -461,9 +448,6 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
-Konstantin
-kostik
-kostikConsistentHash
 Korzeniewski
 Kubernetes
 LDAP
@@ -475,7 +459,6 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 Levenshtein
-Liao
 LibFuzzer
 LightHouse
 LineAsString
@@ -563,20 +546,7 @@ MinIO
 MinMax
 MindsDB
 Mongodb
-mortonDecode
-mortonEncode
 MsgPack
-multiSearchAllPositionsCaseInsensitive
-multiSearchAllPositionsCaseInsensitiveUTF
-multiSearchAnyCaseInsensitive
-multiSearchAnyCaseInsensitiveUTF
-multiSearchAnyUTF
-multiSearchFirstIndexCaseInsensitive
-multiSearchFirstIndexCaseInsensitiveUTF
-multiSearchFirstIndexUTF
-multiSearchFirstPositionCaseInsensitive
-multiSearchFirstPositionCaseInsensitiveUTF
-multiSearchFirstPositionUTF
 MultiPolygon
 Multiline
 Multiqueries
@@ -678,7 +648,6 @@ OTLP
 OUTFILE
 ObjectId
 Observability
-Oblakov
 Octonica
 Ok
 OnTime
@@ -699,7 +668,6 @@ PCRE
 PRCP
 PREWHERE
 PROCESSLIST
-PROXYv
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
@@ -717,6 +685,7 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
+PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -804,6 +773,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -872,7 +842,6 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
-SharedMergeTree
 Shortkeys
 SimHash
 Simhash
@@ -885,7 +854,6 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
-SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -949,7 +917,6 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
-tanh
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -988,7 +955,6 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
-Tsai
 Tukey
 TwoColumnList
 UBSan
@@ -1016,7 +982,6 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
-unshuffled
 Updatable
 Uppercased
 Uptime
@@ -1114,8 +1079,6 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
-approxtopk
-approxtopsum
 argMax
 argMin
 argmax
@@ -1276,7 +1239,6 @@ buildable
 builtins
 byteHammingDistance
 byteSize
-byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1372,8 +1334,6 @@ countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
-countSubstringsCaseInsensitive
-countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
@@ -1616,7 +1576,6 @@ gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
-generateSeries
 generateULID
 generateUUIDv
 geoDistance
@@ -1631,7 +1590,6 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
-getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1659,6 +1617,7 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+grouparrayintersect
 groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
@@ -1675,7 +1634,6 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
-grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
@@ -1710,7 +1668,6 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
-hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1789,6 +1746,7 @@ isValidJSON
 isValidUTF
 isZeroOrNull
 iteratively
+iTerm
 jaccard
 jaccardIndex
 jaroSimilarity
@@ -1847,7 +1805,6 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
-leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -1885,7 +1842,6 @@ linearized
 lineasstring
 linefeeds
 lineorder
-linestring
 linux
 llvm
 loadDefaultCAFile
@@ -1966,7 +1922,6 @@ mmap
 mmapped
 modularization
 moduloOrZero
-moduli
 mongodb
 monthName
 moscow
@@ -2017,9 +1972,6 @@ nestjs
 netloc
 ngram
 ngramDistance
-ngramDistanceCaseInsensitive
-ngramDistanceCaseInsensitiveUTF
-ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -2029,9 +1981,6 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
-ngramSearchCaseInsensitive
-ngramSearchCaseInsensitiveUTF
-ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF
@@ -2251,9 +2200,7 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
-readWKTPoint
 readWKTPolygon
-readWKTRing
 readahead
 readline
 readme
@@ -2321,7 +2268,6 @@ retriable
 reverseUTF
 rightPad
 rightPadUTF
-rightUTF
 risc
 riscv
 ro
@@ -2349,13 +2295,10 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
 russian
-rustc
-rustup
 rw
 sasl
 satisfiable
 scala
-sccache
 schemas
 seekable
 seektable
@@ -2377,17 +2320,10 @@ shardNum
 sharded
 sharding
 shortcircuit
+Shortkeys
 shortkeys
 shoutout
 simdjson
-simpleJSON
-simpleJSONExtractBool
-simpleJSONExtractFloat
-simpleJSONExtractInt
-simpleJSONExtractRaw
-simpleJSONExtractString
-simpleJSONExtractUInt
-simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2554,7 +2490,6 @@ theilsu
 themself
 threadpool
 throwIf
-timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2606,7 +2541,6 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
-toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2682,12 +2616,6 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
-tupleIntDiv
-tupleIntDivByNumber
-tupleIntDivOrZero
-tupleIntDivOrZeroByNumber
-tupleModulo
-tupleModuloByNumber
 turbostat
 txt
 typename
@@ -2748,9 +2676,7 @@ userver
 utils
 uuid
 varPop
-varPopStable
 varSamp
-varSampStable
 variadic
 variantElement
 variantType
@@ -2759,7 +2685,6 @@ varpop
 varsamp
 vectorized
 vectorscan
-vendoring
 verificationDepth
 verificationMode
 versionedcollapsingmergetree
@@ -2803,7 +2728,6 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
-wyHash
 xcode
 xeus
 xkcd
@@ -2814,7 +2738,6 @@ xz
 yaml
 yandex
 youtube
-ZCurve
 zLib
 zLinux
 zabbix

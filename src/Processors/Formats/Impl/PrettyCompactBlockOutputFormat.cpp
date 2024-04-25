@@ -147,12 +147,10 @@ void PrettyCompactBlockOutputFormat::writeRow(
         // Write row number;
         auto row_num_string = std::to_string(row_num + 1 + total_rows) + ". ";
         for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
-            writeChar(' ', out);
-        if (color)
-            writeCString("\033[90m", out);
+        {
+            writeCString(" ", out);
+        }
         writeString(row_num_string, out);
-        if (color)
-            writeCString("\033[0m", out);
     }
 
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
@@ -161,10 +159,6 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
     size_t num_columns = max_widths.size();
     const auto & columns = chunk.getColumns();
-
-    size_t cut_to_width = format_settings.pretty.max_value_width;
-    if (!format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0)
-        cut_to_width = 0;
 
     writeCString(grid_symbols.bar, out);
 
@@ -175,7 +169,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], type.shouldAlignRightInPrettyFormats());
     }
 
     writeCString(grid_symbols.bar, out);

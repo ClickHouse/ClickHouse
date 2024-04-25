@@ -63,7 +63,7 @@ std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTr
     return {};
 }
 
-void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
@@ -94,12 +94,12 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     const auto & settings_str = settings_arg->value.get<String>();
     if (!settings_str.empty())
     {
-        const Settings & settings = context->getSettingsRef();
+        constexpr UInt64 max_size = 4096;
+        constexpr UInt64 max_depth = 16;
 
         /// parse_only_internals_ = true - we don't want to parse `SET` keyword
         ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
-        ASTPtr settings_ast = parseQuery(settings_parser, settings_str,
-            settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ASTPtr settings_ast = parseQuery(settings_parser, settings_str, max_size, max_depth);
         explain_query->setSettings(std::move(settings_ast));
     }
 
@@ -136,7 +136,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
 
 ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind()); /// NOLINT(readability-static-accessed-through-instance)
+    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind());
     ColumnsDescription columns_description;
     for (const auto & column : sample_block.getColumnsWithTypeAndName())
         columns_description.add(ColumnDescription(column.name, column.type));

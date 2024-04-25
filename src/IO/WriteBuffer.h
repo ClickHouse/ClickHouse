@@ -172,12 +172,12 @@ public:
     WriteBufferFromPointer(Position ptr, size_t size) : WriteBuffer(ptr, size) {}
 
 private:
-    void finalizeImpl() override
+    virtual void finalizeImpl() override
     {
         /// no op
     }
 
-    void sync() override
+    virtual void sync() override
     {
         /// no on
     }

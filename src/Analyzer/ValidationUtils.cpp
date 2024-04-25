@@ -56,9 +56,6 @@ void validateFilters(const QueryTreeNodePtr & query_node)
 
     if (query_node_typed.hasHaving())
         validateFilter(query_node_typed.getHaving(), "HAVING", query_node);
-
-    if (query_node_typed.hasQualify())
-        validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
 }
 
 namespace

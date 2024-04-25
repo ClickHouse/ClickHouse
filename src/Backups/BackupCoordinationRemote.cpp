@@ -1,7 +1,6 @@
 #include <Backups/BackupCoordinationRemote.h>
 
 #include <base/hex.h>
-#include <boost/algorithm/string/split.hpp>
 
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
@@ -14,8 +13,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB

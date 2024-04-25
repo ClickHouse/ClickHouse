@@ -5,55 +5,54 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
+#include <base/wide_integer_to_string.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/IColumn.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/getMostSubtype.h>
 #include <Functions/DivisionUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <base/TypeList.h>
-#include <base/TypeLists.h>
 #include <base/map.h>
-#include <base/types.h>
-#include <base/wide_integer_to_string.h>
-#include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <base/types.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/getMostSubtype.h>
+#include <base/TypeLists.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Interpreters/Context.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -171,8 +170,7 @@ public:
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
     using ResultDataType = Switch<
         /// Result must be Integer
-        Case<IsOperation<Operation>::int_div || IsOperation<Operation>::int_div_or_zero,
-            std::conditional_t<IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>, InvalidType>>,
+        Case<IsOperation<Operation>::div_int || IsOperation<Operation>::div_int_or_zero, DataTypeFromFieldType<typename Op::ResultType>>,
         /// Decimal cases
         Case<IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>, DecimalResultDataType>,
         Case<
@@ -674,8 +672,8 @@ private:
                                             IsOperation<Operation>::minus;
     static constexpr bool is_multiply =     IsOperation<Operation>::multiply;
     static constexpr bool is_float_division = IsOperation<Operation>::div_floating;
-    static constexpr bool is_int_division = IsOperation<Operation>::int_div ||
-                                            IsOperation<Operation>::int_div_or_zero;
+    static constexpr bool is_int_division = IsOperation<Operation>::div_int ||
+                                            IsOperation<Operation>::div_int_or_zero;
     static constexpr bool is_division = is_float_division || is_int_division;
     static constexpr bool is_compare =      IsOperation<Operation>::least ||
                                             IsOperation<Operation>::greatest;
@@ -783,8 +781,8 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
-    static constexpr bool is_int_div = IsOperation<Op>::int_div;
-    static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
+    static constexpr bool is_div_int = IsOperation<Op>::div_int;
+    static constexpr bool is_div_int_or_zero = IsOperation<Op>::div_int_or_zero;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -1009,11 +1007,11 @@ class FunctionBinaryArithmetic : public IFunction
             {
                 function_name = "tupleModuloByNumber";
             }
-            else if constexpr (is_int_div)
+            else if constexpr (is_div_int)
             {
                 function_name = "tupleIntDivByNumber";
             }
-            else if constexpr (is_int_div_or_zero)
+            else if constexpr (is_div_int_or_zero)
             {
                 function_name = "tupleIntDivOrZeroByNumber";
             }
@@ -1468,7 +1466,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
+        return ((IsOperation<Op>::div_int || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
                 && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
@@ -1692,7 +1690,7 @@ public:
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
-                    if constexpr (is_int_div || is_int_div_or_zero)
+                    if constexpr (is_div_int || is_div_int_or_zero)
                         type_res = std::make_shared<ResultDataType>();
                     else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
@@ -2088,7 +2086,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     right_nullmap);
             }
             /// Here we check if we have `intDiv` or `intDivOrZero` and at least one of the arguments is decimal, because in this case originally we had result as decimal, so we need to convert result into integer after calculations
-            else if constexpr (!decimal_with_float && (is_int_div || is_int_div_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
+            else if constexpr (!decimal_with_float && (is_div_int || is_div_int_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
             {
 
                 if constexpr (!std::is_same_v<DecimalResultType, InvalidType>)
@@ -2626,7 +2624,7 @@ public:
         /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
         /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
         bool division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
-            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
+            && (IsOperation<Op>::div_int || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
                 || (IsOperation<Op>::div_floating
                     && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
 

@@ -4,8 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Poco/String.h>
-
 namespace DB
 {
 
