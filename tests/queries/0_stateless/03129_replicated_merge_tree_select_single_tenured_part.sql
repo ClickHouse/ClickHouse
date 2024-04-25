@@ -18,7 +18,7 @@ SELECT s, v FROM t_single_tenured_part ORDER BY v;
 -- Optimize table to have just one part
 SYSTEM START MERGES t_single_tenured_part;
 OPTIMIZE TABLE t_single_tenured_part FINAL;
-SELECT count() from system.parts where active and table = 't_single_tenured_part';
+SELECT count() from system.parts where active and table = 't_single_tenured_part' and database = currentDatabase();
 
 -- Make sure that a merged value is returned when setting is enabled
 SELECT s, v from t_single_tenured_part ORDER BY v SETTINGS select_only_one_part_with_min_block_per_partition=1;
@@ -37,7 +37,7 @@ SELECT s, v FROM t_single_tenured_part ORDER BY v;
 SYSTEM START MERGES t_single_tenured_part;
 SYSTEM START MERGES t_single_tenured_part;
 OPTIMIZE TABLE t_single_tenured_part FINAL;
-SELECT count() from system.parts where active and table = 't_single_tenured_part';
+SELECT count() from system.parts where active and table = 't_single_tenured_part' and database = currentDatabase();
 SELECT s, v from t_single_tenured_part ORDER BY v SETTINGS select_only_one_part_with_min_block_per_partition=1;
 
 DROP TABLE t_single_tenured_part SYNC;
