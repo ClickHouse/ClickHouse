@@ -1783,6 +1783,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 left_start_row);
         }
         auto filter_col = buildAdditionalFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
+        filter_col = filter_col->convertToFullIfNeeded();
         copy_final_matched_rows(left_start_row, filter_col);
 
         if constexpr (need_replication)
