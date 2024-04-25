@@ -24,16 +24,12 @@ try
     checkNumberOfColumns(num_columns);
     createColumnsForReading(res_columns);
 
-    size_t rows_to_skip = 0;
-    bool is_skipping = true;
-    bool need_skipping = offset > 0;
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
         if (rows_to_read <= offset)
         {
             offset -= rows_to_read;
-            rows_to_skip += rows_to_read;
             ++from_mark;
             continue;
         }
@@ -43,8 +39,6 @@ try
         {
             if (!res_columns[pos])
             {
-                if (offset > 0)
-                    skipped_rows.emplace_back(rows_to_skip);
                 continue;
             }
 
@@ -67,18 +61,14 @@ try
             {
                 return stream->getDataBuffer();
             };
-            size_t cur_rows_to_skip = rows_to_skip;
 
             readPrefix(columns_to_read[pos], buffer_getter, buffer_getter_for_prefix, columns_for_offsets[pos]);
-            readData(columns_to_read[pos], column, cur_rows_to_skip, rows_to_read, offset, buffer_getter);
-            if (is_skipping && need_skipping)
-                skipped_rows.emplace_back(cur_rows_to_skip);
+            readData(columns_to_read[pos], column, rows_to_read, offset, buffer_getter);
         }
 
         ++from_mark;
         read_rows += rows_to_read;
         offset = 0;
-        is_skipping = false;
     }
 
     next_mark = from_mark;

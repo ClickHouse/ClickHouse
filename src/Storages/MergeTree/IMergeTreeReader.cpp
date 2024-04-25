@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -97,7 +99,6 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 
         if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
             continue;
-        //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
 
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
@@ -109,16 +110,35 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     }
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
+void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+                                          size_t offset) const
 {
     try
     {
         NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
+        const auto & converted_requested_columns = Nested::convertToSubcolumns(requested_columns);
+        auto converted_requested_column = converted_requested_columns.begin();
+        auto num_columns = converted_requested_columns.size();
+        std::vector<size_t> columns_to_cut;
+
+        for (size_t i = 0; i < num_columns; ++i, ++converted_requested_column)
+        {
+            const auto & [name, type] = *converted_requested_column;
+            if (!res_columns[i] && partially_read_columns.contains(name))
+                columns_to_cut.emplace_back(i);
+        }
+
         DB::fillMissingColumns(
-            res_columns, num_rows,
-            Nested::convertToSubcolumns(requested_columns),
+            res_columns, num_rows, converted_requested_columns,
             Nested::convertToSubcolumns(available_columns),
             partially_read_columns, storage_snapshot->metadata);
+
+        for (const auto column_idx : columns_to_cut)
+        {
+            auto tmp_column = res_columns[column_idx];
+            if (tmp_column)
+                res_columns[column_idx] = tmp_column->cut(offset, tmp_column->size() - offset);
+        }
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });

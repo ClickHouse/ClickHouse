@@ -18,7 +18,6 @@ class IMergeTreeReader : private boost::noncopyable
 public:
     using ValueSizeMap = std::map<std::string, double>;
     using VirtualFields = std::unordered_map<String, Field>;
-    using SkippedRowsArray = std::vector<size_t>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
@@ -51,7 +50,8 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+                            size_t offset = 0) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -63,8 +63,6 @@ public:
     size_t numColumnsInResult() const { return requested_columns.size(); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
-
-    const SkippedRowsArray & getSkippedRows() const { return skipped_rows; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
@@ -115,9 +113,6 @@ protected:
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
-
-    /// Number of skipped rows when read rows.
-    SkippedRowsArray skipped_rows;
 
 private:
     /// Columns that are requested to read.

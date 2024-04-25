@@ -123,9 +123,7 @@ static void collectLazilyReadColumnNames(
     for (const auto & column_name : all_column_names)
     {
         if (storage_columns.has(column_name))
-        {
             lazily_read_column_name_set.insert(column_name);
-        }
     }
 
     for (const auto & column_name : lazily_read_column_name_set)

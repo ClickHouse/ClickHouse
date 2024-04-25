@@ -42,7 +42,6 @@ protected:
     void readData(
         const NameAndTypePair & name_and_type,
         ColumnPtr & column,
-        size_t & rows_to_skip,
         size_t rows_to_read,
         size_t offset,
         const InputStreamGetter & getter);

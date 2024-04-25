@@ -36,6 +36,28 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     }
 }
 
+void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num_rows)
+{
+    bool has_columns = false;
+    for (const auto & column : res_columns)
+    {
+        if (column)
+        {
+            has_columns = true;
+            break;
+        }
+    }
+
+    if (has_columns)
+        return;
+
+    ColumnWithTypeAndName dummy_column;
+    dummy_column.column = DataTypeUInt8().createColumnConst(num_rows, Field(1));
+    dummy_column.type = std::make_shared<DataTypeUInt8>();
+    dummy_column.name = "....dummy...." + toString(UUIDHelpers::generateV4());
+    block.insert(dummy_column);
+}
+
 void MergeTreeLazilyReader::transformLazyColumns(
     const ColumnLazy & column_lazy,
     ColumnsWithTypeAndName & res_columns)
@@ -104,23 +126,19 @@ void MergeTreeLazilyReader::transformLazyColumns(
             1, current_offset, columns_to_read);
 
         bool should_evaluate_missing_defaults = false;
-        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1);
+        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1, current_offset);
 
-        if (should_evaluate_missing_defaults)
-            reader->evaluateMissingDefaults({}, columns_to_read);
+
+        if (should_evaluate_missing_defaults) {
+            Block block;
+            addDummyColumnWithRowCount(block, columns_to_read, 1);
+            reader->evaluateMissingDefaults(block, columns_to_read);
+        }
 
         reader->performRequiredConversions(columns_to_read);
 
         for (size_t i = 0; i < columns_size; ++i)
-        {
-            size_t skipped_rows = 0;
-            if (current_offset)
-                skipped_rows = reader->getSkippedRows()[i];
-            if (columns_to_read[i]->size() <= (current_offset - skipped_rows))
-                lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
-            else
-                lazily_read_columns[i]->insert((*columns_to_read[i])[current_offset - skipped_rows]);
-        }
+            lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
     }
 
     for (size_t i = origin_size; i < lazily_read_columns.size(); ++i)

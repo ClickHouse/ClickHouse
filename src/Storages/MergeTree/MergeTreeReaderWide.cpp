@@ -361,24 +361,17 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
-    if (offset > 0)
+    if (offset > 0 && serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, deserialize_state))
     {
-        if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(column, offset, deserialize_settings, deserialize_state))
-        {
-            data_skipped = true;
-            skipped_rows.emplace_back(offset);
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-        }
-        else
-        {
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-            skipped_rows.emplace_back(0);
-            // if (!column->empty() && !partially_read_columns.contains(name_and_type.name))
-            //     column = column->cut(offset, column->size() - offset);
-        }
+        data_skipped = true;
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
     }
     else
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+        if (!column->empty() && !partially_read_columns.contains(name_and_type.name))
+            column = column->cut(offset, column->size() - offset);
+    }
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
 }
 
