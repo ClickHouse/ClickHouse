@@ -6,16 +6,10 @@
 #include "base/types.h"
 
 #include <fsst.h>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <exception>
 #include <stdexcept>
-#include <vector>
-#include <iostream>
-
-#define SERIALIZE(l,p) { (p)[0] = ((l)>>16)&255; (p)[1] = ((l)>>8)&255; (p)[2] = (l)&255; }
 
 namespace DB
 {
@@ -23,7 +17,7 @@ namespace DB
 class CompressionCodecFSST : public ICompressionCodec
 {
 private:
-    using SplittedLens = size_t*;
+    using SplittedMutableLens = size_t*;
     using SplittedMutableRows = unsigned char**;
     using SplittedConstRows = const unsigned char**;
 
@@ -48,18 +42,9 @@ protected:
         size_t len_in[rows_count];
         const unsigned char* str_in[rows_count];
         splitDataByRows(reinterpret_cast<const unsigned char*>(source), source_size, str_in, len_in);
-        
-        ///
-        std::cerr << "rows_count " << rows_count << std::endl;
-        for (size_t i = 0; i < rows_count; ++i) {
-            std::cout << len_in[i] << " " << str_in[i] << std::endl;
-        }
-        ///
 
         fsst_encoder_t *encoder = fsst_create(rows_count, len_in,
                     const_cast<SplittedMutableRows>(str_in), 1);
-
-        std::cerr << "encoder created" << std::endl;
 
         size_t fsst_header_size = fsst_export(encoder, reinterpret_cast<unsigned char*>(dest));
 
@@ -67,8 +52,6 @@ protected:
         const unsigned char* str_out[rows_count];
         size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(len_out) + sizeof(str_out)};
         /* codec_header |(dest*) fsst_header(encoder) rows_count len_out str_out data */
-
-        std::cerr << "header size: " << header_size << std::endl;
 
         if (fsst_compress(encoder,
                         rows_count,
@@ -82,14 +65,10 @@ protected:
         }
         fsst_destroy(encoder);
 
-        std::cerr << "compressed" << std::endl;
-
         /* Copy prerequisites to dest */
         memcpy(dest + fsst_header_size, &rows_count, sizeof(rows_count));
         memcpy(dest + fsst_header_size + sizeof(rows_count), len_out, sizeof(len_out));
         memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out), str_out, sizeof(str_out));
-
-        std::cerr << "copied" << std::endl;
 
         /* Count data total compressed size without header */
         UInt32 compressed_size{0};
@@ -97,13 +76,11 @@ protected:
             compressed_size += len_out[i];
         }
 
-        std::cerr << compressed_size << " " << header_size << std::endl;
-
         return static_cast<UInt32>(header_size) + compressed_size;
     }
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override {
-        UNUSED(uncompressed_size);
+        UNUSED(uncompressed_size, source_size);
         fsst_decoder_t decoder;
         size_t fsst_header_size = fsst_import(&decoder,
         reinterpret_cast<unsigned char *>(const_cast<char*>(source)));
@@ -116,8 +93,6 @@ protected:
         memcpy(lens, source + fsst_header_size + sizeof(rows_count), sizeof(lens));
         memcpy(strs, source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(strs));
 
-        std::cerr << "header size: " << fsst_header_size << "source size: " << source_size << "rows count: " << rows_count << std::endl;
-
         size_t shift{0};
         for (size_t i = 0; i < rows_count; ++i) {
             auto decompressed_size = fsst_decompress(&decoder,
@@ -127,7 +102,6 @@ protected:
                 reinterpret_cast<unsigned char *>(dest + shift)
             );
             shift += decompressed_size + 1;
-            std::cout << "decompressed size: " << decompressed_size << std::endl;
         }
     }
 
@@ -149,7 +123,7 @@ private:
         return rows_count;
     }
 
-    void splitDataByRows(const unsigned char* data, UInt32 size, SplittedConstRows rows, SplittedLens lens) const {
+    void splitDataByRows(const unsigned char* data, UInt32 size, SplittedConstRows rows, SplittedMutableLens lens) const {
         UInt32 ptr = 0;
         rows[ptr] = data;
 

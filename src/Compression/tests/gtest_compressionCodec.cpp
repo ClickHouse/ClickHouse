@@ -1319,29 +1319,17 @@ TEST(FSSTTest, CompressDecompress)
         iter += u.size();
         in_str[iter++] = '\0';
     }
-    for (size_t i = 0; i < iter; ++i) {
-        std::cerr << in_str[i];
-    }
-    std::cerr << std::endl;
 
     char out_str[2281337];
     auto string_length = iter;
-    std::cerr << "in_str length: " << string_length << std::endl;
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
     auto compressed_size = fsst_codec->compress(in_str, static_cast<UInt32>(string_length), out_str);
-
-    std::cerr << "compressed size: " << compressed_size << std::endl;
 
     memset(in_str, '\0', string_length);
 
     fsst_codec->decompress(out_str, compressed_size, in_str);
 
-    std::cerr << "decompressed strings: " << std::endl;
-    for (size_t i = 0; i < string_length; ++i) {
-        std::cerr << in_str[i];
-    }
-    std::cerr << std::endl;
     size_t out_iter = 0;
     for (auto str: strs) {
         EXPECT_EQ(std::memcmp(in_str + out_iter, str.data(), str.size()), 0);
