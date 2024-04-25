@@ -42,7 +42,6 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
 
 static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
 {
-    static std::mutex exception_mutex;
     try
     {
         node->processor->work();
@@ -65,13 +64,11 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             }
         }
     }
-    catch (Exception & exception)
+    catch (Exception exception)
     {
+        /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
-        {
-            std::lock_guard lock(exception_mutex);
             exception.addMessage("While executing " + node->processor->getName());
-        }
         throw;
     }
 }
