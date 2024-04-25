@@ -50,7 +50,7 @@ arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length
     }
     catch (...)
     {
-        auto message = getCurrentExceptionMessage(false);
+        auto message = getCurrentExceptionMessage(true);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while writing to arrow stream: {}", message);
         return arrow::Status::IOError(message);
     }
@@ -92,7 +92,7 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbyt
     }
     catch (...)
     {
-        auto message = getCurrentExceptionMessage(false);
+        auto message = getCurrentExceptionMessage(true);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
         return arrow::Status::IOError(message);
     }
@@ -130,7 +130,7 @@ arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
     }
     catch (...)
     {
-        auto message = getCurrentExceptionMessage(false);
+        auto message = getCurrentExceptionMessage(true);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while seeking arrow file: {}", message);
         return arrow::Status::IOError(message);
     }
@@ -149,7 +149,7 @@ arrow::Result<int64_t> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes, void
     }
     catch (...)
     {
-        auto message = getCurrentExceptionMessage(false);
+        auto message = getCurrentExceptionMessage(true);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
         return arrow::Status::IOError(message);
     }
@@ -197,7 +197,7 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_
     }
     catch (...)
     {
-        auto message = getCurrentExceptionMessage(false);
+        auto message = getCurrentExceptionMessage(true);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
         return arrow::Status::IOError(message);
     }
