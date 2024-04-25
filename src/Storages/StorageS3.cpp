@@ -278,7 +278,6 @@ private:
 
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         fillInternalBufferAssumeLocked();
-        return;
     }
 
     KeyWithInfoPtr nextAssumeLocked()
