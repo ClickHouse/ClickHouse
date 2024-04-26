@@ -383,7 +383,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             if (has_lower_limit)
             {
                 if (!key_condition.addCondition(
-                        sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable())))
+                        sampling_key.column_names[0],
+                        Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -401,7 +402,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             if (has_upper_limit)
             {
                 if (!key_condition.addCondition(
-                        sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable())))
+                        sampling_key.column_names[0],
+                        Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -473,6 +475,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
 }
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
+    const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
     const ActionsDAGPtr & filter_dag,
@@ -481,12 +484,12 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     if (!filter_dag)
         return {};
 
-    auto sample = data.getHeaderWithVirtualsForFilter();
+    auto sample = data.getHeaderWithVirtualsForFilter(metadata_snapshot);
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample);
     if (!dag)
         return {};
 
-    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(parts);
+    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
     VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }

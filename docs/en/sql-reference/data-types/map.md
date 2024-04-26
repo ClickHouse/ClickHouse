@@ -1,12 +1,12 @@
 ---
 slug: /en/sql-reference/data-types/map
-sidebar_position: 65
-sidebar_label: Map(key, value)
+sidebar_position: 36
+sidebar_label: Map(K, V)
 ---
 
-# Map(key, value)
+# Map(K, V)
 
-`Map(key, value)` data type stores `key:value` pairs.
+`Map(K, V)` data type stores `key:value` pairs.
 
 **Parameters**
 
