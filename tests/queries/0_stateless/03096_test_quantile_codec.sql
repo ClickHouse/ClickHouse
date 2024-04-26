@@ -1,3 +1,6 @@
+--Tags: no-fasttest
+-- no-fasttest because Quantile isn't available in fasttest
+
 DROP TABLE IF EXISTS codecTest;
 
 SET cross_to_inner_join_rewrite = 1;
