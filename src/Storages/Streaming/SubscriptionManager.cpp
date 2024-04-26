@@ -3,7 +3,6 @@
 
 #include <Processors/Chunk.h>
 
-#include <Storages/Streaming/Subscription.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 
 namespace DB
@@ -19,20 +18,14 @@ std::unique_lock<std::shared_mutex> StreamSubscriptionManager::lockExclusive() c
     return std::unique_lock{rwlock};
 }
 
-StreamSubscriptionPtr StreamSubscriptionManager::subscribe()
+void StreamSubscriptionManager::registerSubscription(StreamSubscriptionPtr subscription)
 {
     auto lock = lockExclusive();
-
-    uint64_t cur_snapshot = subscription_id_counter.fetch_add(1);
-    auto subscription = std::make_shared<StreamSubscription>(cur_snapshot);
-
     subscriptions.push_back(subscription);
     subscriptions_count.fetch_add(1);
-
-    return subscription;
 }
 
-void StreamSubscriptionManager::pushToAll(Block block, uint64_t snapshot)
+void StreamSubscriptionManager::executeOnEachSubscription(const std::function<void(StreamSubscriptionPtr & subscription)> & func)
 {
     auto lock = lockShared();
 
@@ -47,9 +40,7 @@ void StreamSubscriptionManager::pushToAll(Block block, uint64_t snapshot)
             continue;
         }
 
-        // push to subscription only if it is visible in snapshot
-        if (locked_sub->getManagerSnapshot() < snapshot)
-            locked_sub->push(block);
+        func(locked_sub);
     }
 
     if (need_clean)
@@ -62,11 +53,6 @@ void StreamSubscriptionManager::pushToAll(Block block, uint64_t snapshot)
 size_t StreamSubscriptionManager::getSubscriptionsCount() const
 {
     return subscriptions_count.load();
-}
-
-uint64_t StreamSubscriptionManager::getSnapshot() const
-{
-    return subscription_id_counter.load();
 }
 
 void StreamSubscriptionManager::clean()

@@ -14,7 +14,7 @@ public:
 
     String getName() const override { return "SinkToSubscribers"; }
 
-    void consume (Chunk chunk) override;
+    void consume(Chunk chunk) override;
 
 private:
     StreamSubscriptionManager & subscription_manager;

@@ -362,9 +362,8 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
-    /// Creates subscription for capturing storage changes
-    /// By default calls subscribe on subscription manager
-    virtual StreamSubscriptionPtr subscribeForChanges() const;
+    /// Registers subscription in storage's subscription manager
+    virtual void registerSubscription(StreamSubscriptionPtr subscription) const;
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL

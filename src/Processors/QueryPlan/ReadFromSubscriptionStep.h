@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 
-#include <Storages/Streaming/Subscription_fwd.h>
+#include <Storages/Streaming/IStreamSubscription.h>
 
 namespace DB
 {

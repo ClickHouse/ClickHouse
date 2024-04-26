@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/Streaming/Subscription_fwd.h>
+#include <Storages/Streaming/IStreamSubscription.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
@@ -96,9 +96,6 @@ struct StorageSnapshot
     Block getSampleBlockForColumns(const Names & column_names) const;
 
     ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
-
-    /// returns saved subscription or creates new one - not synchronized with getStorageSnapshot.
-    StreamSubscriptionPtr getStreamSubscription() const;
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.

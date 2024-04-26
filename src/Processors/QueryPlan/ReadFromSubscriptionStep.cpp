@@ -2,7 +2,7 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
-#include <Processors/Sources/SubscriptionSource.h>
+#include <Processors/Sources/BlockQueueSubscriptionSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -20,7 +20,7 @@ ReadFromSubscriptionStep::ReadFromSubscriptionStep(Block storage_sample_, Block 
 
 void ReadFromSubscriptionStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipe pipe(std::make_shared<SubscriptionSource>(storage_sample, std::move(subscription)));
+    Pipe pipe(std::make_shared<BlockQueueSubscriptionSource>(storage_sample, std::move(subscription)));
 
     if (!isCompatibleHeader(storage_sample, desired_header))
     {

@@ -19,6 +19,7 @@
 #include <Processors/Sinks/SinkToSubscribers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/Estimator.h>
+#include <Storages/Streaming/QueueStreamSubscription.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
@@ -122,9 +123,9 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
-StreamSubscriptionPtr IStorage::subscribeForChanges() const
+void IStorage::registerSubscription(StreamSubscriptionPtr subscription) const
 {
-    return subscription_manager.subscribe();
+    subscription_manager.registerSubscription(subscription);
 }
 
 Pipe IStorage::watch(
@@ -215,12 +216,18 @@ void IStorage::streamingRead(
         storage_query_plan->addStep(std::move(read_from_pipe));
     }
 
+    StreamSubscriptionPtr subscription = storage_snapshot->stream_subscription == nullptr
+        ? std::make_shared<QueueStreamSubscription<Block>>()
+        : storage_snapshot->stream_subscription;
+
+    registerSubscription(subscription);
+
     /// prepare read from subscription plan
     QueryPlanPtr subscription_query_plan = std::make_unique<QueryPlan>();
     auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
         getInMemoryMetadata().getSampleBlock(),
         storage_snapshot->getSampleBlockForColumns(column_names),
-        storage_snapshot->getStreamSubscription());
+        std::move(subscription));
     subscription_query_plan->addStep(std::move(subscription_source));
 
     /// unite plans with streaming adapter
