@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Parsers/CommonParsers.h>
 
 namespace DB
 {
@@ -33,8 +34,8 @@ enum class AuthenticationType
     /// Password is encrypted in bcrypt hash.
     BCRYPT_PASSWORD,
 
-    /// Server sends a random string named `challenge` which client needs to encrypt with private key.
-    /// The check is performed on server side by decrypting the data and comparing with the original string.
+    /// Server sends a random string named `challenge` to the client. The client encrypts it with its SSH private key.
+    /// The server decrypts the result using the SSH public key registered for the user and compares with the original string.
     SSH_KEY,
 
     /// Authentication through HTTP protocol
@@ -45,7 +46,7 @@ enum class AuthenticationType
 
 struct AuthenticationTypeInfo
 {
-    const char * const raw_name;
+    Keyword keyword; // Keyword used in parser
     const String name; /// Lowercased with underscores, e.g. "sha256_password".
     bool is_password;
     static const AuthenticationTypeInfo & get(AuthenticationType type_);
@@ -53,7 +54,7 @@ struct AuthenticationTypeInfo
 
 inline String toString(AuthenticationType type_)
 {
-    return AuthenticationTypeInfo::get(type_).raw_name;
+    return String(toStringView(AuthenticationTypeInfo::get(type_).keyword));
 }
 
 }

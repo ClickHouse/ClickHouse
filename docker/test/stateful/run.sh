@@ -25,7 +25,7 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 cache_policy=""
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+if [ $((RANDOM % 2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
     cache_policy="LRU"

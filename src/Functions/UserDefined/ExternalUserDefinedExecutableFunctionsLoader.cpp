@@ -120,7 +120,7 @@ void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::str
     loadOrReload(user_defined_function_name);
 }
 
-ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create(const std::string & name,
+ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader::createObject(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
     const std::string &) const

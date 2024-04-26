@@ -20,14 +20,23 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
     auto context = part->storage.getContext();
     auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
-    return std::make_unique<MergeTreeReaderStream>(
+    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
+        mark_cache,
+        part->index_granularity_info.getMarksFilePath(index->getFileName()),
+        marks_count,
+        part->index_granularity_info,
+        settings.save_marks_in_cache,
+        settings.read_settings,
+        load_marks_threadpool,
+        /*num_columns_in_mark=*/ 1);
+
+    return std::make_unique<MergeTreeReaderStreamSingleColumn>(
+        part->getDataPartStoragePtr(),
         index->getFileName(), extension, marks_count,
-        all_mark_ranges,
-        std::move(settings), mark_cache, uncompressed_cache,
-        part->getFileSizeOrZero(index->getFileName() + extension),
-        &part->index_granularity_info,
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE, false, load_marks_threadpool);
+        all_mark_ranges, std::move(settings), uncompressed_cache,
+        part->getFileSizeOrZero(index->getFileName() + extension), std::move(marks_loader),
+        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
 }
 
 }

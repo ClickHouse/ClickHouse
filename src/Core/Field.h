@@ -8,7 +8,6 @@
 #include <functional>
 
 #include <Core/CompareHelper.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -40,6 +39,7 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 /// construct a Field of Array or a Tuple type. An alternative approach would be
 /// to construct both of these types from FieldVector, and have the caller
 /// specify the desired Field type explicitly.
+/// NOLINTBEGIN(modernize-type-traits)
 #define DEFINE_FIELD_VECTOR(X) \
 struct X : public FieldVector \
 { \
@@ -48,6 +48,7 @@ struct X : public FieldVector \
 
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
+/// NOLINTEND(modernize-type-traits)
 
 /// An array with the following structure: [(key1, value1), (key2, value2), ...]
 DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
@@ -149,7 +150,7 @@ public:
 
     operator T() const { return dec; } /// NOLINT
     T getValue() const { return dec; }
-    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
+    T getScaleMultiplier() const;
     UInt32 getScale() const { return scale; }
 
     template <typename U>
@@ -197,6 +198,12 @@ private:
     T dec;
     UInt32 scale;
 };
+
+extern template class DecimalField<Decimal32>;
+extern template class DecimalField<Decimal64>;
+extern template class DecimalField<Decimal128>;
+extern template class DecimalField<Decimal256>;
+extern template class DecimalField<DateTime64>;
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -891,11 +898,13 @@ NearestFieldType<std::decay_t<T>> & Field::get()
 template <typename T>
 auto & Field::safeGet()
 {
-    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
-    if (which != requested)
+    /// We allow converting int64 <-> uint64, int64 <-> bool, uint64 <-> bool in safeGet().
+    if (target != which
+           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)))
         throw Exception(ErrorCodes::BAD_GET,
-            "Bad get: has {}, requested {}", getTypeName(), requested);
+            "Bad get: has {}, requested {}", getTypeName(), target);
 
     return get<T>();
 }
