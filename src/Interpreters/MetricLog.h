@@ -21,11 +21,14 @@ namespace DB
 
 struct MetricLogElement
 {
+    UInt16 event_date;
     time_t event_time{};
     Decimal64 event_time_microseconds{};
+    std::string metric_name;
+    Int64 value;
 
-    std::vector<ProfileEvents::Count> profile_events;
-    std::vector<CurrentMetrics::Metric> current_metrics;
+    // std::vector<ProfileEvents::Count> profile_events;
+    // std::vector<CurrentMetrics::Metric> current_metrics;
 
     static std::string name() { return "MetricLog"; }
     static ColumnsDescription getColumnsDescription();

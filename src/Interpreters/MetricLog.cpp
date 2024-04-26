@@ -1,13 +1,22 @@
+
+#include <Interpreters/MetricLog.h>
+
+#include <base/getFQDNOrHostName.h>
+#include <Interpreters/MetricLog.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadPool.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/MetricLog.h>
-#include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/ThreadPool.h>
+
+#include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
+
 
 
 namespace DB
@@ -15,28 +24,46 @@ namespace DB
 
 ColumnsDescription MetricLogElement::getColumnsDescription()
 {
-    ColumnsDescription result;
-
-    result.add({"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."});
-    result.add({"event_date", std::make_shared<DataTypeDate>(), "Event date."});
-    result.add({"event_time", std::make_shared<DataTypeDateTime>(), "Event time."});
-    result.add({"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Event time with microseconds resolution."});
-
-    for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+    ParserCodec codec_parser;
+    return ColumnsDescription
     {
-        auto name = fmt::format("ProfileEvent_{}", ProfileEvents::getName(ProfileEvents::Event(i)));
-        const auto * comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
-        result.add({std::move(name), std::make_shared<DataTypeUInt64>(), comment});
-    }
-
-    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-    {
-        auto name = fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(i)));
-        const auto * comment = CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i));
-        result.add({std::move(name), std::make_shared<DataTypeInt64>(), comment});
-    }
-
-    return result;
+        {
+            "hostname",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Hostname of the server executing the query."
+        },
+        {
+            "event_date",
+            std::make_shared<DataTypeDate>(),
+            parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Event date."
+        },
+        {
+            "event_time",
+            std::make_shared<DataTypeDateTime>(),
+            parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Event time."
+        },
+        {
+            "event_time_microseconds",
+            std::make_shared<DataTypeDateTime64>(6),
+            parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Event time with microseconds resolution."
+        },
+        {
+            "metric",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Metric name."
+        },
+        {
+            "value",
+            std::make_shared<DataTypeInt64>(),
+            parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Metric value."
+        }
+    };
 }
 
 
@@ -48,12 +75,8 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
-
-    for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
-        columns[column_idx++]->insert(profile_events[i]);
-
-    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        columns[column_idx++]->insert(current_metrics[i].toUnderType());
+    columns[column_idx++]->insert(metric_name);
+    columns[column_idx++]->insert(value);
 }
 
 
@@ -99,22 +122,22 @@ void MetricLog::metricThreadFunction()
             elem.event_time = std::chrono::system_clock::to_time_t(current_time);
             elem.event_time_microseconds = timeInMicroseconds(current_time);
 
-            elem.profile_events.resize(ProfileEvents::end());
             for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
             {
                 const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
                 auto & old_value = prev_profile_events[i];
-                elem.profile_events[i] = new_value - old_value;
+                elem.metric_name = fmt::format("ProfileEvent_{}", ProfileEvents::getName(ProfileEvents::Event(i)));
+                elem.value = new_value - old_value;
                 old_value = new_value;
+                this->add(elem);
             }
 
-            elem.current_metrics.resize(CurrentMetrics::end());
             for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
             {
-                elem.current_metrics[i] = CurrentMetrics::values[i];
+                elem.metric_name = fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(i)));
+                elem.value = CurrentMetrics::values[i];
+                this->add(elem);
             }
-
-            this->add(std::move(elem));
 
             /// We will record current time into table but align it to regular time intervals to avoid time drift.
             /// We may drop some time points if the server is overloaded and recording took too much time.
