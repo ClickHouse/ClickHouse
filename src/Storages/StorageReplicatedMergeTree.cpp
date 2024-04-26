@@ -7982,13 +7982,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
-
-    /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
-
-    LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
-
     static const String TMP_PREFIX = "tmp_replace_from_";
     auto zookeeper = getZooKeeper();
 
@@ -7999,7 +7992,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
 
         partitions = src_data.getAllPartitionIds();
-        LOG_INFO(log, "Will try to attach {} partitions", partitions.size());
+        LOG_INFO(log, "Will try to attach {} partitions without replace", partitions.size());
     } else
     {
         partitions = std::unordered_set<String>();
@@ -8008,6 +8001,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
     for (const auto & partition_id : partitions)
     {
+        /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
         auto src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
         LOG_DEBUG(log, "Cloning {} parts from partition '{}'", src_all_parts.size(), partition_id);
 
