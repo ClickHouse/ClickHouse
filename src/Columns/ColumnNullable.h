@@ -210,4 +210,7 @@ ColumnPtr makeNullableSafe(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 
+ColumnPtr removeNullable(const ColumnPtr & column);
+ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column);
+
 }

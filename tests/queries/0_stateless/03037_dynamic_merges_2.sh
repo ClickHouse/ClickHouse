@@ -19,7 +19,7 @@ function test()
     $CH_CLIENT -q "insert into test select number, range(number % 10 + 1) from numbers(2000000, 1000000)"
 
     $CH_CLIENT -nm -q "system start merges test; optimize table test final;"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
 }
 
 $CH_CLIENT -q "drop table if exists test;"

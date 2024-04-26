@@ -28,6 +28,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
+{
+    std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
+};
+
+struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
+{
+    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
+};
+
 void SerializationVariant::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
@@ -35,6 +45,7 @@ void SerializationVariant::enumerateStreams(
 {
     const auto * type_variant = data.type ? &assert_cast<const DataTypeVariant &>(*data.type) : nullptr;
     const auto * column_variant = data.column ? &assert_cast<const ColumnVariant &>(*data.column) : nullptr;
+    const auto * variant_deserialize_prefix_state = data.deserialize_prefix_state ? checkAndGetState<DeserializeBinaryBulkStateVariant>(data.deserialize_prefix_state) : nullptr;
 
     auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
@@ -59,7 +70,8 @@ void SerializationVariant::enumerateStreams(
         auto variant_data = SubstreamData(variants[i])
                              .withType(type_variant ? type_variant->getVariant(i) : nullptr)
                              .withColumn(column_variant ? column_variant->getVariantPtrByGlobalDiscriminator(i) : nullptr)
-                             .withSerializationInfo(data.serialization_info);
+                             .withSerializationInfo(data.serialization_info)
+                             .withDeserializePrefix(variant_deserialize_prefix_state ? variant_deserialize_prefix_state->states[i] : nullptr);
 
         addVariantElementToPath(settings.path, i);
         settings.path.back().data = variant_data;
@@ -69,16 +81,6 @@ void SerializationVariant::enumerateStreams(
 
     settings.path.pop_back();
 }
-
-struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
-{
-    std::vector<ISerialization::SerializeBinaryBulkStatePtr> states;
-};
-
-struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBinaryBulkState
-{
-    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
-};
 
 void SerializationVariant::serializeBinaryBulkStatePrefix(
     const IColumn & column,

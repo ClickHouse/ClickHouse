@@ -21,45 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void SerializationDynamic::enumerateStreams(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
-{
-    settings.path.push_back(Substream::DynamicStructure);
-    callback(settings.path);
-    settings.path.pop_back();
-
-    const auto * column_dynamic = data.column ? &assert_cast<const ColumnDynamic &>(*data.column) : nullptr;
-
-    /// If column is nullptr, nothing to enumerate as we don't have any variants.
-    if (!column_dynamic)
-        return;
-
-    const auto & variant_info = column_dynamic->getVariantInfo();
-    auto variant_serialization = variant_info.variant_type->getDefaultSerialization();
-
-    settings.path.push_back(Substream::DynamicData);
-    auto variant_data = SubstreamData(variant_serialization)
-                         .withType(variant_info.variant_type)
-                         .withColumn(column_dynamic->getVariantColumnPtr())
-                         .withSerializationInfo(data.serialization_info);
-    settings.path.back().data = variant_data;
-    variant_serialization->enumerateStreams(settings, callback, variant_data);
-    settings.path.pop_back();
-}
-
-SerializationDynamic::DynamicStructureSerializationVersion::DynamicStructureSerializationVersion(UInt64 version) : value(static_cast<Value>(version))
-{
-    checkVersion(version);
-}
-
-void SerializationDynamic::DynamicStructureSerializationVersion::checkVersion(UInt64 version)
-{
-    if (version != VariantTypeName)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization.");
-}
-
 struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryBulkState
 {
     SerializationDynamic::DynamicStructureSerializationVersion structure_version;
@@ -67,10 +28,6 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
     Names variant_names;
     SerializationPtr variant_serialization;
     ISerialization::SerializeBinaryBulkStatePtr variant_state;
-
-    /// Pointer to currently serialized dynamic column.
-    /// Used to calculate statistics for the whole column and not for some range.
-    const ColumnDynamic * current_dynamic_column = nullptr;
 
     /// Variants statistics. Map (Variant name) -> (Variant size).
     ColumnDynamic::Statistics statistics = { .source =ColumnDynamic::Statistics::Source::READ };
@@ -90,6 +47,47 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     ISerialization::DeserializeBinaryBulkStatePtr variant_state;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 };
+
+void SerializationDynamic::enumerateStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
+{
+    settings.path.push_back(Substream::DynamicStructure);
+    callback(settings.path);
+    settings.path.pop_back();
+
+    const auto * column_dynamic = data.column ? &assert_cast<const ColumnDynamic &>(*data.column) : nullptr;
+    const auto * deserialize_prefix_state = data.deserialize_prefix_state ? checkAndGetState<DeserializeBinaryBulkStateDynamic>(data.deserialize_prefix_state) : nullptr;
+
+    /// If column is nullptr and we didn't deserizlize prefix yet, nothing to enumerate as we don't have any variants.
+    if (!column_dynamic && !deserialize_prefix_state)
+        return;
+
+    const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_prefix_state->structure_state)->variant_type;
+    auto variant_serialization = variant_type->getDefaultSerialization();
+
+    settings.path.push_back(Substream::DynamicData);
+    auto variant_data = SubstreamData(variant_serialization)
+                         .withType(variant_type)
+                         .withColumn(column_dynamic ? column_dynamic->getVariantColumnPtr() : nullptr)
+                         .withSerializationInfo(data.serialization_info)
+                         .withDeserializePrefix(deserialize_prefix_state ? deserialize_prefix_state->variant_state : nullptr);
+    settings.path.back().data = variant_data;
+    variant_serialization->enumerateStreams(settings, callback, variant_data);
+    settings.path.pop_back();
+}
+
+SerializationDynamic::DynamicStructureSerializationVersion::DynamicStructureSerializationVersion(UInt64 version) : value(static_cast<Value>(version))
+{
+    checkVersion(version);
+}
+
+void SerializationDynamic::DynamicStructureSerializationVersion::checkVersion(UInt64 version)
+{
+    if (version != VariantTypeName)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization.");
+}
 
 void SerializationDynamic::serializeBinaryBulkStatePrefix(
     const DB::IColumn & column,
@@ -244,6 +242,10 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreams(
 
     if (!variant_info.variant_type->equals(*dynamic_state->variant_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", dynamic_state->variant_type->getName(), variant_info.variant_type->getName());
+
+    /// Update statistics.
+    if (offset == 0)
+        dynamic_state->updateStatistics(*variant_column);
 
     settings.path.push_back(Substream::DynamicData);
     dynamic_state->variant_serialization->serializeBinaryBulkWithMultipleStreams(*variant_column, offset, limit, settings, dynamic_state->variant_state);

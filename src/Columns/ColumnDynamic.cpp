@@ -687,7 +687,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const DB::Columns & so
             }
 
             size_t size = source_statistics.data.empty() ? source_variant_column.getVariantByGlobalDiscriminator(i).size() : source_statistics.data.at(variant_name);
-//            LOG_DEBUG(getLogger("ColumnDynamic"), "Source variant: {}. Variant: {}. Size: {}", source_variant_info.variant_name, variant_name, size);
+            LOG_DEBUG(getLogger("ColumnDynamic"), "Source variant: {}. Variant: {}. Size: {}", source_variant_info.variant_name, variant_name, size);
             it->second += size;
         }
     }
@@ -701,7 +701,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const DB::Columns & so
         variants_with_sizes.reserve(all_variants.size());
         for (const auto & variant : all_variants)
         {
-//            LOG_DEBUG(getLogger("ColumnDynamic"), "Variant: {}. Size: {}", variant->getName(), total_sizes[variant->getName()]);
+            LOG_DEBUG(getLogger("ColumnDynamic"), "Variant: {}. Size: {}", variant->getName(), total_sizes[variant->getName()]);
             variants_with_sizes.emplace_back(total_sizes[variant->getName()], variant);
         }
         std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());

@@ -334,8 +334,7 @@ void MergeTreeReaderWide::prefetchForColumn(
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
 {
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache, deserialize_states_cache);
-
-    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
@@ -348,7 +347,11 @@ void MergeTreeReaderWide::prefetchForColumn(
                 prefetched_streams.insert(*stream_name);
             }
         }
-    });
+    };
+
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializePrefix(deserialize_binary_bulk_state_map[name_and_type.name]);
+    ISerialization::EnumerateStreamsSettings settings;
+    serialization->enumerateStreams(settings, callback, data);
 }
 
 

@@ -779,13 +779,7 @@ static NameToNameVector collectFilesForRenames(
                 };
 
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
-                {
-                    auto name_and_type = source_part->getColumn(command.column_name);
-                    ColumnPtr column_sample;
-                    if (name_and_type.type->hasDynamicSubcolumns())
-                        column_sample = source_part->readColumnSample(name_and_type);
-                    serialization->enumerateStreams(callback, name_and_type.type, column_sample);
-                }
+                    serialization->enumerateStreams(callback);
 
                 /// if we drop a column with statistic, we should also drop the stat file.
                 if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
@@ -821,13 +815,7 @@ static NameToNameVector collectFilesForRenames(
                 };
 
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
-                {
-                    auto name_and_type = source_part->getColumn(command.column_name);
-                    ColumnPtr column_sample;
-                    if (name_and_type.type->hasDynamicSubcolumns())
-                        column_sample = source_part->readColumnSample(name_and_type);
-                    serialization->enumerateStreams(callback, name_and_type.type, column_sample);
-                }
+                    serialization->enumerateStreams(callback);
 
                 /// if we rename a column with statistic, we should also rename the stat file.
                 if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))

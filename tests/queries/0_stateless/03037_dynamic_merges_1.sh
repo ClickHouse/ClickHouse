@@ -21,34 +21,35 @@ function test()
     $CH_CLIENT -q "insert into test select number, toDateTime(number) from numbers(50000)"
     $CH_CLIENT -q "insert into test select number, NULL from numbers(100000)"
 
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final;"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
 
     $CH_CLIENT -q "system stop merges test"
     $CH_CLIENT -q "insert into test select number, map(number, number) from numbers(200000)"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final;"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
 
     $CH_CLIENT -q "system stop merges test"
     $CH_CLIENT -q "insert into test select number, tuple(number, number) from numbers(10000)"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final;"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
 }
 
 $CH_CLIENT -q "drop table if exists test;"
 
 echo "MergeTree compact + horizontal merge"
-$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000;"
+$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_columns_to_activate=10;"
 test
 $CH_CLIENT -q "drop table test;"
 
 echo "MergeTree wide + horizontal merge"
-$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;"
+$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10;"
 test
 $CH_CLIENT -q "drop table test;"
+
 
 echo "MergeTree compact + vertical merge"
 $CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;"

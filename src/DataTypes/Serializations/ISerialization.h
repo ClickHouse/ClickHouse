@@ -99,6 +99,19 @@ public:
 
     using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
 
+    struct SerializeBinaryBulkState
+    {
+        virtual ~SerializeBinaryBulkState() = default;
+    };
+
+    struct DeserializeBinaryBulkState
+    {
+        virtual ~DeserializeBinaryBulkState() = default;
+    };
+
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
     struct SubstreamData
     {
         SubstreamData() = default;
@@ -125,10 +138,17 @@ public:
             return *this;
         }
 
+        SubstreamData & withDeserializePrefix(DeserializeBinaryBulkStatePtr deserialize_prefix_state_)
+        {
+            deserialize_prefix_state = std::move(deserialize_prefix_state_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
         SerializationInfoPtr serialization_info;
+        DeserializeBinaryBulkStatePtr deserialize_prefix_state;
     };
 
     struct Substream
@@ -221,21 +241,6 @@ public:
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
 
-    struct SerializeBinaryBulkState
-    {
-        virtual ~SerializeBinaryBulkState() = default;
-    };
-
-    struct DeserializeBinaryBulkState
-    {
-        virtual ~DeserializeBinaryBulkState() = default;
-    };
-
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
-
-    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
-
     struct SerializeBinaryBulkSettings
     {
         OutputStreamGetter getter;
@@ -284,6 +289,8 @@ public:
     virtual void serializeBinaryBulkStateSuffix(
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(

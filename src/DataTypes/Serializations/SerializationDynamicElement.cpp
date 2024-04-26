@@ -14,17 +14,41 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
+struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::DeserializeBinaryBulkState
+{
+    ISerialization::DeserializeBinaryBulkStatePtr structure_state;
+    SerializationPtr variant_serialization;
+    ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
+};
+
 void SerializationDynamicElement::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
     const DB::ISerialization::StreamCallback & callback,
-    const DB::ISerialization::SubstreamData &) const
+    const DB::ISerialization::SubstreamData & data) const
 {
     settings.path.push_back(Substream::DynamicStructure);
     callback(settings.path);
     settings.path.pop_back();
 
-    /// We don't know if we have actually have this variant in Dynamic column,
+    /// If we didn't deserialize prefix yet, we don't know if we actually have this variant in Dynamic column,
     /// so we cannot enumerate variant streams.
+    if (!data.deserialize_prefix_state)
+        return;
+
+    auto * deserialize_prefix_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(data.deserialize_prefix_state);
+    /// If we don't have this variant, no need to enumerate streams for it as we won't read from any stream.
+    if (!deserialize_prefix_state->variant_serialization)
+        return;
+
+    settings.path.push_back(Substream::DynamicData);
+    auto variant_data = SubstreamData(deserialize_prefix_state->variant_serialization)
+                            .withType(data.type)
+                            .withColumn(data.column)
+                            .withSerializationInfo(data.serialization_info)
+                            .withDeserializePrefix(deserialize_prefix_state->variant_element_state);
+    deserialize_prefix_state->variant_serialization->enumerateStreams(settings, callback, variant_data);
+    settings.path.pop_back();
 }
 
 void SerializationDynamicElement::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
@@ -38,13 +62,6 @@ void SerializationDynamicElement::serializeBinaryBulkStateSuffix(SerializeBinary
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationDynamicElement");
 }
-
-struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::DeserializeBinaryBulkState
-{
-    ISerialization::DeserializeBinaryBulkStatePtr structure_state;
-    SerializationPtr variant_serialization;
-    ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
-};
 
 void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const

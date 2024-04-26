@@ -1,5 +1,5 @@
 MergeTree compact + horizontal merge
-test1
+test
 50000	DateTime
 60000	Date
 70000	Array(UInt16)
@@ -20,8 +20,8 @@ test1
 200000	Map(UInt64, UInt64)
 260000	String
 10000	Tuple(UInt64, UInt64)
-100000	UInt64
 100000	None
+100000	UInt64
 200000	Map(UInt64, UInt64)
 260000	String
 100000	None
@@ -29,7 +29,7 @@ test1
 200000	Map(UInt64, UInt64)
 270000	String
 MergeTree wide + horizontal merge
-test1
+test
 50000	DateTime
 60000	Date
 70000	Array(UInt16)
@@ -41,8 +41,8 @@ test1
 100000	UInt64
 190000	String
 70000	Array(UInt16)
-100000	UInt64
 100000	None
+100000	UInt64
 190000	String
 200000	Map(UInt64, UInt64)
 100000	None
@@ -50,8 +50,8 @@ test1
 200000	Map(UInt64, UInt64)
 260000	String
 10000	Tuple(UInt64, UInt64)
-100000	UInt64
 100000	None
+100000	UInt64
 200000	Map(UInt64, UInt64)
 260000	String
 100000	None
@@ -59,7 +59,7 @@ test1
 200000	Map(UInt64, UInt64)
 270000	String
 MergeTree compact + vertical merge
-test1
+test
 50000	DateTime
 60000	Date
 70000	Array(UInt16)
@@ -71,8 +71,8 @@ test1
 100000	UInt64
 190000	String
 70000	Array(UInt16)
-100000	UInt64
 100000	None
+100000	UInt64
 190000	String
 200000	Map(UInt64, UInt64)
 100000	None
@@ -84,12 +84,12 @@ test1
 100000	UInt64
 200000	Map(UInt64, UInt64)
 260000	String
-100000	UInt64
 100000	None
+100000	UInt64
 200000	Map(UInt64, UInt64)
 270000	String
 MergeTree wide + vertical merge
-test1
+test
 50000	DateTime
 60000	Date
 70000	Array(UInt16)
