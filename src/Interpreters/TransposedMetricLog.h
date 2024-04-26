@@ -16,27 +16,26 @@
 namespace DB
 {
 
-/** MetricLog is a log of metric values measured at regular time interval.
+/** TransposedMetricLog is a log of metric values measured at regular time interval.
   */
 
-struct MetricLogElement
+struct TransposedMetricLogElement
 {
+    UInt16 event_date;
     time_t event_time{};
-    Decimal64 event_time_microseconds{};
+    std::string metric_name;
+    Int64 value;
 
-    std::vector<ProfileEvents::Count> profile_events;
-    std::vector<CurrentMetrics::Metric> current_metrics;
-
-    static std::string name() { return "MetricLog"; }
+    static std::string name() { return "TransposedMetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 
 
-class MetricLog : public SystemLog<MetricLogElement>
+class TransposedMetricLog : public SystemLog<TransposedMetricLogElement>
 {
-    using SystemLog<MetricLogElement>::SystemLog;
+    using SystemLog<TransposedMetricLogElement>::SystemLog;
 
 public:
     void shutdown() override;
