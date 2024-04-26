@@ -1,3 +1,5 @@
+#ifdef USE_PCO
+
 #include "base/types.h"
 #include <Common/Exception.h>
 #include <Compression/ICompressionCodec.h>
@@ -8,9 +10,7 @@
 
 #include "config.h"
 
-#ifdef USE_PCO
 #include <pco.h>
-#endif
 
 namespace DB
 {
@@ -210,3 +210,6 @@ void registerCodecQuantile(CompressionCodecFactory & factory)
 }
 
 }
+
+#endif
+
