@@ -53,6 +53,10 @@ public:
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
+    // Checks if user valid_until is less than current time.
+    // Throws exception otherwise.
+    void isUserStillValid();
+
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
 
