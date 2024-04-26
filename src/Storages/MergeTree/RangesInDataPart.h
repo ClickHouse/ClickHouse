@@ -82,6 +82,6 @@ struct DataPartInfo
     AlterConversionsPtr alter_conversions;
 };
 using DataPartsInfo = std::unordered_map<size_t, DataPartInfo>;
-using DataPartsInfoPtr = std::unique_ptr<DataPartsInfo>;
+using DataPartsInfoPtr = std::shared_ptr<DataPartsInfo>;
 
 }

@@ -211,7 +211,7 @@ ActionsDAGPtr evaluateMissingDefaults(
 }
 
 static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
-    const NamesAndTypesList & available_columns, const Columns & res_columns)
+    const NamesAndTypesList & available_columns, const Columns & res_columns, const size_t offset)
 {
     std::unordered_map<String, ColumnPtr> offsets_columns;
 
@@ -251,7 +251,9 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
                     for (const auto & elem : subpath)
                         inside_variant_element |= elem.type == ISerialization::Substream::VariantElement;
 
-                    if (offsets_column->size() != current_offsets_column->size() && inside_variant_element)
+                    if (offset > 0)
+                        offsets_column = offsets_column->size() > current_offsets_column->size() ? offsets_column : current_offsets_column;
+                    else if (offsets_column->size() != current_offsets_column->size() && inside_variant_element)
                         offsets_column = offsets_column->size() < current_offsets_column->size() ? offsets_column : current_offsets_column;
 #ifndef NDEBUG
                     else
@@ -276,6 +278,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 void fillMissingColumns(
     Columns & res_columns,
     size_t num_rows,
+    size_t offset,
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
@@ -292,7 +295,7 @@ void fillMissingColumns(
     /// but a column of arrays of correct length.
 
     /// First, collect offset columns for all arrays in the block.
-    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns);
+    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns, offset);
 
     /// Insert default values only for columns without default expressions.
     auto requested_column = requested_columns.begin();

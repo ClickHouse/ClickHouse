@@ -43,6 +43,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 void fillMissingColumns(
     Columns & res_columns,
     size_t num_rows,
+    size_t offset,
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,

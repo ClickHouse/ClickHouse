@@ -19,9 +19,9 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     const ContextPtr & context_,
     const AliasToNamePtr & alias_index_)
     : storage(storage_)
+    , data_parts_info(lazily_read_info_->data_parts_info)
     , storage_snapshot(storage_snapshot_)
     , use_uncompressed_cache(context_->getSettings().use_uncompressed_cache)
-    , lazily_read_info(lazily_read_info_)
 {
     NameSet columns_name_set(lazily_read_info_->lazily_read_columns_names.begin(),
                              lazily_read_info_->lazily_read_columns_names.end());
@@ -94,8 +94,9 @@ void MergeTreeLazilyReader::transformLazyColumns(
     {
         size_t row_offset = row_num_column->getUInt(row_idx);
         size_t part_index = part_num_column->getUInt(row_idx);
-        MergeTreeData::DataPartPtr data_part = (*lazily_read_info->data_parts_info)[part_index].data_part;
-        AlterConversionsPtr alter_conversions = (*lazily_read_info->data_parts_info)[part_index].alter_conversions;
+
+        MergeTreeData::DataPartPtr data_part = (*data_parts_info)[part_index].data_part;
+        AlterConversionsPtr alter_conversions = (*data_parts_info)[part_index].alter_conversions;
         MarkRange mark_range = data_part->index_granularity.getMarkRangeForRowOffset(row_offset);
         MarkRanges mark_ranges{mark_range};
 
@@ -127,7 +128,6 @@ void MergeTreeLazilyReader::transformLazyColumns(
 
         bool should_evaluate_missing_defaults = false;
         reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1, current_offset);
-
 
         if (should_evaluate_missing_defaults)
         {

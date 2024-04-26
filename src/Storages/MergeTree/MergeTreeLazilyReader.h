@@ -27,9 +27,9 @@ public:
 
 private:
     const MergeTreeData & storage;
+    DataPartsInfoPtr data_parts_info;
     StorageSnapshotPtr storage_snapshot;
     bool use_uncompressed_cache;
-    LazilyReadInfoPtr lazily_read_info;
     Names requested_column_names;
     ColumnsWithTypeAndName lazy_columns;
 };
