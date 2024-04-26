@@ -13,6 +13,7 @@
 
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
+using bsoncxx::builder::basic::array;
 #endif
 
 namespace DB
@@ -153,7 +154,7 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
 
-    auto ids_array = bsoncxx::builder::basic::array{};
+    auto ids_array = array();
     for(const auto & id : ids)
         ids_array.append(static_cast<Int64>(id));
 
@@ -166,6 +167,7 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 
 QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/)
 {
+    // TODO: implement
     /*if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
 
