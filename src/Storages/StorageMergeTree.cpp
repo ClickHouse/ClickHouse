@@ -41,6 +41,7 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/Streaming/StreamingUtils.h>
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <QueryPipeline/Pipe.h>
@@ -302,8 +303,6 @@ void StorageMergeTree::streamingRead(
     chassert(storage_query_plan->isInitialized());
     query_plan = std::move(*storage_query_plan);
 
-    addCursorFilterStep(query_plan, query_info, cursor);
-    // TODO: add cursor setup and block splitter step
     addDropAuxColumnsStep(query_plan, storage_snapshot->getSampleBlockForColumns(column_names));
     makeStreamInfinite(query_plan);
 }
@@ -1631,7 +1630,7 @@ bool StorageMergeTree::scheduleStreamingJob([[maybe_unused]] BackgroundJobsAssig
 
     auto promote = [&](StreamSubscriptionPtr & subscription)
     {
-        scheduled_reading = scheduled_reading | populateSubscription(subscription, *this, parts_index, promoters);
+        scheduled_reading = scheduled_reading | enrichSubscription(subscription, *this, parts_index, promoters);
     };
 
     subscription_manager.executeOnEachSubscription(promote);

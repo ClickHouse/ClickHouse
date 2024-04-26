@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
 #include <Storages/MergeTree/Streaming/ChunkSplitter.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -324,6 +325,10 @@ ReadFromMergeTree::ReadFromMergeTree(
             /// Just limit requested_num_streams otherwise.
             requested_num_streams = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
     }
+
+    if (query_info.isStream())
+        if (auto filter = convertCursorToFilter(cursor, query_info))
+            addFilter(filter->actions, filter->column_name);
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
@@ -2003,7 +2008,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
         subscription->query_subscriptions_count = readers_cnt;
         subscription->max_block_numbers = initial_offsets;
 
-        populateSubscription(subscription, data, index, promoters);
+        enrichSubscription(subscription, data, index, promoters);
         data.registerSubscription(subscription);
 
         Pipe partition_reader = createMergeTreePartitionSequentialSource(data, storage_snapshot, subscription, result.column_names_to_read);

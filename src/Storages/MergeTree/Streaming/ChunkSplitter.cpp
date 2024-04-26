@@ -75,7 +75,7 @@ Chunk ChunkSplitterTransform::splitByCursor(Chunk && chunk, const PartitionCurso
         size_t mid = (l + r) / 2;
         PartitionCursor mid_cursor = getCursor(chunk, mid);
 
-        if (mid_cursor < current || mid_cursor == current)
+        if (mid_cursor <= current)
             l = mid;
         else
             r = mid;
