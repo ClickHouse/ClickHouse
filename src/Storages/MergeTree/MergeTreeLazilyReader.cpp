@@ -129,7 +129,8 @@ void MergeTreeLazilyReader::transformLazyColumns(
         reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1, current_offset);
 
 
-        if (should_evaluate_missing_defaults) {
+        if (should_evaluate_missing_defaults)
+        {
             Block block;
             addDummyColumnWithRowCount(block, columns_to_read, 1);
             reader->evaluateMissingDefaults(block, columns_to_read);

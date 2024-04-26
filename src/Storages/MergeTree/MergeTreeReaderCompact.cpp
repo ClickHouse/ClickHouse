@@ -184,7 +184,7 @@ void MergeTreeReaderCompact::readData(
                                                                         deserialize_binary_bulk_state_map[name], nullptr);
         }
 
-        if(offset && !is_skipped)
+        if(offset > 0 && !is_skipped)
         {
             if (!partially_read_columns.contains(name_and_type.name))
                 column = column->cut(offset, rows_to_read);
