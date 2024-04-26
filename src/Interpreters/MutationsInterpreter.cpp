@@ -523,7 +523,7 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
         {
             // Materialized nested columns shall never be part of the update expression
             if (affected_materialized.contains(column.name))
-                continue ;
+                continue;
 
             auto it = column_to_update_expression.find(column.name);
             if (it == column_to_update_expression.end())
