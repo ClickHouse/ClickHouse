@@ -2955,7 +2955,7 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Common options for clickhouse-client and clickhouse-local.
     options_description.main_description->add_options()
-        ("help", "produce help message")
+        ("help", "print usage summary, combine with --verbose to display all options")
         ("verbose", "print query and other debugging info")
         ("version,V", "print version information and exit")
         ("version-clean", "print version in machine-readable format and exit")
@@ -3008,7 +3008,8 @@ void ClientBase::init(int argc, char ** argv)
 
     addOptions(options_description);
 
-    OptionsDescription options_description_not_verbose = options_description;
+    OptionsDescription options_description_non_verbose = options_description;
+
     auto getter = [](const auto & op)
     {
         String op_long_name = op->long_name();
@@ -3051,9 +3052,9 @@ void ClientBase::init(int argc, char ** argv)
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
         if (config().getBool("verbose", false))
-            printHelpMessage(options_description);
+            printHelpMessage(options_description, true);
         else
-            printHelpMessage(options_description_not_verbose);
+            printHelpMessage(options_description_non_verbose, false);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
