@@ -324,17 +324,23 @@ namespace
             /// Returns a string like ipv4:127.0.0.1:55930 or ipv6:%5B::1%5D:55930
             String uri_encoded_peer = grpc_context.peer();
 
-            if (uri_encoded_peer.starts_with("ipv4") || uri_encoded_peer.starts_with("ipv6"))
-            {
-                uri_encoded_peer = uri_encoded_peer.substr(uri_encoded_peer.find(':') + 1);
+            constexpr const std::string_view ipv4_prefix = "ipv4:";
+            constexpr const std::string_view ipv6_prefix = "ipv6:";
 
-                String peer;
-                Poco::URI::decode(uri_encoded_peer, peer);
+            bool ipv4 = uri_encoded_peer.starts_with(ipv4_prefix);
+            bool ipv6 = uri_encoded_peer.starts_with(ipv6_prefix);
 
-                return Poco::Net::SocketAddress{Poco::Net::AddressFamily::Family::IPv4, uri_encoded_peer};
-            }
-            else
+            if (!ipv4 && !ipv6)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ipv4 or ipv6 protocol in peer address, got {}", uri_encoded_peer);
+
+            auto prefix = ipv4 ? ipv4_prefix : ipv6_prefix;
+            auto family = ipv4 ? Poco::Net::AddressFamily::Family::IPv4 : Poco::Net::AddressFamily::Family::IPv6;
+
+            String peer;
+            Poco::URI::decode(uri_encoded_peer, peer);
+            peer = peer.substr(prefix.length());
+
+            return Poco::Net::SocketAddress{family, peer};
         }
 
         std::optional<String> getClientHeader(const String & key) const
