@@ -1500,90 +1500,94 @@ ColumnPtr buildAdditionalFilter(
     const std::vector<size_t> & row_replicate_offset,
     AddedColumns & added_columns)
 {
-    if (selected_rows.empty())
-        return ColumnUInt8::create();
-    const Block & sample_right_block = *selected_rows.begin()->block;
-    if (!sample_right_block || !added_columns.additional_filter_expression)
+    ColumnPtr result_column;
+    do
     {
-        auto filter = ColumnUInt8::create();
-        filter->insertMany(1, selected_rows.size());
-        return filter;
-    }
-
-    auto required_cols = added_columns.additional_filter_expression->getRequiredColumnsWithTypes();
-    if (required_cols.empty())
-    {
-        Block block;
-        added_columns.additional_filter_expression->execute(block);
-        return block.getByPosition(0).column->cloneResized(selected_rows.size());
-    }
-    NameSet required_column_names;
-    for (auto & col : required_cols)
-    {
-        required_column_names.insert(col.name);
-    }
-
-    Block executed_block;
-    size_t right_col_pos = 0;
-    for (const auto & col : sample_right_block.getColumnsWithTypeAndName())
-    {
-        if (required_column_names.contains(col.name))
+        if (selected_rows.empty())
         {
-            auto new_col = col.column->cloneEmpty();
-            for (const auto & selected_row : selected_rows)
-            {
-                const auto & src_col = selected_row.block->getByPosition(right_col_pos);
-                new_col->insertFrom(*src_col.column, selected_row.row_num);
-            }
-            executed_block.insert({std::move(new_col), col.type, col.name});
+            result_column = ColumnUInt8::create();
+            break;
         }
-        right_col_pos += 1;
-    }
-    if (!executed_block)
-    {
-        return ColumnUInt8::create();
-    }
-
-    for (const auto & col_name : required_column_names)
-    {
-        const auto * src_col = added_columns.left_block.findByName(col_name);
-        if (!src_col)
-            continue;
-        auto new_col = src_col->column->cloneEmpty();
-        size_t prev_left_offset = 0;
-        for (size_t i = 1; i < row_replicate_offset.size(); ++i)
+        const Block & sample_right_block = *selected_rows.begin()->block;
+        if (!sample_right_block || !added_columns.additional_filter_expression)
         {
-            const size_t & left_offset = row_replicate_offset[i];
-            size_t rows = left_offset - prev_left_offset;
-            if (rows)
-            {
-                new_col->insertManyFrom(*src_col->column, left_start_row + i - 1, rows);
-            }
-            prev_left_offset = left_offset;
+            auto filter = ColumnUInt8::create();
+            filter->insertMany(1, selected_rows.size());
+            result_column = std::move(filter);
+            break;
         }
-        executed_block.insert({std::move(new_col), src_col->type, col_name});
-    }
-    if (!executed_block)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "required columns: [{}], but not found any in left/right table. right table: {}, left table: {}",
-            required_cols.toString(),
-            sample_right_block.dumpNames(),
-            added_columns.left_block.dumpNames());
-    }
 
-    for (const auto & col : executed_block.getColumnsWithTypeAndName())
-    {
-        if (!col.column || !col.type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal nullptr column in input block: {}", executed_block.dumpStructure());
-    }
+        auto required_cols = added_columns.additional_filter_expression->getRequiredColumnsWithTypes();
+        if (required_cols.empty())
+        {
+            Block block;
+            added_columns.additional_filter_expression->execute(block);
+            result_column = block.getByPosition(0).column->cloneResized(selected_rows.size());
+            break;
+        }
+        NameSet required_column_names;
+        for (auto & col : required_cols)
+            required_column_names.insert(col.name);
 
-    added_columns.additional_filter_expression->execute(executed_block);
+        Block executed_block;
+        size_t right_col_pos = 0;
+        for (const auto & col : sample_right_block.getColumnsWithTypeAndName())
+        {
+            if (required_column_names.contains(col.name))
+            {
+                auto new_col = col.column->cloneEmpty();
+                for (const auto & selected_row : selected_rows)
+                {
+                    const auto & src_col = selected_row.block->getByPosition(right_col_pos);
+                    new_col->insertFrom(*src_col.column, selected_row.row_num);
+                }
+                executed_block.insert({std::move(new_col), col.type, col.name});
+            }
+            right_col_pos += 1;
+        }
+        if (!executed_block)
+        {
+            result_column = ColumnUInt8::create();
+            break;
+        }
 
-    ColumnPtr result_column = executed_block.getByPosition(0).column->convertToFullColumnIfConst();
-    executed_block.clear();
+        for (const auto & col_name : required_column_names)
+        {
+            const auto * src_col = added_columns.left_block.findByName(col_name);
+            if (!src_col)
+                continue;
+            auto new_col = src_col->column->cloneEmpty();
+            size_t prev_left_offset = 0;
+            for (size_t i = 1; i < row_replicate_offset.size(); ++i)
+            {
+                const size_t & left_offset = row_replicate_offset[i];
+                size_t rows = left_offset - prev_left_offset;
+                if (rows)
+                    new_col->insertManyFrom(*src_col->column, left_start_row + i - 1, rows);
+                prev_left_offset = left_offset;
+            }
+            executed_block.insert({std::move(new_col), src_col->type, col_name});
+        }
+        if (!executed_block)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "required columns: [{}], but not found any in left/right table. right table: {}, left table: {}",
+                required_cols.toString(),
+                sample_right_block.dumpNames(),
+                added_columns.left_block.dumpNames());
+        }
 
+        for (const auto & col : executed_block.getColumnsWithTypeAndName())
+            if (!col.column || !col.type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal nullptr column in input block: {}", executed_block.dumpStructure());
+
+        added_columns.additional_filter_expression->execute(executed_block);
+        result_column = executed_block.getByPosition(0).column->convertToFullColumnIfConst();
+        executed_block.clear();
+    } while (false);
+
+    result_column = result_column->convertToFullIfNeeded();
     if (result_column->isNullable())
     {
         /// Convert Nullable(UInt8) to UInt8 ensuring that nulls are zeros
@@ -1783,7 +1787,6 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 left_start_row);
         }
         auto filter_col = buildAdditionalFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
-        filter_col = filter_col->convertToFullIfNeeded();
         copy_final_matched_rows(left_start_row, filter_col);
 
         if constexpr (need_replication)
