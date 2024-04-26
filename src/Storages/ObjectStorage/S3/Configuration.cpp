@@ -1,16 +1,22 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
 #if USE_AWS_S3
-
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageURL.h>
+
+#include <IO/S3/getObjectInfo.h>
 #include <Formats/FormatFactory.h>
-#include <boost/algorithm/string.hpp>
+
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+
+#include <boost/algorithm/string.hpp>
+#include <filesystem>
 
 namespace DB
 {
@@ -46,7 +52,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 String StorageS3Configuration::getDataSourceDescription()
 {
-    return fs::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
+    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
 }
 
 void StorageS3Configuration::check(ContextPtr context) const
@@ -54,7 +60,7 @@ void StorageS3Configuration::check(ContextPtr context) const
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
-    StorageObjectStorageConfiguration::check(context);
+    Configuration::check(context);
 }
 
 void StorageS3Configuration::validateNamespace(const String & name) const
@@ -63,7 +69,7 @@ void StorageS3Configuration::validateNamespace(const String & name) const
 }
 
 StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & other)
-    : StorageObjectStorageConfiguration(other)
+    : Configuration(other)
 {
     url = other.url;
     static_configuration = other.static_configuration;
@@ -91,11 +97,12 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     assertInitialized();
 
     const auto & config = context->getConfigRef();
+    const auto & settings = context->getSettingsRef();
     const std::string config_prefix = "s3.";
 
-    auto s3_settings = getSettings(config, config_prefix, context, false); /// FIXME: add a setting
+    auto s3_settings = getSettings(config, config_prefix, context, settings.s3_validate_request_settings);
 
-    request_settings.updateFromSettingsIfChanged(context->getSettingsRef());
+    request_settings.updateFromSettingsIfChanged(settings);
     auth_settings.updateFrom(s3_settings->auth_settings);
 
     s3_settings->auth_settings = auth_settings;

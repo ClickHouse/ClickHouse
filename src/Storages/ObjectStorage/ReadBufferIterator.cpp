@@ -10,7 +10,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
-
 }
 
 ReadBufferIterator::ReadBufferIterator(
@@ -29,18 +28,19 @@ ReadBufferIterator::ReadBufferIterator(
     , query_settings(configuration->getQuerySettings(context_))
     , schema_cache(schema_cache_)
     , read_keys(read_keys_)
-    , format(configuration->format == "auto" ? std::nullopt : std::optional<String>(configuration->format))
     , prev_read_keys_size(read_keys_.size())
 {
+    if (configuration->format != "auto")
+        format = configuration->format;
 }
 
 SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const String & path, const String & format_name) const
 {
-    auto source = fs::path(configuration->getDataSourceDescription()) / path;
+    auto source = std::filesystem::path(configuration->getDataSourceDescription()) / path;
     return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext());
 }
 
-SchemaCache::Keys ReadBufferIterator::getPathsForSchemaCache() const
+SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
 {
     Strings sources;
     sources.reserve(read_keys.size());
@@ -49,7 +49,7 @@ SchemaCache::Keys ReadBufferIterator::getPathsForSchemaCache() const
         std::back_inserter(sources),
         [&](const auto & elem)
         {
-            return fs::path(configuration->getDataSourceDescription()) / elem->relative_path;
+            return std::filesystem::path(configuration->getDataSourceDescription()) / elem->relative_path;
         });
     return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
 }
@@ -66,16 +66,14 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         const auto & object_info = (*it);
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
-            if (object_info->metadata)
-                return object_info->metadata->last_modified.epochTime();
-            else
-            {
-                object_info->metadata = object_storage->getObjectMetadata(object_info->relative_path);
-                return object_info->metadata->last_modified.epochTime();
-            }
+            if (!object_info->metadata)
+                object_info->metadata = object_storage->tryGetObjectMetadata(object_info->relative_path);
+
+            return object_info->metadata
+                ? std::optional<time_t>(object_info->metadata->last_modified.epochTime())
+                : std::nullopt;
         };
 
-        chassert(object_info);
         if (format)
         {
             auto cache_key = getKeyForSchemaCache(object_info->relative_path, *format);
@@ -105,14 +103,12 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 
 void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
-    chassert(current_object_info);
     if (query_settings.schema_inference_use_cache)
         schema_cache.addNumRows(getKeyForSchemaCache(current_object_info->relative_path, *format), num_rows);
 }
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
 {
-    chassert(current_object_info);
     if (query_settings.schema_inference_use_cache
         && query_settings.schema_inference_mode == SchemaInferenceMode::UNION)
     {
@@ -125,7 +121,7 @@ void ReadBufferIterator::setResultingSchema(const ColumnsDescription & columns)
     if (query_settings.schema_inference_use_cache
         && query_settings.schema_inference_mode == SchemaInferenceMode::DEFAULT)
     {
-        schema_cache.addManyColumns(getPathsForSchemaCache(), columns);
+        schema_cache.addManyColumns(getKeysForSchemaCache(), columns);
     }
 }
 
@@ -144,15 +140,11 @@ String ReadBufferIterator::getLastFileName() const
 
 std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
 {
-    chassert(current_object_info);
-
-    auto impl = object_storage->readObject(
-        StoredObject(current_object_info->relative_path), getContext()->getReadSettings());
-
-    int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
-    return wrapReadBufferWithCompressionMethod(
-        std::move(impl), chooseCompressionMethod(current_object_info->relative_path, configuration->compression_method),
-        zstd_window_log_max);
+    auto context = getContext();
+    auto impl = object_storage->readObject(StoredObject(current_object_info->relative_path), context->getReadSettings());
+    const auto compression_method = chooseCompressionMethod(current_object_info->relative_path, configuration->compression_method);
+    const auto zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window_log_max);
 }
 
 ReadBufferIterator::Data ReadBufferIterator::next()
@@ -190,16 +182,21 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             if (first)
             {
                 if (format.has_value())
+                {
                     throw Exception(
                         ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "The table structure cannot be extracted from a {} format file, because there are no files with provided path "
+                        "The table structure cannot be extracted from a {} format file, "
+                        "because there are no files with provided path "
                         "in {} or all files are empty. You can specify table structure manually",
                         *format, object_storage->getName());
+                }
 
                 throw Exception(
                     ErrorCodes::CANNOT_DETECT_FORMAT,
-                    "The data format cannot be detected by the contents of the files, because there are no files with provided path "
-                    "in {} or all files are empty. You can specify the format manually", object_storage->getName());
+                    "The data format cannot be detected by the contents of the files, "
+                    "because there are no files with provided path "
+                    "in {} or all files are empty. You can specify the format manually",
+                    object_storage->getName());
             }
 
             return {nullptr, std::nullopt, format};

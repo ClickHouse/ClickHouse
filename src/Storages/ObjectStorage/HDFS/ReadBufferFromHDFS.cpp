@@ -114,10 +114,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         {
             num_bytes_to_read = internal_buffer.size();
         }
-        // if (file_size != 0 && file_offset >= file_size)
-        // {
-        //     return false;
-        // }
+        if (file_size != 0 && file_offset >= file_size)
+        {
+            return false;
+        }
 
         ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
         int bytes_read;

@@ -35,7 +35,8 @@ public:
     HDFSObjectStorage(
         const String & hdfs_root_path_,
         SettingsPtr settings_,
-        const Poco::Util::AbstractConfiguration & config_)
+        const Poco::Util::AbstractConfiguration & config_,
+        bool lazy_initialize)
         : config(config_)
         , settings(std::move(settings_))
     {
@@ -46,6 +47,9 @@ public:
             data_directory = url.substr(begin_of_path);
         else
             data_directory = "/";
+
+        if (!lazy_initialize)
+            initializeHDFSFS();
     }
 
     std::string getName() const override { return "HDFSObjectStorage"; }
@@ -98,10 +102,6 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    void shutdown() override;
-
-    void startup() override;
-
     String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
@@ -114,8 +114,13 @@ public:
 
     bool isRemote() const override { return true; }
 
+    void startup() override { }
+
+    void shutdown() override { }
+
 private:
-    void initializeHDFS() const;
+    void initializeHDFSFS() const;
+    std::string extractObjectKeyFromURL(const StoredObject & object) const;
 
     const Poco::Util::AbstractConfiguration & config;
 

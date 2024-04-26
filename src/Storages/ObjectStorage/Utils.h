@@ -1,14 +1,10 @@
 #pragma once
-#include <Core/Types.h>
 #include "StorageObjectStorage.h"
 
 namespace DB
 {
 
 class IObjectStorage;
-class StorageObjectStorageConfiguration;
-using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
-struct StorageObjectStorageSettings;
 
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
@@ -21,7 +17,7 @@ void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorage::ConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
     const ContextPtr & context);
 

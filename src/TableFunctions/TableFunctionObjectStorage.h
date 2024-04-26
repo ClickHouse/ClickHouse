@@ -1,19 +1,18 @@
 #pragma once
 
 #include "config.h"
-
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
-
+#include <Storages/VirtualColumnUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
 
 class Context;
 class StorageS3Configuration;
-class StorageAzureBlobConfiguration;
+class StorageAzureConfiguration;
 class StorageHDFSConfiguration;
 struct S3StorageSettings;
 struct AzureStorageSettings;
@@ -104,20 +103,32 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
-    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override
+    {
+        return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
+    }
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    {
+        return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+    }
 
-    virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
+    virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
+    {
+        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true);
+    }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
       ASTs & args,
       const String & structure,
       const String & format,
-      const ContextPtr & context);
+      const ContextPtr & context)
+    {
+        Configuration().addStructureAndFormatToArgs(args, structure, format, context);
+    }
 
 protected:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -146,7 +157,7 @@ using TableFunctionS3 = TableFunctionObjectStorage<S3Definition, StorageS3Config
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureBlobConfiguration>;
+using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>;
 #endif
 
 #if USE_HDFS

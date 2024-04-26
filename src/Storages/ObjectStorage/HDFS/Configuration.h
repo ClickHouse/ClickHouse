@@ -2,17 +2,18 @@
 #include "config.h"
 
 #if USE_HDFS
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
-class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
+class StorageHDFSConfiguration : public StorageObjectStorage::Configuration
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     static constexpr auto type_name = "hdfs";
     static constexpr auto engine_name = "HDFS";
 
@@ -26,7 +27,6 @@ public:
     void setPath(const Path & path_) override { path = path_; }
 
     const Paths & getPaths() const override { return paths; }
-    Paths & getPaths() override { return paths; }
     void setPaths(const Paths & paths_) override { paths = paths_; }
 
     String getNamespace() const override { return ""; }
@@ -35,12 +35,12 @@ public:
 
     void check(ContextPtr context) const override;
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
-    StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
+    ConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
     void addStructureAndFormatToArgs(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context) override;
 
-    std::string getPathWithoutGlob() const override;
+    std::string getPathWithoutGlobs() const override;
 
 private:
     void fromNamedCollection(const NamedCollection &) override;

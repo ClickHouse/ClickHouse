@@ -1,6 +1,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
@@ -47,14 +47,15 @@ void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorage::ConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
     const ContextPtr & context)
 {
     if (columns.empty())
     {
         if (format == "auto")
-            std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, context);
+            std::tie(columns, format) =
+                StorageObjectStorage::resolveSchemaAndFormatFromData(object_storage, configuration, format_settings, context);
         else
             columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, context);
     }

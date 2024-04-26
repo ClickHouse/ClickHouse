@@ -6,7 +6,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IStorageDataLake.h>
 #include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>

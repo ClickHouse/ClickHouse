@@ -591,7 +591,7 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
             auto configuration = std::make_shared<StorageS3Configuration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getContext(), false);
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false);
 
             // Use format settings from global server context + settings from
             // the SETTINGS clause of the create query. Settings from current

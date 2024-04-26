@@ -7,6 +7,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/S3Queue/S3QueueTableMetadata.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 
 namespace DB
@@ -32,7 +33,7 @@ namespace
 
 
 S3QueueTableMetadata::S3QueueTableMetadata(
-    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorage::Configuration & configuration,
     const S3QueueSettings & engine_settings,
     const StorageInMemoryMetadata & storage_metadata)
 {

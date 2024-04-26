@@ -9,7 +9,7 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <filesystem>
 #endif
 
@@ -49,7 +49,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        StorageAzureBlobConfiguration configuration;
+        StorageAzureConfiguration configuration;
 
         if (!id_arg.empty())
         {

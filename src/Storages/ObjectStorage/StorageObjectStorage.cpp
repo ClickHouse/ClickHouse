@@ -2,21 +2,25 @@
 
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
+#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+
 #include <Storages/StorageFactory.h>
+#include <Storages/Cache/SchemaCache.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/ReadFromObjectStorageStep.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
-#include <Storages/ObjectStorage/Utils.h>
-#include <Storages/Cache/SchemaCache.h>
 
 
 namespace DB
@@ -26,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageObjectStorage::StorageObjectStorage(
@@ -90,6 +95,110 @@ void StorageObjectStorage::updateConfiguration(ContextPtr context)
         object_storage->applyNewSettings(context->getConfigRef(), "s3.", context);
 }
 
+namespace
+{
+class ReadFromObjectStorageStep : public SourceStepWithFilter
+{
+public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
+    ReadFromObjectStorageStep(
+        ObjectStoragePtr object_storage_,
+        ConfigurationPtr configuration_,
+        const String & name_,
+        const Names & columns_to_read,
+        const NamesAndTypesList & virtual_columns_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const std::optional<DB::FormatSettings> & format_settings_,
+        bool distributed_processing_,
+        ReadFromFormatInfo info_,
+        SchemaCache & schema_cache_,
+        const bool need_only_count_,
+        ContextPtr context_,
+        size_t max_block_size_,
+        size_t num_streams_)
+        : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
+        , object_storage(object_storage_)
+        , configuration(configuration_)
+        , schema_cache(schema_cache_)
+        , info(std::move(info_))
+        , virtual_columns(virtual_columns_)
+        , format_settings(format_settings_)
+        , query_settings(configuration->getQuerySettings(context_))
+        , name(name_ + "Source")
+        , need_only_count(need_only_count_)
+        , max_block_size(max_block_size_)
+        , num_streams(num_streams_)
+        , distributed_processing(distributed_processing_)
+    {
+    }
+
+    std::string getName() const override { return name; }
+
+    void applyFilters(ActionDAGNodes added_filter_nodes) override
+    {
+        filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+        const ActionsDAG::Node * predicate = nullptr;
+        if (filter_actions_dag)
+            predicate = filter_actions_dag->getOutputs().at(0);
+        createIterator(predicate);
+    }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        createIterator(nullptr);
+        Pipes pipes;
+        auto context = getContext();
+
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            auto source = std::make_shared<StorageObjectStorageSource>(
+                getName(), object_storage, configuration, info, format_settings, query_settings,
+                context, max_block_size, iterator_wrapper, need_only_count, schema_cache);
+
+            source->setKeyCondition(filter_actions_dag, context);
+            pipes.emplace_back(std::move(source));
+        }
+
+        auto pipe = Pipe::unitePipes(std::move(pipes));
+        if (pipe.empty())
+            pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+
+        pipeline.init(std::move(pipe));
+    }
+
+private:
+    ObjectStoragePtr object_storage;
+    ConfigurationPtr configuration;
+    std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
+    SchemaCache & schema_cache;
+
+    const ReadFromFormatInfo info;
+    const NamesAndTypesList virtual_columns;
+    const std::optional<DB::FormatSettings> format_settings;
+    const StorageObjectStorage::QuerySettings query_settings;
+    const String name;
+    const bool need_only_count;
+    const size_t max_block_size;
+    const size_t num_streams;
+    const bool distributed_processing;
+
+    void createIterator(const ActionsDAG::Node * predicate)
+    {
+        if (iterator_wrapper)
+            return;
+        auto context = getContext();
+        iterator_wrapper = StorageObjectStorageSource::createFileIterator(
+            configuration, object_storage, distributed_processing,
+            context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
+    }
+};
+}
+
 void StorageObjectStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -123,7 +232,7 @@ void StorageObjectStorage::read(
         storage_snapshot,
         format_settings,
         distributed_processing,
-        std::move(read_from_format_info),
+        read_from_format_info,
         getSchemaCache(local_context),
         need_only_count,
         local_context,
@@ -169,12 +278,13 @@ SinkToStoragePtr StorageObjectStorage::write(
             getName(), configuration->getPath());
     }
 
-    auto & paths = configuration->getPaths();
+    auto paths = configuration->getPaths();
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
             *object_storage, *configuration, settings, paths.front(), paths.size()))
     {
         paths.push_back(*new_key);
     }
+    configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
         object_storage,
@@ -185,10 +295,10 @@ SinkToStoragePtr StorageObjectStorage::write(
 }
 
 void StorageObjectStorage::truncate(
-    const ASTPtr &,
-    const StorageMetadataPtr &,
-    ContextPtr,
-    TableExclusiveLockHolder &)
+    const ASTPtr & /* query */,
+    const StorageMetadataPtr & /* metadata_snapshot */,
+    ContextPtr /* context */,
+    TableExclusiveLockHolder & /* table_holder */)
 {
     if (configuration->withGlobs())
     {
@@ -233,10 +343,8 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto read_buffer_iterator = createReadBufferIterator(
-        object_storage, configuration, format_settings, read_keys, context);
-    return readSchemaFromFormat(
-        configuration->format, format_settings, *read_buffer_iterator, context);
+    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    return readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
 }
 
 std::string StorageObjectStorage::resolveFormatFromData(
@@ -246,10 +354,8 @@ std::string StorageObjectStorage::resolveFormatFromData(
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto read_buffer_iterator = createReadBufferIterator(
-        object_storage, configuration, format_settings, read_keys, context);
-    return detectFormatAndReadSchema(
-        format_settings, *read_buffer_iterator, context).second;
+    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    return detectFormatAndReadSchema(format_settings, *iterator, context).second;
 }
 
 std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
@@ -259,10 +365,8 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
-    auto read_buffer_iterator = createReadBufferIterator(
-        object_storage, configuration, format_settings, read_keys, context);
-
-    auto [columns, format] = detectFormatAndReadSchema(format_settings, *read_buffer_iterator, context);
+    auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
+    auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
     configuration->format = format;
     return std::pair(columns, format);
 }
@@ -302,4 +406,65 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
 }
 
+void StorageObjectStorage::Configuration::initialize(
+    Configuration & configuration,
+    ASTs & engine_args,
+    ContextPtr local_context,
+    bool with_table_structure)
+{
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+        configuration.fromNamedCollection(*named_collection);
+    else
+        configuration.fromAST(engine_args, local_context, with_table_structure);
+
+    // FIXME: it should be - if (format == "auto" && get_format_from_file)
+    if (configuration.format == "auto")
+        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.getPath()).value_or("auto");
+    else
+        FormatFactory::instance().checkFormatName(configuration.format);
+
+    configuration.initialized = true;
+}
+
+void StorageObjectStorage::Configuration::check(ContextPtr) const
+{
+    FormatFactory::instance().checkFormatName(format);
+}
+
+StorageObjectStorage::Configuration::Configuration(const Configuration & other)
+{
+    format = other.format;
+    compression_method = other.compression_method;
+    structure = other.structure;
+}
+
+bool StorageObjectStorage::Configuration::withWildcard() const
+{
+    static const String PARTITION_ID_WILDCARD = "{_partition_id}";
+    return getPath().find(PARTITION_ID_WILDCARD) != String::npos
+        || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
+}
+
+bool StorageObjectStorage::Configuration::isPathWithGlobs() const
+{
+    return getPath().find_first_of("*?{") != std::string::npos;
+}
+
+bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
+{
+    return getNamespace().find_first_of("*?{") != std::string::npos;
+}
+
+std::string StorageObjectStorage::Configuration::getPathWithoutGlobs() const
+{
+    return getPath().substr(0, getPath().find_first_of("*?{"));
+}
+
+void StorageObjectStorage::Configuration::assertInitialized() const
+{
+    if (!initialized)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration was not initialized before usage");
+    }
+}
 }

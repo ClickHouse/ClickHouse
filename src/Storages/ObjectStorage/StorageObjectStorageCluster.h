@@ -1,12 +1,10 @@
 #pragma once
 
-#include "config.h"
-
-#include <Interpreters/Cluster.h>
+// #include <Interpreters/Cluster.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <TableFunctions/TableFunctionObjectStorageCluster.h>
+// #include <TableFunctions/TableFunctionObjectStorageCluster.h>
 
 namespace DB
 {
@@ -29,17 +27,14 @@ public:
 
     std::string getName() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(
-        const ActionsDAG::Node * predicate,
-        const ContextPtr & context) const override;
-
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
-private:
-    void updateBeforeRead(const ContextPtr & /* context */) override {}
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(
+        const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
+private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,

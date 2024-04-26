@@ -14,14 +14,13 @@ namespace ErrorCodes
 
 StorageObjectStorageSink::StorageObjectStorageSink(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    ConfigurationPtr configuration,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
     ContextPtr context,
     const std::string & blob_path)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
-    , format_settings(format_settings_)
 {
     const auto & settings = context->getSettingsRef();
     const auto path = blob_path.empty() ? configuration->getPaths().back() : blob_path;
@@ -37,7 +36,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
                     static_cast<int>(settings.output_format_compression_zstd_window_log));
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *write_buf, sample_block, context, format_settings);
+        configuration->format, *write_buf, sample_block, context, format_settings_);
 }
 
 void StorageObjectStorageSink::consume(Chunk chunk)
@@ -102,7 +101,7 @@ void StorageObjectStorageSink::release()
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
     ContextPtr context_,

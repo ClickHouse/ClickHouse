@@ -88,7 +88,7 @@ public:
         else
         {
             ConfigurationPtr configuration = base_configuration->clone();
-            configuration->getPaths() = metadata->getDataFiles();
+            configuration->setPaths(metadata->getDataFiles());
             return Storage::resolveSchemaFromData(
                 object_storage_, configuration, format_settings_, local_context);
         }

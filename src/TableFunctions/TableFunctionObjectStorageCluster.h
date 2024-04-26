@@ -13,7 +13,7 @@ class Context;
 class StorageS3Settings;
 class StorageAzureBlobSettings;
 class StorageS3Configuration;
-class StorageAzureBlobConfiguration;
+class StorageAzureConfiguration;
 
 struct AzureClusterDefinition
 {
@@ -90,7 +90,7 @@ using TableFunctionS3Cluster = TableFunctionObjectStorageCluster<S3ClusterDefini
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureBlobConfiguration>;
+using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 
 #if USE_HDFS

@@ -1,8 +1,7 @@
 #pragma once
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/StorageObjectStorage_fwd_internal.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 
 namespace DB
@@ -12,6 +11,9 @@ class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
 public:
     using FileIterator = std::shared_ptr<StorageObjectStorageSource::IIterator>;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ObjectInfoPtr = StorageObjectStorage::ObjectInfoPtr;
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
@@ -40,7 +42,7 @@ public:
 
 private:
     SchemaCache::Key getKeyForSchemaCache(const String & path, const String & format_name) const;
-    SchemaCache::Keys getPathsForSchemaCache() const;
+    SchemaCache::Keys getKeysForSchemaCache() const;
     std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
 

@@ -55,7 +55,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -502,7 +502,7 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureBlobConfiguration::type_name).clear();
+                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
 #endif
             break;
         }

@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
@@ -13,7 +13,7 @@ namespace DB
 class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     static constexpr auto name = "Hudi";
 

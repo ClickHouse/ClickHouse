@@ -45,7 +45,7 @@ namespace ErrorCodes
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ConfigurationPtr configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -341,7 +341,7 @@ MutableColumns parseAvro(
  */
 std::pair<Int32, String> getMetadataFileAndVersion(
     ObjectStoragePtr object_storage,
-    const StorageObjectStorageConfiguration & configuration)
+    const StorageObjectStorage::Configuration & configuration)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
@@ -378,7 +378,7 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 
 DataLakeMetadataPtr IcebergMetadata::create(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    ConfigurationPtr configuration,
     ContextPtr local_context)
 {
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);

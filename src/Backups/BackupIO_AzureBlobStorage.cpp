@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
-    const StorageAzureBlobConfiguration & configuration_,
+    const StorageAzureConfiguration & configuration_,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
@@ -112,7 +112,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
 
 
 BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
-    const StorageAzureBlobConfiguration & configuration_,
+    const StorageAzureConfiguration & configuration_,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_,

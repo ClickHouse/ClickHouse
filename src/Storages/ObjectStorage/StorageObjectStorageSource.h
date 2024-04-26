@@ -3,8 +3,8 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorage_fwd_internal.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/re2.h>
 
 
 namespace DB
@@ -16,6 +16,11 @@ class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
     friend class StorageS3QueueSource;
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ObjectInfo = StorageObjectStorage::ObjectInfo;
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
+    using ObjectInfoPtr = StorageObjectStorage::ObjectInfoPtr;
+
     class IIterator;
     class ReadTaskIterator;
     class GlobIterator;

@@ -1,17 +1,18 @@
 #pragma once
 #include <Storages/PartitionedSink.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
 class StorageObjectStorageSink : public SinkToStorage
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     StorageObjectStorageSink(
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
+        ConfigurationPtr configuration,
         std::optional<FormatSettings> format_settings_,
         const Block & sample_block_,
         ContextPtr context,
@@ -29,8 +30,6 @@ public:
 
 private:
     const Block sample_block;
-    const std::optional<FormatSettings> format_settings;
-
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     bool cancelled = false;
@@ -43,9 +42,11 @@ private:
 class PartitionedStorageObjectStorageSink : public PartitionedSink
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     PartitionedStorageObjectStorageSink(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
         const Block & sample_block_,
         ContextPtr context_,
@@ -58,7 +59,8 @@ private:
     void validateNamespace(const String & str);
 
     ObjectStoragePtr object_storage;
-    StorageObjectStorageConfigurationPtr configuration;
+    ConfigurationPtr configuration;
+
     const StorageObjectStorage::QuerySettings query_settings;
     const std::optional<FormatSettings> format_settings;
     const Block sample_block;

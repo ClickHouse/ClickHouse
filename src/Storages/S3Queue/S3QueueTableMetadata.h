@@ -4,7 +4,7 @@
 
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <base/types.h>
 
 namespace DB
@@ -29,7 +29,7 @@ struct S3QueueTableMetadata
 
     S3QueueTableMetadata() = default;
     S3QueueTableMetadata(
-        const StorageObjectStorageConfiguration & configuration,
+        const StorageObjectStorage::Configuration & configuration,
         const S3QueueSettings & engine_settings,
         const StorageInMemoryMetadata & storage_metadata);
 

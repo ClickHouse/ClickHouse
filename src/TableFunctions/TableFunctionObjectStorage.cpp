@@ -1,23 +1,23 @@
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/Context.h>
+
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
+
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Access/Common/AccessFlags.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Formats/FormatFactory.h>
-#include <Analyzer/FunctionNode.h>
-#include "registerTableFunctions.h"
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 
 
 namespace DB
@@ -29,8 +29,7 @@ namespace ErrorCodes
 }
 
 template <typename Definition, typename Configuration>
-ObjectStoragePtr TableFunctionObjectStorage<
-    Definition, Configuration>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
+ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
         object_storage = configuration->createObjectStorage(context, create_readonly);
@@ -38,8 +37,7 @@ ObjectStoragePtr TableFunctionObjectStorage<
 }
 
 template <typename Definition, typename Configuration>
-StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<
-    Definition, Configuration>::getConfiguration() const
+StorageObjectStorage::ConfigurationPtr TableFunctionObjectStorage<Definition, Configuration>::getConfiguration() const
 {
     if (!configuration)
         configuration = std::make_shared<Configuration>();
@@ -47,8 +45,8 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<
 }
 
 template <typename Definition, typename Configuration>
-std::vector<size_t> TableFunctionObjectStorage<
-    Definition, Configuration>::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+std::vector<size_t> TableFunctionObjectStorage<Definition, Configuration>::skipAnalysisForArguments(
+    const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
@@ -62,19 +60,6 @@ std::vector<size_t> TableFunctionObjectStorage<
             result.push_back(i);
     }
     return result;
-}
-
-template <typename Definition, typename Configuration>
-void TableFunctionObjectStorage<Definition, Configuration>::updateStructureAndFormatArgumentsIfNeeded(
-        ASTs & args, const String & structure, const String & format, const ContextPtr & context)
-{
-    Configuration().addStructureAndFormatToArgs(args, structure, format, context);
-}
-
-template <typename Definition, typename Configuration>
-void TableFunctionObjectStorage<Definition, Configuration>::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
-{
-    StorageObjectStorageConfiguration::initialize(*getConfiguration(), engine_args, local_context, true);
 }
 
 template <typename Definition, typename Configuration>
@@ -94,32 +79,16 @@ template <typename Definition, typename Configuration>
 ColumnsDescription TableFunctionObjectStorage<
     Definition, Configuration>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    chassert(configuration);
     if (configuration->structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        auto storage = getObjectStorage(context, !is_insert_query);
         ColumnsDescription columns;
+        auto storage = getObjectStorage(context, !is_insert_query);
         resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, context);
         return columns;
     }
-
-    return parseColumnsListFromString(configuration->structure, context);
-}
-
-template <typename Definition, typename Configuration>
-bool TableFunctionObjectStorage<
-    Definition, Configuration>::supportsReadingSubsetOfColumns(const ContextPtr & context)
-{
-    chassert(configuration);
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
-}
-
-template <typename Definition, typename Configuration>
-std::unordered_set<String> TableFunctionObjectStorage<
-    Definition, Configuration>::getVirtualsToCheckBeforeUsingStructureHint() const
-{
-    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+    else
+        return parseColumnsListFromString(configuration->structure, context);
 }
 
 template <typename Definition, typename Configuration>
@@ -205,7 +174,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-    factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureBlobConfiguration>>(
+    factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>>(
     {
         .documentation =
         {
@@ -229,8 +198,8 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 }
 
 #if USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<AzureDefinition, StorageAzureBlobConfiguration>;
-template class TableFunctionObjectStorage<AzureClusterDefinition, StorageAzureBlobConfiguration>;
+template class TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>;
+template class TableFunctionObjectStorage<AzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 
 #if USE_AWS_S3

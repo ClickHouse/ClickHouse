@@ -20,7 +20,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3Configuration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
 
             return StorageIceberg::create(
                 configuration, args.getContext(), args.table_id, args.columns,
@@ -43,7 +43,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3Configuration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
 
             return StorageDeltaLake::create(
                 configuration, args.getContext(), args.table_id, args.columns,
@@ -64,7 +64,7 @@ void registerStorageHudi(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3Configuration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
 
             return StorageHudi::create(
                 configuration, args.getContext(), args.table_id, args.columns,

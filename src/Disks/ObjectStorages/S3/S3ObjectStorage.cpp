@@ -582,26 +582,8 @@ void S3ObjectStorage::applyNewSettings(
         auto new_client = getClient(config, config_prefix, context, *new_s3_settings, for_disk_s3, &uri);
         client.set(std::move(new_client));
     }
-
     s3_settings.set(std::move(new_s3_settings));
 }
-
-// void S3ObjectStorage::applyNewSettings(ContextPtr context)
-// {
-//     auto settings = s3_settings.get();
-//     if (!endpoint_settings || !settings->auth_settings.hasUpdates(endpoint_settings->auth_settings))
-//         return;
-//
-//     const auto & config = context->getConfigRef();
-//     auto new_s3_settings = getSettings(uri, config, "s3.", context);
-//
-//     new_s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
-//
-//     auto new_client = getClient(config, "s3.", context, *new_s3_settings, false);
-//
-//     s3_settings.set(std::move(new_s3_settings));
-//     client.set(std::move(new_client));
-// }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     const std::string & new_namespace,

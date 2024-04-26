@@ -1,8 +1,8 @@
-#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
 
@@ -18,12 +18,14 @@ namespace ErrorCodes
 
 static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
     const StorageFactory::Arguments & args,
-    typename StorageObjectStorage::ConfigurationPtr configuration,
+    StorageObjectStorage::ConfigurationPtr configuration,
     ContextPtr context)
 {
     auto & engine_args = args.engine_args;
     if (engine_args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -75,10 +77,8 @@ void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage("AzureBlobStorage", [](const StorageFactory::Arguments & args)
     {
-        auto context = args.getLocalContext();
-        auto configuration = std::make_shared<StorageAzureBlobConfiguration>();
-        StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
-        return createStorageObjectStorage(args, configuration, context);
+        auto configuration = std::make_shared<StorageAzureConfiguration>();
+        return createStorageObjectStorage(args, configuration, args.getLocalContext());
     },
     {
         .supports_settings = true,
@@ -94,10 +94,8 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
-        auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageS3Configuration>();
-        StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
-        return createStorageObjectStorage(args, configuration, context);
+        return createStorageObjectStorage(args, configuration, args.getLocalContext());
     },
     {
         .supports_settings = true,
@@ -129,10 +127,8 @@ void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage("HDFS", [=](const StorageFactory::Arguments & args)
     {
-        auto context = args.getLocalContext();
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
-        StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
-        return createStorageObjectStorage(args, configuration, context);
+        return createStorageObjectStorage(args, configuration, args.getLocalContext());
     },
     {
         .supports_settings = true,

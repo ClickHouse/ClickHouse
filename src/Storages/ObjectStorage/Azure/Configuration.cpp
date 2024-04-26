@@ -1,8 +1,9 @@
-#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/common/storage_credential.hpp>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -65,7 +66,7 @@ namespace
     }
 }
 
-void StorageAzureBlobConfiguration::check(ContextPtr context) const
+void StorageAzureConfiguration::check(ContextPtr context) const
 {
     Poco::URI url_to_check;
     if (is_connection_string)
@@ -77,11 +78,11 @@ void StorageAzureBlobConfiguration::check(ContextPtr context) const
         url_to_check = Poco::URI(connection_url);
 
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url_to_check);
-    StorageObjectStorageConfiguration::check(context);
+    Configuration::check(context);
 }
 
-StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureBlobConfiguration & other)
-    : StorageObjectStorageConfiguration(other)
+StorageAzureConfiguration::StorageAzureConfiguration(const StorageAzureConfiguration & other)
+    : Configuration(other)
 {
     connection_url = other.connection_url;
     is_connection_string = other.is_connection_string;
@@ -92,7 +93,7 @@ StorageAzureBlobConfiguration::StorageAzureBlobConfiguration(const StorageAzureB
     blobs_paths = other.blobs_paths;
 }
 
-AzureObjectStorage::SettingsPtr StorageAzureBlobConfiguration::createSettings(ContextPtr context)
+AzureObjectStorage::SettingsPtr StorageAzureConfiguration::createSettings(ContextPtr context)
 {
     const auto & context_settings = context->getSettingsRef();
     auto settings_ptr = std::make_unique<AzureObjectStorageSettings>();
@@ -102,7 +103,7 @@ AzureObjectStorage::SettingsPtr StorageAzureBlobConfiguration::createSettings(Co
     return settings_ptr;
 }
 
-StorageObjectStorage::QuerySettings StorageAzureBlobConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
@@ -110,14 +111,14 @@ StorageObjectStorage::QuerySettings StorageAzureBlobConfiguration::getQuerySetti
         .create_new_file_on_insert = settings.azure_create_new_file_on_insert,
         .schema_inference_use_cache = settings.schema_inference_use_cache_for_azure,
         .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for azure
+        .skip_empty_files = settings.azure_skip_empty_files,
         .list_object_keys_size = settings.azure_list_object_keys_size,
-        .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+        .throw_on_zero_files_match = settings.azure_throw_on_zero_files_match,
         .ignore_non_existent_file = settings.azure_ignore_file_doesnt_exist,
     };
 }
 
-ObjectStoragePtr StorageAzureBlobConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
+ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
 {
     assertInitialized();
     auto client = createClient(is_readonly, /* attempt_to_create_container */true);
@@ -125,7 +126,7 @@ ObjectStoragePtr StorageAzureBlobConfiguration::createObjectStorage(ContextPtr c
     return std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), container);
 }
 
-AzureClientPtr StorageAzureBlobConfiguration::createClient(bool is_read_only, bool attempt_to_create_container)
+AzureClientPtr StorageAzureConfiguration::createClient(bool is_read_only, bool attempt_to_create_container)
 {
     using namespace Azure::Storage::Blobs;
 
@@ -133,8 +134,8 @@ AzureClientPtr StorageAzureBlobConfiguration::createClient(bool is_read_only, bo
 
     if (is_connection_string)
     {
-        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-        std::unique_ptr<BlobServiceClient> blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(connection_url));
+        auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+        auto blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(connection_url));
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(connection_url, container));
 
         if (attempt_to_create_container)
@@ -243,7 +244,7 @@ AzureClientPtr StorageAzureBlobConfiguration::createClient(bool is_read_only, bo
     return result;
 }
 
-void StorageAzureBlobConfiguration::fromNamedCollection(const NamedCollection & collection)
+void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
@@ -275,7 +276,7 @@ void StorageAzureBlobConfiguration::fromNamedCollection(const NamedCollection & 
     blobs_paths = {blob_path};
 }
 
-void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
+void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     if (engine_args.size() < 3 || engine_args.size() > (with_structure ? 8 : 7))
     {
@@ -396,7 +397,7 @@ void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr conte
     blobs_paths = {blob_path};
 }
 
-void StorageAzureBlobConfiguration::addStructureAndFormatToArgs(
+void StorageAzureConfiguration::addStructureAndFormatToArgs(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context)
 {
     if (tryGetNamedCollectionWithOverrides(args, context))

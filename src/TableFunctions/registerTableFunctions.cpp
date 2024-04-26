@@ -29,18 +29,6 @@ void registerTableFunctions()
     registerTableFunctionFuzzJSON(factory);
 #endif
 
-#if USE_AWS_S3
-    // registerTableFunctionS3Cluster(factory);
-    // registerTableFunctionHudi(factory);
-#if USE_PARQUET
-    // registerTableFunctionDeltaLake(factory);
-#endif
-#if USE_AVRO
-    // registerTableFunctionIceberg(factory);
-#endif
-
-#endif
-
 #if USE_HIVE
     registerTableFunctionHive(factory);
 #endif

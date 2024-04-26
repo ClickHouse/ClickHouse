@@ -85,7 +85,7 @@ struct DeltaLakeMetadata::Impl
             while (true)
             {
                 const auto filename = withPadding(++current_version) + metadata_file_suffix;
-                const auto file_path = fs::path(configuration->getPath()) / deltalake_metadata_directory / filename;
+                const auto file_path = std::filesystem::path(configuration->getPath()) / deltalake_metadata_directory / filename;
 
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
@@ -161,12 +161,12 @@ struct DeltaLakeMetadata::Impl
             if (json.has("add"))
             {
                 const auto path = json["add"]["path"].getString();
-                result.insert(fs::path(configuration->getPath()) / path);
+                result.insert(std::filesystem::path(configuration->getPath()) / path);
             }
             else if (json.has("remove"))
             {
                 const auto path = json["remove"]["path"].getString();
-                result.erase(fs::path(configuration->getPath()) / path);
+                result.erase(std::filesystem::path(configuration->getPath()) / path);
             }
         }
     }
@@ -186,7 +186,7 @@ struct DeltaLakeMetadata::Impl
      */
     size_t readLastCheckpointIfExists() const
     {
-        const auto last_checkpoint_file = fs::path(configuration->getPath()) / deltalake_metadata_directory / "_last_checkpoint";
+        const auto last_checkpoint_file = std::filesystem::path(configuration->getPath()) / deltalake_metadata_directory / "_last_checkpoint";
         if (!object_storage->exists(StoredObject(last_checkpoint_file)))
             return 0;
 
@@ -249,7 +249,7 @@ struct DeltaLakeMetadata::Impl
             return 0;
 
         const auto checkpoint_filename = withPadding(version) + ".checkpoint.parquet";
-        const auto checkpoint_path = fs::path(configuration->getPath()) / deltalake_metadata_directory / checkpoint_filename;
+        const auto checkpoint_path = std::filesystem::path(configuration->getPath()) / deltalake_metadata_directory / checkpoint_filename;
 
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
@@ -311,7 +311,7 @@ struct DeltaLakeMetadata::Impl
             if (filename.empty())
                 continue;
             LOG_TEST(log, "Adding {}", filename);
-            const auto [_, inserted] = result.insert(fs::path(configuration->getPath()) / filename);
+            const auto [_, inserted] = result.insert(std::filesystem::path(configuration->getPath()) / filename);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", filename);
         }

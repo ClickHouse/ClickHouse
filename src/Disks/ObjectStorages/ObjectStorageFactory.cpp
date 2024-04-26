@@ -232,7 +232,8 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             context->getSettingsRef().hdfs_replication
         );
 
-        return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config);
+        return createObjectStorage<HDFSObjectStorage>(
+            ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
     });
 }
 #endif

@@ -8,7 +8,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 
 
 namespace DB
@@ -109,7 +109,7 @@ template class TableFunctionObjectStorageCluster<S3ClusterDefinition, StorageS3C
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureBlobConfiguration>;
+template class TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureConfiguration>;
 #endif
 
 #if USE_HDFS

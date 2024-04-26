@@ -2,15 +2,16 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/IStorage.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 
 namespace DB
 {
 
-class StorageObjectStorageConfiguration;
 class ReadBufferIterator;
 class SchemaCache;
+class NamedCollection;
 
 /**
  * A general class containing implementation for external table engines
@@ -20,7 +21,7 @@ class SchemaCache;
 class StorageObjectStorage : public IStorage
 {
 public:
-    using Configuration = StorageObjectStorageConfiguration;
+    class Configuration;
     using ConfigurationPtr = std::shared_ptr<Configuration>;
     using ObjectInfo = RelativePathWithMetadata;
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
@@ -132,6 +133,63 @@ protected:
 
     LoggerPtr log;
     std::mutex configuration_update_mutex;
+};
+
+class StorageObjectStorage::Configuration
+{
+public:
+    Configuration() = default;
+    Configuration(const Configuration & other);
+    virtual ~Configuration() = default;
+
+    using Path = std::string;
+    using Paths = std::vector<Path>;
+
+    static void initialize(
+        Configuration & configuration,
+        ASTs & engine_args,
+        ContextPtr local_context,
+        bool with_table_structure);
+
+    virtual std::string getTypeName() const = 0;
+    virtual std::string getEngineName() const = 0;
+
+    virtual Path getPath() const = 0;
+    virtual void setPath(const Path & path) = 0;
+
+    virtual const Paths & getPaths() const = 0;
+    virtual void setPaths(const Paths & paths) = 0;
+
+    virtual String getDataSourceDescription() = 0;
+    virtual String getNamespace() const = 0;
+    virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;
+    virtual void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
+
+    bool withWildcard() const;
+    bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
+    bool isPathWithGlobs() const;
+    bool isNamespaceWithGlobs() const;
+    virtual std::string getPathWithoutGlobs() const;
+
+    virtual void check(ContextPtr context) const;
+    virtual void validateNamespace(const String & /* name */) const {}
+
+    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) = 0; /// NOLINT
+    virtual ConfigurationPtr clone() = 0;
+    virtual bool isStaticConfiguration() const { return true; }
+
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
+
+protected:
+    virtual void fromNamedCollection(const NamedCollection & collection) = 0;
+    virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+
+    void assertInitialized() const;
+
+    bool initialized = false;
 };
 
 }

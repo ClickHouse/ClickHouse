@@ -4,17 +4,17 @@
 
 #if USE_AWS_S3
 
-#include <IO/S3/getObjectInfo.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Common/CurrentMetrics.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
 
-class StorageS3Configuration : public StorageObjectStorageConfiguration
+class StorageS3Configuration : public StorageObjectStorage::Configuration
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     static constexpr auto type_name = "s3";
 
     StorageS3Configuration() = default;
@@ -27,7 +27,6 @@ public:
     void setPath(const Path & path) override { url.key = path; }
 
     const Paths & getPaths() const override { return keys; }
-    Paths & getPaths() override { return keys; }
     void setPaths(const Paths & paths) override { keys = paths; }
 
     String getNamespace() const override { return url.bucket; }
@@ -37,7 +36,7 @@ public:
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;
 
-    StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
+    ConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
     bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT

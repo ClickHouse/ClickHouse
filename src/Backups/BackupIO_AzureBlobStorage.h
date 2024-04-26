@@ -6,7 +6,7 @@
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/AzureBlob/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 
 
 namespace DB
@@ -17,7 +17,7 @@ class BackupReaderAzureBlobStorage : public BackupReaderDefault
 {
 public:
     BackupReaderAzureBlobStorage(
-        const StorageAzureBlobConfiguration & configuration_,
+        const StorageAzureConfiguration & configuration_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_);
@@ -39,7 +39,7 @@ public:
 private:
     const DataSourceDescription data_source_description;
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureBlobConfiguration configuration;
+    StorageAzureConfiguration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
     std::shared_ptr<const AzureObjectStorageSettings> settings;
 };
@@ -48,7 +48,7 @@ class BackupWriterAzureBlobStorage : public BackupWriterDefault
 {
 public:
     BackupWriterAzureBlobStorage(
-        const StorageAzureBlobConfiguration & configuration_,
+        const StorageAzureConfiguration & configuration_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,
@@ -85,7 +85,7 @@ private:
 
     const DataSourceDescription data_source_description;
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureBlobConfiguration configuration;
+    StorageAzureConfiguration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
     std::shared_ptr<const AzureObjectStorageSettings> settings;
 };

@@ -9,10 +9,11 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/parseGlobs.h>
 
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -218,11 +219,9 @@ std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const O
 
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
-        if (object_info->metadata)
-        {
-            return object_info->metadata->last_modified.epochTime();
-        }
-        return std::nullopt;
+        return object_info->metadata
+            ? std::optional<size_t>(object_info->metadata->last_modified.epochTime())
+            : std::nullopt;
     };
     return schema_cache.tryGetNumRows(cache_key, get_last_mod_time);
 }
@@ -354,7 +353,7 @@ StorageObjectStorageSource::IIterator::IIterator(const std::string & logger_name
 {
 }
 
-ObjectInfoPtr StorageObjectStorageSource::IIterator::next(size_t processor)
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::IIterator::next(size_t processor)
 {
     auto object_info = nextImpl(processor);
 
@@ -392,7 +391,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     else if (configuration->isPathWithGlobs())
     {
         const auto key_with_globs = configuration_->getPath();
-        const auto key_prefix = configuration->getPathWithoutGlob();
+        const auto key_prefix = configuration->getPathWithoutGlobs();
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
@@ -423,7 +422,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
 }
 
-ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t processor)
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t processor)
 {
     std::lock_guard lock(next_mutex);
     auto object_info = nextImplUnlocked(processor);
@@ -439,7 +438,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t processo
     return object_info;
 }
 
-ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImplUnlocked(size_t /* processor */)
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImplUnlocked(size_t /* processor */)
 {
     bool current_batch_processed = object_infos.empty() || index >= object_infos.size();
     if (is_finished && current_batch_processed)
@@ -533,7 +532,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     }
 }
 
-ObjectInfoPtr StorageObjectStorageSource::KeysIterator::nextImpl(size_t /* processor */)
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::nextImpl(size_t /* processor */)
 {
     while (true)
     {
@@ -614,7 +613,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     }
 }
 
-ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::nextImpl(size_t)
+StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::nextImpl(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())

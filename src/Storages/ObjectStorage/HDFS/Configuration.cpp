@@ -1,18 +1,21 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 
 #if USE_HDFS
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
-#include <Interpreters/Context.h>
-#include <Storages/checkAndGetLiteralArgument.h>
+#include <Common/logger_useful.h>
 #include <Parsers/IAST.h>
-#include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
+#include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -23,7 +26,7 @@ namespace ErrorCodes
 }
 
 StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
-    : StorageObjectStorageConfiguration(other)
+    : Configuration(other)
 {
     url = other.url;
     path = other.path;
@@ -34,7 +37,7 @@ void StorageHDFSConfiguration::check(ContextPtr context) const
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.substr(1));
-    StorageObjectStorageConfiguration::check(context);
+    Configuration::check(context);
 }
 
 ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
@@ -47,10 +50,11 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
         settings.remote_read_min_bytes_for_seek,
         settings.hdfs_replication
     );
-    return std::make_shared<HDFSObjectStorage>(url, std::move(hdfs_settings), context->getConfigRef());
+    return std::make_shared<HDFSObjectStorage>(
+        url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
 
-std::string StorageHDFSConfiguration::getPathWithoutGlob() const
+std::string StorageHDFSConfiguration::getPathWithoutGlobs() const
 {
     /// Unlike s3 and azure, which are object storages,
     /// hdfs is a filesystem, so it cannot list files by partual prefix,
@@ -69,9 +73,9 @@ StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(c
         .create_new_file_on_insert = settings.hdfs_create_new_file_on_insert,
         .schema_inference_use_cache = settings.schema_inference_use_cache_for_hdfs,
         .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.hdfs_skip_empty_files, /// TODO: add setting for hdfs
-        .list_object_keys_size = settings.s3_list_object_keys_size, /// TODO: add a setting for hdfs
-        .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+        .skip_empty_files = settings.hdfs_skip_empty_files,
+        .list_object_keys_size = 0, /// HDFS does not support listing in batches.
+        .throw_on_zero_files_match = settings.hdfs_throw_on_zero_files_match,
         .ignore_non_existent_file = settings.hdfs_ignore_file_doesnt_exist,
     };
 }

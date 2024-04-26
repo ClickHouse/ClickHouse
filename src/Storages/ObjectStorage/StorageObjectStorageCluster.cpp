@@ -1,21 +1,15 @@
 #include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
 
-#include "config.h"
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageURL.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+
 
 namespace DB
 {

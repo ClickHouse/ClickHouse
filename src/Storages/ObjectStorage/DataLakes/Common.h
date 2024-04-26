@@ -1,15 +1,15 @@
 #pragma once
 #include <Core/Types.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
 
 class IObjectStorage;
-class StorageObjectStorageConfiguration;
 
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorage::Configuration & configuration,
     const String & prefix, const String & suffix);
 
 }

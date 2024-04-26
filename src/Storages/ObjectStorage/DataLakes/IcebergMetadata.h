@@ -5,7 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
@@ -61,7 +61,7 @@ namespace DB
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     static constexpr auto name = "Iceberg";
 

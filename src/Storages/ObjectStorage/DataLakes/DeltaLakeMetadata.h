@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
@@ -12,8 +12,7 @@ namespace DB
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
-
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
     static constexpr auto name = "DeltaLake";
 
     DeltaLakeMetadata(
