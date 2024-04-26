@@ -365,8 +365,7 @@
 	url = https://github.com/ada-url/idna.git
 [submodule "contrib/rust_vendor"]
 	path = contrib/rust_vendor
-	url = https://github.com/rgolovachev/rust_vendor.git
-	branch = add-pco-package
+	url = https://github.com/ClickHouse/rust_vendor.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/ClickHouse/openssl.git
