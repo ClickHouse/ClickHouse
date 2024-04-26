@@ -2,8 +2,9 @@
 
 #include <Interpreters/ActionsDAG.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/StreamingAdapterStep.h>
-#include <Processors/Streaming/StreamingAdapter.h>
+#include <Processors/StreamingAdapter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -22,23 +23,35 @@ static Block checkHeaders(DataStream storage_stream, DataStream subscription_str
     return storage_stream.header;
 }
 
-StreamingAdapterStep::StreamingAdapterStep(
-    DataStream storage_stream_, DataStream subscription_stream_, SequencerPtr sequencer_, ReadingSourceOptions state_)
-    : storage_header(checkHeaders(storage_stream_, subscription_stream_)), sequencer{std::move(sequencer_)}, state{std::move(state_)}
+StreamingAdapterStep::StreamingAdapterStep(DataStream subscription_stream_)
+    : input_streams_count(1), output_header(subscription_stream_.header)
+{
+    updateInputStreams({std::move(subscription_stream_)});
+}
+
+StreamingAdapterStep::StreamingAdapterStep(DataStream storage_stream_, DataStream subscription_stream_)
+    : input_streams_count(2), output_header(checkHeaders(storage_stream_, subscription_stream_))
 {
     updateInputStreams({std::move(storage_stream_), std::move(subscription_stream_)});
 }
 
 QueryPipelineBuilderPtr StreamingAdapterStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
-    if (pipelines.size() != 2)
+    if (input_streams_count == 1 && pipelines.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single subscription pipeline in StreamingAdapterStep::updatePipeline");
+
+    if (input_streams_count == 2 && pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected storage and subscription pipelines in StreamingAdapterStep::updatePipeline");
+
+    /// simple case when step is used only to update DataStream with infinite flag
+    if (pipelines.size() == 1)
+        return std::move(pipelines[0]);
 
     /// resize pipelines to 1 output port as preparation for fifo order
     for (auto & cur_pipeline : pipelines)
         cur_pipeline->resize(1);
 
-    auto streaming_adapter = std::make_shared<StreamingAdapter>(storage_header, std::move(sequencer), std::move(state));
+    auto streaming_adapter = std::make_shared<StreamingAdapter>(output_header);
 
     return QueryPipelineBuilder::mergePipelines(
         std::move(pipelines[0]), std::move(pipelines[1]), std::move(streaming_adapter), &processors);
@@ -47,7 +60,7 @@ QueryPipelineBuilderPtr StreamingAdapterStep::updatePipeline(QueryPipelineBuilde
 void StreamingAdapterStep::updateOutputStream()
 {
     output_stream = DataStream{
-        .header = storage_header,
+        .header = output_header,
         .has_single_port = true,
         .is_infinite = true,
     };
@@ -56,6 +69,11 @@ void StreamingAdapterStep::updateOutputStream()
 void StreamingAdapterStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
+}
+
+void makeStreamInfinite(QueryPlan & plan)
+{
+    plan.addStep(std::make_unique<StreamingAdapterStep>(plan.getCurrentDataStream()));
 }
 
 }
