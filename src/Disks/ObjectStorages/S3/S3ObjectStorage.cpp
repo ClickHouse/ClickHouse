@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include "Common/ObjectStorageKey.h"
 
 #if USE_AWS_S3
 
@@ -572,11 +573,12 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
     return key_generator->generate(path, /* is_directory */ false);
 }
 
-std::string S3ObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
+ObjectStorageKey S3ObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
-    return key_generator->generate(path, /* is_directory */ true).serialize();
+
+    return key_generator->generate(path, /* is_directory */ true);
 }
 }
 

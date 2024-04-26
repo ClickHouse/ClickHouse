@@ -210,7 +210,9 @@ public:
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
-    virtual std::string generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */) const
+
+    /// Object key prefix for local paths in the directory 'path'.
+    virtual ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
     }
