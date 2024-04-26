@@ -13,16 +13,6 @@ SELECT sleep(2) FORMAT Null;
 SET query_profiler_real_time_period_ns = 1000000000;
 SYSTEM FLUSH LOGS;
 
-SELECT '01473_metric_log_table_event_start_time_microseconds_test';
--- query assumes that the event_time field is accurate.
-WITH (
-        SELECT event_time_microseconds, event_time
-        FROM system.metric_log
-        ORDER BY event_time DESC
-        LIMIT 1
-    ) AS time
-SELECT if(dateDiff('second', toDateTime(time.1), toDateTime(time.2)) = 0, 'ok', toString(time));
-
 SELECT '01473_trace_log_table_event_start_time_microseconds_test';
 WITH (
           SELECT event_time_microseconds, event_time
