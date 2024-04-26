@@ -16,6 +16,7 @@ public:
     std::list<T> extractAll();
 
     bool isEmpty() const;
+    bool isClosed() const;
 
     /// returns event_fd's native handle for unix systems
     /// otherwise returns nullopt
@@ -31,7 +32,7 @@ private:
     std::list<T> queue;
 
     // synchronization
-    std::atomic<bool> is_disabled{false};
+    std::atomic<bool> is_closed{false};
 
 #if defined(OS_LINUX)
     EventFD new_values_event;
@@ -47,6 +48,12 @@ bool SCMPQueue<T>::isEmpty() const
     return queue.empty();
 }
 
+template <class T>
+bool SCMPQueue<T>::isClosed() const
+{
+    return is_closed.load();
+}
+
 #if defined(OS_LINUX)
 
 template <class T>
@@ -55,7 +62,7 @@ void SCMPQueue<T>::add(T value)
     {
         std::unique_lock guard(mutex);
 
-        if (is_disabled.load())
+        if (is_closed.load())
             return;
 
         queue.emplace_back(std::move(value));
@@ -66,7 +73,7 @@ void SCMPQueue<T>::add(T value)
 template <class T>
 std::list<T> SCMPQueue<T>::extractAll()
 {
-    if (is_disabled.load())
+    if (is_closed.load())
         return {};
 
     new_values_event.read();
@@ -86,7 +93,7 @@ void SCMPQueue<T>::close()
 {
     {
         std::unique_lock guard(mutex);
-        is_disabled.store(true);
+        is_closed.store(true);
         queue.clear();
     }
 
@@ -100,7 +107,7 @@ void SCMPQueue<T>::add(T value)
 {
     std::unique_lock guard(mutex);
 
-    if (is_disabled.load())
+    if (is_closed.load())
         return;
 
     queue.emplace_back(std::move(value));
@@ -112,7 +119,7 @@ std::list<T> SCMPQueue<T>::extractAll()
 {
     std::unique_lock guard(mutex);
 
-    while (queue.empty() && !is_disabled.load())
+    while (queue.empty() && !is_closed.load())
         new_values.wait(guard);
 
     return std::exchange(queue, {});
@@ -128,7 +135,7 @@ template <class T>
 void SCMPQueue<T>::close()
 {
     std::unique_lock guard(mutex);
-    is_disabled.store(true);
+    is_closed.store(true);
     queue.clear();
     new_values.notify_one();
 }

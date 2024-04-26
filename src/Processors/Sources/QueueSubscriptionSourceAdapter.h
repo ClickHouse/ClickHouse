@@ -57,7 +57,7 @@ QueueSubscriptionSourceAdapter<T>::QueueSubscriptionSourceAdapter(Block header_,
 template <class T>
 IProcessor::Status QueueSubscriptionSourceAdapter<T>::prepare()
 {
-    if (finished)
+    if (subscription.isDisabled())
         return Status::Finished;
 
     if (is_async_state)
@@ -66,7 +66,7 @@ IProcessor::Status QueueSubscriptionSourceAdapter<T>::prepare()
     auto base_status = ISource::prepare();
 
     if (base_status == Status::Finished)
-        finished = true;
+        subscription.disable();
 
     return base_status;
 }
@@ -76,7 +76,7 @@ std::optional<Chunk> QueueSubscriptionSourceAdapter<T>::tryGenerate()
 {
     is_async_state = false;
 
-    if (isCancelled() || finished)
+    if (isCancelled() || subscription.isDisabled())
         return std::nullopt;
 
     if (need_new_data)
@@ -113,7 +113,6 @@ void QueueSubscriptionSourceAdapter<T>::onUpdatePorts()
     if (getPort().isFinished())
     {
         LOG_DEBUG(log, "output port is finished, disabling subscription");
-        finished = true;
         subscription.disable();
     }
 }
@@ -122,7 +121,6 @@ template <class T>
 void QueueSubscriptionSourceAdapter<T>::onCancel()
 {
     LOG_DEBUG(log, "query is cancelled, disabling subscription");
-    finished = true;
     subscription.disable();
 }
 

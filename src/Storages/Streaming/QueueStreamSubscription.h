@@ -14,6 +14,8 @@ public:
     std::list<T> extractAll() { return queue.extractAll(); }
 
     bool isEmpty() const { return queue.isEmpty(); }
+    bool isDisabled() const { return queue.isClosed(); }
+
     std::optional<int> fd() const { return queue.fd(); }
 
     void disable() { queue.close(); }
