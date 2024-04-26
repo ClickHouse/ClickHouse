@@ -1,22 +1,20 @@
 
 #include <Interpreters/MetricLog.h>
 
+
 #include <base/getFQDNOrHostName.h>
-#include <Interpreters/MetricLog.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-
-#include <Parsers/parseQuery.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ExpressionElementParsers.h>
-
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
@@ -46,12 +44,6 @@ ColumnsDescription MetricLogElement::getColumnsDescription()
             "Event time."
         },
         {
-            "event_time_microseconds",
-            std::make_shared<DataTypeDateTime64>(6),
-            parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-            "Event time with microseconds resolution."
-        },
-        {
             "metric",
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
             parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
@@ -74,7 +66,6 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(getFQDNOrHostName());
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
-    columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
 }
@@ -120,7 +111,6 @@ void MetricLog::metricThreadFunction()
 
             MetricLogElement elem;
             elem.event_time = std::chrono::system_clock::to_time_t(current_time);
-            elem.event_time_microseconds = timeInMicroseconds(current_time);
 
             for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
             {
