@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-from copy import deepcopy
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
@@ -37,7 +37,7 @@ class Runners(metaclass=WithIter):
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
-class Labels(metaclass=WithIter):
+class CILabels(metaclass=WithIter):
     """
     Label names or commit tokens in normalized form
     """
@@ -181,6 +181,13 @@ class JobNames(metaclass=WithIter):
     BUGFIX_VALIDATE = "Bugfix validation"
 
 
+class StatusNames(metaclass=WithIter):
+    "Class with statuses that aren't related to particular jobs"
+    CI = "CI running"
+    MERGEABLE = "Mergeable Check"
+    SYNC = "A Sync"
+
+
 # dynamically update JobName with Build jobs
 for attr_name in dir(Build):
     if not attr_name.startswith("__") and not callable(getattr(Build, attr_name)):
@@ -275,7 +282,7 @@ builds_job_config = JobConfig(
     run_command="build_check.py $BUILD_NAME",
 )
 fuzzer_build_job_config = deepcopy(builds_job_config)
-fuzzer_build_job_config.run_by_label = Labels.libFuzzer
+fuzzer_build_job_config.run_by_label = CILabels.libFuzzer
 
 
 @dataclass
@@ -818,28 +825,28 @@ class CIConfig:
 
 CI_CONFIG = CIConfig(
     label_configs={
-        Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        Labels.CI_SET_FAST: LabelConfig(
+        CILabels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        CILabels.CI_SET_FAST: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
             ]
         ),
-        Labels.CI_SET_ARM: LabelConfig(
+        CILabels.CI_SET_ARM: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 Build.PACKAGE_AARCH64,
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        Labels.CI_SET_INTEGRATION: LabelConfig(
+        CILabels.CI_SET_INTEGRATION: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 Build.PACKAGE_RELEASE,
                 JobNames.INTEGRATION_TEST,
             ]
         ),
-        Labels.CI_SET_ANALYZER: LabelConfig(
+        CILabels.CI_SET_ANALYZER: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -849,7 +856,7 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
-        Labels.CI_SET_STATLESS: LabelConfig(
+        CILabels.CI_SET_STATLESS: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -857,7 +864,7 @@ CI_CONFIG = CIConfig(
                 JobNames.STATELESS_TEST_RELEASE,
             ]
         ),
-        Labels.CI_SET_STATLESS_ASAN: LabelConfig(
+        CILabels.CI_SET_STATLESS_ASAN: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -865,7 +872,7 @@ CI_CONFIG = CIConfig(
                 JobNames.STATELESS_TEST_ASAN,
             ]
         ),
-        Labels.CI_SET_STATEFUL: LabelConfig(
+        CILabels.CI_SET_STATEFUL: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -873,7 +880,7 @@ CI_CONFIG = CIConfig(
                 JobNames.STATEFUL_TEST_RELEASE,
             ]
         ),
-        Labels.CI_SET_STATEFUL_ASAN: LabelConfig(
+        CILabels.CI_SET_STATEFUL_ASAN: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -881,7 +888,7 @@ CI_CONFIG = CIConfig(
                 JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
-        Labels.CI_SET_REDUCED: LabelConfig(
+        CILabels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
                 for job in JobNames
@@ -1335,7 +1342,7 @@ CI_CONFIG = CIConfig(
         JobNames.LIBFUZZER_TEST: TestConfig(
             Build.FUZZERS,
             job_config=JobConfig(
-                run_by_label=Labels.libFuzzer,
+                run_by_label=CILabels.libFuzzer,
                 timeout=10800,
                 run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
             ),
@@ -1348,7 +1355,7 @@ CI_CONFIG.validate()
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
     "PR Check",
-    "A Sync",  # Cloud sync
+    StatusNames.SYNC,
     JobNames.BUILD_CHECK,
     JobNames.BUILD_CHECK_SPECIAL,
     JobNames.DOCS_CHECK,
@@ -1461,9 +1468,9 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Integration tests ("),
     ),
     CheckDescription(
-        "Mergeable Check",
+        StatusNames.MERGEABLE,
         "Checks if all other necessary checks are successful",
-        lambda x: x == "Mergeable Check",
+        lambda x: x == StatusNames.MERGEABLE,
     ),
     CheckDescription(
         "Performance Comparison",

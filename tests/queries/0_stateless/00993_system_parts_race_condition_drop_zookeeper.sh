@@ -37,7 +37,7 @@ function thread4()
 {
     while true; do
         REPLICA=$(($RANDOM % 10))
-        $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE alter_table_$REPLICA FINAL"; 
+        $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE alter_table_$REPLICA FINAL SETTINGS receive_timeout=1";
         sleep 0.$RANDOM;
     done
 }

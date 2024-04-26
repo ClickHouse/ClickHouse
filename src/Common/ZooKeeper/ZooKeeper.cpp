@@ -518,7 +518,8 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
     return code != Coordination::Error::ZNONODE;
 }
 
-Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
+Coordination::Error ZooKeeper::getImpl(
+    const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback)
 {
     auto future_result = asyncTryGetNoThrow(path, watch_callback);
 
@@ -541,6 +542,11 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
     }
 }
 
+Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
+{
+    return getImpl(path, res, stat, watch_callback ? std::make_shared<Coordination::WatchCallback>(watch_callback) : Coordination::WatchCallbackPtr{});
+}
+
 std::string ZooKeeper::get(const std::string & path, Coordination::Stat * stat, const EventPtr & watch)
 {
     Coordination::Error code = Coordination::Error::ZOK;
@@ -552,6 +558,17 @@ std::string ZooKeeper::get(const std::string & path, Coordination::Stat * stat, 
 }
 
 std::string ZooKeeper::getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
+{
+    Coordination::Error code = Coordination::Error::ZOK;
+    std::string res;
+    if (tryGetWatch(path, res, stat, watch_callback, &code))
+        return res;
+    else
+        throw KeeperException(code, "Can't get data for node '{}': node doesn't exist", path);
+}
+
+
+std::string ZooKeeper::getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback)
 {
     Coordination::Error code = Coordination::Error::ZOK;
     std::string res;
@@ -575,6 +592,25 @@ bool ZooKeeper::tryGetWatch(
     const std::string & path,
     std::string & res,
     Coordination::Stat * stat,
+    Coordination::WatchCallbackPtr watch_callback,
+    Coordination::Error * return_code)
+{
+    Coordination::Error code = getImpl(path, res, stat, watch_callback);
+
+    if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+        throw KeeperException::fromPath(code, path);
+
+    if (return_code)
+        *return_code = code;
+
+    return code == Coordination::Error::ZOK;
+
+}
+
+bool ZooKeeper::tryGetWatch(
+    const std::string & path,
+    std::string & res,
+    Coordination::Stat * stat,
     Coordination::WatchCallback watch_callback,
     Coordination::Error * return_code)
 {
@@ -588,6 +624,7 @@ bool ZooKeeper::tryGetWatch(
 
     return code == Coordination::Error::ZOK;
 }
+
 
 Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::string & data,
                            int32_t version, Coordination::Stat * stat)
@@ -1063,6 +1100,11 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncGet(const std::string & p
 
 std::future<Coordination::GetResponse> ZooKeeper::asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
 {
+    return asyncTryGetNoThrow(path, watch_callback ? std::make_shared<Coordination::WatchCallback>(watch_callback) : Coordination::WatchCallbackPtr{});
+}
+
+std::future<Coordination::GetResponse> ZooKeeper::asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback)
+{
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
 
@@ -1071,8 +1113,7 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncTryGetNoThrow(const std::
         promise->set_value(response);
     };
 
-    impl->get(path, std::move(callback),
-        watch_callback ? std::make_shared<Coordination::WatchCallback>(watch_callback) : Coordination::WatchCallbackPtr{});
+    impl->get(path, std::move(callback), watch_callback);
     return future;
 }
 

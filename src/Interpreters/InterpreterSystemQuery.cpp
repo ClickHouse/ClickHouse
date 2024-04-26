@@ -397,22 +397,31 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
+                {
+                    if (!cache_data->cache->isInitialized())
+                        continue;
+
                     cache_data->cache->removeAllReleasable(user_id);
+                }
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
-                if (query.key_to_drop.empty())
+
+                if (cache->isInitialized())
                 {
-                    cache->removeAllReleasable(user_id);
-                }
-                else
-                {
-                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                    if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
+                    if (query.key_to_drop.empty())
+                    {
+                        cache->removeAllReleasable(user_id);
+                    }
                     else
-                        cache->removeKey(key, user_id);
+                    {
+                        auto key = FileCacheKey::fromKeyString(query.key_to_drop);
+                        if (query.offset_to_drop.has_value())
+                            cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
+                        else
+                            cache->removeKey(key, user_id);
+                    }
                 }
             }
             break;

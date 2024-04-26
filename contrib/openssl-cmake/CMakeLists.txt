@@ -93,7 +93,7 @@ enable_language(ASM)
 
 if(COMPILER_CLANG)
     add_definitions(-Wno-unused-command-line-argument)
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
 endif()
 
 if(ARCH_AMD64)

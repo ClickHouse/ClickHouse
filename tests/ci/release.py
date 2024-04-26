@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
 from git_helper import Git, commit, release_branch
+from lambda_shared_package.lambda_shared.pr import Labels
 from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
@@ -407,9 +408,9 @@ class Release:
         self._git.update()
         new_version = self.version.patch_update()
         version_type = self.get_stable_release_type()
-        pr_labels = "--label release"
+        pr_labels = f"--label {Labels.RELEASE}"
         if version_type == VersionType.LTS:
-            pr_labels += " --label release-lts"
+            pr_labels += f" --label {Labels.RELEASE_LTS}"
         new_version.with_description(version_type)
         self._update_cmake_contributors(new_version)
         self._commit_cmake_contributors(new_version)

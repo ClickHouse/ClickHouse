@@ -817,6 +817,42 @@ Result:
 └─────────────────────────────────────┘
 ```
 
+## flattenTuple
+
+Returns a flattened `output` tuple from a nested named `input` tuple. Elements of the `output` tuple are the paths from the original `input` tuple. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
+
+**Syntax**
+
+```sql
+flattenTuple(input)
+```
+
+**Parameters**
+
+- `input`: Nested named tuple to flatten. [Tuple](../data-types/tuple).
+
+**Returned value**
+
+- `output` tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t_flatten_tuple(t Tuple(t1 Nested(a UInt32, s String), b UInt32, t2 Tuple(k String, v UInt32))) ENGINE = Memory;
+INSERT INTO t_flatten_tuple VALUES (([(1, 'a'), (2, 'b')], 3, ('c', 4)));
+SELECT flattenTuple(t) FROM t_flatten_tuple;
+```
+
+Result:
+
+``` text
+┌─flattenTuple(t)───────────┐
+│ ([1,2],['a','b'],3,'c',4) │
+└───────────────────────────┘
+```
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).

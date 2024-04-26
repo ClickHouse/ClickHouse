@@ -9,7 +9,7 @@ from threading import Thread
 from typing import Any, Dict, List, Optional
 
 import requests
-from lambda_shared.pr import check_pr_description
+from lambda_shared.pr import Labels, check_pr_description
 from lambda_shared.token import get_cached_access_token
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
@@ -261,7 +261,7 @@ def main(event):
         print("Freshly opened PR, nothing to do")
         return
 
-    if action == "closed" or label == "do not test":
+    if action == "closed" or label == Labels.DO_NOT_TEST:
         print("PR merged/closed or manually labeled 'do not test', will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -281,7 +281,7 @@ def main(event):
         exec_workflow_url(urls_to_cancel, token)
         return
 
-    if label == "can be tested":
+    if label == Labels.CAN_BE_TESTED:
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
