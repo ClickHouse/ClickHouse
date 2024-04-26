@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS t_single_tenured_part SYNC;
 
 CREATE TABLE t_single_tenured_part(s String, v Int64)
-ENGINE=ReplicatedReplacingMergeTree('/clickhouse/tables/{database}/t_single_tenured_part', 'v') ORDER BY s PARTITION BY length(s);
+ENGINE=ReplicatedReplacingMergeTree('/clickhouse/tables/{database}/t_single_tenured_part', 'r1', v) ORDER BY s PARTITION BY length(s);
 
 SYSTEM STOP MERGES t_single_tenured_part;
 
