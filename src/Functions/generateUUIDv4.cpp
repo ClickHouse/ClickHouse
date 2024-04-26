@@ -21,13 +21,10 @@ class FunctionGenerateUUIDv4 : public IFunction
 public:
     static constexpr auto name = "generateUUIDv4";
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
-
+    bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -42,8 +39,6 @@ public:
 
         return std::make_shared<DataTypeUUID>();
     }
-
-    bool isDeterministic() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {

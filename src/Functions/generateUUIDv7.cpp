@@ -83,7 +83,9 @@ namespace UUIDv7Impl
 
     struct CounterDataCommon : UUIDv7Base
     {
-        explicit CounterDataCommon(UUIDAsArray & u) : UUIDv7Base(u) { }
+        explicit CounterDataCommon(UUIDAsArray & u)
+            : UUIDv7Base(u)
+        {}
 
         uint64_t getCounter()
         {
@@ -101,22 +103,16 @@ namespace UUIDv7Impl
             uint64_t timestamp = 0;
             /// Get timestamp of the previous uuid
             for (int i = 0; i != 6; ++i)
-            {
                 timestamp = (timestamp << 8) | uuid[i];
-            }
 
             const uint64_t unix_time_ms = getTimestampMs();
             // continue incrementing counter when clock slightly goes back or when counter overflow happened during the previous UUID generation
             bool need_to_increment_counter = (timestamp == unix_time_ms || timestamp < unix_time_ms + 10000);
             uint64_t counter = 0;
             if (need_to_increment_counter)
-            {
                 counter = getCounter();
-            }
             else
-            {
                 timestamp = unix_time_ms;
-            }
 
             bool counter_incremented = false;
             if (need_to_increment_counter)
@@ -157,7 +153,10 @@ namespace UUIDv7Impl
         {
             // Implement counter monotony only within one thread so function doesn't require mutexes and doesn't affect performance of the same function running simultenaously on other threads
             static inline thread_local UUIDAsArray uuid_data;
-            Data() : CounterDataCommon(uuid_data) { }
+
+            Data()
+                : CounterDataCommon(uuid_data)
+            {}
         };
     };
 
@@ -169,47 +168,32 @@ namespace UUIDv7Impl
             // Implement counter monotony within one timestamp across all threads generating UUIDv7 with counter simultaneously
             static inline UUIDAsArray uuid_data;
             static inline std::mutex mtx;
-            Data() : std::lock_guard<std::mutex>(mtx), CounterDataCommon(uuid_data) { }
+
+            Data()
+                : std::lock_guard<std::mutex>(mtx)
+                , CounterDataCommon(uuid_data)
+            {}
         };
     };
 }
 
 template <typename FillPolicy>
-class FunctionGenerateUUIDv7Base
-: public IFunction,
-  public FillPolicy {
+class FunctionGenerateUUIDv7Base : public IFunction, public FillPolicy
+{
   public:
       using FillPolicy::name;
       using FillPolicyData = typename FillPolicy::Data;
 
       FunctionGenerateUUIDv7Base() = default;
 
-      String getName() const final
-      {
-          return name;
-      }
+      String getName() const final { return name; }
 
-      size_t getNumberOfArguments() const final
-      {
-          return 0;
-      }
-
-      bool isDeterministicInScopeOfQuery() const final
-      {
-          return false;
-      }
-      bool useDefaultImplementationForNulls() const final
-      {
-          return false;
-      }
-      bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final
-      {
-          return false;
-      }
-      bool isVariadic() const final
-      {
-          return true;
-      }
+      size_t getNumberOfArguments() const final { return 0; }
+      bool isDeterministic() const override { return false; }
+      bool isDeterministicInScopeOfQuery() const final { return false; }
+      bool useDefaultImplementationForNulls() const final { return false; }
+      bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
+      bool isVariadic() const final { return true; }
 
       DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
       {
@@ -217,15 +201,9 @@ class FunctionGenerateUUIDv7Base
               throw Exception(
                   ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                   "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
-                  getName(),
-                  arguments.size());
+                  getName(), arguments.size());
 
           return std::make_shared<DataTypeUUID>();
-      }
-
-      bool isDeterministic() const override
-      {
-          return false;
       }
 
       ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
