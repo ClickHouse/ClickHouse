@@ -30,26 +30,11 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     if (table_join.joinUseNulls())
         return 0;
 
-    bool check_left_stream = false;
-    bool check_right_stream = false;
+    bool check_left_stream = table_join.kind() == JoinKind::Right || table_join.kind() == JoinKind::Full;
+    bool check_right_stream = table_join.kind() == JoinKind::Left || table_join.kind() == JoinKind::Full;
 
-    if (table_join.kind() == JoinKind::Left)
-    {
-        check_right_stream = true;
-    }
-    else if (table_join.kind() == JoinKind::Right)
-    {
-        check_left_stream = true;
-    }
-    else if (table_join.kind() == JoinKind::Full)
-    {
-        check_left_stream = true;
-        check_right_stream = true;
-    }
-    else
-    {
+    if (!check_left_stream && !check_right_stream)
         return 0;
-    }
 
     const auto & filter_dag = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
