@@ -172,14 +172,11 @@ void MergeSortingTransform::consume(Chunk chunk)
         size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
         auto & tmp_stream = tmp_data->createStream(header_without_constants, reserve_size);
         size_t max_merged_block_size = this->max_merged_block_size;
-        if (max_merged_block_size > 0)
+        if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
         {
             auto avg_row_bytes = sum_bytes_in_blocks / sum_rows_in_blocks;
             /// max_merged_block_size >= 128
             max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
-            /// when max_block_size < 128, use max_block_size.
-            /// max_block_size still works.
-            max_merged_block_size = std::min(this->max_merged_block_size, max_merged_block_size);
         }
         merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, tmp_stream, log);
