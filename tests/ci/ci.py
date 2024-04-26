@@ -1365,7 +1365,9 @@ def _configure_jobs(
         batches_to_do: List[int] = []
         add_to_skip = False
 
-        if job_config.pr_only and (pr_info.is_release_branch and not pr_info.is_merge_queue):
+        if job_config.pr_only and (
+            pr_info.is_release_branch and not pr_info.is_merge_queue
+        ):
             # run only in PR's wf and in the MQ wf
             continue
         if job_config.release_only and not pr_info.is_release_branch:
