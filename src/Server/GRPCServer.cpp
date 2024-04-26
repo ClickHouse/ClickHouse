@@ -1,6 +1,7 @@
 #include "GRPCServer.h"
 #include <limits>
 #include <memory>
+#include <Poco/Net/SocketAddress.h>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -322,12 +323,18 @@ namespace
         {
             /// Returns a string like ipv4:127.0.0.1:55930 or ipv6:%5B::1%5D:55930
             String uri_encoded_peer = grpc_context.peer();
-            uri_encoded_peer = uri_encoded_peer.substr(uri_encoded_peer.find(':') + 1);
 
-            String peer;
-            Poco::URI::decode(uri_encoded_peer, peer);
+            if (uri_encoded_peer.starts_with("ipv4") || uri_encoded_peer.starts_with("ipv6"))
+            {
+                uri_encoded_peer = uri_encoded_peer.substr(uri_encoded_peer.find(':') + 1);
 
-            return Poco::Net::SocketAddress{peer};
+                String peer;
+                Poco::URI::decode(uri_encoded_peer, peer);
+
+                return Poco::Net::SocketAddress{Poco::Net::AddressFamily::Family::IPv4, uri_encoded_peer};
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ipv4 or ipv6 protocol in peer address, got {}", uri_encoded_peer);
         }
 
         std::optional<String> getClientHeader(const String & key) const
