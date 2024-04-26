@@ -57,6 +57,14 @@ private:
 
     bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent);
 
+    bool traverseTreeIn(
+        const String & function_name,
+        const RPNBuilderTreeNode & key_node,
+        const ConstSetPtr & prepared_set,
+        const DataTypePtr & type,
+        const ColumnPtr & column,
+        RPNElement & out);
+
     bool traverseTreeEquals(
         const String & function_name,
         const RPNBuilderTreeNode & key_node,
