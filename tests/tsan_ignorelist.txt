@@ -3,7 +3,7 @@
 #  [1]: https://clang.llvm.org/docs/SanitizerSpecialCaseList.html
 #  [2]: https://github.com/google/sanitizers/wiki/ThreadSanitizerSuppressions
 #
-
+[thread]
 # https://github.com/ClickHouse/ClickHouse/issues/55629
 fun:rd_kafka_broker_set_nodename
 # https://github.com/ClickHouse/ClickHouse/issues/60443
