@@ -3,7 +3,7 @@
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 
 /// TODO: rename to MetadataStorageTransactionState.
-#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
+#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
 /**
  * Implementations for transactional operations with metadata used by MetadataStorageFromDisk
@@ -17,7 +17,7 @@ class MetadataOperationsHolder
 {
 private:
     std::vector<MetadataOperationPtr> operations;
-    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
+    MetadataStorageTransactionState state{MetadataStorageTransactionState::PREPARING};
 
     void rollback(size_t until_pos);
 

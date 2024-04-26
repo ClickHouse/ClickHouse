@@ -13,7 +13,7 @@ extern const int FS_METADATA_ERROR;
 void MetadataOperationsHolder::rollback(size_t until_pos)
 {
     /// Otherwise everything is alright
-    if (state == MetadataFromDiskTransactionState::FAILED)
+    if (state == MetadataStorageTransactionState::FAILED)
     {
         for (int64_t i = until_pos; i >= 0; --i)
         {
@@ -23,7 +23,7 @@ void MetadataOperationsHolder::rollback(size_t until_pos)
             }
             catch (Exception & ex)
             {
-                state = MetadataFromDiskTransactionState::PARTIALLY_ROLLED_BACK;
+                state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
                 ex.addMessage(fmt::format("While rolling back operation #{}", i));
                 throw;
             }
@@ -37,24 +37,24 @@ void MetadataOperationsHolder::rollback(size_t until_pos)
 
 void MetadataOperationsHolder::addOperation(MetadataOperationPtr && operation)
 {
-    if (state != MetadataFromDiskTransactionState::PREPARING)
+    if (state != MetadataStorageTransactionState::PREPARING)
         throw Exception(
             ErrorCodes::FS_METADATA_ERROR,
             "Cannot add operations to transaction in {} state, it should be in {} state",
             toString(state),
-            toString(MetadataFromDiskTransactionState::PREPARING));
+            toString(MetadataStorageTransactionState::PREPARING));
 
     operations.emplace_back(std::move(operation));
 }
 
 void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
 {
-    if (state != MetadataFromDiskTransactionState::PREPARING)
+    if (state != MetadataStorageTransactionState::PREPARING)
         throw Exception(
             ErrorCodes::FS_METADATA_ERROR,
             "Cannot commit transaction in {} state, it should be in {} state",
             toString(state),
-            toString(MetadataFromDiskTransactionState::PREPARING));
+            toString(MetadataStorageTransactionState::PREPARING));
 
     {
         std::unique_lock lock(metadata_mutex);
@@ -68,7 +68,7 @@ void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 ex.addMessage(fmt::format("While committing metadata operation #{}", i));
-                state = MetadataFromDiskTransactionState::FAILED;
+                state = MetadataStorageTransactionState::FAILED;
                 rollback(i);
                 throw;
             }
@@ -88,7 +88,7 @@ void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
         }
     }
 
-    state = MetadataFromDiskTransactionState::COMMITTED;
+    state = MetadataStorageTransactionState::COMMITTED;
 }
 
 }
