@@ -2,8 +2,8 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
+#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
 #include <unordered_map>
 

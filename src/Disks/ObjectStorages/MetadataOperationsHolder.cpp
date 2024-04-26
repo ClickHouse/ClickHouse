@@ -10,7 +10,7 @@ namespace ErrorCodes
 extern const int FS_METADATA_ERROR;
 }
 
-void MetadataOperationsHolder::rollback(size_t until_pos)
+void MetadataOperationsHolder::rollback(std::unique_lock<SharedMutex> & lock, size_t until_pos)
 {
     /// Otherwise everything is alright
     if (state == MetadataStorageTransactionState::FAILED)
@@ -19,7 +19,7 @@ void MetadataOperationsHolder::rollback(size_t until_pos)
         {
             try
             {
-                operations[i]->undo();
+                operations[i]->undo(lock);
             }
             catch (Exception & ex)
             {
@@ -69,7 +69,7 @@ void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 ex.addMessage(fmt::format("While committing metadata operation #{}", i));
                 state = MetadataStorageTransactionState::FAILED;
-                rollback(i);
+                rollback(lock, i);
                 throw;
             }
         }
@@ -90,5 +90,4 @@ void MetadataOperationsHolder::commitImpl(SharedMutex & metadata_mutex)
 
     state = MetadataStorageTransactionState::COMMITTED;
 }
-
 }

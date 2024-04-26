@@ -59,7 +59,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     write_finalized = true;
 }
 
-void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
+void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
     if (write_finalized)
@@ -134,7 +134,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     write_finalized = true;
 }
 
-void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
+void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     if (write_finalized)
         path_map.emplace(path_from, path_map.extract(path_to).mapped());
@@ -168,7 +168,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     path_map.erase(path_it);
 }
 
-void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
+void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     if (!removed)
         return;

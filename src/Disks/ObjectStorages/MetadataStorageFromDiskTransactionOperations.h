@@ -20,7 +20,7 @@ struct SetLastModifiedOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -35,7 +35,7 @@ struct ChmodOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -51,7 +51,7 @@ struct UnlinkFileOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -66,7 +66,7 @@ struct CreateDirectoryOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -80,7 +80,7 @@ struct CreateDirectoryRecursiveOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -95,7 +95,7 @@ struct RemoveDirectoryOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -108,7 +108,7 @@ struct RemoveRecursiveOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
     void finalize() override;
 
@@ -124,7 +124,8 @@ struct WriteFileOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+
 private:
     std::string path;
     IDisk & disk;
@@ -143,7 +144,7 @@ struct CreateHardlinkOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path_from;
@@ -160,7 +161,7 @@ struct MoveFileOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path_from;
@@ -175,7 +176,7 @@ struct MoveDirectoryOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path_from;
@@ -190,7 +191,7 @@ struct ReplaceFileOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
     void finalize() override;
 
@@ -218,7 +219,7 @@ struct AddBlobOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -246,7 +247,7 @@ struct UnlinkMetadataFileOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;
@@ -271,7 +272,7 @@ struct SetReadonlyFileOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 
 private:
     std::string path;

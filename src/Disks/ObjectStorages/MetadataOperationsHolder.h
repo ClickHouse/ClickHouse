@@ -1,9 +1,9 @@
 #pragma once
 
+#include <mutex>
 #include <Disks/ObjectStorages/IMetadataOperation.h>
-
-/// TODO: rename to MetadataStorageTransactionState.
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Common/SharedMutex.h>
 
 /**
  * Implementations for transactional operations with metadata used by MetadataStorageFromDisk
@@ -19,7 +19,7 @@ private:
     std::vector<MetadataOperationPtr> operations;
     MetadataStorageTransactionState state{MetadataStorageTransactionState::PREPARING};
 
-    void rollback(size_t until_pos);
+    void rollback(std::unique_lock<SharedMutex> & lock, size_t until_pos);
 
 protected:
     void addOperation(MetadataOperationPtr && operation);

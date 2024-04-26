@@ -29,7 +29,7 @@ public:
         ObjectStoragePtr object_storage_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
 class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public IMetadataOperation
@@ -55,7 +55,7 @@ public:
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
 class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : public IMetadataOperation
@@ -74,7 +74,7 @@ public:
         std::filesystem::path && path_, MetadataStorageFromPlainObjectStorage::PathMap & path_map_, ObjectStoragePtr object_storage_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
 }
