@@ -22,7 +22,7 @@ void worker()
 
     // std::cerr << "from worker" << std::endl;
 
-    std::this_thread::sleep_for(3000us);
+    std::this_thread::sleep_for(300us);
     // volatile UInt64 j = 0;
     // for (size_t i = 0; i < 200000; ++i)
     // {
@@ -98,11 +98,14 @@ TEST_P(ThreadPoolTest, Warm)
     warm_pool.setQueueSize(0);
     warm_pool.wait();
 
-    for (size_t i = 0; i < 10000 /* num_jobs */; ++i)
+    for (size_t i = 0; i < 1000 /* num_jobs */; ++i)
     {
-        warm_pool.scheduleOrThrowOnError(worker);
+        for (size_t j = 0; j < 10000 /* num_jobs */; ++j)
+        {
+            warm_pool.scheduleOrThrowOnError(worker);
+        }
+        worker();
     }
-
 
     warm_pool.wait();
 

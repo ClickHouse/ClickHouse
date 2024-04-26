@@ -8,7 +8,7 @@ template <typename Task>
 inline ThreadPoolImpl<Task>::ThreadPoolImpl(const ThreadPoolOptions& options)
     : m_options(options)
     // , m_num_workers(options.threadCount() - options.maxFreeThreads())
-    , m_num_workers(std::min(2UL, options.maxFreeThreads()))
+    , m_num_workers(std::max(2UL, options.maxFreeThreads()))
     , m_workers(options.threadCount())
     , m_raw_workers(options.threadCount())
     , m_orphaned_workers(options.threadCount())
@@ -208,7 +208,7 @@ inline void ThreadPoolImpl<Task>::tryShrink(Worker<Task>* /* worker */)
             }
 
             auto now = std::chrono::steady_clock::now();
-            auto max_free_threads = std::min(2UL, m_options.maxFreeThreads());
+            auto max_free_threads = std::max(2UL, m_options.maxFreeThreads());
             for (size_t worker_num = 0; worker_num < m_workers.size() && m_num_workers > max_free_threads; ++worker_num)
             {
                 const auto worker_ptr = m_workers[worker_num].get();
