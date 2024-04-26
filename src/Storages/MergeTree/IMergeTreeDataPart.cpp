@@ -2392,6 +2392,36 @@ void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
     exception_code = code;
 }
 
+ColumnPtr IMergeTreeDataPart::readColumnSample(const NameAndTypePair & column) const
+{
+    const size_t total_mark = getMarksCount();
+    if (!total_mark)
+        return column.type->createColumn();
+
+    NamesAndTypesList cols;
+    cols.emplace_back(column);
+
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+
+    MergeTreeReaderPtr reader = getReader(
+        cols,
+        storage_snapshot_ptr,
+        MarkRanges{MarkRange(0, 1)},
+        /*virtual_fields=*/ {},
+        /*uncompressed_cache=*/{},
+        storage.getContext()->getMarkCache().get(),
+        std::make_shared<AlterConversions>(),
+        MergeTreeReaderSettings{},
+        ValueSizeMap{},
+        ReadBufferFromFileBase::ProfileCallback{});
+
+    Columns result;
+    result.resize(1);
+    reader->readRows(0, 1, false, 0, result);
+    return result[0];
+}
+
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::Compact);

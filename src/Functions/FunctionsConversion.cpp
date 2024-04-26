@@ -26,6 +26,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
@@ -39,6 +40,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/Concepts.h>
@@ -62,6 +64,7 @@
 #include <Common/IPv6ToBinary.h>
 #include <Core/Types.h>
 
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -1815,6 +1818,7 @@ struct ConvertImpl
 
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
+template <bool throw_on_error>
 struct ConvertImplGenericFromString
 {
     static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
@@ -1854,29 +1858,34 @@ struct ConvertImplGenericFromString
             {
                 serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
             }
-            catch (const Exception & e)
+            catch (const Exception &)
             {
-                auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to);
-                if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && nullable_column)
-                {
-                    auto & col_nullmap = nullable_column->getNullMapData();
-                    if (col_nullmap.size() != nullable_column->size())
-                        col_nullmap.resize_fill(nullable_column->size());
-                    if (nullable_column->size() == (i + 1))
-                        nullable_column->popBack(1);
-                    nullable_column->insertDefault();
-                    continue;
-                }
-                throw;
+                if constexpr (throw_on_error)
+                    throw;
+                /// Check if exception happened after we inserted the value
+                /// (deserializeWholeText should not do it, but let's check anyway).
+                if (column_to.size() > i)
+                    column_to.popBack(column_to.size() - i);
+                column_to.insertDefault();
             }
 
+            /// Usually deserializeWholeText checks for eof after parsing, but let's check one more time just in case.
             if (!read_buffer.eof())
             {
-                if (result_type)
-                    throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                if constexpr (throw_on_error)
+                {
+                    if (result_type)
+                        throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                    else
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to column {}. Expected eof", column_to.getName());
+                }
                 else
-                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                        "Cannot parse string to column {}. Expected eof", column_to.getName());
+                {
+                    if (column_to.size() > i)
+                        column_to.popBack(column_to.size() - i);
+                    column_to.insertDefault();
+                }
             }
         }
     }
@@ -3279,7 +3288,9 @@ private:
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            if (cast_type == CastType::accurateOrNull)
+                return &ConvertImplGenericFromString<false>::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
@@ -3442,7 +3453,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
         else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
         {
@@ -3485,7 +3496,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         DataTypePtr from_type_holder;
@@ -3576,7 +3587,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
@@ -3921,7 +3932,7 @@ private:
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
+                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
                 res->finalize();
                 return res;
             };
@@ -4089,7 +4100,7 @@ private:
             };
         }
 
-        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(*removeNullableOrLowCardinalityNullable(from_type));
+        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
         if (!variant_discr_opt)
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
 
@@ -4195,6 +4206,293 @@ private:
         }
 
         return createColumnToVariantWrapper(from_type, assert_cast<const DataTypeVariant &>(*to_type));
+    }
+
+    WrapperType createDynamicToColumnWrapper(const DataTypePtr & to_type) const
+    {
+        return [this, to_type]
+               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
+        {
+            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
+            const auto & variant_info = column_dynamic.getVariantInfo();
+            auto variant_wrapper = createVariantToColumnWrapper(assert_cast<const DataTypeVariant &>(*variant_info.variant_type), to_type);
+            ColumnsWithTypeAndName args = {ColumnWithTypeAndName(column_dynamic.getVariantColumnPtr(), variant_info.variant_type, "")};
+            return variant_wrapper(args, result_type, col_nullable, input_rows_count);
+        };
+    }
+
+    WrapperType createStringToDynamicThroughParsingWrapper() const
+    {
+        return [&](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+        {
+            auto column = arguments[0].column->convertToFullColumnIfLowCardinality();
+            auto args = arguments;
+            args[0].column = column;
+
+            const ColumnNullable * column_nullable = nullptr;
+            if (isColumnNullable(*args[0].column))
+            {
+                column_nullable = assert_cast<const ColumnNullable *>(args[0].column.get());
+                args[0].column = column_nullable->getNestedColumnPtr();
+            }
+
+            args[0].type = removeNullable(removeLowCardinality(args[0].type));
+
+            if (cast_type == CastType::accurateOrNull)
+                return ConvertImplGenericFromString<false>::execute(args, result_type, column_nullable, input_rows_count);
+            return ConvertImplGenericFromString<true>::execute(args, result_type, column_nullable, input_rows_count);
+        };
+    }
+
+    std::pair<ColumnPtr, DataTypePtr> getReducedVariant(
+        const ColumnVariant & variant_column,
+        const DataTypePtr & variant_type,
+        const std::unordered_map<String, ColumnVariant::Discriminator> & variant_name_to_discriminator,
+        size_t max_result_num_variants,
+        const ColumnDynamic::Statistics & statistics = {}) const
+    {
+        LOG_DEBUG(getLogger("FunctionsConversion"), "getReducedVariant for variant {} with size {}", variant_type->getName(), variant_column.size());
+
+        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
+        /// First check if we don't exceed the limit in current Variant column.
+        if (variant_types.size() < max_result_num_variants || (variant_types.size() == max_result_num_variants && variant_name_to_discriminator.contains("String")))
+            return {variant_column.getPtr(), variant_type};
+
+        /// We want to keep the most frequent variants and convert to string the rarest.
+        std::vector<std::pair<size_t, ColumnVariant::Discriminator>> variant_sizes;
+        variant_sizes.reserve(variant_types.size());
+        std::optional<ColumnVariant::Discriminator> old_string_discriminator;
+        /// List of variants that should be converted to a single String variant.
+        std::vector<ColumnVariant::Discriminator> variants_to_convert_to_string;
+        for (size_t i = 0; i != variant_types.size(); ++i)
+        {
+            /// String variant won't be removed.
+            String variant_name = variant_types[i]->getName();
+            LOG_DEBUG(getLogger("FunctionsConversion"), "Variant {}/{} size: {}, statistics: {}", variant_name, i, variant_column.getVariantByGlobalDiscriminator(i).size(), statistics.data.contains(variant_name) ? toString(statistics.data.at(variant_name)) : "none");
+
+            if (variant_name == "String")
+            {
+                old_string_discriminator = i;
+                /// For simplicity, add this variant to the list that will be converted string,
+                /// so we will process it with other variants when constructing the new String variant.
+                variants_to_convert_to_string.push_back(i);
+            }
+            else
+            {
+                size_t size = 0;
+                if (statistics.data.empty())
+                    size = variant_column.getVariantByGlobalDiscriminator(i).size();
+                else
+                    size = statistics.data.at(variant_name);
+                variant_sizes.emplace_back(size, i);
+            }
+        }
+
+        /// Sort variants by sizes, so we will keep the most frequent.
+        std::sort(variant_sizes.begin(), variant_sizes.end(), std::greater());
+
+        DataTypes remaining_variants;
+        remaining_variants.reserve(max_result_num_variants);
+        /// Add String variant in advance.
+        remaining_variants.push_back(std::make_shared<DataTypeString>());
+        for (auto [_, discr] : variant_sizes)
+        {
+            if (remaining_variants.size() != max_result_num_variants)
+                remaining_variants.push_back(variant_types[discr]);
+            else
+                variants_to_convert_to_string.push_back(discr);
+        }
+
+        auto reduced_variant = std::make_shared<DataTypeVariant>(remaining_variants);
+        const auto & new_variants = reduced_variant->getVariants();
+        /// To construct reduced variant column we will need mapping from old to new discriminators.
+        std::vector<ColumnVariant::Discriminator> old_to_new_discriminators_mapping;
+        old_to_new_discriminators_mapping.resize(variant_types.size());
+        ColumnVariant::Discriminator string_variant_discriminator = 0;
+        for (size_t i = 0; i != new_variants.size(); ++i)
+        {
+            String variant_name = new_variants[i]->getName();
+            if (variant_name == "String")
+            {
+                string_variant_discriminator = i;
+                for (auto discr : variants_to_convert_to_string)
+                    old_to_new_discriminators_mapping[discr] = i;
+            }
+            else
+            {
+                auto old_discr = variant_name_to_discriminator.at(variant_name);
+                old_to_new_discriminators_mapping[old_discr] = i;
+            }
+        }
+
+        /// Convert all reduced variants to String.
+        std::unordered_map<ColumnVariant::Discriminator, ColumnPtr> variants_converted_to_string;
+        variants_converted_to_string.reserve(variants_to_convert_to_string.size());
+        size_t string_variant_size = 0;
+        for (auto discr : variants_to_convert_to_string)
+        {
+            auto string_type = std::make_shared<DataTypeString>();
+            auto string_wrapper = prepareUnpackDictionaries(variant_types[discr], string_type);
+            LOG_DEBUG(getLogger("FunctionsConversion"), "Convert variant {} with size {} to String", variant_types[discr]->getName(), variant_column.getVariantPtrByGlobalDiscriminator(discr)->size());
+            auto column_to_convert = ColumnWithTypeAndName(variant_column.getVariantPtrByGlobalDiscriminator(discr), variant_types[discr], "");
+            ColumnsWithTypeAndName args = {column_to_convert};
+            auto variant_string_column = string_wrapper(args, string_type, nullptr, column_to_convert.column->size());
+            LOG_DEBUG(getLogger("FunctionsConversion"), "Got String column with size {}", variant_string_column->size());
+            string_variant_size += variant_string_column->size();
+            variants_converted_to_string[discr] = variant_string_column;
+        }
+
+        /// Create new discriminators and offsets and fill new String variant according to old discriminators.
+        auto string_variant = ColumnString::create();
+        string_variant->reserve(string_variant_size);
+        auto new_discriminators_column = variant_column.getLocalDiscriminatorsPtr()->cloneEmpty();
+        auto & new_discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*new_discriminators_column).getData();
+        new_discriminators_data.reserve(variant_column.size());
+        auto new_offsets = variant_column.getOffsetsPtr()->cloneEmpty();
+        auto & new_offsets_data = assert_cast<ColumnVariant::ColumnOffsets &>(*new_offsets).getData();
+        new_offsets_data.reserve(variant_column.size());
+        const auto & old_local_discriminators = variant_column.getLocalDiscriminators();
+        const auto & old_offsets = variant_column.getOffsets();
+        LOG_DEBUG(getLogger("FunctionsConversion"), "Discriminators size: {}. Offsets size: {}", old_local_discriminators.size(), old_offsets.size());
+        for (size_t i = 0; i != old_local_discriminators.size(); ++i)
+        {
+            auto old_discr = variant_column.globalDiscriminatorByLocal(old_local_discriminators[i]);
+            LOG_DEBUG(getLogger("FunctionsConversion"), "Row {}, discriminator {}", i, UInt64(old_discr));
+
+            if (old_discr == ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                new_discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                new_offsets_data.push_back(0);
+                continue;
+            }
+
+            auto new_discr = old_to_new_discriminators_mapping[old_discr];
+            new_discriminators_data.push_back(new_discr);
+            if (new_discr != string_variant_discriminator)
+            {
+                LOG_DEBUG(getLogger("FunctionsConversion"), "Keep variant {}", UInt64(old_discr));
+                new_offsets_data.push_back(old_offsets[i]);
+            }
+            else
+            {
+                LOG_DEBUG(getLogger("FunctionsConversion"), "Get string value of variant {} with String column with size {} at offset {}", UInt64(old_discr), variants_converted_to_string[old_discr]->size(), old_offsets[i]);
+                new_offsets_data.push_back(string_variant->size());
+                string_variant->insertFrom(*variants_converted_to_string[old_discr], old_offsets[i]);
+            }
+        }
+
+        /// Create new list of variant columns.
+        Columns new_variant_columns;
+        new_variant_columns.resize(new_variants.size());
+        for (size_t i = 0; i != variant_types.size(); ++i)
+        {
+            auto new_discr = old_to_new_discriminators_mapping[i];
+            if (new_discr != string_variant_discriminator)
+                new_variant_columns[new_discr] = variant_column.getVariantPtrByGlobalDiscriminator(i);
+        }
+        new_variant_columns[string_variant_discriminator] = std::move(string_variant);
+        return {ColumnVariant::create(std::move(new_discriminators_column), std::move(new_offsets), new_variant_columns), reduced_variant};
+    }
+
+    WrapperType createVariantToDynamicWrapper(const DataTypePtr & from_type, const DataTypeDynamic & dynamic_type) const
+    {
+        const auto & from_variant_type = assert_cast<const DataTypeVariant &>(*from_type);
+        size_t max_dynamic_types = dynamic_type.getMaxDynamicTypes();
+        const auto & variants = from_variant_type.getVariants();
+        std::unordered_map<String, ColumnVariant::Discriminator> variant_name_to_discriminator;
+        variant_name_to_discriminator.reserve(variants.size());
+        for (size_t i = 0; i != variants.size(); ++i)
+            variant_name_to_discriminator[variants[i]->getName()] = i;
+
+        return [from_type, max_dynamic_types, variant_name_to_discriminator, this]
+               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
+        {
+            const auto & variant_column = assert_cast<const ColumnVariant &>(*arguments.front().column);
+            auto [reduced_variant_column, reduced_variant_type] = getReducedVariant(variant_column, from_type, variant_name_to_discriminator, max_dynamic_types);
+            return ColumnDynamic::create(reduced_variant_column, reduced_variant_type, max_dynamic_types);
+        };
+    }
+
+    WrapperType createColumnToDynamicWrapper(const DataTypePtr & from_type, const DataTypeDynamic & dynamic_type) const
+    {
+        if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from_type.get()))
+            return createVariantToDynamicWrapper(from_type, dynamic_type);
+
+        if (dynamic_type.getMaxDynamicTypes() == 1)
+        {
+            DataTypePtr string_type = std::make_shared<DataTypeString>();
+            if (from_type->isNullable())
+                string_type = makeNullable(string_type);
+            auto string_wrapper = prepareUnpackDictionaries(from_type, string_type);
+            auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{removeNullable(string_type)});
+            auto variant_wrapper = createColumnToVariantWrapper(string_type, *variant_type);
+            return [string_wrapper, variant_wrapper, string_type, variant_type, max_dynamic_types=dynamic_type.getMaxDynamicTypes()]
+                   (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
+            {
+                auto string_column = string_wrapper(arguments, string_type, col_nullable, input_rows_count);
+                auto column = ColumnWithTypeAndName(string_column, string_type, "");
+                ColumnsWithTypeAndName args = {column};
+                auto variant_column = variant_wrapper(args, variant_type, nullptr, string_column->size());
+                return ColumnDynamic::create(variant_column, variant_type, max_dynamic_types);
+            };
+        }
+
+        if (context && context->getSettingsRef().cast_string_to_dynamic_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
+            return createStringToDynamicThroughParsingWrapper();
+
+        auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{removeNullableOrLowCardinalityNullable(from_type)});
+        auto variant_wrapper = createColumnToVariantWrapper(from_type, *variant_type);
+        return [variant_wrapper, variant_type, max_dynamic_types=dynamic_type.getMaxDynamicTypes()]
+               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
+        {
+            auto variant_res = variant_wrapper(arguments, variant_type, col_nullable, input_rows_count);
+            return ColumnDynamic::create(variant_res, variant_type, max_dynamic_types);
+        };
+    }
+
+    WrapperType createDynamicToDynamicWrapper(const DataTypeDynamic & from_dynamic, const DataTypeDynamic & to_dynamic) const
+    {
+        size_t from_max_types = from_dynamic.getMaxDynamicTypes();
+        size_t to_max_types = to_dynamic.getMaxDynamicTypes();
+        if (from_max_types == to_max_types)
+            return createIdentityWrapper(from_dynamic.getPtr());
+
+        if (to_max_types > from_max_types)
+        {
+            return [to_max_types]
+                   (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
+            {
+                const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), to_max_types);
+            };
+        }
+
+        return [to_max_types, this]
+               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
+        {
+            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+            auto [reduced_variant_column, reduced_variant_type] = getReducedVariant(
+                column_dynamic.getVariantColumn(),
+                column_dynamic.getVariantInfo().variant_type,
+                column_dynamic.getVariantInfo().variant_name_to_discriminator,
+                to_max_types,
+                column_dynamic.getStatistics());
+            return ColumnDynamic::create(reduced_variant_column, reduced_variant_type, to_max_types);
+        };
+    }
+
+    /// Wrapper for conversion to/from Dynamic type
+    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const
+    {
+        if (const auto * from_dynamic = checkAndGetDataType<DataTypeDynamic>(from_type.get()))
+        {
+            if (const auto * to_dynamic = checkAndGetDataType<DataTypeDynamic>(to_type.get()))
+                return createDynamicToDynamicWrapper(*from_dynamic, *to_dynamic);
+
+            return createDynamicToColumnWrapper(to_type);
+        }
+
+        return createColumnToDynamicWrapper(from_type, *checkAndGetDataType<DataTypeDynamic>(to_type.get()));
     }
 
     template <typename FieldType>
@@ -4376,8 +4674,11 @@ private:
 
     WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
-        /// Conversion from/to Variant data type is processed in a special way.
+        /// Conversion from/to Variant/Dynamic data type is processed in a special way.
         /// We don't need to remove LowCardinality/Nullable.
+        if (isDynamic(to_type) || isDynamic(from_type))
+            return createDynamicWrapper(from_type, to_type);
+
         if (isVariant(to_type) || isVariant(from_type))
             return createVariantWrapper(from_type, to_type);
 
@@ -4691,7 +4992,7 @@ private:
 
                 if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
-                    ret = [requested_result_is_nullable](
+                    ret = [requested_result_is_nullable, this](
                               ColumnsWithTypeAndName & arguments,
                               const DataTypePtr & result_type,
                               const ColumnNullable * column_nullable,
@@ -4700,7 +5001,10 @@ private:
                         auto wrapped_result_type = result_type;
                         if (requested_result_is_nullable)
                             wrapped_result_type = makeNullable(result_type);
-                        return ConvertImplGenericFromString::execute(
+                        if (this->cast_type == CastType::accurateOrNull)
+                            return ConvertImplGenericFromString<false>::execute(
+                                arguments, wrapped_result_type, column_nullable, input_rows_count);
+                        return ConvertImplGenericFromString<true>::execute(
                             arguments, wrapped_result_type, column_nullable, input_rows_count);
                     };
                     return true;

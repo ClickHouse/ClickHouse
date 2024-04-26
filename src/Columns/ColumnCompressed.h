@@ -122,6 +122,9 @@ public:
     UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
+    bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
+    void takeDynamicStructureFromSourceColumns(const Columns &) override { throwMustBeDecompressed(); }
+
 protected:
     size_t rows;
     size_t bytes;

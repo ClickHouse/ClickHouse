@@ -534,6 +534,8 @@ public:
         return res;
     }
 
+    virtual bool hasDynamicStructure() const { return false; }
+    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.

@@ -166,6 +166,8 @@ public:
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
+    ColumnPtr readColumnSample(const NameAndTypePair & column) const;
+
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
     SerializationPtr getSerialization(const String & column_name) const;

@@ -105,6 +105,8 @@ public:
         }
     }
 
+    virtual void finalizeBuffers() {}
+
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -122,7 +124,6 @@ protected:
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
     virtual void finalizeImpl() {}
-    virtual void finalizeBuffers() {}
     virtual void writePrefix() {}
     virtual void writeSuffix() {}
     virtual void resetFormatterImpl() {}

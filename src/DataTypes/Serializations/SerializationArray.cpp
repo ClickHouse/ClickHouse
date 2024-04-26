@@ -284,10 +284,11 @@ void SerializationArray::serializeBinaryBulkStateSuffix(
 
 void SerializationArray::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     settings.path.push_back(Substream::ArrayElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state);
+    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
     settings.path.pop_back();
 }
 

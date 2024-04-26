@@ -2,7 +2,7 @@
 #include <memory>
 #include <set>
 
-#include <Core/Settings.h>
+//#include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 
@@ -1183,6 +1183,38 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                         }
                     }
                 }
+                ++it;
+            }
+        }
+    }
+
+    if (!unknown_required_source_columns.empty())
+    {
+
+        for (const NameAndTypePair & pair : source_columns_ordinary)
+        {
+//            std::cerr << "Check ordinary column " << pair.name << "\n";
+            if (!pair.type->hasDynamicSubcolumns())
+                continue;
+
+//            std::cerr << "Check dyamic subcolumns\n";
+
+            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
+            {
+                auto [column_name, dynamic_subcolumn_name] = Nested::splitName(*it);
+//                std::cerr << "Check dyamic subcolumn " << dynamic_subcolumn_name << "\n";
+
+                if (column_name == pair.name)
+                {
+                    if (auto dynamic_subcolumn_type = pair.type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                    {
+//                        std::cerr << "Found\n";
+                        source_columns.emplace_back(*it, dynamic_subcolumn_type);
+                        it = unknown_required_source_columns.erase(it);
+                        continue;
+                    }
+                }
+
                 ++it;
             }
         }

@@ -79,6 +79,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,

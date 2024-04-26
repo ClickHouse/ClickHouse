@@ -186,6 +186,9 @@ public:
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
 
+    bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;

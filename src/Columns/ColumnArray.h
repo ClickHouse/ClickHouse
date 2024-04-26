@@ -175,6 +175,9 @@ public:
 
     size_t getNumberOfDimensions() const;
 
+    bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+
 private:
     WrappedPtr data;
     WrappedPtr offsets;

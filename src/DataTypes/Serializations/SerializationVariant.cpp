@@ -123,7 +123,8 @@ void SerializationVariant::serializeBinaryBulkStateSuffix(
 
 void SerializationVariant::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
     variant_state->states.resize(variants.size());
@@ -132,7 +133,7 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     for (size_t i = 0; i < variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variants[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->states[i]);
+        variants[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->states[i], cache);
         settings.path.pop_back();
     }
 

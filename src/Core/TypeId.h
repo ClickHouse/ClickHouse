@@ -50,6 +50,7 @@ enum class TypeIndex
     IPv6,
     JSONPaths,
     Variant,
+    Dynamic
 };
 
 /**

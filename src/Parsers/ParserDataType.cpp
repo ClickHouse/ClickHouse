@@ -1,17 +1,46 @@
 #include <Parsers/ParserDataType.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-
 
 namespace DB
 {
 
 namespace
 {
+
+class DynamicArgumentsParser : public IParserBase
+{
+private:
+    const char * getName() const override { return "Dynamic data type optional argument"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        ASTPtr identifier;
+        ParserIdentifier identifier_parser;
+        if (!identifier_parser.parse(pos, identifier, expected))
+            return false;
+
+        if (pos->type != TokenType::Equals)
+        {
+            expected.add(pos, "equals operator");
+            return false;
+        }
+
+        ++pos;
+
+        ASTPtr number;
+        ParserNumber number_parser;
+        if (!number_parser.parse(pos, number, expected))
+            return false;
+
+        node = makeASTFunction("equals", identifier, number);
+        return true;
+    }
+};
 
 /// Wrapper to allow mixed lists of nested and normal types.
 /// Parameters are either:
@@ -21,10 +50,21 @@ namespace
 /// - another data type (or identifier)
 class ParserDataTypeArgument : public IParserBase
 {
+public:
+    ParserDataTypeArgument(std::string_view type_name_) : type_name(type_name_)
+    {
+    }
+
 private:
     const char * getName() const override { return "data type argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
+        if (type_name == "Dynamic")
+        {
+            DynamicArgumentsParser parser;
+            return parser.parse(pos, node, expected);
+        }
+
         ParserNestedTable nested_parser;
         ParserDataType data_type_parser;
         ParserAllCollectionsOfLiterals literal_parser(false);
@@ -39,6 +79,8 @@ private:
             || literal_parser.parse(pos, node, expected)
             || data_type_parser.parse(pos, node, expected);
     }
+
+    std::string_view type_name;
 };
 
 }
@@ -140,7 +182,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(), std::make_unique<ParserToken>(TokenType::Comma));
+    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(type_name), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     if (!args_parser.parse(pos, expr_list_args, expected))

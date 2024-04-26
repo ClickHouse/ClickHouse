@@ -42,7 +42,9 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc);
+    void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc);
+
+    void initStreamsIfNeeded(const Block & block);
 
     Block header;
 

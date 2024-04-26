@@ -152,7 +152,7 @@ void SerializationSparse::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    const auto * column_sparse = data.column ? &assert_cast<const ColumnSparse &>(*data.column) : nullptr;
+    const auto * column_sparse = data.column ? typeid_cast<const ColumnSparse *>(data.column.get()) : nullptr;
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
     settings.path.push_back(Substream::SparseOffsets);
@@ -242,12 +242,13 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
 
 void SerializationSparse::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
     auto state_sparse = std::make_shared<DeserializeStateSparse>();
 
     settings.path.push_back(Substream::SparseElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested);
+    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
     state = std::move(state_sparse);

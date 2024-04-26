@@ -20,6 +20,7 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override
     {

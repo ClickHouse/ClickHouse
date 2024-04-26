@@ -606,13 +606,14 @@ void SerializationTuple::serializeBinaryBulkStateSuffix(
 
 void SerializationTuple::deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const
 {
     auto tuple_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
     tuple_state->states.resize(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->deserializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
+        elems[i]->deserializeBinaryBulkStatePrefix(settings, tuple_state->states[i], cache);
 
     state = std::move(tuple_state);
 }

@@ -160,6 +160,9 @@ public:
             VariantElements,
             VariantElement,
 
+            DynamicData,
+            DynamicStructure,
+
             Regular,
         };
 
@@ -231,6 +234,8 @@ public:
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
     using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
 
+    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
+
     struct SerializeBinaryBulkSettings
     {
         OutputStreamGetter getter;
@@ -240,6 +245,14 @@ public:
         bool low_cardinality_use_single_dictionary_for_part = true;
 
         bool position_independent_encoding = true;
+
+        enum class DynamicStatisticsMode
+        {
+            NONE,   /// Don't write statistics.
+            PREFIX, /// Write statistics in prefix.
+            SUFFIX, /// Write statistics in suffix.
+        };
+        DynamicStatisticsMode dynamic_write_statistics = DynamicStatisticsMode::NONE;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -256,6 +269,8 @@ public:
 
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
+
+        bool dynamic_read_statistics = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -273,7 +288,8 @@ public:
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+        DeserializeBinaryBulkStatePtr & /*state*/,
+        SubstreamsDeserializeStatesCache * /*cache*/) const {}
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -392,6 +408,9 @@ public:
 
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+
+    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
+    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
