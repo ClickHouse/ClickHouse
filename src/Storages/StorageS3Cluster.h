@@ -34,7 +34,7 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     void updateConfigurationIfChanged(ContextPtr local_context);
