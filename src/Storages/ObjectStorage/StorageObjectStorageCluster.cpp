@@ -47,7 +47,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setConstraints(constraints_);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
-    setInMemoryMetadata(std::move(metadata));
+    setInMemoryMetadata(metadata);
 }
 
 std::string StorageObjectStorageCluster::getName() const

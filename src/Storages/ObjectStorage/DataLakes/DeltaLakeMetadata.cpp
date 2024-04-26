@@ -136,7 +136,7 @@ struct DeltaLakeMetadata::Impl
      *             \"nullCount\":{\"col-6c990940-59bb-4709-8f2e-17083a82c01a\":0,\"col-763cd7e2-7627-4d8e-9fb7-9e85d0c8845b\":0}}"}}
      * "
      */
-    void processMetadataFile(const String & key, std::set<String> & result)
+    void processMetadataFile(const String & key, std::set<String> & result) const
     {
         auto read_settings = context->getReadSettings();
         auto buf = object_storage->readObject(StoredObject(key), read_settings);

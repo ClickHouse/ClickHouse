@@ -61,7 +61,7 @@ StorageObjectStorage::StorageObjectStorage(
         objects.emplace_back(key);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
-    setInMemoryMetadata(std::move(metadata));
+    setInMemoryMetadata(metadata);
 }
 
 String StorageObjectStorage::getName() const
