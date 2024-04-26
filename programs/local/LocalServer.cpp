@@ -774,7 +774,7 @@ void LocalServer::processConfig()
 }
 
 
-void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description, bool verbose)
+void LocalServer::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
