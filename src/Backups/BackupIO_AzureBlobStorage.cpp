@@ -222,7 +222,7 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
         DBMS_DEFAULT_BUFFER_SIZE,
         write_settings,
         settings,
-        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
 void BackupWriterAzureBlobStorage::removeFile(const String & file_name)
