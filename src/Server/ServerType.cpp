@@ -126,7 +126,7 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "postgresql_port")
         port_type = Type::POSTGRESQL;
-    
+
     else if (port_name == "mongodb_port")
         port_type = Type::MONGODB;
 
@@ -135,7 +135,7 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "prometheus.port")
         port_type = Type::PROMETHEUS;
-        
+
     else if (port_name == "interserver_http_port")
         port_type = Type::INTERSERVER_HTTP;
 

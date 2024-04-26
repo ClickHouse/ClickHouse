@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include "Poco/Nullable.h"
 #include <Poco/DateTimeFormatter.h>
 #include <Poco/DateTimeParser.h>
 #include <Poco/NumberFormatter.h>
@@ -402,6 +403,43 @@ template <>
 inline Int32 BSONWriter::getLength<Poco::Timestamp>(const Poco::Timestamp & t)
 {
     return static_cast<Int32>(sizeof(t.epochMicroseconds() / 1000));
+}
+
+using NullValue = Poco::Nullable<unsigned char>;
+
+
+// BSON Null Value
+// spec:
+template <>
+struct ElementTraits<NullValue>
+{
+    enum
+    {
+        TypeId = 0x0A
+    };
+
+    static std::string toString(const NullValue &) { return "null"; }
+
+    static NullValue fromString(const std::string &) { return NullValue(); }
+};
+
+
+template <>
+inline NullValue BSONReader::read<NullValue>()
+{
+    return NullValue();
+}
+
+
+template <>
+inline void BSONWriter::write<NullValue>(const NullValue &)
+{
+}
+
+template <>
+inline Int32 BSONWriter::getLength<NullValue>(const NullValue &)
+{
+    return 0;
 }
 
 

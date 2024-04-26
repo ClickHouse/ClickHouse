@@ -9,15 +9,6 @@
 #include "IServer.h"
 #include "config.h"
 
-#if USE_SSL
-#    include <Poco/Net/SecureStreamSocket.h>
-#endif
-
-namespace CurrentMetrics
-{
-extern const Metric MongoDBConnection;
-}
-
 namespace DB
 {
 class ReadBufferFromPocoSocket;
@@ -49,10 +40,6 @@ private:
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
-
-#if USE_SSL
-    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
-#endif
 };
 
 }

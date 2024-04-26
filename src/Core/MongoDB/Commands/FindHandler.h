@@ -25,26 +25,8 @@ struct FindCommand
     BSON::Document::Ptr filter;
     BSON::Document::Ptr sort;
     BSON::Document::Ptr projection;
-    BSON::Element::Ptr hint; // can be document or string
-    Int32 skip;
     std::optional<Int32> limit;
-    Int32 batch_size;
-    bool single_batch;
-    BSON::Element::Ptr comment; // any
-    Int32 max_time_ms;
-    BSON::Document::Ptr read_concern;
-    BSON::Document::Ptr max;
-    BSON::Document::Ptr min;
-    bool return_key;
-    bool show_record_id;
-    bool tailable;
-    bool oplog_replay;
-    bool no_cursor_timeout;
-    bool await_data;
-    bool allow_partial_result;
-    BSON::Document::Ptr collation;
-    bool allow_disk_use;
-    BSON::Document::Ptr let;
+    // TODO support other options
 };
 
 
@@ -64,35 +46,6 @@ FindCommand::Ptr parseFindCommand(Command::Ptr command)
     if (extra->exists("limit"))
         find_cmd->limit = extra->takeValue<Int32>("limit");
     return find_cmd;
-}
-
-std::string makeElementIntoQuery(BSON::Element::Ptr elem)
-{
-    switch (elem->getType())
-    {
-        case BSON::ElementTraits<double>::TypeId:
-        case BSON::ElementTraits<Int32>::TypeId:
-        case BSON::ElementTraits<Int64>::TypeId:
-        case BSON::ElementTraits<Poco::Timestamp>::TypeId:
-            return elem->toString();
-        case BSON::ElementTraits<BSON::Document::Ptr>::TypeId:
-        case BSON::ElementTraits<BSON::Binary::Ptr>::TypeId:
-        case BSON::ElementTraits<BSON::Array::Ptr>::TypeId:
-        case BSON::ElementTraits<BSON::ObjectId::Ptr>::TypeId:
-            LOG_WARNING(getLogger("MongoDB::QueryParser"), "invalid data in query");
-            throw std::logic_error("");
-        case BSON::ElementTraits<bool>::TypeId: {
-            auto tmp = elem.cast<BSON::ConcreteElement<bool>>();
-            return (tmp->getValue() ? "True" : "False");
-        }
-        case BSON::ElementTraits<std::string>::TypeId: {
-            auto tmp = elem.cast<BSON::ConcreteElement<std::string>>();
-            return fmt::format("\'{}\'", tmp->getValue());
-        }
-        default: {
-            throw Poco::NotImplementedException();
-        }
-    }
 }
 
 std::string makeQueryConditionForColumn(const std::string & column_name, BSON::Element::Ptr payload)

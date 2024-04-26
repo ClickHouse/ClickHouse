@@ -1,6 +1,6 @@
 #include "MongoDBHandler.h"
 #include <Core/MongoDB/Commands/Commands.h>
-#include <Core/MongoDB/Commands/FindCommand.h>
+#include <Core/MongoDB/Commands/CommonHandlers.h>
 #include <Core/MongoDB/Message.h>
 #include <Core/MongoDB/MessageHeader.h>
 #include <Core/MongoDB/MessageReader.h>
@@ -47,41 +47,62 @@ void MongoDBHandler::handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB
     std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
     auto secret_key = dis(gen);
 
-    switch (command->getType())
+    ContextMutablePtr context;
+    if (command->getDBName() != "admin")
     {
-        case MongoDB::CommandTypes::IsMaster:
-            res = MongoDB::handleIsMaster();
-            writer.write_op_reply(res, message->getHeader().getRequestID());
-            return;
-        case MongoDB::CommandTypes::Hello:
-            res = MongoDB::handleIsMaster();
+        // TODO support admin commands like getParameter, Hello and other
+        // NOTE: currently supported operations with regular dbs&tables
+        session->sessionContext()->setCurrentDatabase(command->getDBName());
+        context = session->makeQueryContext();
+        context->setCurrentQueryId(fmt::format("mongodb:{:d}:{:d}", connection_id, secret_key));
+        LOG_DEBUG(log, "Made context for queries");
+    }
+    try
+    {
+        switch (command->getType())
+        {
+            case MongoDB::CommandTypes::IsMaster:
+                res = MongoDB::handleIsMaster();
+                writer.write_op_reply(res, message->getHeader().getRequestID());
+                return;
+            case MongoDB::CommandTypes::Hello:
+                res = MongoDB::handleIsMaster();
+                break;
+            case MongoDB::CommandTypes::BuildInfo:
+                res = MongoDB::handleBuildInfo();
+                break;
+            case MongoDB::CommandTypes::GetParameter:
+                res = MongoDB::handleGetParameter(command);
+                break;
+            case MongoDB::CommandTypes::Ping:
+                res = MongoDB::handlePing();
+                break;
+            case MongoDB::CommandTypes::GetLog:
+                res = MongoDB::handleGetLog(command);
+                break;
+            case MongoDB::CommandTypes::Aggregate:
+                if (command->getDBName() == "admin")
+                    res = MongoDB::handleAtlasCLI(command);
+                else
+                    res = MongoDB::handleAggregate(command, context);
+                break;
+            case MongoDB::CommandTypes::Find: {
+                res = MongoDB::handleFind(command, context);
+            }
             break;
-        case MongoDB::CommandTypes::BuildInfo:
-            res = MongoDB::handleBuildInfo();
-            break;
-        case MongoDB::CommandTypes::GetParameter:
-            res = MongoDB::handleGetParameter(command);
-            break;
-        case MongoDB::CommandTypes::Ping:
-            res = MongoDB::handlePing();
-            break;
-        case MongoDB::CommandTypes::GetLog:
-            res = MongoDB::handleGetLog(command);
-            break;
-        case MongoDB::CommandTypes::Aggregate:
-            res = MongoDB::handleAggregate(command);
-            break;
-        case MongoDB::CommandTypes::Find: {
-            session->sessionContext()->setCurrentDatabase(command->getDBName());
-            auto context = session->makeQueryContext();
-            context->setCurrentQueryId(fmt::format("mongodb:{:d}:{:d}", connection_id, secret_key));
-            res = MongoDB::handleFind(command, context);
+            case MongoDB::CommandTypes::Unknown:
+                LOG_ERROR(log, "Unknown MongoDB command");
+                res = MongoDB::handleUnknownCommand(command);
+                break;
         }
-        break;
-        case MongoDB::CommandTypes::Unknown:
-            LOG_ERROR(log, "Unknown MongoDB command");
-            res = MongoDB::handleUnknownCommand(command);
-            break;
+    }
+    catch (const Poco::Exception & e)
+    {
+        res = MongoDB::handleError(e.displayText());
+    }
+    catch (std::exception & e)
+    {
+        res = MongoDB::handleError(e.what());
     }
     writer.write(res, message->getHeader().getRequestID());
 }
@@ -123,7 +144,7 @@ void MongoDBHandler::run()
             return;
         }
         MongoDB::MessageHeader::OpCode op_code = message->getHeader().getOpCode();
-        LOG_INFO(log, "GOT OPCODE {}", static_cast<int>(op_code));
+        LOG_INFO(log, "GOT OPCODE {}, request_id: {}", static_cast<int>(op_code), message->getHeader().getRequestID());
         switch (op_code)
         {
             case MongoDB::MessageHeader::OP_QUERY: {
@@ -139,7 +160,7 @@ void MongoDBHandler::run()
             }
             break;
             default:
-                throw Poco::NotImplementedException();
+                throw Poco::NotImplementedException("MongoDB Handler: Unknown OpCode");
         }
         in->next();
     }

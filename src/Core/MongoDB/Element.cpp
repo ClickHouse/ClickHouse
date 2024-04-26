@@ -48,6 +48,9 @@ BSON::Element::Ptr Element::fromTypeId(UInt8 typeId, const std::string & name)
         case ElementTraits<ObjectId::Ptr>::TypeId:
             element = new ConcreteElement<ObjectId::Ptr>(name, new ObjectId);
             break;
+        case ElementTraits<NullValue>::TypeId:
+            element = new ConcreteElement<NullValue>(name, NullValue());
+            break;
         default: {
             std::stringstream ss;
             ss << "Element " << name << " contains an unsupported type 0x" << std::hex << static_cast<int>(typeId);
@@ -66,6 +69,11 @@ UInt8 Element::typeIdFromString(const std::string & type)
         return ElementTraits<Int32>::TypeId;
     else if (type == "Int64")
         return ElementTraits<Int64>::TypeId;
+    else if (type == "UInt64")
+    {
+        LOG_WARNING(getLogger("MongoDB::typeIdFromString"), "Conveting UInt64 to Int64");
+        return ElementTraits<Int64>::TypeId;
+    }
     else if (type == "Float64")
         return ElementTraits<double>::TypeId;
     else if (type == "String")
