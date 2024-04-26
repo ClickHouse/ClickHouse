@@ -76,11 +76,11 @@ void PrettyBlockOutputFormat::calculateWidths(
                 {
                     if (serialized_value[k] == '\n')
                     {
-                        row_width = std::max(row_width, k - row_start + 1 + (row_start != 0));
+                        row_width = std::max(row_width, k - row_start);
                         row_start = k + 1;
                     }
                 }
-                widths[i][j] = std::max(row_width, serialized_value.size() - row_start + 1);
+                widths[i][j] = std::max(row_width, serialized_value.size() - row_start);
             }
             max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i],
                 std::min<UInt64>(format_settings.pretty.max_column_pad_width,
@@ -441,8 +441,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     if (size_t line_breake_pos = serialized_value.find_first_of('\n'); line_breake_pos != String::npos)
     {
         has_break_line = true;
-        serialized_value = serialized_value.substr(0, line_breake_pos) + "…";
-        value_width = serialized_value.size() - 3;
+        serialized_value = serialized_value.substr(0, line_breake_pos);
+        value_width = serialized_value.size() - 1;
     }
 
     if (cut_to_width && value_width > cut_to_width)
@@ -462,7 +462,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         value_width = format_settings.pretty.max_value_width;
     }
-    else
+    else if (!has_break_line)
         serialized_value += ' ';
 
     auto write_padding = [&]()
@@ -486,6 +486,9 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         out.write(serialized_value.data(), serialized_value.size());
         write_padding();
     }
+
+    if (has_break_line)
+        writeString("…", out);
 }
 
 void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, const std::vector<String> & transferred_row)
@@ -495,6 +498,10 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
                                         ascii_grid_symbols;
 
     size_t num_columns = max_widths.size();
+
+    if (format_settings.pretty.output_format_pretty_row_numbers)
+        for (size_t i = 0; i < row_number_width; ++i)
+            writeChar(' ', out);
 
     writeCString(grid_symbols.bar, out);
     std::vector<String> new_transferred_row(num_columns);
@@ -508,22 +515,21 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
 
         String value = transferred_row[j];
         cur_width = value.size();
+        bool has_break_line = false;
 
         if (size_t break_line_pos = value.find_first_of('\n'); break_line_pos != String::npos)
         {
             has_transferred_row = true;
             new_transferred_row[j] = value.substr(break_line_pos + 1);
-            value = value.substr(0, break_line_pos) + "…";
-            cur_width = value.size() - 2;
+            value = value.substr(0, break_line_pos);
+            cur_width = value.size();
+            has_break_line = true;
         }
 
         if (!value.empty())
-        {
-            value = "…" + value;
-            cur_width += 1;
-        }
-
-        value = " " + value + " ";
+            writeString("…", out);
+        else
+            writeChar(' ', out);
 
         auto write_padding = [&]()
         {
@@ -534,6 +540,11 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
 
         out.write(value.data(), value.size());
         write_padding();
+
+        if (has_break_line)
+            writeString("…", out);
+        else
+            writeChar(' ', out);
     }
 
     writeCString(grid_symbols.bar, out);
