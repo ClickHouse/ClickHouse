@@ -329,8 +329,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
                 max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type), has_break_line);
-            
-            if (has_break_line) {
+
+            if (has_break_line)
+            {
                 has_transferred_row = true;
                 String serialized_value = " ";
                 {
@@ -429,7 +430,7 @@ static String highlightDigitGroups(String source)
 
 void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
-    size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number, bool & has_line_breake)
+    size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number, bool & has_break_line)
 {
     String serialized_value = " ";
     {
@@ -439,7 +440,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
     if (size_t line_breake_pos = serialized_value.find_first_of('\n'); line_breake_pos != String::npos)
     {
-        has_line_breake = true;
+        has_break_line = true;
         serialized_value = serialized_value.substr(0, line_breake_pos) + "…";
         value_width = serialized_value.size() - 3;
     }

@@ -98,8 +98,9 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             bool has_break_line = false;
             writeValueWithPadding(*columns[column], *serializations[column],
                 row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type), has_break_line);
-            
-            if (has_break_line) {
+
+            if (has_break_line)
+            {
                 has_transferred_row = true;
                 String serialized_value = " ";
                 {
