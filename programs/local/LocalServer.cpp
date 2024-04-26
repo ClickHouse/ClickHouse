@@ -122,7 +122,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        config_processor.setConfigPath(fs::path(config_path).parent_path());
+        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -312,47 +312,28 @@ void LocalServer::cleanup()
 }
 
 
-static bool checkIfStdinIsRegularFile()
-{
-    struct stat file_stat;
-    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
-}
-
-
-static bool checkIfStdoutIsRegularFile()
-{
-    struct stat file_stat;
-    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
-}
-
-
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || queries.empty()))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
     auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
-    std::optional<String> format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
     }
 
-    auto data_format = backQuoteIfNeed(
-        config().getString("table-data-format", config().getString("format", format_from_file_name ? *format_from_file_name : "TSV")));
-
+    String data_format = backQuoteIfNeed(default_input_format);
 
     if (table_structure == "auto")
         table_structure = "";
@@ -432,8 +413,20 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config(), "localhost");
+
+    ReadBuffer * in;
+    auto table_file = config().getString("table-file", "-");
+    if (table_file == "-" || table_file == "stdin")
+    {
+        in = &std_in;
+    }
+    else
+    {
+        input = std::make_unique<ReadBufferFromFile>(table_file);
+        in = input.get();
+    }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -579,6 +572,7 @@ void LocalServer::processConfig()
     const std::string clickhouse_dialect{"clickhouse"};
     load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
         && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
+    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -618,26 +612,7 @@ void LocalServer::processConfig()
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
-    if (!config().has("output-format") && !config().has("format") && checkIfStdoutIsRegularFile())
-    {
-        std::optional<String> format_from_file_name;
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
-        format = format_from_file_name ? *format_from_file_name : "TSV";
-    }
-    else
-        format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
-    insert_format = "Values";
-
-    /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef().max_insert_block_size.changed)
-    {
-        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
-    }
-    else
-    {
-        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
-            global_context->getSettingsRef().max_insert_block_size);
-    }
+    setDefaultFormatsFromConfiguration();
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
@@ -819,7 +794,6 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
         ("input-format", po::value<std::string>(), "input format of the initial table data")
-        ("output-format", po::value<std::string>(), "default output format")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
@@ -874,6 +848,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
+    if (options.count("wait_for_suggestions_to_load"))
+        config().setBool("wait_for_suggestions_to_load", true);
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)

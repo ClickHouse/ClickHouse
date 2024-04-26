@@ -216,11 +216,14 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     return tags
 
 
-def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str]) -> List[str]:
+def buildx_args(
+    urls: Dict[str, str], arch: str, direct_urls: List[str], version: str
+) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
         f"--label=com.clickhouse.build.githash={git.sha}",
+        f"--label=com.clickhouse.build.version={version}",
     ]
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
@@ -267,7 +270,9 @@ def build_and_push_image(
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
                 urls = [url for url in direct_urls[arch] if ".tgz" in url]
-        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls))
+        cmd_args.extend(
+            buildx_args(repo_urls, arch, direct_urls=urls, version=version.describe)
+        )
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
@@ -357,7 +362,7 @@ def main():
     del args.image_repo
     del args.push
 
-    if pr_info.is_master():
+    if pr_info.is_master:
         push = True
 
     image = DockerImageData(image_path, image_repo, False)
@@ -369,9 +374,10 @@ def main():
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
         if not args.bucket_prefix:
-            repo_urls[
-                arch
-            ] = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}"
+            repo_urls[arch] = (
+                f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
+                f"{release_or_pr}/{pr_info.sha}/{build_name}"
+            )
         else:
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
         if args.allow_build_reuse:

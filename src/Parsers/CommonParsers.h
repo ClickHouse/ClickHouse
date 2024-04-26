@@ -299,6 +299,7 @@ namespace DB
     MR_MACROS(MOD, "MOD") \
     MR_MACROS(MODIFY_COLUMN, "MODIFY COLUMN") \
     MR_MACROS(MODIFY_COMMENT, "MODIFY COMMENT") \
+    MR_MACROS(MODIFY_DEFINER, "MODIFY DEFINER") \
     MR_MACROS(MODIFY_ORDER_BY, "MODIFY ORDER BY") \
     MR_MACROS(MODIFY_QUERY, "MODIFY QUERY") \
     MR_MACROS(MODIFY_REFRESH, "MODIFY REFRESH") \
@@ -445,6 +446,7 @@ namespace DB
     MR_MACROS(SPATIAL, "SPATIAL") \
     MR_MACROS(SQL_SECURITY, "SQL SECURITY") \
     MR_MACROS(SS, "SS") \
+    MR_MACROS(START_TRANSACTION, "START TRANSACTION") \
     MR_MACROS(STATISTIC, "STATISTIC") \
     MR_MACROS(STEP, "STEP") \
     MR_MACROS(STORAGE, "STORAGE") \
@@ -505,6 +507,7 @@ namespace DB
     MR_MACROS(WHEN, "WHEN") \
     MR_MACROS(WHERE, "WHERE") \
     MR_MACROS(WINDOW, "WINDOW") \
+    MR_MACROS(QUALIFY, "QUALIFY") \
     MR_MACROS(WITH_ADMIN_OPTION, "WITH ADMIN OPTION") \
     MR_MACROS(WITH_CHECK, "WITH CHECK") \
     MR_MACROS(WITH_FILL, "WITH FILL") \
@@ -554,7 +557,7 @@ namespace DB
     MR_MACROS(SSH_KEY, "SSH_KEY") \
     MR_MACROS(SSL_CERTIFICATE, "SSL_CERTIFICATE") \
     MR_MACROS(STRICTLY_ASCENDING, "STRICTLY_ASCENDING") \
-    MR_MACROS(WITH_ITEMINDEX, "with_itemindex") \
+    MR_MACROS(WITH_ITEMINDEX, "WITH_ITEMINDEX") \
 
 enum class Keyword : size_t
 {
@@ -598,6 +601,8 @@ public:
     explicit ParserKeyword(Keyword keyword);
 
     constexpr const char * getName() const override { return s.data(); }
+
+    Highlight highlight() const override { return Highlight::keyword; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

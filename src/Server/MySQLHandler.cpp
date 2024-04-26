@@ -21,8 +21,10 @@
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
@@ -191,6 +193,8 @@ MySQLHandler::MySQLHandler(
     settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
     settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
 }
+
+MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
