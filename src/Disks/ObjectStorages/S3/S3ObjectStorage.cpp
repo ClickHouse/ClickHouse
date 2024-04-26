@@ -447,7 +447,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
-    result.last_modified = object_info.last_modification_time;
+    result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.attributes = object_info.metadata;
 
     return result;
@@ -462,7 +462,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
-    result.last_modified = object_info.last_modification_time;
+    result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.attributes = object_info.metadata;
 
     return result;

@@ -76,6 +76,11 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
     create_reader_pool->wait();
 }
 
+void StorageObjectStorageSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
+{
+    setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
+}
+
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
     ConfigurationPtr configuration,
     ObjectStoragePtr object_storage,
@@ -213,9 +218,11 @@ std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const O
 
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
-        return object_info->metadata
-            ? object_info->metadata->last_modified.epochMicroseconds()
-            : 0;
+        if (object_info->metadata)
+        {
+            return object_info->metadata->last_modified.epochTime();
+        }
+        return std::nullopt;
     };
     return schema_cache.tryGetNumRows(cache_key, get_last_mod_time);
 }
@@ -260,7 +267,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto max_parsing_threads = need_only_count ? std::optional<size_t>(1) : std::nullopt;
         read_buf = createReadBuffer(object_info->relative_path, object_info->metadata->size_bytes);
 
-        LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII HEADER: {}", read_from_format_info.format_header.dumpStructure());
         auto input_format = FormatFactory::instance().getInput(
             configuration->format, *read_buf, read_from_format_info.format_header,
             getContext(), max_block_size, format_settings, max_parsing_threads,
@@ -354,7 +360,7 @@ ObjectInfoPtr StorageObjectStorageSource::IIterator::next(size_t processor)
 
     if (object_info)
     {
-        LOG_TEST(&Poco::Logger::get("KeysIterator"), "Next key: {}", object_info->relative_path);
+        LOG_TEST(logger, "Next key: {}", object_info->relative_path);
     }
 
     return object_info;

@@ -38,10 +38,7 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
-    {
-        setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
-    }
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
 
     Chunk generate() override;
 
@@ -65,11 +62,11 @@ protected:
     const bool need_only_count;
     const ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
+
     ColumnsDescription columns_desc;
     std::shared_ptr<IIterator> file_iterator;
     SchemaCache & schema_cache;
     bool initialized = false;
-
     size_t total_rows_in_file = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 

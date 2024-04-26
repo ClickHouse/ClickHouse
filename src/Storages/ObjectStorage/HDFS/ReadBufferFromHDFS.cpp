@@ -116,7 +116,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         // if (file_size != 0 && file_offset >= file_size)
         // {
-        //     LOG_TEST(log, "KSSENII 1 2");
         //     return false;
         // }
 
