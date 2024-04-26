@@ -54,7 +54,7 @@ public:
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
     // Checks if user valid_until is less than current time.
-    // Throws exception otherwise.
+    // Throws exception if valid_until is higher than current time.
     void isUserStillValid();
 
     /// Writes a row about login failure into session log (if enabled)

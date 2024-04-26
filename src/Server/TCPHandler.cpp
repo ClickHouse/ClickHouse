@@ -415,7 +415,8 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
 
-            session->isUserStillValid();
+            if (!is_interserver_mode)
+                session->isUserStillValid();
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {

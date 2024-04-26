@@ -368,7 +368,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
 void Session::isUserStillValid()
 {
-    if (user->valid_until)
+    if (user && user->valid_until)
     {
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
