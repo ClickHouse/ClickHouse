@@ -227,36 +227,6 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             builder.EndVector(start, false, false);
             return;
         }
-        case TypeIndex::Map:
-        {
-            const auto & map_column = assert_cast<const ColumnMap &>(column);
-            const auto & nested_column = map_column.getNestedColumn();
-            const auto & key_value_columns = map_column.getNestedData().getColumns();
-            const auto & key_column = key_value_columns[0];
-            const auto & value_column = key_value_columns[1];
-
-            const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
-            const auto & offsets = nested_column.getOffsets();
-            size_t offset = offsets[row_num - 1];
-            size_t size = offsets[row_num] - offset;
-            size_t start = builder.StartMap()
-            for (size_t i = 0; i < size; ++i)
-            {
-                const char* key = reinterpret_cast<const char*>(key_column->getDataAt(offset + i).data);
-                size_t key_size = map_type.getValueType()->getDefault();
-                serializeField(*value_column, map_type.getValueType(), offset + i, key, key_size);
-            }
-            return;
-        }
-        case TypeIndex::LowCardinality:
-        {
-            const auto & lc_column = assert_cast<const ColumnLowCardinality &>(column);
-            auto dict_type = assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType();
-            auto dict_column = lc_column.getDictionary().getNestedColumn();
-            size_t index = lc_column.getIndexAt(row_num);
-            serializeField(*dict_column, dict_type, index);
-            return;
-        }
         case TypeIndex::UUID:
         {
             const auto & uuid_column = assert_cast<const ColumnUUID &>(column);
