@@ -2262,7 +2262,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);
 
-                bool continue_repl = is_interactive;
+                bool continue_repl;
                 try
                 {
                     continue_repl = processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
@@ -2273,6 +2273,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     // have been reported without throwing (see onReceiveExceptionFromServer()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
+                    continue_repl = is_interactive;
                 }
 
                 // Check whether the error (or its absence) matches the test hints
