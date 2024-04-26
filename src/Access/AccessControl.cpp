@@ -607,7 +607,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}",
+                                            std::vector<std::string>{credentials.getUserName()}},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
