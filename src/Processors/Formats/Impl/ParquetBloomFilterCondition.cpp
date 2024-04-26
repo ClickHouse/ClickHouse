@@ -45,7 +45,9 @@ bool maybeTrueOnBloomFilter(const IColumn * data_column, const std::unique_ptr<p
     static constexpr uint32_t buffer_size = 32;
     uint8_t buffer[buffer_size] = {0};
 
-    for (size_t i = 0; i < data_column->size(); ++i)
+    auto column_size = data_column->size();
+
+    for (size_t i = 0; i < column_size; ++i)
     {
         const auto data_view = data_column->getDataAt(i).toView();
 
@@ -122,7 +124,9 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
         {
             rpn_stack.emplace_back(true, true);
         }
-        else if (element.function == RPNElement::FUNCTION_EQUALS
+        else if (element.function == RPNElement::FUNCTION_IN
+                 || element.function == RPNElement::FUNCTION_NOT_IN
+                 || element.function == RPNElement::FUNCTION_EQUALS
                  || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
             bool match_rows = true;
@@ -130,14 +134,13 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
             const auto & predicate = element.predicate;
             for (size_t index = 0; match_rows && index < predicate.size(); ++index)
             {
-                const auto & query_index_hash = predicate[index];
+                const auto [column_index, column_ptr] = predicate[index];
 
-                if (column_index_to_bf.contains(query_index_hash.first))
+                if (column_index_to_bf.contains(column_index))
                 {
-                    const auto & filter = column_index_to_bf.at(query_index_hash.first);
-                    const ColumnPtr & hash_column = query_index_hash.second;
+                    const auto & filter = column_index_to_bf.at(column_index);
 
-                    match_rows = maybeTrueOnBloomFilter(&*hash_column,
+                    match_rows = maybeTrueOnBloomFilter(&*column_ptr,
                                                         filter,
                                                         match_all);
                 }
@@ -214,6 +217,139 @@ bool ParquetBloomFilterCondition::extractAtomFromTree(const RPNBuilderTreeNode &
     return traverseFunction(node, out, nullptr /*parent*/);
 }
 
+bool ParquetBloomFilterCondition::traverseTreeIn(
+    const String & function_name,
+    const RPNBuilderTreeNode & key_node,
+    const ConstSetPtr &,
+    const DataTypePtr & type,
+    const ColumnPtr & column,
+    ParquetBloomFilterCondition::RPNElement & out)
+{
+    auto key_node_column_name = key_node.getColumnName();
+
+    if (header.has(key_node_column_name))
+    {
+        //        size_t row_size = column->size();
+        size_t position = header.getPositionByName(key_node_column_name);
+        //        const DataTypePtr & index_type = header.getByPosition(position).type;
+        //        const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
+        out.predicate.emplace_back(std::make_pair(position, column));
+
+        if (function_name == "in"  || function_name == "globalIn")
+            out.function = RPNElement::FUNCTION_IN;
+
+        if (function_name == "notIn"  || function_name == "globalNotIn")
+            out.function = RPNElement::FUNCTION_NOT_IN;
+
+        return true;
+    }
+
+    if (key_node.isFunction())
+    {
+        auto key_node_function = key_node.toFunctionNode();
+        auto key_node_function_name = key_node_function.getFunctionName();
+        size_t key_node_function_arguments_size = key_node_function.getArgumentsSize();
+
+        WhichDataType which(type);
+
+        if (which.isTuple() && key_node_function_name == "tuple")
+        {
+            const auto & tuple_column = typeid_cast<const ColumnTuple *>(column.get());
+            const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
+
+            if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
+
+            bool match_with_subtype = false;
+            const auto & sub_columns = tuple_column->getColumns();
+            const auto & sub_data_types = tuple_data_type->getElements();
+
+            for (size_t index = 0; index < key_node_function_arguments_size; ++index)
+                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out);
+
+            return match_with_subtype;
+        }
+
+        if (key_node_function_name == "arrayElement")
+        {
+            throw std::runtime_error {"Arthur check this"};
+            /** Try to parse arrayElement for mapKeys index.
+              * It is important to ignore keys like column_map['Key'] IN ('') because if key does not exists in map
+              * we return default value for arrayElement.
+              *
+              * We cannot skip keys that does not exist in map if comparison is with default type value because
+              * that way we skip necessary granules where map key does not exists.
+              */
+//            if (!prepared_set)
+//                return false;
+//
+//            auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+//            ColumnWithTypeAndName default_column_with_type_to_check { default_column_to_check, type, "" };
+//            ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
+//            auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
+//            const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
+//            bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
+//            if (set_contain_default_value)
+//                return false;
+//
+//            auto first_argument = key_node_function.getArgumentAt(0);
+//            const auto column_name = first_argument.getColumnName();
+//            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
+//            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
+//
+//            if (header.has(map_keys_index_column_name))
+//            {
+//                /// For mapKeys we serialize key argument with bloom filter
+//
+//                auto second_argument = key_node_function.getArgumentAt(1);
+//
+//                Field constant_value;
+//                DataTypePtr constant_type;
+//
+//                if (second_argument.tryGetConstant(constant_value, constant_type))
+//                {
+//                    size_t position = header.getPositionByName(map_keys_index_column_name);
+//                    out.predicate.emplace_back(position, column);
+//                    //                    const DataTypePtr & index_type = header.getByPosition(position).type;
+//                    //                    const DataTypePtr actual_type = getPrimitiveType(index_type);
+//                    //                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), constant_value)));
+//                }
+//                else
+//                {
+//                    return false;
+//                }
+//            }
+//            else if (header.has(map_values_index_column_name))
+//            {
+//                /// For mapValues we serialize set with bloom filter
+//
+//                //                size_t row_size = column->size();
+//                size_t position = header.getPositionByName(map_values_index_column_name);
+//                const DataTypePtr & index_type = header.getByPosition(position).type;
+//                const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
+//                const auto & array_nested_type = array_type.getNestedType();
+//                const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+//                //                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
+//                out.predicate.emplace_back(position, converted_column);
+//            }
+//            else
+//            {
+//                return false;
+//            }
+//
+//            if (function_name == "in"  || function_name == "globalIn")
+//                out.function = RPNElement::FUNCTION_IN;
+//
+//            if (function_name == "notIn"  || function_name == "globalNotIn")
+//                out.function = RPNElement::FUNCTION_NOT_IN;
+//
+//            return true;
+        }
+    }
+
+    return false;
+}
+
 bool ParquetBloomFilterCondition::traverseFunction(
     const RPNBuilderTreeNode & node, ParquetBloomFilterCondition::RPNElement & out, const RPNBuilderTreeNode * parent)
 {
@@ -246,8 +382,8 @@ bool ParquetBloomFilterCondition::traverseFunction(
                 {
                     if (prepared_set->hasExplicitSetElements())
                     {
-                        [[maybe_unused]] const auto prepared_info = getPreparedSetInfo(prepared_set);
-//                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                        const auto prepared_info = getPreparedSetInfo(prepared_set);
+                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
                             maybe_useful = true;
                     }
                 }
