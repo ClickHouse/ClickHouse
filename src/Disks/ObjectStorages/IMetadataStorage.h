@@ -145,7 +145,7 @@ public:
 
     virtual ~IMetadataTransaction() = default;
 
-private:
+protected:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");

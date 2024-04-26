@@ -44,7 +44,7 @@ private:
     bool write_finalized = false;
 
     std::unique_ptr<WriteBufferFromFileBase>
-    moveObject(const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content);
+    createWriteBuf(const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(

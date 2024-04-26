@@ -50,7 +50,8 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     write_created = true;
 
-    path_map.emplace(path, std::move(key_prefix));
+    [[maybe_unused]] auto result = path_map.emplace(path, std::move(key_prefix));
+    chassert(result.second);
 
     writeString(path.string(), *buf);
     buf->finalize();
@@ -60,14 +61,14 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
 {
+    auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
     if (write_finalized)
-        path_map.erase(path);
-
-    if (write_created)
     {
-        auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
+        path_map.erase(path);
         object_storage->removeObject(StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
     }
+    else if (write_created)
+        object_storage->removeObjectIfExists(StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
 }
 
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -79,31 +80,31 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 {
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::moveObject(
-    const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content)
+std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
+    const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content)
 {
-    auto from_it = path_map.find(from);
-    if (from_it == path_map.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", from);
+    auto expected_it = path_map.find(expected_path);
+    if (expected_it == path_map.end())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the expected (source) path '{}' does not exist", expected_path);
 
-    if (path_map.contains(to))
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Metadata object for the destination path '{}' already exists", to);
+    if (path_map.contains(new_path))
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Metadata object for the new (destination) path '{}' already exists", new_path);
 
-    auto object_key = ObjectStorageKey::createAsRelative(from_it->second, PREFIX_PATH_FILE_NAME);
+    auto object_key = ObjectStorageKey::createAsRelative(expected_it->second, PREFIX_PATH_FILE_NAME);
 
-    auto object = StoredObject(object_key.serialize(), path_from / PREFIX_PATH_FILE_NAME);
+    auto object = StoredObject(object_key.serialize(), expected_path / PREFIX_PATH_FILE_NAME);
 
     if (validate_content)
     {
         std::string data;
-        auto readBuf = object_storage->readObject(object);
-        readStringUntilEOF(data, *readBuf);
+        auto read_buf = object_storage->readObject(object);
+        readStringUntilEOF(data, *read_buf);
         if (data != path_from)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Incorrect data for object key {}, expected {}, got {}",
                 object_key.serialize(),
-                path_from,
+                expected_path,
                 data);
     }
 
@@ -122,12 +123,14 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     LOG_TRACE(
         getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", path_from, path_to);
 
-    auto write_buf = moveObject(path_from, path_to, /* validate_content */ true);
+    auto write_buf = createWriteBuf(path_from, path_to, /* validate_content */ true);
     write_created = true;
     writeString(path_to.string(), *write_buf);
     write_buf->finalize();
 
-    path_map.emplace(path_to, path_map.extract(path_from).mapped());
+    [[maybe_unused]] auto result = path_map.emplace(path_to, path_map.extract(path_from).mapped());
+    chassert(result.second);
+
     write_finalized = true;
 }
 
@@ -138,7 +141,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 
     if (write_created)
     {
-        auto write_buf = moveObject(path_to, path_from, /* verify_content */ false);
+        auto write_buf = createWriteBuf(path_to, path_from, /* verify_content */ false);
         writeString(path_from.string(), *write_buf);
         write_buf->finalize();
     }

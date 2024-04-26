@@ -116,7 +116,7 @@ public:
 
     void createDirectoryRecursive(const std::string & path) override;
 
-    void moveDirectory(const std::string & /* path_from */, const std::string & /* path_to */) override;
+    void moveDirectory(const std::string & path_from, const std::string & path_to) override;
 
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;

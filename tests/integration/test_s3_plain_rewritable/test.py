@@ -30,6 +30,7 @@ def start_cluster():
         cluster.shutdown()
 
 
+@pytest.mark.order(0)
 def test_insert():
     for index, value in enumerate(insert_values):
         node.query(
@@ -52,6 +53,7 @@ def test_insert():
         )
 
 
+@pytest.mark.order(1)
 def test_restart():
     for index, value in enumerate(insert_values):
         assert (
@@ -67,6 +69,7 @@ def test_restart():
         )
 
 
+@pytest.mark.order(2)
 def test_drop():
     for index, value in enumerate(insert_values):
         node.query("DROP TABLE IF EXISTS test_{} SYNC".format(index))

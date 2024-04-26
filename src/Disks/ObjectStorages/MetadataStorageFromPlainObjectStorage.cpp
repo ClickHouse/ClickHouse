@@ -288,7 +288,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(
 void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
     if (metadata_storage.object_storage->isWriteOnce())
-        return;
+        throwNotImplemented();
 
     addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from), normalizeDirectoryPath(path_to), *metadata_storage.path_map, object_storage));

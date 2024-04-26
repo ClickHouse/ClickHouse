@@ -212,7 +212,7 @@ public:
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
     virtual std::string generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
     }
 
     /// Get unique id for passed absolute path in object storage.
