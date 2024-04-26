@@ -10,7 +10,8 @@ CREATE TABLE t
 )
 ENGINE = MergeTree
 ORDER BY (x, y, z)
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 8192,
+index_granularity_bytes = 10485760;
 
 INSERT INTO t SELECT
     number,
