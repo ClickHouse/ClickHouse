@@ -1,4 +1,5 @@
 #ifdef USE_PCO
+#if USE_PCO
 
 #include "base/types.h"
 #include <Common/Exception.h>
@@ -211,5 +212,6 @@ void registerCodecQuantile(CompressionCodecFactory & factory)
 
 }
 
+#endif
 #endif
 
