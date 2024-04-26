@@ -729,6 +729,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
+        /// Don't allow relative paths because install script may cd to / when installing
+        /// And having path=./ may break the system
+        if (log_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log path is relative: {}", log_path.string());
+        if (data_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data path is relative: {}", data_path.string());
+        if (pid_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pid path is relative: {}", pid_path.string());
+
         /// Create directories for data and log.
 
         if (fs::exists(log_path))

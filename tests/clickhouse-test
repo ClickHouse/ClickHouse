@@ -3368,6 +3368,7 @@ if __name__ == "__main__":
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
+        os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
