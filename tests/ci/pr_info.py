@@ -318,7 +318,7 @@ class PRInfo:
 
     @property
     def is_release_branch(self) -> bool:
-        return self.number == 0
+        return self.number == 0 and not self.is_merge_queue
 
     @property
     def is_pr(self):

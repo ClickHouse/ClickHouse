@@ -1365,10 +1365,9 @@ def _configure_jobs(
         batches_to_do: List[int] = []
         add_to_skip = False
 
-        if job_config.pr_only and (
-            pr_info.is_release_branch and not pr_info.is_merge_queue
-        ):
-            # run only in PR's wf and in the MQ wf
+        if pr_info.is_merge_queue and job not in MQ_JOBS:
+            continue
+        if job_config.pr_only and pr_info.is_release_branch:
             continue
         if job_config.release_only and not pr_info.is_release_branch:
             continue
@@ -1448,12 +1447,6 @@ def _configure_jobs(
     jobs_to_do, jobs_to_skip, jobs_params = ci_options.apply(
         jobs_to_do, jobs_to_skip, jobs_params
     )
-
-    if pr_info.is_merge_queue:
-        # FIXME: Quick support for MQ workflow which is only StyleCheck for now
-        jobs_to_do = [JobNames.STYLE_CHECK]
-        jobs_to_skip = []
-        print(f"NOTE: This is Merge Queue CI: set jobs to do: [{jobs_to_do}]")
 
     return {
         "digests": digests,
