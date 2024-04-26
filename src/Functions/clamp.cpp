@@ -47,7 +47,7 @@ public:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[2], 1) > 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} the minimum value cannot be greater than the maximum value", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The minimum value cannot be greater than the maximum value for function {}", getName());
 
             size_t best_arg = 0;
             if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) > 0)
