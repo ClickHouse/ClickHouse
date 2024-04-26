@@ -35,10 +35,11 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <cassert>
 #include <chrono>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -47,8 +48,6 @@
 
 namespace DB
 {
-
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 
 namespace ErrorCodes
 {
@@ -241,7 +240,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
             const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
             if (data_file_it == storage.data_files_by_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no information about file {} in StorageLog", data_file_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
             const auto & data_file = *data_file_it->second;
 
             size_t offset = stream_for_prefix ? 0 : offsets[data_file.index];
@@ -299,6 +298,7 @@ public:
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(std::make_shared<StorageSnapshot>(storage, metadata_snapshot))
         , lock(std::move(lock_))
     {
         if (!lock)
@@ -343,6 +343,7 @@ public:
 private:
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     WriteLock lock;
     bool done = false;
 
@@ -448,7 +449,7 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
         auto it = streams.find(data_file_name);
         if (it == streams.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: stream was not created when writing data in LogSink");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream was not created when writing data in LogSink");
 
         Stream & stream = it->second;
         if (stream.written)
@@ -473,16 +474,10 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
         {
             const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
             if (data_file_it == storage.data_files_by_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no information about file {} in StorageLog", data_file_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            const auto & columns = metadata_snapshot->getColumns();
-
-            CompressionCodecPtr compression;
-            if (name_and_type.name == BlockNumberColumn::name)
-                compression = BlockNumberColumn::compression_codec;
-            else
-                compression = columns.getCodecOrDefault(name_and_type.name);
+            auto compression = storage_snapshot->getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -569,7 +564,7 @@ StorageLog::StorageLog(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
     : IStorage(table_id_)
     , WithMutableContext(context_)
@@ -603,7 +598,7 @@ StorageLog::StorageLog(
             file_checker.setEmpty(marks_file_path);
     }
 
-    if (!attach)
+    if (mode < LoadingStrictnessLevel::ATTACH)
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
@@ -1163,7 +1158,7 @@ void registerStorageLog(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.attach,
+            args.mode,
             args.getContext());
     };
 

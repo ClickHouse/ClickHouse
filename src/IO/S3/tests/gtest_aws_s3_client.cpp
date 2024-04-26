@@ -8,7 +8,7 @@
 
 #include <memory>
 
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Poco/URI.h>
 
@@ -45,7 +45,7 @@ String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
     String content;
     for (const auto & [header_name, header_value] : message_header)
     {
-        if (boost::algorithm::starts_with(header_name, "x-amz-server-side-encryption"))
+        if (header_name.starts_with("x-amz-server-side-encryption"))
         {
             content += header_name + ": " + header_value + "\n";
         }
@@ -55,7 +55,7 @@ String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
             boost::split(parts, header_value, [](char c){ return c == ' '; });
             for (const auto & part : parts)
             {
-                if (boost::algorithm::starts_with(part, "SignedHeaders="))
+                if (part.starts_with("SignedHeaders="))
                     content += header_name + ": ... " + part + " ...\n";
             }
         }
@@ -110,7 +110,8 @@ void testServerSideEncryption(
     bool disable_checksum,
     String server_side_encryption_customer_key_base64,
     DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
-    String expected_headers)
+    String expected_headers,
+    bool is_s3express_bucket = false)
 {
     TestPocoHTTPServer http;
 
@@ -144,6 +145,7 @@ void testServerSideEncryption(
         .use_virtual_addressing = uri.is_virtual_hosted_style,
         .disable_checksum = disable_checksum,
         .gcs_issue_compose_request = false,
+        .is_s3express_bucket = is_s3express_bucket,
     };
 
     std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
@@ -157,7 +159,7 @@ void testServerSideEncryption(
         DB::S3::CredentialsConfiguration
         {
             .use_environment_credentials = use_environment_credentials,
-            .use_insecure_imds_request = use_insecure_imds_request
+            .use_insecure_imds_request = use_insecure_imds_request,
         }
     );
 
@@ -293,6 +295,27 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
         "x-amz-server-side-encryption-aws-kms-key-id: alias/test-key\n"
         "x-amz-server-side-encryption-bucket-key-enabled: true\n"
         "x-amz-server-side-encryption-context: arn:aws:s3:::bucket_ARN\n");
+}
+
+TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
+{
+    /// See https://github.com/ClickHouse/ClickHouse/pull/19748
+    testServerSideEncryption(
+        doWriteRequest,
+        /* disable_checksum= */ true,
+        "",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-checksum-crc32;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-sdk-checksum-algorithm, ...\n",
+        /*is_s3express_bucket=*/true);
 }
 
 #endif

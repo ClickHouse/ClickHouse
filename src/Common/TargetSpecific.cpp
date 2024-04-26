@@ -1,7 +1,7 @@
 #include <base/defines.h>
 #include <Common/TargetSpecific.h>
 
-#include <Common/CpuId.h>
+#include <Common/CPUID.h>
 
 namespace DB
 {
@@ -9,25 +9,25 @@ namespace DB
 UInt32 getSupportedArchs()
 {
     UInt32 result = 0;
-    if (Cpu::CpuFlagsCache::have_SSE42)
+    if (CPU::CPUFlagsCache::have_SSE42)
         result |= static_cast<UInt32>(TargetArch::SSE42);
-    if (Cpu::CpuFlagsCache::have_AVX)
+    if (CPU::CPUFlagsCache::have_AVX)
         result |= static_cast<UInt32>(TargetArch::AVX);
-    if (Cpu::CpuFlagsCache::have_AVX2)
+    if (CPU::CPUFlagsCache::have_AVX2)
         result |= static_cast<UInt32>(TargetArch::AVX2);
-    if (Cpu::CpuFlagsCache::have_AVX512F)
+    if (CPU::CPUFlagsCache::have_AVX512F)
         result |= static_cast<UInt32>(TargetArch::AVX512F);
-    if (Cpu::CpuFlagsCache::have_AVX512BW)
+    if (CPU::CPUFlagsCache::have_AVX512BW)
         result |= static_cast<UInt32>(TargetArch::AVX512BW);
-    if (Cpu::CpuFlagsCache::have_AVX512VBMI)
+    if (CPU::CPUFlagsCache::have_AVX512VBMI)
         result |= static_cast<UInt32>(TargetArch::AVX512VBMI);
-    if (Cpu::CpuFlagsCache::have_AVX512VBMI2)
+    if (CPU::CPUFlagsCache::have_AVX512VBMI2)
         result |= static_cast<UInt32>(TargetArch::AVX512VBMI2);
-    if (Cpu::CpuFlagsCache::have_AMXBF16)
+    if (CPU::CPUFlagsCache::have_AMXBF16)
         result |= static_cast<UInt32>(TargetArch::AMXBF16);
-    if (Cpu::CpuFlagsCache::have_AMXTILE)
+    if (CPU::CPUFlagsCache::have_AMXTILE)
         result |= static_cast<UInt32>(TargetArch::AMXTILE);
-    if (Cpu::CpuFlagsCache::have_AMXINT8)
+    if (CPU::CPUFlagsCache::have_AMXINT8)
         result |= static_cast<UInt32>(TargetArch::AMXINT8);
     return result;
 }

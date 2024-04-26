@@ -22,11 +22,22 @@
 #include <Core/Types.h>
 #include <Disks/DirectoryIterator.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/Exception.h>
+#include "config.h"
 
+#if USE_AZURE_BLOB_STORAGE
+#include <Common/MultiVersion.h>
+#include <azure/storage/blobs.hpp>
+#endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -207,12 +218,21 @@ public:
 
     virtual bool isReadOnly() const { return false; }
     virtual bool isWriteOnce() const { return false; }
+    virtual bool isPlain() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
+#if USE_AZURE_BLOB_STORAGE
+    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+#endif
+
 
 private:
     mutable std::mutex throttlers_mutex;

@@ -4,9 +4,11 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
+#include <Common/scope_guard_safe.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/MemorySanitizer.h>
+#include <Common/SharedMutex.h>
 #include <Common/SymbolIndex.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -17,12 +19,18 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
-#include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
 #include <libunwind.h>
 
-#include "config.h"
+#include <boost/algorithm/string/split.hpp>
+
+#if defined(OS_DARWIN)
+/// This header contains functions like `backtrace` and `backtrace_symbols`
+/// Which will be used for stack unwinding on Mac.
+/// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
+#include "execinfo.h"
+#endif
 
 namespace
 {
@@ -264,6 +272,33 @@ void StackTrace::forEachFrame(
 
         callback(current_frame);
     }
+#elif defined(OS_DARWIN)
+    UNUSED(fatal);
+
+    /// This function returns an array of string in a special (a little bit weird format)
+    /// The frame number, library name, address in hex, mangled symbol name, `+` sign, the offset.
+    char** strs = ::backtrace_symbols(frame_pointers.data(), static_cast<int>(size));
+    SCOPE_EXIT_SAFE({free(strs);});
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        StackTrace::Frame current_frame;
+
+        std::vector<std::string> split;
+        boost::split(split, strs[i], isWhitespaceASCII);
+        split.erase(
+            std::remove_if(
+                split.begin(), split.end(),
+                [](const std::string & x) { return x.empty(); }),
+            split.end());
+        assert(split.size() == 6);
+
+        current_frame.virtual_addr = frame_pointers[i];
+        current_frame.physical_addr = frame_pointers[i];
+        current_frame.object = split[1];
+        current_frame.symbol = split[3];
+        callback(current_frame);
+    }
 #else
     UNUSED(fatal);
 
@@ -306,7 +341,11 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
+#if defined(OS_DARWIN)
+    size = backtrace(frame_pointers.data(), capacity);
+#else
     size = unw_backtrace(frame_pointers.data(), capacity);
+#endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
@@ -317,16 +356,19 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::string_view file, const char * const symbol_name)
+String demangleAndCollapseNames(std::optional<std::string_view> file, const char * const symbol_name)
 {
     if (!symbol_name)
         return "?";
 
-    std::string_view file_copy = file;
-    if (auto trim_pos = file.find_last_of('/'); trim_pos != file.npos)
-        file_copy.remove_suffix(file.size() - trim_pos);
-    if (file_copy.ends_with("functional"))
-        return "?";
+    if (file.has_value())
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
+    }
 
     String haystack = demangle(symbol_name);
 
@@ -373,7 +415,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         return callback("<Empty trace>");
 
     size_t frame_index = stack_trace.offset;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     size_t inline_frame_index = 0;
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
@@ -393,8 +435,8 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         if (frame.file.has_value() && frame.line.has_value())
             out << *frame.file << ':' << *frame.line << ": ";
 
-        if (frame.symbol.has_value() && frame.file.has_value())
-            out << demangleAndCollapseNames(*frame.file, frame.symbol->data());
+        if (frame.symbol.has_value())
+            out << demangleAndCollapseNames(frame.file, frame.symbol->data());
         else
             out << "?";
 
@@ -403,9 +445,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
             out << " @ ";
             DB::writePointerHex(frame.physical_addr, out);
         }
-
-        if (frame.object.has_value())
-            out << " in " << *frame.object;
 
         callback(out.str());
     };
@@ -440,7 +479,15 @@ void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, si
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
-using StackTraceCache = std::map<StackTraceTriple, String, std::less<>>;
+struct CacheEntry
+{
+    std::mutex mutex;
+    std::optional<String> stacktrace_string;
+};
+
+using CacheEntryPtr = std::shared_ptr<CacheEntry>;
+
+using StackTraceCache = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
 
 static StackTraceCache & cacheInstance()
 {
@@ -448,27 +495,47 @@ static StackTraceCache & cacheInstance()
     return cache;
 }
 
-static std::mutex stacktrace_cache_mutex;
+static DB::SharedMutex stacktrace_cache_mutex;
 
 String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    /// Note that this cache can grow unconditionally, but practically it should be small.
-    std::lock_guard lock{stacktrace_cache_mutex};
-
-    StackTraceCache & cache = cacheInstance();
     const StackTraceRefTriple key{pointers, offset, size};
 
-    if (auto it = cache.find(key); it != cache.end())
-        return it->second;
-    else
+    /// Calculation of stack trace text is extremely slow.
+    /// We use cache because otherwise the server could be overloaded by trash queries.
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+    StackTraceCache & cache = cacheInstance();
+    CacheEntryPtr cache_entry;
+
+    // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
+    {
+        std::shared_lock read_lock{stacktrace_cache_mutex};
+        if (auto it = cache.find(key); it != cache.end())
+            cache_entry = it->second;
+    }
+
+    // Create a new entry in case of a cache miss
+    if (!cache_entry)
+    {
+        std::unique_lock write_lock{stacktrace_cache_mutex};
+
+        // We should recheck because `shared_lock` was released before we acquired `write_lock`
+        if (auto it = cache.find(key); it != cache.end())
+            cache_entry = it->second; // Another thread managed to created this entry before us
+        else
+            cache_entry = cache.emplace(StackTraceTriple{pointers, offset, size}, std::make_shared<CacheEntry>()).first->second;
+    }
+
+    // Do not hold `stacktrace_cache_mutex` while running possibly slow calculation of stack trace text
+    std::scoped_lock lock(cache_entry->mutex);
+    if (!cache_entry->stacktrace_string.has_value())
     {
         DB::WriteBufferFromOwnString out;
         toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
-
-        return cache.emplace(StackTraceTriple{pointers, offset, size}, out.str()).first->second;
+        cache_entry->stacktrace_string = out.str();
     }
+
+    return *cache_entry->stacktrace_string;
 }
 
 std::string StackTrace::toString() const

@@ -4,6 +4,8 @@ sidebar_position: 170
 sidebar_label: Strings
 ---
 
+import VersionBadge from '@theme/badges/VersionBadge';
+
 # Functions for Working with Strings
 
 Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
@@ -97,8 +99,102 @@ Alias: `OCTET_LENGTH`
 Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 Alias:
-- `CHAR_LENGTH``
+- `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
+
+## left
+
+Returns a substring of string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+left(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT left('Hello', 3);
+```
+
+Result:
+
+```response
+Hel
+```
+
+Query:
+
+```sql
+SELECT left('Hello', -3);
+```
+
+Result:
+
+```response
+He
+```
+
+## leftUTF8
+
+Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
+
+**Syntax**
+
+``` sql
+leftUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+Прив
+```
+
+Query:
+
+```sql
+SELECT leftUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+Пр
+```
 
 ## leftPad
 
@@ -172,6 +268,100 @@ Result:
 ┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
 │ ***абвг                     │    дежз                │
 └─────────────────────────────┴────────────────────────┘
+```
+
+## right
+
+Returns a substring of string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+right(s, offset)
+```
+
+**Parameters**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT right('Hello', 3);
+```
+
+Result:
+
+```response
+llo
+```
+
+Query:
+
+```sql
+SELECT right('Hello', -3);
+```
+
+Result:
+
+```response
+lo
+```
+
+## rightUTF8
+
+Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
+
+**Syntax**
+
+``` sql
+rightUTF8(s, offset)
+```
+
+**Parameters**
+
+- `s`: The UTF-8 encoded string to calculate a substring from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset`: The number of bytes of the offset. [UInt*](../data-types/int-uint).
+
+**Returned value**
+
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
+- An empty string if `length` is 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', 4);
+```
+
+Result:
+
+```response
+ивет
+```
+
+Query:
+
+```sql
+SELECT rightUTF8('Привет', -4);
+```
+
+Result:
+
+```response
+ет
 ```
 
 ## rightPad
@@ -252,13 +442,69 @@ Result:
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
+*Syntax**
+
+``` sql
+lower(input)
+```
+
 Alias: `lcase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT lower('CLICKHOUSE');
+```
+
+```response
+┌─lower('CLICKHOUSE')─┐
+│ clickhouse          │
+└─────────────────────┘
+```
 
 ## upper
 
 Converts the ASCII Latin symbols in a string to uppercase.
 
+**Syntax**
+
+``` sql
+upper(input)
+```
+
 Alias: `ucase`
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT upper('clickhouse');
+```
+
+``` response
+┌─upper('clickhouse')─┐
+│ CLICKHOUSE          │
+└─────────────────────┘
+```
 
 ## lowerUTF8
 
@@ -275,6 +521,34 @@ Converts a string to uppercase, assuming that the string contains valid UTF-8 en
 Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+**Syntax**
+
+``` sql
+upperUTF8(input)
+```
+
+**Parameters**
+
+- `input`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT upperUTF8('München') as Upperutf8;
+```
+
+``` response
+┌─Upperutf8─┐
+│ MÜNCHEN   │
+└───────────┘
+```
 
 ## isValidUTF8
 
@@ -515,7 +789,7 @@ Alias: `concat_ws`
 **Arguments**
 
 - sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- exprN — expression to be concatenated. Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -556,6 +830,7 @@ substring(s, offset[, length])
 Alias:
 - `substr`
 - `mid`
+- `byteSlice`
 
 **Arguments**
 
@@ -585,8 +860,41 @@ Result:
 
 ## substringUTF8
 
-Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the substring of a string `s` which starts at the specified byte index `offset` for Unicode code points. Byte counting starts from `1`. If `offset` is `0`, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+substringUTF8(s, offset[, length])
+```
+
+**Arguments**
+
+- `s`: The string to calculate a substring from. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md) or [Enum](../../sql-reference/data-types/enum.md)
+- `offset`: The starting position of the substring in `s` . [(U)Int*](../../sql-reference/data-types/int-uint.md).
+- `length`: The maximum length of the substring. [(U)Int*](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned value**
+
+A substring of `s` with `length` many bytes, starting at index `offset`.
+
+**Implementation details**
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Example**
+
+```sql
+SELECT 'Täglich grüßt das Murmeltier.' AS str,
+       substringUTF8(str, 9),
+       substringUTF8(str, 9, 5)
+```
+
+```response
+Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
+```
 
 ## substringIndex
 
@@ -621,7 +929,39 @@ Result:
 
 ## substringIndexUTF8
 
-Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, specifically for Unicode code points.
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+substringIndexUTF8(s, delim, count)
+```
+
+**Arguments**
+
+- `s`: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
+- `delim`: The character to split. [String](../../sql-reference/data-types/string.md).
+- `count`: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Returned value**
+
+A substring [String](../../sql-reference/data-types/string.md) of `s` before `count` occurrences of `delim`.
+
+**Implementation details**
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Example**
+
+```sql
+SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)
+```
+
+```response
+www.straßen-in-europa
+```
 
 ## appendTrailingCharIfAbsent
 
@@ -782,6 +1122,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 ```
 
 ## startsWithUTF8
+
+<VersionBadge minVersion='23.8' />
 
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 

@@ -37,12 +37,11 @@ public:
         const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ContextMutablePtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
-        std::unique_ptr<MergeTreeSettings> settings_,
-        bool has_force_restore_data_flag);
+        std::unique_ptr<MergeTreeSettings> settings_);
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -176,7 +175,7 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
-            String & out_disable_reason,
+            PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
@@ -203,7 +202,7 @@ private:
         bool aggressive,
         const String & partition_id,
         bool final,
-        String & disable_reason,
+        PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
@@ -212,7 +211,7 @@ private:
 
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
-        const StorageMetadataPtr & metadata_snapshot, String & disable_reason,
+        const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
     /// For current mutations queue, returns maximum version of mutation for a part,
@@ -261,6 +260,7 @@ private:
                                                                         std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
+    void fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
 
@@ -272,6 +272,8 @@ private:
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
+
+    void assertNotReadonly() const;
 
     friend class MergeTreeSink;
     friend class MergeTreeData;
@@ -306,7 +308,7 @@ private:
     };
 
 protected:
-    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }

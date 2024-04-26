@@ -5,26 +5,416 @@ sidebar_label: "External Disks for Storing Data"
 title: "External Disks for Storing Data"
 ---
 
-Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely — on [Amazon S3](https://aws.amazon.com/s3/) disks or in the Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)).
+Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely. Various storages are supported:
+1. [Amazon S3](https://aws.amazon.com/s3/) object storage.
+2. The Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
+3. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-To work with data stored on `Amazon S3` disks use [S3](/docs/en/engines/table-engines/integrations/s3.md) table engine, and to work with data in the Hadoop Distributed File System — [HDFS](/docs/en/engines/table-engines/integrations/hdfs.md) table engine.
+:::note ClickHouse also has support for external table engines, which are different from external storage option described on this page as they allow to read data stored in some general file format (like Parquet), while on this page we are describing storage configuration for ClickHouse `MergeTree` family or `Log` family tables.
+1. to work with data stored on `Amazon S3` disks, use [S3](/docs/en/engines/table-engines/integrations/s3.md) table engine.
+2. to work with data in the Hadoop Distributed File System — [HDFS](/docs/en/engines/table-engines/integrations/hdfs.md) table engine.
+3. to work with data stored in Azure Blob Storage use [AzureBlobStorage](/docs/en/engines/table-engines/integrations/azureBlobStorage.md) table engine.
+:::
 
-To load data from a web server with static files use a disk with type [web](#storing-data-on-webserver).
+## Configuring external storage {#configuring-external-storage}
 
-## Configuring HDFS {#configuring-hdfs}
+[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly.
 
-[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) family table engines can store data to HDFS using a disk with type `HDFS`.
+Disk configuration requires:
+1. `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs`, `local_blob_storage`, `web`.
+2. Configuration of a specific external storage type.
 
-Configuration markup:
+Starting from 24.1 clickhouse version, it is possible to use a new configuration option.
+It requires to specify:
+1. `type` equal to `object_storage`
+2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs`, `local_blob_storage` (or just `local` from `24.3`), `web`.
+Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web`.
+Usage of `plain` metadata type is described in [plain storage section](/docs/en/operations/storing-data.md/#storing-data-on-webserver), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them).
+
+E.g. configuration option
+``` xml
+<s3>
+    <type>s3</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+is equal to configuration (from `24.1`):
+``` xml
+<s3>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>local</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+Configuration
+``` xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+is equal to
+``` xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+Example of full storage configuration will look like:
+``` xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+Starting with 24.1 clickhouse version, it can also look like:
+``` xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+In order to make a specific kind of storage a default option for all `MergeTree` tables add the following section to configuration file:
+``` xml
+<clickhouse>
+    <merge_tree>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+</clickhouse>
+```
+
+If you want to configure a specific storage policy only to specific table, you can define it in settings while creating the table:
+
+``` sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS storage_policy = 's3';
+```
+
+You can also use `disk` instead of `storage_policy`. In this case it is not requires to have `storage_policy` section in configuration file, only `disk` section would be enough.
+
+``` sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = 's3';
+```
+
+## Dynamic Configuration {#dynamic-configuration}
+
+There is also a possibility to specify storage configuration without a predefined disk in configuration in a configuration file, but can be configured in the `CREATE`/`ATTACH` query settings.
+
+The following example query builds on the above dynamic disk configuration and shows how to use a local disk to cache data from a table stored at a URL.
+
+```sql
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+    type=web,
+    endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+  );
+  # highlight-end
+```
+
+The example below adds cache to external storage.
+
+```sql
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+  # highlight-end
+```
+
+In the settings highlighted below notice that the disk of `type=web` is nested within
+the disk of `type=cache`.
+
+:::note
+The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
+:::
+
+A combination of config-based configuration and sql-defined configuration is also possible:
+
+```sql
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+  # highlight-end
+```
+
+where `web` is a from a server configuration file:
 
 ``` xml
+<storage_configuration>
+    <disks>
+        <web>
+            <type>web</type>
+            <endpoint>'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'</endpoint>
+        </web>
+    </disks>
+</storage_configuration>
+```
+
+### Using S3 Storage {#s3-storage}
+
+Required parameters:
+
+- `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
+- `access_key_id` — S3 access key id.
+- `secret_access_key` — S3 secret access key.
+
+Optional parameters:
+
+- `region` — S3 region name.
+- `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
+- `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
+- `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
+- `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
+- `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
+- `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
+- `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
+- `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
+- `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
+- `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
+- `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
+- `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+- `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
+- `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
+- `server_side_encryption_kms_key_id` - If specified, required headers for accessing S3 objects with [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) will be set. If an empty string is specified, the AWS managed S3 key will be used. Optional.
+- `server_side_encryption_kms_encryption_context` - If specified alongside `server_side_encryption_kms_key_id`, the given encryption context header for SSE-KMS will be set. Optional.
+- `server_side_encryption_kms_bucket_key_enabled` - If specified alongside `server_side_encryption_kms_key_id`, the header to enable S3 bucket keys for SSE-KMS will be set. Optional, can be `true` or `false`, defaults to nothing (matches the bucket-level setting).
+- `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
+- `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
+- `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
+- `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
+- `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+- `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+- `key_template` — Define the format with which the object keys are generated. By default, Clickhouse takes `root path` from `endpoint` option and adds random generated suffix. That suffix is a dir with 3 random symbols and a file name with 29 random symbols. With that option you have a full control how to the object keys are generated. Some usage scenarios require having random symbols in the prefix or in the middle of object key. For example: `[a-z]{3}-prefix-random/constant-part/random-middle-[a-z]{3}/random-suffix-[a-z]{29}`. The value is parsed with [`re2`](https://github.com/google/re2/wiki/Syntax). Only some subset of the syntax is supported. Check if your preferred format is supported before using that option. Disk isn't initialized if clickhouse is unable to generate a key by the value of `key_template`. It requires enabled feature flag [storage_metadata_write_full_object_key](/docs/en/operations/settings/settings#storage_metadata_write_full_object_key). It forbids declaring the `root path` in `endpoint` option. It requires definition of the option `key_compatibility_prefix`.
+- `key_compatibility_prefix` — That option is required when option `key_template` is in use. In order to be able to read the objects keys which were stored in the metadata files with the metadata version lower that `VERSION_FULL_OBJECT_KEY`, the previous `root path` from the `endpoint` option should be set here.
+
+:::note
+Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/gcs).
+:::
+
+### Using Plain Storage {#plain-storage}
+
+In `22.10` a new disk type `s3_plain` was introduced, which provides a write-once storage. Configuration parameters are the same as for `s3` disk type.
+Unlike `s3` disk type, it stores data as is, e.g. instead of randomly-generated blob names, it uses normal file names (the same way as clickhouse stores files on local disk) and does not store any metadata locally, e.g. it is derived from data on `s3`.
+
+This disk type allows to keep a static version of the table, as it does not allow executing merges on the existing data and does not allow inserting of new data.
+A use case for this disk type is to create backups on it, which can be done via `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. Afterwards you can do `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')` or using `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`.
+
+Configuration:
+``` xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+Starting from `24.1` it is possible configure any object storage disk (`s3`, `azure`, `hdfs`, `local`) using `plain` metadata type.
+
+Configuration:
+``` xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>azure</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+### Using Azure Blob Storage {#azure-blob-storage}
+
+`MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) using a disk with type `azure_blob_storage`.
+
+As of February 2022, this feature is still a fresh addition, so expect that some Azure Blob Storage functionalities might be unimplemented.
+
+Configuration markup:
+``` xml
+<storage_configuration>
+    ...
+    <disks>
+        <blob_storage_disk>
+            <type>azure_blob_storage</type>
+            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+            <container_name>container</container_name>
+            <account_name>account</account_name>
+            <account_key>pass123</account_key>
+            <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </blob_storage_disk>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+Connection parameters:
+* `storage_account_url` - **Required**, Azure Blob Storage account URL, like `http://account.blob.core.windows.net` or `http://azurite1:10000/devstoreaccount1`.
+* `container_name` - Target container name, defaults to `default-container`.
+* `container_already_exists` - If set to `false`, a new container `container_name` is created in the storage account, if set to `true`, disk connects to the container directly, and if left unset, disk connects to the account, checks if the container `container_name` exists, and creates it if it doesn't exist yet.
+
+Authentication parameters (the disk will try all available methods **and** Managed Identity Credential):
+* `connection_string` - For authentication using a connection string.
+* `account_name` and `account_key` - For authentication using Shared Key.
+
+Limit parameters (mainly for internal usage):
+* `s3_max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
+* `min_bytes_for_seek` - Limits the size of a seekable region.
+* `max_single_read_retries` - Limits the number of attempts to read a chunk of data from Blob Storage.
+* `max_single_download_retries` - Limits the number of attempts to download a readable buffer from Blob Storage.
+* `thread_pool_size` - Limits the number of threads with which `IDiskRemote` is instantiated.
+* `s3_max_inflight_parts_for_one_file` - Limits the number of put requests that can be run concurrently for one object.
+
+Other parameters:
+* `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
+* `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+* `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+* `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
+
+Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
+
+:::note Zero-copy replication is not ready for production
+Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+:::
+
+## Using HDFS storage {#hdfs-storage}
+
+In this sample configuration:
+- the disk is of type `hdfs`
+- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
+
+```xml
 <clickhouse>
     <storage_configuration>
         <disks>
             <hdfs>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
             </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
         </disks>
         <policies>
             <hdfs>
@@ -32,26 +422,17 @@ Configuration markup:
                     <main>
                         <disk>hdfs</disk>
                     </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
                 </volumes>
             </hdfs>
         </policies>
     </storage_configuration>
-
-    <merge_tree>
-        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
-    </merge_tree>
 </clickhouse>
 ```
 
-Required parameters:
-
-- `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
-
-Optional parameters:
-
-- `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
-
-## Using Virtual File System for Data Encryption {#encrypted-virtual-file-system}
+### Using Data Encryption {#encrypted-virtual-file-system}
 
 You can encrypt the data stored on [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#configuring-hdfs) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
 
@@ -112,7 +493,7 @@ Example of disk configuration:
 </clickhouse>
 ```
 
-## Using local cache {#using-local-cache}
+### Using local cache {#using-local-cache}
 
 It is possible to configure local cache over disks in storage configuration starting from version 22.3.
 For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc.
@@ -139,13 +520,13 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <s3-cache>
+            <s3_cache>
                 <volumes>
                     <main>
                         <disk>cache</disk>
                     </main>
                 </volumes>
-            </s3-cache>
+            </s3_cache>
         <policies>
     </storage_configuration>
 ```
@@ -165,13 +546,13 @@ Example of configuration for versions earlier than 22.8:
             </s3>
         </disks>
         <policies>
-            <s3-cache>
+            <s3_cache>
                 <volumes>
                     <main>
                         <disk>s3</disk>
                     </main>
                 </volumes>
-            </s3-cache>
+            </s3_cache>
         <policies>
     </storage_configuration>
 ```
@@ -206,7 +587,7 @@ Some of these settings will disable cache features per query/profile that are en
 
 - `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise query data will not be written to local cache storage. Default: `false`.
 
-- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on. Default: `false`.
+- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on. Default: `false`. Cloud default value: `true`.
 
 - `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. It can be turn on for specific queries or enabled in a profile. Default: `false`.
 
@@ -275,13 +656,92 @@ Cache profile events:
 
 - `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`
 
-## Storing Data on Web Server {#storing-data-on-webserver}
-
-There is a tool `clickhouse-static-files-uploader`, which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation, you can load this table into any ClickHouse server via `DiskWeb`.
+### Using static Web storage (read-only) {#web-storage}
 
 This is a read-only disk. Its data is only read and never modified. A new table is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk is not actually used, each `SELECT` query will result in a `http` request to fetch required data. All modification of the table data will result in an exception, i.e. the following types of queries are not allowed: [CREATE TABLE](/docs/en/sql-reference/statements/create/table.md), [ALTER TABLE](/docs/en/sql-reference/statements/alter/index.md), [RENAME TABLE](/docs/en/sql-reference/statements/rename.md/#misc_operations-rename_table), [DETACH TABLE](/docs/en/sql-reference/statements/detach.md) and [TRUNCATE TABLE](/docs/en/sql-reference/statements/truncate.md).
+Web storage can be used for read-only purposes. An example use is for hosting sample data, or for migrating data.
+There is a tool `clickhouse-static-files-uploader`, which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation, you can load this table into any ClickHouse server via `DiskWeb`.
 
-Web server storage is supported only for the [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) and [Log](/docs/en/engines/table-engines/log-family/log.md) engine families. To access the data stored on a `web` disk, use the [storage_policy](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#terms) setting when executing the query. For example, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
+In this sample configuration:
+- the disk is of type `web`
+- the data is hosted at `http://nginx:80/test1/`
+- a cache on local storage is used
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+:::tip
+Storage can also be configured temporarily within a query, if a web dataset is not expected
+to be used routinely, see [dynamic configuration](#dynamic-configuration) and skip editing the
+configuration file.
+:::
+
+:::tip
+A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/docs/en/operations/storing-data.md/#storing-data-on-webserver)
+:::
+
+In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
+
+```sql
+# highlight-next-line
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+  # highlight-end
+```
 
 A ready test case. You need to add this configuration to config:
 
@@ -477,7 +937,7 @@ If URL is not reachable on disk load when the server is starting up tables, then
 Use [http_max_single_read_retries](/docs/en/operations/settings/settings.md/#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
 
 
-## Zero-copy Replication (not ready for production) {#zero-copy}
+### Zero-copy Replication (not ready for production) {#zero-copy}
 
 Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
 

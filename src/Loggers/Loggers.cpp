@@ -1,14 +1,17 @@
 #include "Loggers.h"
 
-#include <iostream>
-#include <Poco/SyslogChannel.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
 #include "OwnPatternFormatter.h"
 #include "OwnSplitChannel.h"
+
+#include <iostream>
+#include <sstream>
+
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+#include <Poco/SyslogChannel.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
@@ -49,6 +52,8 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     ss << std::put_time(&buf, path.filename().c_str());
     return path.replace_filename(ss.str());
 }
+
+/// NOLINTBEGIN(readability-static-accessed-through-instance)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
@@ -159,7 +164,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     if (config.getBool("logger.use_syslog", false))
     {
-        //const std::string & cmd_name = commandName();
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         if (syslog_level > max_log_level)
         {
@@ -228,21 +232,23 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     split->open();
     logger.close();
-    logger.setChannel(split);
 
-    // Global logging level (it can be overridden for specific loggers).
+    logger.setChannel(split);
     logger.setLevel(max_log_level);
 
-    // Set level to all already created loggers
-    std::vector<std::string> names;
-    //logger_root = Logger::root();
-    logger.root().names(names);
-    for (const auto & name : names)
-        logger.root().get(name).setLevel(max_log_level);
-
-    // Attach to the root logger.
+    // Global logging level and channel (it can be overridden for specific loggers).
     logger.root().setLevel(max_log_level);
     logger.root().setChannel(logger.getChannel());
+
+    // Set level and channel to all already created loggers
+    std::vector<std::string> names;
+    logger.names(names);
+
+    for (const auto & name : names)
+    {
+        logger.get(name).setLevel(max_log_level);
+        logger.get(name).setChannel(split);
+    }
 
     // Explicitly specified log levels for specific loggers.
     {
@@ -302,6 +308,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
                                                             DB::TextLog::shouldNotifyFlushOnCrash());
 
         log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
+
+        log_settings.database = config.getString("text_log.database", "system");
+        log_settings.table = config.getString("text_log.table", "text_log");
 
         split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
     }
@@ -385,6 +394,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
     }
 }
+
+/// NOLINTEND(readability-static-accessed-through-instance)
 
 void Loggers::closeLogs(Poco::Logger & logger)
 {

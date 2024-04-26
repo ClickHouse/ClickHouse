@@ -20,6 +20,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -29,6 +30,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/SharedThreadPools.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -811,7 +813,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     ParserCreateQuery parser;
     auto size = context->getSettingsRef().max_query_size;
     auto depth = context->getSettingsRef().max_parser_depth;
-    ASTPtr query = parseQuery(parser, metadata, size, depth);
+    auto backtracks = context->getSettingsRef().max_parser_backtracks;
+    ASTPtr query = parseQuery(parser, metadata, size, depth, backtracks);
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
@@ -870,7 +873,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     std::vector<RenameEdge> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
-    for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
+    for (auto existing_tables_it = getTablesIterator(getContext(), {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
          existing_tables_it->next(), ++total_tables)
     {
         String name = existing_tables_it->name();
@@ -925,6 +928,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_nlp_functions", 1);
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
+        query_context->setSetting("allow_experimental_variant_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
@@ -1090,31 +1094,48 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     tables_dependencies.checkNoCyclicDependencies();
-    auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
 
-    for (const auto & table_id : tables_to_create)
+    auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
+    auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
+
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
+
+    for (const auto & tables_to_create : tables_to_create_by_level)
     {
-        auto table_name = table_id.getTableName();
-        auto metadata_it = table_name_to_metadata.find(table_name);
-        if (metadata_it == table_name_to_metadata.end())
+        for (const auto & table_id : tables_to_create)
         {
-            /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
-            LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
-                        "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
-            continue;
+            auto task = [&]()
+            {
+                auto table_name = table_id.getTableName();
+                auto metadata_it = table_name_to_metadata.find(table_name);
+                if (metadata_it == table_name_to_metadata.end())
+                {
+                    /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
+                    LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
+                                "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
+                    return;
+                }
+
+                const auto & create_query_string = metadata_it->second;
+                if (isTableExist(table_name, getContext()))
+                {
+                    assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+                    return;
+                }
+
+                auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
+                LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
+                auto create_query_context = make_query_context();
+                InterpreterCreateQuery(query_ast, create_query_context).execute();
+            };
+
+            if (allow_concurrent_table_creation)
+                runner(std::move(task));
+            else
+                task();
         }
 
-        const auto & create_query_string = metadata_it->second;
-        if (isTableExist(table_name, getContext()))
-        {
-            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
-            continue;
-        }
-
-        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-        LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
-        auto create_query_context = make_query_context();
-        InterpreterCreateQuery(query_ast, create_query_context).execute();
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
     LOG_INFO(log, "All tables are created successfully");
 
@@ -1206,7 +1227,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 {
     ParserCreateQuery parser;
     String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
-    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth);
+    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
 
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
@@ -1294,7 +1315,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    stopLoading();
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -1531,7 +1551,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     for (const auto & [table_name, metadata] : snapshot)
     {
         ParserCreateQuery parser;
-        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth);
+        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
 
         auto & create = create_table_query->as<ASTCreateQuery &>();
         create.attach = false;
@@ -1688,9 +1708,18 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        zookeeper_path = args.context->getMacros()->expand(zookeeper_path);
-        shard_name = args.context->getMacros()->expand(shard_name);
-        replica_name = args.context->getMacros()->expand(replica_name);
+        /// Expand macros.
+        Macros::MacroExpansionInfo info;
+        info.table_id.database_name = args.database_name;
+        info.table_id.uuid = args.uuid;
+        zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
+
+        info.level = 0;
+        info.table_id.uuid = UUIDHelpers::Nil;
+        shard_name = args.context->getMacros()->expand(shard_name, info);
+
+        info.level = 0;
+        replica_name = args.context->getMacros()->expand(replica_name, info);
 
         DatabaseReplicatedSettings database_replicated_settings{};
         if (engine_define->settings)

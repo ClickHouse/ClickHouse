@@ -37,16 +37,29 @@ instance2 = cluster.add_instance(
     with_rabbitmq=True,
 )
 
+instance3 = cluster.add_instance(
+    "instance3",
+    user_configs=["configs/users.xml"],
+    main_configs=[
+        "configs/rabbitmq.xml",
+        "configs/macros.xml",
+        "configs/named_collection.xml",
+        "configs/mergetree.xml",
+    ],
+    with_rabbitmq=True,
+    stay_alive=True,
+)
+
 # Helpers
 
 
-def rabbitmq_check_result(result, check=False, ref_file="test_rabbitmq_json.reference"):
-    fpath = p.join(p.dirname(__file__), ref_file)
-    with open(fpath) as reference:
-        if check:
-            assert TSV(result) == TSV(reference)
-        else:
-            return TSV(result) == TSV(reference)
+def rabbitmq_check_result(result, check=False, reference=None):
+    if reference is None:
+        reference = "\n".join([f"{i}\t{i}" for i in range(50)])
+    if check:
+        assert TSV(result) == TSV(reference)
+    else:
+        return TSV(result) == TSV(reference)
 
 
 def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
@@ -84,6 +97,7 @@ def rabbitmq_cluster():
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
         instance.query("CREATE DATABASE test")
+        instance3.query("CREATE DATABASE test")
 
         yield cluster
 
@@ -119,9 +133,10 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
     if secure:
         port = cluster.rabbitmq_secure_port
 
+    # MATERIALIZED and ALIAS columns are not supported in RabbitMQ engine, but we can test that it does not fail
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:{}',
                      rabbitmq_exchange_name = 'select',
@@ -132,6 +147,11 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
         """.format(
             rabbitmq_cluster.rabbitmq_host, port, secure
         )
+    )
+
+    assert (
+        "RabbitMQ table engine doesn\\'t support ALIAS, DEFAULT or MATERIALIZED columns"
+        in instance.query("SELECT * FROM system.warnings")
     )
 
     credentials = pika.PlainCredentials("root", "clickhouse")
@@ -365,7 +385,7 @@ def test_rabbitmq_macros(rabbitmq_cluster):
 def test_rabbitmq_materialized_view(rabbitmq_cluster):
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, dt1 DateTime MATERIALIZED now(), value2 ALIAS value + 1)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
@@ -470,9 +490,11 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         """
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
+        DROP TABLE IF EXISTS test.view3;
         DROP TABLE IF EXISTS test.consumer1;
         DROP TABLE IF EXISTS test.consumer2;
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+        DROP TABLE IF EXISTS test.consumer3;
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1, value4 DEFAULT 1)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mmv',
@@ -483,12 +505,17 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         CREATE TABLE test.view1 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
-        CREATE TABLE test.view2 (key UInt64, value UInt64)
+        CREATE TABLE test.view2 (key UInt64, value UInt64, value2 UInt64, value3 UInt64, value4 UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE TABLE test.view3 (key UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
             SELECT * FROM test.rabbitmq;
         CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
+            SELECT * FROM test.rabbitmq;
+        CREATE MATERIALIZED VIEW test.consumer3 TO test.view3 AS
             SELECT * FROM test.rabbitmq;
     """
     )
@@ -500,7 +527,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    instance.wait_for_log_line("Started streaming to 2 attached views")
+    instance.wait_for_log_line("Started streaming to 3 attached views")
 
     messages = []
     for i in range(50):
@@ -508,24 +535,43 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange="mmv", routing_key="", body=message)
 
-    while True:
+    is_check_passed = False
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
         result1 = instance.query("SELECT * FROM test.view1 ORDER BY key")
         result2 = instance.query("SELECT * FROM test.view2 ORDER BY key")
-        if rabbitmq_check_result(result1) and rabbitmq_check_result(result2):
+        result3 = instance.query("SELECT * FROM test.view3 ORDER BY key")
+        # Note that for view2 result is `i i 0 0 0`, but not `i i i+1 i+1 1` as expected, ALIAS/MATERIALIZED/DEFAULT columns are not supported in RabbitMQ engine
+        # We onlt check that at least it do not fail
+        if (
+            rabbitmq_check_result(result1)
+            and rabbitmq_check_result(
+                result2, reference="\n".join([f"{i}\t{i}\t0\t0\t0" for i in range(50)])
+            )
+            and rabbitmq_check_result(
+                result3, reference="\n".join([str(i) for i in range(50)])
+            )
+        ):
+            is_check_passed = True
             break
+        time.sleep(0.1)
+
+    assert (
+        is_check_passed
+    ), f"References are not equal to results, result1: {result1}, result2: {result2}, result3: {result3}"
 
     instance.query(
         """
         DROP TABLE test.consumer1;
         DROP TABLE test.consumer2;
+        DROP TABLE test.consumer3;
         DROP TABLE test.view1;
         DROP TABLE test.view2;
+        DROP TABLE test.view3;
     """
     )
 
     connection.close()
-    rabbitmq_check_result(result1, True)
-    rabbitmq_check_result(result2, True)
 
 
 def test_rabbitmq_big_message(rabbitmq_cluster):
@@ -3156,7 +3202,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     )
 
     instance.query(
-        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;"
+        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1, output_format_pretty_row_numbers=0;"
     )
     insert_messages = []
 
@@ -3538,3 +3584,99 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
     expected = "".join(sorted(expected))
     assert broken_messages == expected
+
+
+def test_attach_broken_table(rabbitmq_cluster):
+    instance.query(
+        "ATTACH TABLE rabbit_queue UUID '2d1cdf1a-f060-4a61-a7c9-5b59e59992c6' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
+    )
+
+    error = instance.query_and_get_error("SELECT * FROM rabbit_queue")
+    assert "CANNOT_CONNECT_RABBITMQ" in error
+    error = instance.query_and_get_error("INSERT INTO rabbit_queue VALUES ('test')")
+    assert "CANNOT_CONNECT_RABBITMQ" in error
+
+
+def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
+    table_name = "nack_failed_insert"
+    exchange = f"{table_name}_exchange"
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    channel.exchange_declare(exchange="deadl")
+
+    result = channel.queue_declare(queue="deadq")
+    queue_name = result.method.queue
+    channel.queue_bind(exchange="deadl", routing_key="", queue=queue_name)
+
+    instance3.query(
+        f"""
+        CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                    rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
+
+        DROP TABLE IF EXISTS test.view;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.{table_name};
+        """
+    )
+
+    num_rows = 25
+    for i in range(num_rows):
+        message = json.dumps({"key": i, "value": i}) + "\n"
+        channel.basic_publish(exchange=exchange, routing_key="", body=message)
+
+    instance3.wait_for_log_line(
+        "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
+    )
+
+    instance3.replace_in_config(
+        "/etc/clickhouse-server/config.d/mergetree.xml",
+        "parts_to_throw_insert>0",
+        "parts_to_throw_insert>10",
+    )
+    instance3.restart_clickhouse()
+
+    count = [0]
+
+    def on_consume(channel, method, properties, body):
+        channel.basic_publish(exchange=exchange, routing_key="", body=body)
+        count[0] += 1
+        if count[0] == num_rows:
+            channel.stop_consuming()
+
+    channel.basic_consume(queue_name, on_consume)
+    channel.start_consuming()
+
+    attempt = 0
+    count = 0
+    while attempt < 100:
+        count = int(instance3.query("SELECT count() FROM test.view"))
+        if count == num_rows:
+            break
+        attempt += 1
+
+    assert count == num_rows
+
+    instance3.query(
+        f"""
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+        DROP TABLE test.{table_name};
+    """
+    )
+    connection.close()

@@ -1,25 +1,28 @@
 #pragma once
 
-#include <cerrno>
-#include <vector>
-#include <memory>
-
-#include <Poco/Exception.h>
-
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <base/int8_to_string.h>
 #include <base/scope_guard.h>
-#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/Logger.h>
+#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 
+#include <cerrno>
+#include <exception>
+#include <memory>
+#include <vector>
+
 #include <fmt/format.h>
+#include <Poco/Exception.h>
 
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
+
+class AtomicLogger;
 
 [[noreturn]] void abortOnFailedAssertion(const String & description);
 
@@ -69,6 +72,8 @@ public:
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
     static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
+    /// Callback for any exception
+    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
 
 protected:
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
@@ -200,7 +205,7 @@ public:
     {
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
-        throw e;
+        throw e; /// NOLINT
     }
 
     template <typename... Args>
@@ -209,7 +214,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e;
+        throw e; /// NOLINT
     }
 
     template <typename... Args>
@@ -219,7 +224,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e;
+        throw e; /// NOLINT
     }
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }
@@ -245,6 +250,7 @@ using Exceptions = std::vector<std::exception_ptr>;
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
 void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "");
 
 
 /** Prints current exception in canonical format.
@@ -290,6 +296,7 @@ struct ExecutionStatus
 /// TODO: Logger leak constexpr overload
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
 void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message = "");
+void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const std::string & start_of_message = "");
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);

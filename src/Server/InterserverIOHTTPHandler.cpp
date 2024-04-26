@@ -8,8 +8,9 @@
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Common/setThreadName.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -91,24 +92,35 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
 
+    auto finalize_output = [&]
+    {
+        try
+        {
+            used_output.out->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to finalize response write buffer");
+        }
+    };
+
     auto write_response = [&](const std::string & message)
     {
-        auto & out = *used_output.out;
         if (response.sent())
         {
-            out.finalize();
+            finalize_output();
             return;
         }
 
         try
         {
-            writeString(message, out);
-            out.finalize();
+            writeString(message, *used_output.out);
+            finalize_output();
         }
         catch (...)
         {
             tryLogCurrentException(log);
-            out.finalize();
+            finalize_output();
         }
     };
 
@@ -117,7 +129,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
-            used_output.out->finalize();
+            finalize_output();
             LOG_DEBUG(log, "Done processing query");
         }
         else

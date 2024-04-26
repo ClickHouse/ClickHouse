@@ -9,22 +9,21 @@ from pathlib import Path
 from typing import Tuple
 
 from build_download_helper import download_all_deb_packages
-from commit_status_helper import override_status
 from docker_images_helper import DockerImage, pull_image, get_docker_image
 from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from report import (
-    OK,
-    FAIL,
     ERROR,
+    FAIL,
+    OK,
     SUCCESS,
     JobReport,
-    TestResults,
+    StatusType,
     TestResult,
+    TestResults,
     read_test_results,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-
 
 NO_CHANGES_MSG = "Nothing to run"
 IMAGE_NAME = "clickhouse/sqllogic-test"
@@ -43,11 +42,12 @@ def get_run_command(
         f"--volume={repo_tests_path}:/clickhouse-tests "
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {image}"
     )
 
 
-def read_check_status(result_folder: Path) -> Tuple[str, str]:
+def read_check_status(result_folder: Path) -> Tuple[StatusType, str]:
     status_path = result_folder / "check_status.tsv"
     if not status_path.exists():
         return ERROR, "Not found check_status.tsv"
@@ -60,9 +60,9 @@ def read_check_status(result_folder: Path) -> Tuple[str, str]:
         if len(row) != 2:
             return ERROR, "Invalid check_status.tsv"
         if row[0] != SUCCESS:
-            return row[0], row[1]
+            return row[0], row[1]  # type: ignore
 
-    return status_rows[-1][0], status_rows[-1][1]
+    return status_rows[-1][0], status_rows[-1][1]  # type: ignore
 
 
 def parse_args() -> argparse.Namespace:
@@ -163,7 +163,7 @@ def main():
         status, description = ERROR, "Empty test_results.tsv"
 
     assert status is not None
-    status = override_status(status, check_name)
+
     test_results.append(
         TestResult(
             "All tests",
@@ -172,7 +172,7 @@ def main():
         )
     )
 
-    # Until it pass all tests, do not block CI, report "success"
+    # Until it pass all tests, do not block CI, report SUCCESS
     assert description is not None
     # FIXME: force SUCCESS until all cases are fixed
     status = SUCCESS

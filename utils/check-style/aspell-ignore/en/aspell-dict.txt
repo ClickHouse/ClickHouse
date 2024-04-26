@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2657 
+personal_ws-1.1 en 2758
 AArch
 ACLs
 ALTERs
@@ -12,6 +12,7 @@ ARMv
 ASLR
 ASOF
 ASan
+AWND
 AWST
 Actian
 ActionsMenu
@@ -28,6 +29,13 @@ Alexey
 AnyEvent
 AppleClang
 Approximative
+arrayDotProduct
+arrayEnumerateDenseRanked
+arrayEnumerateUniqRanked
+arrayFirstOrNull
+arrayLastOrNull
+arrayPartialShuffle
+arrayShuffle
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -111,6 +119,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -159,7 +168,10 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
+CloudNotSupportedBadge
+CloudStorage
 CodeBlock
 CodeLLDB
 Codecs
@@ -171,6 +183,8 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
+Composable
+composable
 Config
 ConnectionDetails
 Const
@@ -189,6 +203,7 @@ CustomSeparatedWithNamesAndTypes
 DBAs
 DBMSs
 DBeaver
+DD
 DDLWORKER
 DDLWorker
 DDLWorkerThreads
@@ -214,7 +229,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-DDSketch
 Decrypted
 Deduplicate
 Deduplication
@@ -238,6 +252,7 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
+Durre
 ECMA
 Ecto
 EdgeAngle
@@ -257,6 +272,7 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
+FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -289,6 +305,7 @@ ForEach
 FreeBSD
 Fuzzer
 Fuzzers
+GHCN
 GTID
 GTest
 Gb
@@ -444,6 +461,10 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Konstantin
+kostik
+kostikConsistentHash
+Korzeniewski
 Kubernetes
 LDAP
 LGPL
@@ -454,6 +475,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 Levenshtein
+Liao
 LibFuzzer
 LightHouse
 LineAsString
@@ -503,6 +525,7 @@ MaxMind
 MaxPartCountForPartition
 MaxPushedDDLEntryID
 Mbps
+McNeal
 Memcheck
 MemoryCode
 MemoryDataAndStack
@@ -512,6 +535,7 @@ MemorySanitizer
 MemoryShared
 MemoryTracking
 MemoryVirtual
+Menne
 MergeJoin
 MergeState
 MergeTree
@@ -539,7 +563,20 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+mortonDecode
+mortonEncode
 MsgPack
+multiSearchAllPositionsCaseInsensitive
+multiSearchAllPositionsCaseInsensitiveUTF
+multiSearchAnyCaseInsensitive
+multiSearchAnyCaseInsensitiveUTF
+multiSearchAnyUTF
+multiSearchFirstIndexCaseInsensitive
+multiSearchFirstIndexCaseInsensitiveUTF
+multiSearchFirstIndexUTF
+multiSearchFirstPositionCaseInsensitive
+multiSearchFirstPositionCaseInsensitiveUTF
+multiSearchFirstPositionUTF
 MultiPolygon
 Multiline
 Multiqueries
@@ -556,6 +593,7 @@ NEWDATE
 NEWDECIMAL
 NFKC
 NFKD
+NOAA
 NULLIF
 NVME
 NVMe
@@ -576,6 +614,7 @@ NetworkSendBytes
 NetworkSendDrop
 NetworkSendErrors
 NetworkSendPackets
+Noaa
 NodeJs
 NuRaft
 NumHexagons
@@ -639,6 +678,7 @@ OTLP
 OUTFILE
 ObjectId
 Observability
+Oblakov
 Octonica
 Ok
 OnTime
@@ -656,8 +696,11 @@ OrZero
 OvercommitTracker
 PAAMAYIM
 PCRE
+PRCP
 PREWHERE
 PROCESSLIST
+PROXYv
+PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
@@ -674,7 +717,6 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
-PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -802,6 +844,7 @@ SIMD
 SLES
 SLRU
 SMALLINT
+SNWD
 SPNEGO
 SQEs
 SQLAlchemy
@@ -829,6 +872,8 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+SharedMergeTree
+Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -840,6 +885,7 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
+SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -874,11 +920,14 @@ SupersetDocker
 SystemReplicasThreads
 SystemReplicasThreadsActive
 TABLUM
+TAVG
 TCPConnection
 TCPThreads
 TDigest
 TINYINT
 TLSv
+TMAX
+TMIN
 TPCH
 TSDB
 TSVRaw
@@ -900,6 +949,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
+tanh
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -938,6 +988,8 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+Tsai
+Tukey
 TwoColumnList
 UBSan
 UDFs
@@ -964,6 +1016,7 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unshuffled
 Updatable
 Uppercased
 Uptime
@@ -975,12 +1028,15 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
+VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
 ViewAllLink
 VirtualBox
+Vose
 WALs
+WSFG
 Welch's
 Werror
 Wether
@@ -999,6 +1055,7 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDD
 YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
@@ -1057,6 +1114,8 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
+approxtopk
+approxtopsum
 argMax
 argMin
 argmax
@@ -1217,6 +1276,7 @@ buildable
 builtins
 byteHammingDistance
 byteSize
+byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1246,6 +1306,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
@@ -1265,6 +1327,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1307,7 +1370,10 @@ cosineDistance
 countDigits
 countEqual
 countMatches
+countMatchesCaseInsensitive
 countSubstrings
+countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
@@ -1331,6 +1397,7 @@ cryptographic
 csv
 csvwithnames
 csvwithnamesandtypes
+ctukey
 curdate
 currentDatabase
 currentProfiles
@@ -1549,6 +1616,7 @@ gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
+generateSeries
 generateULID
 generateUUIDv
 geoDistance
@@ -1563,6 +1631,7 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1570,6 +1639,7 @@ getSetting
 getSizeOfEnumType
 getblockinfo
 getevents
+ghcnd
 github
 glibc
 globalIn
@@ -1589,10 +1659,12 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
+groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1603,10 +1675,12 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
+grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
+grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -1636,6 +1710,7 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1666,6 +1741,7 @@ hudi
 hyperscan
 hypot
 hyvor
+iTerm
 icosahedron
 icudata
 idempotency
@@ -1771,6 +1847,7 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -1808,6 +1885,7 @@ linearized
 lineasstring
 linefeeds
 lineorder
+linestring
 linux
 llvm
 loadDefaultCAFile
@@ -1865,6 +1943,7 @@ meanztest
 mebibytes
 memtable
 memtables
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -1889,6 +1968,7 @@ mmap
 mmapped
 modularization
 moduloOrZero
+moduli
 mongodb
 monthName
 moscow
@@ -1939,6 +2019,9 @@ nestjs
 netloc
 ngram
 ngramDistance
+ngramDistanceCaseInsensitive
+ngramDistanceCaseInsensitiveUTF
+ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -1948,12 +2031,16 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
+ngramSearchCaseInsensitive
+ngramSearchCaseInsensitiveUTF
+ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF
 ngramSimHashUTF
 ngrambf
 ngrams
+noaa
 nonNegativeDerivative
 noop
 normalizeQuery
@@ -2062,7 +2149,6 @@ prebuild
 prebuilt
 preemptable
 preferServerCiphers
-prefertch
 prefetch
 prefetchsize
 preloaded
@@ -2112,6 +2198,7 @@ py
 qryn
 quantile
 quantileBFloat
+quantileDD
 quantileDeterministic
 quantileExact
 quantileExactExclusive
@@ -2126,6 +2213,7 @@ quantileTDigestWeighted
 quantileTiming
 quantileTimingWeighted
 quantilebfloat
+quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
@@ -2138,8 +2226,6 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
-quantileddsketch
-quantileDDSketch
 quartile
 queryID
 queryString
@@ -2167,7 +2253,9 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
+readWKTPoint
 readWKTPolygon
+readWKTRing
 readahead
 readline
 readme
@@ -2211,6 +2299,7 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remoteSecure
+repivot
 replaceAll
 replaceOne
 replaceRegexpAll
@@ -2234,6 +2323,7 @@ retriable
 reverseUTF
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
@@ -2261,10 +2351,13 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
 russian
+rustc
+rustup
 rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
@@ -2272,6 +2365,7 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesDecomposeSTL
+seriesOutliersDetectTukey
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2285,8 +2379,17 @@ shardNum
 sharded
 sharding
 shortcircuit
+shortkeys
 shoutout
 simdjson
+simpleJSON
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2389,6 +2492,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2452,6 +2556,7 @@ theilsu
 themself
 threadpool
 throwIf
+timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2503,6 +2608,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2564,6 +2670,7 @@ tryPunycodeDecode
 tskv
 tsv
 tui
+tukey
 tumbleEnd
 tumbleStart
 tupleConcat
@@ -2577,6 +2684,12 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
+tupleModulo
+tupleModuloByNumber
 turbostat
 txt
 typename
@@ -2637,13 +2750,18 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
+variantElement
+variantType
 varint
 varpop
 varsamp
 vectorized
 vectorscan
+vendoring
 verificationDepth
 verificationMode
 versionedcollapsingmergetree
@@ -2685,7 +2803,9 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
+wyHash
 xcode
 xeus
 xkcd
@@ -2696,6 +2816,7 @@ xz
 yaml
 yandex
 youtube
+ZCurve
 zLib
 zLinux
 zabbix

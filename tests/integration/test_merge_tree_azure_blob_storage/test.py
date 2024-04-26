@@ -37,6 +37,7 @@ def generate_cluster_def(port):
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                 <max_single_part_upload_size>100000</max_single_part_upload_size>
+                <min_upload_part_size>100000</min_upload_part_size>
                 <max_single_download_retries>10</max_single_download_retries>
                 <max_single_read_retries>10</max_single_read_retries>
             </blob_storage_disk>
@@ -613,7 +614,8 @@ def test_endpoint(cluster):
     container_client = cluster.blob_service_client.get_container_client(container_name)
     container_client.create_container()
 
-    node.query(
+    azure_query(
+        node,
         f"""
     DROP TABLE IF EXISTS test SYNC;
 
@@ -622,13 +624,200 @@ def test_endpoint(cluster):
     SETTINGS disk = disk(
     type = azure_blob_storage,
     endpoint = 'http://azurite1:{port}/{account_name}/{container_name}/{data_prefix}',
+    endpoint_contains_account_name = 'true',
     account_name = 'devstoreaccount1',
     account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
     container_already_exists = 1,
     skip_access_check = 0);
 
     INSERT INTO test SELECT number FROM numbers(10);
-    """
+    """,
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
+
+
+def test_endpoint_new_container(cluster):
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    container_name = "cont3"
+    data_prefix = "data_prefix"
+    port = cluster.azurite_port
+
+    azure_query(
+        node,
+        f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/{account_name}/{container_name}/{data_prefix}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+
+    INSERT INTO test SELECT number FROM numbers(10);
+    """,
+    )
+
+    assert 10 == int(node.query("SELECT count() FROM test"))
+
+
+def test_endpoint_without_prefix(cluster):
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    container_name = "cont4"
+    port = cluster.azurite_port
+
+    azure_query(
+        node,
+        f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/{account_name}/{container_name}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+
+    INSERT INTO test SELECT number FROM numbers(10);
+    """,
+    )
+
+    assert 10 == int(node.query("SELECT count() FROM test"))
+
+
+def test_endpoint_error_check(cluster):
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    port = cluster.azurite_port
+
+    query = f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/{account_name}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+    """
+
+    expected_err_msg = "Expected container_name in endpoint"
+    assert expected_err_msg in azure_query(node, query, expect_error=True)
+
+    query = f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+    """
+
+    expected_err_msg = "Expected account_name in endpoint"
+    assert expected_err_msg in azure_query(node, query, expect_error=True)
+
+    query = f"""
+    DROP TABLE IF EXISTS test SYNC;
+
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}',
+    endpoint_contains_account_name = 'false',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    skip_access_check = 0);
+    """
+
+    expected_err_msg = "Expected container_name in endpoint"
+    assert expected_err_msg in azure_query(node, query, expect_error=True)
+
+
+def get_azure_client(container_name, port):
+    connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;"
+    )
+
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    return blob_service_client.get_container_client(container_name)
+
+
+def test_azure_broken_parts(cluster):
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    container_name = "cont5"
+    port = cluster.azurite_port
+
+    query = f"""
+    DROP TABLE IF EXISTS t_azure_broken_parts SYNC;
+
+    CREATE TABLE t_azure_broken_parts (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+        type = azure_blob_storage,
+        endpoint = 'http://azurite1:{port}/{account_name}/{container_name}',
+        endpoint_contains_account_name = 'true',
+        account_name = 'devstoreaccount1',
+        account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+        skip_access_check = 0), min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+    INSERT INTO t_azure_broken_parts VALUES (1);
+    """
+
+    azure_query(node, query)
+
+    result = azure_query(node, "SELECT count() FROM t_azure_broken_parts").strip()
+    assert int(result) == 1
+
+    result = azure_query(
+        node,
+        "SELECT count() FROM system.detached_parts WHERE table = 't_azure_broken_parts'",
+    ).strip()
+
+    assert int(result) == 0
+
+    data_path = azure_query(
+        node,
+        "SELECT data_paths[1] FROM system.tables WHERE name = 't_azure_broken_parts'",
+    ).strip()
+
+    remote_path = azure_query(
+        node,
+        f"SELECT remote_path FROM system.remote_data_paths WHERE path || local_path = '{data_path}' || 'all_1_1_0/columns.txt'",
+    ).strip()
+
+    client = get_azure_client(container_name, port)
+    client.delete_blob(remote_path)
+
+    azure_query(node, "DETACH TABLE t_azure_broken_parts")
+    azure_query(node, "ATTACH TABLE t_azure_broken_parts")
+
+    result = azure_query(node, "SELECT count() FROM t_azure_broken_parts").strip()
+    assert int(result) == 0
+
+    result = azure_query(
+        node,
+        "SELECT count() FROM system.detached_parts WHERE table = 't_azure_broken_parts'",
+    ).strip()
+
+    assert int(result) == 1

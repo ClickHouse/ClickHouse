@@ -18,6 +18,7 @@ public:
 
     /// Returns adjusted position, i.e. returns `3` if the position in the nested buffer is `start_offset + 3`.
     off_t getPosition() override;
+
     off_t seek(off_t off, int whence) override;
 
 private:
