@@ -37,7 +37,7 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 
     bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
-    void update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t) override;
+    void update(const Block & block, size_t * pos, size_t limit) override;
 
     String index_name;
     Block index_sample_block;

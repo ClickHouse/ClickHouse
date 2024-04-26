@@ -136,7 +136,7 @@ public:
         DataPartStoragePtr storage_,
         MutableDataPartStoragePtr data_part_storage_builder_,
         UInt64 max_digestion_size_,
-        UInt8 map_to_granule_id);
+        UInt32 row_id_divisor_);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -176,6 +176,8 @@ private:
     friend class GinIndexStoreDeserializer;
     friend struct MergeTreeIndexAggregatorInverted;
 
+    constexpr static UInt32 DEFAULT_MAX_ROW_ID_DIVISOR = 8192 / 2;
+
     /// Initialize all indexing files for this store
     void initFileStreams();
 
@@ -204,9 +206,9 @@ private:
     UInt64 current_size = 0;
     const UInt64 max_digestion_size = 0;
 
-    // In the whole life circle of GinIndexStore when building index for a part, map_to_granule_id stays unchanged.
-    // It can be different for different parts, via ALTER TABLE MODIFY SETTING inverted_index_map_to_granule_id.
-    const UInt8 map_to_granule_id = 0;
+    // In the whole life circle of GinIndexStore when building index for a part, row_id_divisor stays unchanged.
+    // It can be different for different parts, via ALTER TABLE MODIFY SETTING inverted_index_row_id_divisor.
+    const UInt32 row_id_divisor = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;

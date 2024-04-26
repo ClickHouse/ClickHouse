@@ -30,7 +30,7 @@ struct Settings;
     M(UInt64, max_compress_block_size, 0, "Compress the pending uncompressed data in buffer if its size is larger or equal than the specified threshold. Block of data will be compressed even if the current granule is not finished. If this setting is not set, the corresponding global setting is used.", 0) \
     M(UInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
     M(UInt64, max_digestion_size_per_segment, 256_MiB, "Max number of bytes to digest per segment to build GIN index.", 0) \
-    M(Bool, inverted_index_map_to_granule_id, false, "Map terms to granule ids (mark numbers) instead of row numbers (row ids). This greatly reduces size of posting lists, at the cost of precision loss for queries with multiple terms", 0) \
+    M(UInt32, inverted_index_row_id_divisor, 1, "Share a single row id (row number) among several rows to reduce size of posting lists, at the cost of precision loss for queries with multiple terms.", 0) \
     \
     /** Data storing format settings. */ \
     M(UInt64, min_bytes_for_wide_part, 10485760, "Minimal uncompressed size in bytes to create part in wide format instead of compact", 0) \

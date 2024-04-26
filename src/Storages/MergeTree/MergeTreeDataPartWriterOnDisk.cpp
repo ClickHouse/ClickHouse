@@ -290,7 +290,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 data_part->getDataPartStoragePtr(),
                 data_part->getDataPartStoragePtr(),
                 storage.getSettings()->max_digestion_size_per_segment,
-                storage.getSettings()->inverted_index_map_to_granule_id);
+                storage.getSettings()->inverted_index_row_id_divisor);
             gin_index_stores[stream_name] = store;
         }
         skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));
@@ -397,7 +397,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSkipIndicesCalculationMicroseconds);
 
             size_t pos = granule.start_row;
-            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write, granule.mark_number);
+            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write);
             if (granule.is_complete)
                 ++skip_index_accumulated_marks[i];
 

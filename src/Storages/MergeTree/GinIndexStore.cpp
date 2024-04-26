@@ -157,13 +157,15 @@ GinIndexStore::GinIndexStore(
     DataPartStoragePtr storage_,
     MutableDataPartStoragePtr data_part_storage_builder_,
     UInt64 max_digestion_size_,
-    UInt8 map_to_granule_id_)
+    UInt32 row_id_divisor_)
     : name(name_)
     , storage(storage_)
     , data_part_storage_builder(data_part_storage_builder_)
     , max_digestion_size(max_digestion_size_)
-    , map_to_granule_id(map_to_granule_id_)
+    , row_id_divisor(row_id_divisor_ > DEFAULT_MAX_ROW_ID_DIVISOR ? DEFAULT_MAX_ROW_ID_DIVISOR : row_id_divisor_)
 {
+    if (row_id_divisor_ > DEFAULT_MAX_ROW_ID_DIVISOR)
+        LOG_WARNING(getLogger("GinIndexStore"), "Too large row_id_divisor {}, will set to {}.", row_id_divisor_, DEFAULT_MAX_ROW_ID_DIVISOR);
 }
 
 bool GinIndexStore::exists() const

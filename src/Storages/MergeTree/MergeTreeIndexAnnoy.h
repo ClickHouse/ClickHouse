@@ -53,7 +53,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 
     bool empty() const override { return !index || index->get_n_items() == 0; }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
-    void update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t) override;
+    void update(const Block & block, size_t * pos, size_t limit) override;
 
     const String index_name;
     const Block index_sample_block;

@@ -47,7 +47,7 @@ struct MergeTreeIndexAggregatorFullText final : IMergeTreeIndexAggregator
     bool empty() const override { return !granule || granule->empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
-    void update(const Block & block, size_t * pos, size_t limit, [[maybe_unused]] size_t) override;
+    void update(const Block & block, size_t * pos, size_t limit) override;
 
     Names index_columns;
     String index_name;
