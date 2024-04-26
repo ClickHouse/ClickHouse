@@ -34,7 +34,7 @@ parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_
     else
     {
         auto size = static_cast<uint32_t>(std::max(view.size(), sizeof(uint32_t)));
-        assert(size <= buffer_size);
+        chassert(size <= buffer_size);
         std::copy(view.begin(), view.end(), buffer);
         return parquet::ByteArray(size, buffer);
     }
@@ -420,31 +420,62 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
-    if (!header.has(key_column_name))
+    if (header.has(key_column_name))
     {
-        return false;
+        size_t position = header.getPositionByName(key_column_name);
+        const DataTypePtr & index_type = header.getByPosition(position).type;
+        const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+
+        if (function_name == "has" || function_name == "indexOf")
+        {
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
+
+            /// We can treat `indexOf` function similar to `has`.
+            /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
+            /// The `parent` in this context is expected to be function `!=` (`notEquals`).
+
+            // todo arthur check indexOfCanuseBloomFilter
+            // if (function_name == "has" || indexOfCanUseBloomFilter(parent))
+            if (function_name == "has")
+            {
+                out.function = RPNElement::FUNCTION_HAS;
+                const DataTypePtr actual_type = getPrimitiveType(array_type->getNestedType());
+                auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                if (converted_field.isNull())
+                    return false;
+
+                auto column = actual_type->createColumn();
+                column->insert(converted_field);
+                out.predicate.emplace_back(position, std::move(column));
+            }
+        }
+        else if (function_name == "hasAny" || function_name == "hasAll")
+        {
+            throw std::runtime_error {"Arthur check this"};
+        }
+        else
+        {
+            if (array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
+
+            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+            const DataTypePtr actual_type = getPrimitiveType(index_type);
+            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            if (converted_field.isNull())
+                return false;
+
+            //            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+            auto column = actual_type->createColumn();
+            column->insert(converted_field);
+            out.predicate.emplace_back(position, std::move(column));
+        }
+
+        return true;
     }
 
-    size_t position = header.getPositionByName(key_column_name);
-    const DataTypePtr & index_type = header.getByPosition(position).type;
-    const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
-
-    if (array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
-
-    out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-    const DataTypePtr actual_type = getPrimitiveType(index_type);
-    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-    if (converted_field.isNull())
-        return false;
-
-    //            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
-    auto column = actual_type->createColumn();
-    column->insert(converted_field);
-    out.predicate.emplace_back(position, std::move(column));
-
-    return true;
+    return false;
 }
 
 }
