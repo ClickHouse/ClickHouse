@@ -24,7 +24,7 @@ using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFile
 /// It is used to allow BACKUP/RESTORE to ObjectStorage (S3/...) with the same
 /// structure as on disk MergeTree, and does not requires metadata from local
 /// disk to restore.
-class MetadataStorageFromPlainObjectStorage final : public IMetadataStorage
+class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
 public:
     /// Local path prefixes mapped to storage key prefixes.
@@ -33,11 +33,11 @@ public:
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
+protected:
     ObjectStoragePtr object_storage;
     String storage_path_prefix;
 
     mutable SharedMutex metadata_mutex;
-    std::shared_ptr<PathMap> path_map;
 
 public:
     MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
@@ -77,6 +77,12 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
+
+protected:
+    virtual std::shared_ptr<PathMap> getPathMap() const { throwNotImplemented(); }
+
+    virtual std::vector<std::string> getDirectChildrenOnDisk(
+        const std::string & storage_key, const RelativePathsWithMetadata & remote_paths, const std::string & local_path) const;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder

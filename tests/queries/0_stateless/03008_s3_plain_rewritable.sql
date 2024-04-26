@@ -2,8 +2,9 @@
 -- Tag: no-fasttest -- requires S3
 
 drop table if exists test_mt;
-create table test_mt (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 500) order by tuple(a, b)
+create table test_mt (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
 settings disk = disk(
+    name = s3_plain_rewritable,
     type = s3_plain_rewritable,
     endpoint = 'http://localhost:11111/test/test_mt/',
     access_key_id = clickhouse,
@@ -29,10 +30,6 @@ attach table test_mt;
 
 drop table if exists test_mt_dst;
 
-create table test_mt_dst (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 500) order by tuple(a, b)
-settings disk = disk(
-    type = s3_plain_rewritable,
-    endpoint = 'http://localhost:11111/test/test_mt/',
-    access_key_id = clickhouse,
-    secret_access_key = clickhouse);
+create table test_mt_dst (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
+settings disk = 's3_plain_rewritable';
 alter table test_mt move partition 0 to table test_mt_dst; -- { serverError SUPPORT_IS_DISABLED }
