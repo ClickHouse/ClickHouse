@@ -8,7 +8,7 @@ sidebar_label: UUIDs
 
 ## generateUUIDv4
 
-Generates the [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
+Generates a [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
 **Syntax**
 
@@ -18,34 +18,35 @@ generateUUIDv4([x])
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
 
 **Returned value**
 
-The UUID type value.
+A value of type UUIDv4.
 
-**Usage example**
+**Example**
 
-This example demonstrates creating a table with the UUID type column and inserting a value into the table.
+First, create a table with a column of type UUID, then insert a generated UUIDv4 into the table.
 
 ``` sql
-CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
-INSERT INTO t_uuid SELECT generateUUIDv4()
+INSERT INTO tab SELECT generateUUIDv4();
 
-SELECT * FROM t_uuid
+SELECT * FROM tab;
 ```
 
 ```response
-┌────────────────────────────────────x─┐
+┌─────────────────────────────────uuid─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
 ```
 
-**Usage example if it is needed to generate multiple values in one row**
+**Example where multiple UUIDs are generated per row**
 
 ```sql
-SELECT generateUUIDv4(1), generateUUIDv4(2)
+SELECT generateUUIDv4(1), generateUUIDv4(2);
+
 ┌─generateUUIDv4(1)────────────────────┬─generateUUIDv4(2)────────────────────┐
 │ 2d49dc6e-ddce-4cd0-afb8-790956df54c1 │ 8abf8c13-7dea-4fdf-af3e-0e18767770e6 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
@@ -53,7 +54,10 @@ SELECT generateUUIDv4(1), generateUUIDv4(2)
 
 ## generateUUIDv7
 
-Generates the [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04). The generated UUID contains current timestamp in milliseconds followed by version 7 and variant 2 markers and random data in the following bit layout.
+Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+
+The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
+
 ```
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -76,34 +80,35 @@ generateUUIDv7([x])
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
 
 **Returned value**
 
-The UUID type value.
+A value of type UUIDv7.
 
-**Usage example**
+**Example**
 
-This example demonstrates creating a table with the UUID type column and inserting a UUIDv7 value into the table.
+First, create a table with a column of type UUID, then insert a generated UUIDv7 into the table.
 
 ``` sql
-CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
-INSERT INTO t_uuid SELECT generateUUIDv7()
+INSERT INTO tab SELECT generateUUIDv7();
 
-SELECT * FROM t_uuid
+SELECT * FROM tab;
 ```
 
 ```response
-┌────────────────────────────────────x─┐
+┌─────────────────────────────────uuid─┐
 │ 018f05af-f4a8-778f-beee-1bedbc95c93b │
 └──────────────────────────────────────┘
 ```
 
-**Usage example if it is needed to generate multiple values in one row**
+**Example where multiple UUIDs are generated per row**
 
 ```sql
-SELECT generateUUIDv7(1), generateUUIDv7(2)
+SELECT generateUUIDv7(1), generateUUIDv7(2);
+
 ┌─generateUUIDv7(1)────────────────────┬─generateUUIDv7(2)────────────────────┐
 │ 018f05b1-8c2e-7567-a988-48d09606ae8c │ 018f05b1-8c2e-7946-895b-fcd7635da9a0 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
@@ -111,8 +116,11 @@ SELECT generateUUIDv7(1), generateUUIDv7(2)
 
 ## generateUUIDv7WithCounter
 
-Generates the [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
-The generated UUID contains current timestamp in milliseconds followed by version 7 and variant 2 markers, counter and random data in the following bit layout. At any given new timestamp in unix_ts_ms the counter starts from some random value and then it's being increased by 1 on each new UUID v7 with counter generation until current timestamp changes. The counter overflow causes unix_ts_ms field increment by 1 and the counter restart from a random value. Counter increment monotony at one timestamp is guaranteed across all `generateUUIDv7WithCounter` functions running simultaneously.
+Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+
+The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
+At any given new timestamp in unix_ts_ms, the counter starts from some random value and then it's being increased by 1 on each new UUID v7 with counter generation until current timestamp changes.
+The counter overflow causes unix_ts_ms field increment by 1 and the counter restart from a random value. Counter increment monotony at one timestamp is guaranteed across all `generateUUIDv7WithCounter` functions running simultaneously.
 ```
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -135,34 +143,35 @@ generateUUIDv7WithCounter([x])
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
 
 **Returned value**
 
-The UUID type value.
+A value of type UUIDv7.
 
 **Usage example**
 
-This example demonstrates creating a table with the UUID type column and inserting a UUIDv7 value into the table.
+First, create a table with a column of type UUID, then insert a generated UUIDv7 into the table.
 
 ``` sql
-CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
-INSERT INTO t_uuid SELECT generateUUIDv7WithCounter()
+INSERT INTO tab SELECT generateUUIDv7WithCounter();
 
-SELECT * FROM t_uuid
+SELECT * FROM tab;
 ```
 
 ```response
-┌────────────────────────────────────x─┐
+┌─────────────────────────────────uuid─┐
 │ 018f05c7-56e3-7ac3-93e9-1d93c4218e0e │
 └──────────────────────────────────────┘
 ```
 
-**Usage example if it is needed to generate multiple values in one row**
+**Example where multiple UUIDs are generated per row**
 
 ```sql
-SELECT generateUUIDv7WithCounter(1), generateUUIDv7WithCounter(2)
+SELECT generateUUIDv7WithCounter(1), generateUUIDv7WithCounter(2);
+
 ┌─generateUUIDv7WithCounter(1)─────────┬─generateUUIDv7WithCounter(2)─────────┐
 │ 018f05c9-4ab8-7b86-b64e-c9f03fbd45d1 │ 018f05c9-4ab8-7b86-b64e-c9f12efb7e16 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
@@ -170,8 +179,9 @@ SELECT generateUUIDv7WithCounter(1), generateUUIDv7WithCounter(2)
 
 ## generateUUIDv7WithFastCounter
 
-Generates the [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
-This function is a faster version of `generateUUIDv7WithCounter` function giving no guarantee on counter monotony across different requests running simultaneously. Counter increment monotony at one timestamp is guaranteed only within one thread calling this function to generate many UUIDs.
+Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+
+This function behaves like `generateUUIDv7WithCounter` but gives no guarantee on counter monotony across different requests running simultaneously. Counter increment monotony at one timestamp is guaranteed only within one thread calling this function to generate many UUIDs.
 
 **Syntax**
 
@@ -185,30 +195,31 @@ generateUUIDv7WithFastCounter([x])
 
 **Returned value**
 
-The UUID type value.
+A value of type UUIDv7.
 
 **Usage example**
 
-This example demonstrates creating a table with the UUID type column and inserting a UUIDv7 value into the table.
+First, create a table with a column of type UUID, then insert a generated UUIDv7 into the table.
 
 ``` sql
-CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
-INSERT INTO t_uuid SELECT generateUUIDv7WithFastCounter()
+INSERT INTO tab SELECT generateUUIDv7WithFastCounter();
 
-SELECT * FROM t_uuid
+SELECT * FROM tab;
 ```
 
 ```response
-┌────────────────────────────────────x─┐
+┌─────────────────────────────────uuid─┐
 │ 018f05e2-e3b2-70cb-b8be-64b09b626d32 │
 └──────────────────────────────────────┘
 ```
 
-**Usage example if it is needed to generate multiple values in one row**
+**Example where multiple UUIDs are generated per row**
 
 ```sql
-SELECT generateUUIDv7WithFastCounter(1), generateUUIDv7WithFastCounter(2)
+SELECT generateUUIDv7WithFastCounter(1), generateUUIDv7WithFastCounter(2);
+
 ┌─generateUUIDv7WithFastCounter(1)─────┬─generateUUIDv7WithFastCounter(2)─────┐
 │ 018f05e1-14ee-7bc5-9906-207153b400b1 │ 018f05e1-14ee-7bc5-9906-2072b8e96758 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
@@ -226,15 +237,15 @@ empty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [arrays](array-functions.md#function-empty) or [strings](string-functions.md#empty).
+The function also works for [Arrays](array-functions.md#function-empty) and [Strings](string-functions.md#empty).
 
 **Arguments**
 
-- `x` — Input UUID. [UUID](../data-types/uuid.md).
+- `x` — A UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
-- Returns `1` for an empty UUID or `0` for a non-empty UUID. 
+- Returns `1` for an empty UUID or `0` for a non-empty UUID.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -268,15 +279,15 @@ notEmpty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [arrays](array-functions.md#function-notempty) or [strings](string-functions.md#notempty).
+The function also works for [Arrays](array-functions.md#function-notempty) or [Strings](string-functions.md#notempty).
 
 **Arguments**
 
-- `x` — Input UUID. [UUID](../data-types/uuid.md).
+- `x` — A UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
-- Returns `1` for a non-empty UUID or `0` for an empty UUID. 
+- Returns `1` for a non-empty UUID or `0` for an empty UUID.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -298,12 +309,12 @@ Result:
 └────────────────────────────┘
 ```
 
-## toUUID (x)
+## toUUID
 
-Converts String type value to UUID type.
+Converts a value of type String to a UUID.
 
 ``` sql
-toUUID(String)
+toUUID(string)
 ```
 
 **Returned value**
@@ -322,7 +333,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 └──────────────────────────────────────┘
 ```
 
-## toUUIDOrDefault (x,y)
+## toUUIDOrDefault
 
 **Arguments**
 
@@ -334,7 +345,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 UUID
 
 ``` sql
-toUUIDOrDefault(String, UUID)
+toUUIDOrDefault(string, default)
 ```
 
 **Returned value**
@@ -366,12 +377,12 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c4
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## toUUIDOrNull (x)
+## toUUIDOrNull
 
-It takes an argument of type String and tries to parse it into UUID. If failed, returns NULL.
+Takes an argument of type String and tries to parse it into UUID. If failed, returns NULL.
 
 ``` sql
-toUUIDOrNull(String)
+toUUIDOrNull(string)
 ```
 
 **Returned value**
@@ -390,12 +401,12 @@ SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 └──────┘
 ```
 
-## toUUIDOrZero (x)
+## toUUIDOrZero
 
 It takes an argument of type String and tries to parse it into UUID. If failed, returns zero UUID.
 
 ``` sql
-toUUIDOrZero(String)
+toUUIDOrZero(string)
 ```
 
 **Returned value**
@@ -426,7 +437,7 @@ UUIDStringToNum(string[, variant = 1])
 
 **Arguments**
 
-- `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `string` — A [String](../../sql-reference/syntax.md#syntax-string-literal) of 36 characters or [FixedString](../../sql-reference/syntax.md#syntax-string-literal)
 - `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
