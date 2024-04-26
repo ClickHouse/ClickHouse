@@ -81,6 +81,12 @@ ${CLICKHOUSE_CLIENT} --query="select * from file('${multi_column_filename}', Par
 # expect rows_read much less than select count()
 ${CLICKHOUSE_CLIENT} --query="select * from file('${multi_column_filename}', Parquet) where f32=toFloat32(1.7640524) and fixed_str='GFZI' or str='OTDY' order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
+# IN check
+${CLICKHOUSE_CLIENT} --query="select * from file('${multi_column_filename}', Parquet) where f32=toFloat32(1.7640524) and fixed_str in ('GFZI', 'OTDY') order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
+# IN check for floats
+${CLICKHOUSE_CLIENT} --query="select * from file('${multi_column_filename}', Parquet) where f32 in (toFloat32(1.7640524), toFloat32(0.09082593)) or fixed_str = 'RIJV' order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
 # bloom filter is on and it is filtering by data in the other row group, which is bigger than the former. Expect most row groups to be read, but not all
 # expect rows_read less than select count(), but higher than previous query
 ${CLICKHOUSE_CLIENT} --query="select * from file('multi_column_bf.parquet', Parquet) where str='PFRI' or str='ES' order by f32 asc Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
