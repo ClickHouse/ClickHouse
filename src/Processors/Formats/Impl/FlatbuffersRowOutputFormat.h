@@ -18,14 +18,13 @@ public:
     String getName() const override { return "FlatbuffersRowOutputFormat"; }
 
 private:
-    void writePrefix() override {}
-    void writeSuffix() override {}
+    void writePrefix() override;
+    void writeSuffix() override;
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
     void serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num, const char* key = nullptr, size_t key_size = 0);
 
     fxb::Builder builder;
-    size_t rows_start;
 };
 
 }

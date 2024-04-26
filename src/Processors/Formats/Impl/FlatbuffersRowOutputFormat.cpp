@@ -32,6 +32,18 @@ namespace ErrorCodes
 FlatbuffersRowOutputFormat::FlatbuffersRowOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & format_settings_) :
 IRowOutputFormat(header_, out_) {}
 
+void FlatbuffersRowOutputFormat:writePrefix()
+{
+    builder.StartVector();
+}
+
+void FlatbuffersRowOutputFormat::writeSuffix()
+{
+    builder.EndVector(0, false, false);
+    builder.Finish();
+    writeString(builder.GetBuffer().data(), builder.GetSize(), out);
+}
+
 void FlatbuffersRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
     size_t columns_size = columns.size();
@@ -135,15 +147,6 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, DataType
             builder.Blob(reinterpret_cast<const uint8_t*>(column.getDataAt(row_num).data), sizeof(Int256))
             return;
         }
-        /*case TypeIndex::Date:
-        {
-            
-            return;
-        }
-        case TypeIndex::Date32:
-        {
-            return;
-        }*/
         case TypeIndex::Float32:
         {
             builder.Float(static_cast<float>(assert_cast<const ColumnFloat32 &>(column).getElement(row_num)));
