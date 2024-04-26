@@ -22,8 +22,23 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <bit>
+
 namespace DB
 {
+
+static void toBigEndian(unsigned char* bytes, size_t size)
+{
+    if (std::endian::native != std::endian::big)
+    {
+        for (size_t i = 0; i < size / 2; ++i)
+        {
+            unsigned char tmp = bytes[i];
+            bytes[i] = bytes[size - i - 1];
+            bytes[size - i - 1] = tmp;
+        }
+    }
+}
 
 CBOROutput::CBOROutput(WriteBuffer & buf) : buffer(buf) {}
 
@@ -115,14 +130,20 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
         }
         case TypeIndex::UInt128:
         {
+            UInt128 num = assert_cast<const ColumnUInt128 &>(column).getElement(row_num);
+            toBigEndian(reinterpret_cast<unsigned char*>(&num), sizeof(UInt128));
+
             encoder.write_tag(2);
-            encoder.write_bytes(reinterpret_cast<const unsigned char*>(column.getDataAt(row_num).data), sizeof(UInt128));
+            encoder.write_bytes(reinterpret_cast<const unsigned char*>(&num), sizeof(UInt128));
             return;
         }
         case TypeIndex::UInt256:
         {   
+            UInt256 num = assert_cast<const ColumnUInt256 &>(column).getElement(row_num);
+            toBigEndian(reinterpret_cast<unsigned char*>(&num), sizeof(UInt256));
+
             encoder.write_tag(2);
-            encoder.write_bytes(reinterpret_cast<const unsigned char*>(column.getDataAt(row_num).data), sizeof(UInt256));
+            encoder.write_bytes(reinterpret_cast<const unsigned char*>(&num), sizeof(UInt256));
             return;
         }
         case TypeIndex::Enum8: [[fallthrough]];
@@ -160,6 +181,7 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
                 encoder.write_tag(3);
                 num = -(num + 1);
             }
+            toBigEndian(reinterpret_cast<unsigned char*>(&num), sizeof(Int128));
 
             encoder.write_bytes(reinterpret_cast<const unsigned char*>(&num), sizeof(Int128));
             return;
@@ -176,6 +198,7 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
                 encoder.write_tag(3);
                 num = -(num + 1);
             }
+            toBigEndian(reinterpret_cast<unsigned char*>(&num), sizeof(Int256));
 
             encoder.write_bytes(reinterpret_cast<const unsigned char*>(&num), sizeof(Int256));
             return;
@@ -238,6 +261,7 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
                 encoder.write_tag(3);
                 num = -(num + Decimal128(1));
             }
+            toBigEndian(reinterpret_cast<unsigned char*>(&num), sizeof(Decimal128));
 
             encoder.write_bytes(reinterpret_cast<const unsigned char*>(&num), sizeof(Decimal128));
             return;
@@ -254,6 +278,7 @@ void CBORRowOutputFormat::serializeField(const IColumn & column, DataTypePtr dat
                 encoder.write_tag(3);
                 num = -(num + Decimal256(1));
             }
+            toBigEndian(reinterpret_cast<unsigned char*>(&num), sizeof(Decimal256));
 
             encoder.write_bytes(reinterpret_cast<const unsigned char*>(&num), sizeof(Decimal256));
             return;
