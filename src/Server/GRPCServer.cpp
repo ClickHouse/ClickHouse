@@ -336,9 +336,10 @@ namespace
             auto prefix = ipv4 ? ipv4_prefix : ipv6_prefix;
             auto family = ipv4 ? Poco::Net::AddressFamily::Family::IPv4 : Poco::Net::AddressFamily::Family::IPv6;
 
+            uri_encoded_peer= uri_encoded_peer.substr(prefix.length());
+
             String peer;
             Poco::URI::decode(uri_encoded_peer, peer);
-            peer = peer.substr(prefix.length());
 
             return Poco::Net::SocketAddress{family, peer};
         }
