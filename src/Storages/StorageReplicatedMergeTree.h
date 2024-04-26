@@ -255,6 +255,8 @@ public:
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
+    bool scheduleStreamingJob(BackgroundJobsAssignee & assignee) override;
+
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
@@ -364,6 +366,8 @@ public:
     /// download unique parts from our replica
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
+
+    std::map<String, MergeTreeCursorPromoter> buildPromoters() override;
 
 private:
     std::atomic_bool are_restoring_replica {false};

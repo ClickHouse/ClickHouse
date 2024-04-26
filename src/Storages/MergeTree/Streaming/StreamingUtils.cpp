@@ -12,8 +12,7 @@
 #include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 
-#include <Storages/MergeTree/StreamingUtils.h>
-#include <Poco/Logger.h>
+#include <Storages/MergeTree/Streaming/StreamingUtils.h>
 
 namespace DB
 {
@@ -32,29 +31,24 @@ Names extendColumnsWithStreamingAux(const Names & columns_to_read)
     return ext;
 }
 
-void addCursorFilterStep(QueryPlan & query_plan, SelectQueryInfo & info)
+void addCursorFilterStep(QueryPlan & query_plan, SelectQueryInfo & info, const MergeTreeCursor & cursor)
 {
     auto & planner_context = info.planner_context;
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    const auto & cursor_tree = info.table_expression_modifiers->getStreamSettings()->tree;
 
     std::vector<String> partition_filters;
     constexpr static auto kPartitionFilterPattern = FMT_STRING(
         "(_queue_partition_id = '{partition_id}' AND "
         "(_queue_block_number > {block_number} OR (_queue_block_number = {block_number} AND _queue_block_offset > {block_offset})))");
 
-    for (const auto & [partition_id, value] : *cursor_tree)
+    for (const auto & [partition_id, data] : cursor)
     {
-        const auto & partition_cursor = std::get<CursorTreeNodePtr>(value);
-        const auto block_number = partition_cursor->getValue("block_number");
-        const auto block_offset = partition_cursor->getValue("block_offset");
-
         auto partition_filter = fmt::format(
             kPartitionFilterPattern,
             fmt::arg("partition_id", escapeString(partition_id)),
-            fmt::arg("block_number", block_number),
-            fmt::arg("block_offset", block_offset));
+            fmt::arg("block_number", data.block_number),
+            fmt::arg("block_offset", data.block_offset));
 
         partition_filters.push_back(std::move(partition_filter));
     }

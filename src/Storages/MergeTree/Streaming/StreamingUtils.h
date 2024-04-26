@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ namespace DB
 Names extendColumnsWithStreamingAux(const Names & columns_to_read);
 
 /// Builds FilterNode from CursorTree and adds it to the query plan.
-void addCursorFilterStep(QueryPlan & query_plan, SelectQueryInfo & info);
+void addCursorFilterStep(QueryPlan & query_plan, SelectQueryInfo & info, const MergeTreeCursor & cursor);
 
 /// Drops queue mode columns that not needed in result of the query.
 void addDropAuxColumnsStep(QueryPlan & query_plan, const Block & desired_header);

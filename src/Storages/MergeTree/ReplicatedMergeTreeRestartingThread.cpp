@@ -144,7 +144,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     /// Start queue processing
     storage.background_operations_assignee.start();
-    storage.background_streaming_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
@@ -152,6 +151,9 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
+
+    if (storage.getSettings()->queue_mode)
+        storage.background_streaming_assignee->start();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;

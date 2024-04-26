@@ -41,7 +41,8 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/StreamingUtils.h>
+#include <Storages/MergeTree/Streaming/StreamingUtils.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -49,8 +50,6 @@
 #include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/StreamingAdapterStep.h>
-#include <Processors/Streaming/ConsumeOrderSequencer.h>
-#include <fmt/core.h>
 
 
 namespace DB
@@ -157,7 +156,10 @@ void StorageMergeTree::startup()
     try
     {
         background_operations_assignee.start();
-        background_streaming_assignee.start();
+
+        if (getSettings()->queue_mode)
+            background_streaming_assignee->start();
+
         startBackgroundMovesIfNeeded();
         startOutdatedDataPartsLoadingTask();
     }
@@ -199,8 +201,10 @@ void StorageMergeTree::shutdown(bool)
     /// TODO Cursors: add blocker?
 
     background_operations_assignee.finish();
-    background_streaming_assignee.finish();
     background_moves_assignee.finish();
+
+    if (getSettings()->queue_mode)
+        background_streaming_assignee->finish();
 
     if (deduplication_log)
         deduplication_log->shutdown();
@@ -288,40 +292,20 @@ void StorageMergeTree::streamingRead(
         size_t num_streams)
 {
     Names columns_to_read = extendColumnsWithStreamingAux(column_names);
-
-    /// Snapshot read plan
+    auto cursor = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->tree);
+    auto promoters = buildPromoters();
 
     QueryPlanPtr storage_query_plan = reader.read(
-        columns_to_read, storage_snapshot, query_info, local_context, max_block_size, num_streams, nullptr, false);
+        columns_to_read, storage_snapshot, query_info, local_context, max_block_size, num_streams,
+        nullptr, false, cursor, std::move(promoters));
 
-    if (storage_query_plan->isInitialized())
-        addCursorFilterStep(*storage_query_plan, query_info);
-    else
-        storage_query_plan->addStep(std::make_unique<ReadNothingStep>(storage_snapshot->getSampleBlockForColumns(columns_to_read)));
+    chassert(storage_query_plan->isInitialized());
+    query_plan = std::move(*storage_query_plan);
 
-    /// Subscription read plan
-
-    QueryPlanPtr subscription_query_plan = std::make_unique<QueryPlan>();
-    auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
-        getInMemoryMetadata().getSampleBlock(),
-        storage_query_plan->getCurrentDataStream().header,
-        storage_snapshot->getStreamSubscription());
-    subscription_query_plan->addStep(std::move(subscription_source));
-
-    /// Combination
-
-    auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
-        storage_query_plan->getCurrentDataStream(),
-        subscription_query_plan->getCurrentDataStream(),
-        std::make_shared<ConsumeOrderSequencer>(),
-        ReadingSourceOptions{ReadingSourceOption::Storage, ReadingSourceOption::Subscription});
-
-    std::vector<QueryPlanPtr> plans;
-    plans.push_back(std::move(storage_query_plan));
-    plans.push_back(std::move(subscription_query_plan));
-
-    query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
+    addCursorFilterStep(query_plan, query_info, cursor);
+    // TODO: add cursor setup and block splitter step
     addDropAuxColumnsStep(query_plan, storage_snapshot->getSampleBlockForColumns(column_names));
+    makeStreamInfinite(query_plan);
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
@@ -832,6 +816,39 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
             result.emplace(entry.file_name, entry.commands);
     }
     return result;
+}
+
+std::map<String, MergeTreeCursorPromoter> StorageMergeTree::buildPromoters()
+{
+    std::map<String, std::set<Int64>> committing_block_numbers_snapshot;
+    {
+        std::lock_guard guard(committing_block_numbers_mutex);
+        committing_block_numbers_snapshot = committing_block_numbers;
+    }
+
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    std::map<String, PartBlockNumberRanges> partition_ranges;
+
+    for (const auto & part : data_parts)
+        partition_ranges[part->info.partition_id].addPart(part->info.min_block, part->info.max_block);
+
+    std::map<String, MergeTreeCursorPromoter> promoters;
+
+    for (auto && [partition_id, ranges] : partition_ranges)
+    {
+        if (auto it = committing_block_numbers_snapshot.find(partition_id); it != committing_block_numbers_snapshot.end())
+            promoters.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(partition_id),
+                std::forward_as_tuple(std::move(it->second), std::move(ranges)));
+        else
+            promoters.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(partition_id),
+                std::forward_as_tuple(std::set<Int64>{}, std::move(ranges)));
+    }
+
+    return promoters;
 }
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
@@ -1602,6 +1619,24 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
 
     return scheduled;
+}
+
+bool StorageMergeTree::scheduleStreamingJob([[maybe_unused]] BackgroundJobsAssignee & assignee)
+{
+    LOG_INFO(log, "Started scheduleStreamingJob");
+
+    auto parts_index = buildRightPartsIndex(getDataPartsVectorForInternalUsage());
+    auto promoters = buildPromoters();
+    bool scheduled_reading = false;
+
+    auto promote = [&](StreamSubscriptionPtr & subscription)
+    {
+        scheduled_reading = scheduled_reading | populateSubscription(subscription, *this, parts_index, promoters);
+    };
+
+    subscription_manager.executeOnEachSubscription(promote);
+
+    return scheduled_reading;
 }
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(

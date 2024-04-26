@@ -1,0 +1,31 @@
+#pragma once
+
+#include <Processors/ISimpleTransform.h>
+
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
+
+namespace DB
+{
+
+class ChunkSplitterTransform : public ISimpleTransform
+{
+public:
+    ChunkSplitterTransform(Block header_, MergeTreeCursor cursor_);
+
+    String getName() const override { return "ChunkSplitterTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override;
+
+    Chunk splitByCursor(Chunk && chunk, const PartitionCursor & current);
+
+    PartitionCursor getCursor(const Chunk & chunk, size_t index) const;
+
+private:
+    MergeTreeCursor cursor;
+
+    size_t block_number_column_index = 0;
+    size_t block_offset_column_index = 0;
+};
+
+}

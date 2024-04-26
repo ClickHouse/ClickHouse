@@ -1,11 +1,14 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
+
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 
 
 namespace DB
@@ -35,7 +38,9 @@ public:
         UInt64 max_block_size,
         size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
-        bool enable_parallel_reading = false) const;
+        bool enable_parallel_reading = false,
+        MergeTreeCursor cursor = {},
+        std::map<String, MergeTreeCursorPromoter> promoters = {}) const;
 
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
@@ -49,7 +54,9 @@ public:
         size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
-        bool enable_parallel_reading = false) const;
+        bool enable_parallel_reading = false,
+        MergeTreeCursor cursor = {},
+        std::map<String, MergeTreeCursorPromoter> promoters = {}) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.

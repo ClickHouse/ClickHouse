@@ -359,7 +359,6 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
-    , background_streaming_assignee(*this, BackgroundJobsAssignee::Type::Streaming, getContext())
 {
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
@@ -429,13 +428,18 @@ MergeTreeData::MergeTreeData(
             background_moves_assignee.trigger();
     };
 
-    streaming_assignee_trigger = [this] (bool delay) noexcept
+    if (settings->queue_mode)
     {
-        if (delay)
-            background_streaming_assignee.postpone();
-        else
-            background_streaming_assignee.trigger();
-    };
+        background_streaming_assignee.emplace(*this, BackgroundJobsAssignee::Type::Streaming, getContext());
+
+        streaming_assignee_trigger = [this] (bool delay) noexcept
+        {
+            if (delay)
+                background_streaming_assignee->postpone();
+            else
+                background_streaming_assignee->trigger();
+        };
+    }
 }
 
 VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)
@@ -6566,6 +6570,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                     else
                         LOG_INFO(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
 
+                    chassert(data.getSettings()->queue_mode != true);
+
                     part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
                     data.modifyPartState(part, DataPartState::Outdated);
                 }
@@ -6610,10 +6616,10 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             ssize_t diff_parts  = add_parts - reduce_parts;
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
-    }
 
-    if (data.subscription_manager.getSubscriptionsCount() > 0)
-        data.background_streaming_assignee.trigger();
+        if (settings->queue_mode && data.subscription_manager.getSubscriptionsCount() > 0)
+            data.background_streaming_assignee->trigger();
+    }
 
     clear();
 
@@ -8207,16 +8213,12 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
     ColumnsDescription object_columns_copy;
-    StreamSubscriptionPtr stream_subscription = nullptr;
 
     {
         auto lock = lockParts();
 
         snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
         object_columns_copy = object_columns;
-
-        if (additional_settings.need_to_create_subscription)
-            stream_subscription = subscribeForChanges();
     }
 
     snapshot_data->alter_conversions.reserve(snapshot_data->parts.size());
@@ -8224,7 +8226,7 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(
         snapshot_data->alter_conversions.push_back(getAlterConversionsForPart(part));
 
     return std::make_shared<StorageSnapshot>(
-        *this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data), additional_settings, std::move(stream_subscription));
+        *this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data), additional_settings);
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(

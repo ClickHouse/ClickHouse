@@ -35,6 +35,9 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
+#include <Storages/MergeTree/Streaming/ChunkSplitter.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <base/sort.h>
 #include <Poco/Logger.h>
@@ -273,7 +276,9 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
     LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
-    bool enable_parallel_reading)
+    bool enable_parallel_reading,
+    MergeTreeCursor cursor_,
+    std::map<String, MergeTreeCursorPromoter> promoters_)
     : SourceStepWithFilter(DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
         query_info_.prewhere_info)}, all_column_names_, query_info_, storage_snapshot_, context_)
@@ -292,6 +297,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
+    , cursor(std::move(cursor_))
+    , promoters(std::move(promoters_))
     , is_parallel_reading_from_replicas(enable_parallel_reading)
 {
     if (is_parallel_reading_from_replicas)
@@ -1545,6 +1552,16 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         /// parallel replicas and unused shards into optimization, similar to projection analysis.
         query_info.filter_actions_dag = filter_actions_dag;
 
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
+
         buildIndexes(
             indexes,
             filter_actions_dag,
@@ -1971,35 +1988,28 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
 {
     auto && parts_with_ranges = std::move(result.parts_with_ranges);
 
-    if (parts_with_ranges.empty())
-        return {};
+    const size_t partitions_cnt = countPartitions(parts_with_ranges);
+    const size_t readers_cnt = std::max<size_t>(1, std::min(partitions_cnt, requested_num_streams));
 
-    const size_t partitions_cnt = std::max<size_t>(countPartitions(parts_with_ranges), 1);
-    const size_t partitions_per_stream = std::max<size_t>(1, partitions_cnt / requested_num_streams);
+    const auto initial_offsets = buildInitialBlockNumberOffsets(cursor, prepared_parts, parts_with_ranges);
+    const auto index = buildRightPartsIndex(std::move(parts_with_ranges));
 
     Pipes pipes;
-    for (auto begin = parts_with_ranges.begin(), end = begin; end != parts_with_ranges.end(); begin = end)
+
+    for (size_t i = 0; i < readers_cnt; ++i)
     {
-        Pipes single_stream_partitions;
+        auto subscription = std::make_shared<RangesInDataPartStreamSubscription>();
+        subscription->current_subscription_index = i;
+        subscription->query_subscriptions_count = readers_cnt;
+        subscription->max_block_numbers = initial_offsets;
 
-        for (size_t i = 0; i < partitions_per_stream && end != parts_with_ranges.end(); ++i)
-        {
-            end = std::find_if(
-                end,
-                parts_with_ranges.end(),
-                [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
+        populateSubscription(subscription, data, index, promoters);
+        data.registerSubscription(subscription);
 
-            RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
-            begin = end;
+        Pipe partition_reader = createMergeTreePartitionSequentialSource(data, storage_snapshot, subscription, result.column_names_to_read);
+        partition_reader.addSimpleTransform([&](const Block header) { return std::make_unique<ChunkSplitterTransform>(header, cursor); });
 
-            single_stream_partitions.push_back(
-                createMergeTreePartitionSequentialSource(data, storage_snapshot, std::move(partition_parts), result.column_names_to_read));
-        }
-
-        pipes.push_back(Pipe::unitePipes(std::move(single_stream_partitions)));
-
-        if (!pipes.back().empty())
-            pipes.back().resize(1);
+        pipes.push_back(std::move(partition_reader));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -2027,6 +2037,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         result.selected_marks,
         result.selected_ranges);
 
+    for (const auto& part_with_ranges : result.parts_with_ranges) {
+        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
+        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
+        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
+        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
+        LOG_DEBUG(log, "--------------");
+    }
+
     // Adding partition info to QueryAccessInfo.
     if (context->hasQueryContext() && !query_info.is_internal)
     {
@@ -2049,7 +2067,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
-    if (result.parts_with_ranges.empty())
+    if (result.parts_with_ranges.empty() && !query_info.isStream())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
         return;

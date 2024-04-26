@@ -10,19 +10,13 @@
 #include <Storages/MergeTree/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
 
 namespace DB
 {
 
-static void checkSinglePartition(const RangesInDataParts & parts_with_ranges)
+PartitionIdChunkInfo::PartitionIdChunkInfo(String partition_id_) : partition_id(std::move(partition_id_))
 {
-    if (parts_with_ranges.empty())
-        return;
-
-    String partition_id = parts_with_ranges[0].data_part->info.partition_id;
-
-    for (size_t i = 1; i < parts_with_ranges.size(); ++i)
-        chassert(partition_id == parts_with_ranges[i].data_part->info.partition_id);
 }
 
 MergeTreePartSequentialReader::MergeTreePartSequentialReader(
@@ -31,15 +25,18 @@ MergeTreePartSequentialReader::MergeTreePartSequentialReader(
     const StorageSnapshotPtr & storage_snapshot_,
     MarkCachePtr mark_cache_,
     Names columns_to_read_,
-    RangesInDataPart part_ranges_)
+    RangesInDataPart part_ranges_,
+    std::shared_ptr<PartitionIdChunkInfo> info_)
     : header{header_}
     , storage{storage_}
     , storage_snapshot{storage_snapshot_}
     , mark_cache{std::move(mark_cache_)}
     , columns_to_read{std::move(columns_to_read_)}
     , part_ranges(std::move(part_ranges_))
+    , info(std::move(info_))
 {
     chassert(part_ranges.ranges.size() == 1);
+    chassert(part_ranges.alter_conversions != nullptr);
 
     initial_mark = part_ranges.ranges.front().begin;
     current_mark = part_ranges.ranges.front().begin;
@@ -131,74 +128,91 @@ Chunk MergeTreePartSequentialReader::readNext()
         ++it;
     }
 
-    return Chunk(std::move(res_columns), rows_read);
+    Chunk chunk(std::move(res_columns), rows_read);
+    chunk.setChunkInfo(info, PartitionIdChunkInfo::info_slot);
+
+    return chunk;
 }
 
 MergeTreePartitionSequentialSource::MergeTreePartitionSequentialSource(
-    const MergeTreeData & storage_,
-    const StorageSnapshotPtr & storage_snapshot_,
-    RangesInDataParts parts_with_ranges_,
-    Names columns_to_read_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
-    , storage{storage_}
-    , storage_snapshot{storage_snapshot_}
-    , parts_with_ranges{std::move(parts_with_ranges_)}
-    , mark_cache{storage.getContext()->getMarkCache()}
-    , columns_to_read{std::move(columns_to_read_)}
+    const MergeTreeData & storage_, StorageSnapshotPtr storage_snapshot_, StreamSubscriptionPtr subscription_, Names columns_to_read_)
+    : QueueSubscriptionSourceAdapter<RangesInDataPart>(
+        storage_snapshot_->getSampleBlockForColumns(columns_to_read_), *subscription_->as<RangesInDataPartStreamSubscription>(), getName())
+    , storage(storage_)
+    , subscription_holder(std::move(subscription_))
+    , columns_to_read(std::move(columns_to_read_))
+    , storage_snapshot(std::move(storage_snapshot_))
 {
-    checkSinglePartition(parts_with_ranges);
-
-    std::ranges::sort(parts_with_ranges, [](const RangesInDataPart & lhs, const RangesInDataPart & rhs) {
-        return lhs.data_part->info.min_block < rhs.data_part->info.min_block;
-    });
-
-    for (const auto & part : parts_with_ranges)
-        for (const auto & range : part.ranges)
-            addTotalRowsApprox(part.data_part->index_granularity.getRowsCountInRange(range));
-
-    initNextReader();
 }
 
-Chunk MergeTreePartitionSequentialSource::generate()
+Chunk MergeTreePartitionSequentialSource::useCachedData()
 {
-    while (!isCancelled() && reader.has_value())
+    if (reader.has_value() && reader->hasSome())
     {
-        if (reader->isEmpty())
-        {
-            initNextReader();
-            continue;
-        }
-
         Chunk next_chunk = reader->readNext();
         chassert(next_chunk);
-
         return next_chunk;
     }
 
-    return {};
+    /// have no reader or it is empty -> must reinit reader
+    /// drop it explicitly otherwise
+    reader.reset();
+
+    while (!cached_data.empty())
+    {
+        reader.reset();
+        initNextReader();
+        chassert(reader.has_value());
+
+        if (reader->hasSome())
+        {
+            Chunk next_chunk = reader->readNext();
+            chassert(next_chunk);
+            return next_chunk;
+        }
+    }
+
+    need_new_data = true;
+
+    return Chunk();
 }
 
 void MergeTreePartitionSequentialSource::initNextReader()
 {
-    reader.reset();
+    chassert(!reader.has_value() && !cached_data.empty());
+    storage_snapshot = storage.getStorageSnapshotWithoutData(storage.getInMemoryMetadataPtr(), storage.getContext());
 
-    if (next_part_to_read < parts_with_ranges.size())
+    RangesInDataPart ranges_in_data_part = cached_data.front();
+    cached_data.pop_front();
+
+    const auto & partition_id = ranges_in_data_part.data_part->info.partition_id;
+    const auto & part_name = ranges_in_data_part.data_part->name;
+
+    LOG_INFO(log, "Initializing reader for part {} in partition {}", part_name, partition_id);
+
+    auto info_it = partition_infos.find(partition_id);
+    if (info_it == partition_infos.end())
     {
-        LOG_INFO(log, "Initializing reader for part: {}", parts_with_ranges[next_part_to_read].data_part->name);
-
-        reader.emplace(
-            getPort().getHeader(), storage, storage_snapshot, mark_cache, columns_to_read, std::move(parts_with_ranges[next_part_to_read]));
-
-        next_part_to_read += 1;
+        auto [insert_it, inserted] = partition_infos.insert({partition_id, std::make_shared<PartitionIdChunkInfo>(partition_id)});
+        info_it = insert_it;
     }
+
+    chassert(info_it != partition_infos.end());
+
+    reader.emplace(
+        getPort().getHeader(),
+        storage,
+        storage_snapshot,
+        storage.getContext()->getMarkCache(),
+        columns_to_read,
+        std::move(ranges_in_data_part),
+        info_it->second);
 }
 
 Pipe createMergeTreePartitionSequentialSource(
-    const MergeTreeData & storage, const StorageSnapshotPtr & storage_snapshot, RangesInDataParts parts_with_ranges, Names columns_to_read)
+    const MergeTreeData & storage, const StorageSnapshotPtr & storage_snapshot, StreamSubscriptionPtr subscription, Names columns_to_read)
 {
-    auto partition_source
-        = std::make_shared<MergeTreePartitionSequentialSource>(storage, storage_snapshot, parts_with_ranges, columns_to_read);
-
+    auto partition_source = std::make_shared<MergeTreePartitionSequentialSource>(storage, storage_snapshot, subscription, columns_to_read);
     return Pipe(std::move(partition_source));
 }
 

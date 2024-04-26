@@ -1,13 +1,23 @@
 #pragma once
 
+#include <Processors/Chunk.h>
+#include <Processors/Sources/QueueSubscriptionSourceAdapter.h>
+
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 
 namespace DB
 {
 
-/// TODO:
+struct PartitionIdChunkInfo : public ChunkInfo
+{
+    static constexpr size_t info_slot = 2;
+    const String partition_id;
+
+    explicit PartitionIdChunkInfo(String partition_id_);
+};
+
 class MergeTreePartSequentialReader
 {
 public:
@@ -17,7 +27,8 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         MarkCachePtr mark_cache_,
         Names columns_to_read_,
-        RangesInDataPart part_ranges_);
+        RangesInDataPart part_ranges_,
+        std::shared_ptr<PartitionIdChunkInfo> info_);
 
     bool hasSome() const;
     bool isEmpty() const;
@@ -31,6 +42,7 @@ private:
     MarkCachePtr mark_cache;
     Names columns_to_read;
     RangesInDataPart part_ranges;
+    std::shared_ptr<PartitionIdChunkInfo> info;
 
     MergeTreeReaderPtr reader;
     size_t initial_mark = 0;
@@ -39,38 +51,33 @@ private:
 };
 
 /// TODO:
-class MergeTreePartitionSequentialSource : public ISource
+class MergeTreePartitionSequentialSource : public QueueSubscriptionSourceAdapter<RangesInDataPart>
 {
     void initNextReader();
 
 public:
     MergeTreePartitionSequentialSource(
-        const MergeTreeData & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        RangesInDataParts parts_with_ranges_,
-        Names columns_to_read_);
+        const MergeTreeData & storage_, StorageSnapshotPtr storage_snapshot_, StreamSubscriptionPtr subscription_, Names columns_to_read_);
 
     ~MergeTreePartitionSequentialSource() override = default;
 
     String getName() const override { return "MergeTreePartitionSequentialSource"; }
 
 protected:
-    Chunk generate() override;
+    Chunk useCachedData() override;
 
 private:
     const MergeTreeData & storage;
-    StorageSnapshotPtr storage_snapshot;
-    RangesInDataParts parts_with_ranges;
-    MarkCachePtr mark_cache;
+    StreamSubscriptionPtr subscription_holder;
     Names columns_to_read;
 
-    size_t next_part_to_read = 0;
+    StorageSnapshotPtr storage_snapshot;
     std::optional<MergeTreePartSequentialReader> reader;
 
-    LoggerPtr log = getLogger("MergeTreePartitionSequentialSource");
+    std::map<String, std::shared_ptr<PartitionIdChunkInfo>> partition_infos;
 };
 
 Pipe createMergeTreePartitionSequentialSource(
-    const MergeTreeData & storage, const StorageSnapshotPtr & storage_snapshot, RangesInDataParts parts_with_ranges, Names columns_to_read);
+    const MergeTreeData & storage, const StorageSnapshotPtr & storage_snapshot, StreamSubscriptionPtr subscription, Names columns_to_read);
 
 }

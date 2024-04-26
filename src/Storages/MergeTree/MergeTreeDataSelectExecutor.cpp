@@ -131,7 +131,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const UInt64 max_block_size,
     const size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-    bool enable_parallel_reading) const
+    bool enable_parallel_reading,
+    MergeTreeCursor cursor,
+    std::map<String, MergeTreeCursorPromoter> promoters) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
@@ -148,7 +150,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         num_streams,
         max_block_numbers_to_read,
         /*merge_tree_select_result_ptr=*/ nullptr,
-        enable_parallel_reading);
+        enable_parallel_reading,
+        std::move(cursor),
+        std::move(promoters));
 
     auto plan = std::make_unique<QueryPlan>();
     if (step)
@@ -908,16 +912,21 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     const size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr,
-    bool enable_parallel_reading) const
+    bool enable_parallel_reading,
+    MergeTreeCursor cursor,
+    std::map<String, MergeTreeCursorPromoter> promoters) const
 {
-    /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
-    if (merge_tree_select_result_ptr)
+    if (!query_info.isStream())
     {
-        if (merge_tree_select_result_ptr->selected_marks == 0)
+        /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
+        if (merge_tree_select_result_ptr)
+        {
+            if (merge_tree_select_result_ptr->selected_marks == 0)
+                return {};
+        }
+        else if (parts.empty())
             return {};
     }
-    else if (parts.empty())
-        return {};
 
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
@@ -932,7 +941,9 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         max_block_numbers_to_read,
         log,
         merge_tree_select_result_ptr,
-        enable_parallel_reading
+        enable_parallel_reading,
+        std::move(cursor),
+        std::move(promoters)
     );
 }
 

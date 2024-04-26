@@ -3708,6 +3708,31 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
 }
 
 
+bool StorageReplicatedMergeTree::scheduleStreamingJob([[maybe_unused]] BackgroundJobsAssignee & assignee)
+{
+    Stopwatch logging_stopwatch;
+
+    auto zookeeper = getZooKeeperAndAssertNotReadonly();
+    auto pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{});
+
+    auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+    LOG_INFO(log, "getMergePredicate took: {} ms", elapsed_ms);
+
+    return false;
+}
+
+
 bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
 {
     if (fetcher.blocker.isCancelled())
@@ -4412,6 +4437,11 @@ void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(St
         LOG_INFO(log, "Failed to wait for unique parts to be fetched in {} ms, {} parts can be left on this replica", wait_ms, unique_parts_set.size());
     else
         LOG_INFO(log, "Successfully waited all the parts");
+}
+
+std::map<String, MergeTreeCursorPromoter> StorageReplicatedMergeTree::buildPromoters()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "buildPromoters not implemented for replicated merge tree");
 }
 
 std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_)
@@ -5307,8 +5337,11 @@ void StorageReplicatedMergeTree::partialShutdown()
         auto fetch_lock = fetcher.blocker.cancel();
         auto merge_lock = merger_mutator.merges_blocker.cancel();
         auto move_lock = parts_mover.moves_blocker.cancel();
+
         background_operations_assignee.finish();
-        background_streaming_assignee.finish();
+
+        if (getSettings()->queue_mode)
+            background_streaming_assignee->finish();
     }
 
     LOG_TRACE(log, "Threads finished");

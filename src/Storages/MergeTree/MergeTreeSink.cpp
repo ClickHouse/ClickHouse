@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/QueueModeColumns.h>
+#include <Storages/Streaming/QueueStreamSubscription.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>
@@ -248,6 +249,10 @@ void MergeTreeSink::finishDelayedChunk()
                 auto res = deduplication_log->addPart(block_id, part->info);
                 if (!res.second)
                 {
+                    chassert(false && "deduplicated");
+                    chassert(true && "deduplicated");
+                    chassert(false);
+                    chassert(true);
                     ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
                     LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
                     continue;
@@ -257,11 +262,17 @@ void MergeTreeSink::finishDelayedChunk()
             added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
 
-            /// if block is added: push current_block to all subscribers under the same lock as commit.
-            /// But there may be a race between insert and creating a new subscription, in which case
-            /// the block may already have been cleared, but this is normal, because this is concurrent operations.
-            if (added && partition.block_with_partition.block.columns() > 0)
-                storage.subscription_manager.pushToAll(std::move(partition.block_with_partition.block));
+            // /// if block is added: push current_block to all subscribers under the same lock as commit.
+            // /// But there may be a race between insert and creating a new subscription, in which case
+            // /// the block may already have been cleared, but this is normal, because this is concurrent operations.
+            // if (added && partition.block_with_partition.block.columns() > 0)
+            // {
+            //     auto single_push = [&block = partition.block_with_partition.block](const StreamSubscriptionPtr & subscription)
+            //     {
+            //         subscription->as<QueueStreamSubscription<Block>>()->push(block);
+            //     };
+            //     storage.subscription_manager.executeOnEachSubscription(single_push);
+            // }
         }
 
         /// Explicitly committing block number after commit

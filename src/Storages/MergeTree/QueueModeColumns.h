@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block.h>
+
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Compression/ICompressionCodec.h>
