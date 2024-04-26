@@ -7,4 +7,5 @@
 # https://github.com/ClickHouse/ClickHouse/issues/55629
 fun:rd_kafka_broker_set_nodename
 # https://github.com/ClickHouse/ClickHouse/issues/60443
-fun:rd_kafka_stats_emit_all
+fun:rd_avg_calc
+fun:rd_avg_rollover
