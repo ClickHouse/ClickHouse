@@ -1,3 +1,4 @@
+#include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -13,6 +14,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -64,7 +66,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
     auto full_relative_path = fs::path(root_path);
     if (detached)
-        full_relative_path /= "detached";
+        full_relative_path /= MergeTreeData::DETACHED_DIR_NAME;
 
     std::optional<String> original_checksums_content;
     std::optional<Strings> original_files_list;
@@ -109,7 +111,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     if (!exists("checksums.txt"))
         return false;
 
-    auto storage_from_detached = create(volume, fs::path(root_path) / "detached", detached_part_path, /*initialize=*/ true);
+    auto storage_from_detached = create(volume, fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME, detached_part_path, /*initialize=*/ true);
     if (!storage_from_detached->exists("checksums.txt"))
         return false;
 
@@ -335,7 +337,9 @@ void DataPartStorageOnDiskBase::backup(
     const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
-    TemporaryFilesOnDisks * temp_dirs) const
+    TemporaryFilesOnDisks * temp_dirs,
+    bool is_projection_part,
+    bool allow_backup_broken_projection) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
     fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
@@ -377,7 +381,7 @@ void DataPartStorageOnDiskBase::backup(
 
     bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
 
-    for (const auto & filepath : files_to_backup)
+    auto backup_file = [&](const String & filepath)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
         auto filepath_in_backup = part_path_in_backup / filepath;
@@ -385,8 +389,10 @@ void DataPartStorageOnDiskBase::backup(
         if (files_without_checksums.contains(filepath))
         {
             backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
-            continue;
+            return;
         }
+        else if (is_projection_part && allow_backup_broken_projection && !disk->exists(filepath_on_disk))
+            return;
 
         if (make_temporary_hard_links)
         {
@@ -411,6 +417,31 @@ void DataPartStorageOnDiskBase::backup(
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
 
         backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
+    };
+
+    auto * log = &Poco::Logger::get("DataPartStorageOnDiskBase::backup");
+
+    for (const auto & filepath : files_to_backup)
+    {
+        if (is_projection_part && allow_backup_broken_projection)
+        {
+            try
+            {
+                backup_file(filepath);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                    throw;
+
+                LOG_ERROR(log, "Cannot backup file {} of projection part {}. Will try to ignore it", filepath, part_dir);
+                continue;
+            }
+        }
+        else
+        {
+            backup_file(filepath);
+        }
     }
 }
 
@@ -461,7 +492,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with("detached/");
+    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
     return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 
@@ -589,7 +620,7 @@ void DataPartStorageOnDiskBase::remove(
         if (part_dir_without_slash.has_parent_path())
         {
             auto parent_path = part_dir_without_slash.parent_path();
-            if (parent_path == "detached")
+            if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Trying to remove detached part {} with path {} in remove function. It shouldn't happen",

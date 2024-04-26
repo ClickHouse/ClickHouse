@@ -24,3 +24,5 @@ SELECT * FROM numbers(10) LIMIT LENGTH('NNN') + COS(0), toDate('0000-00-02'); --
 SELECT * FROM numbers(10) LIMIT a + 5 - a; -- { serverError 47 }
 SELECT * FROM numbers(10) LIMIT a + b; -- { serverError 47 }
 SELECT * FROM numbers(10) LIMIT 'Hello'; -- { serverError 440 }
+
+SELECT number from numbers(10) order by number limit (select sum(number), count() from numbers(3)).1;

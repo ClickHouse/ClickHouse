@@ -49,6 +49,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_totals(Keyword::TOTALS);
     ParserKeyword s_having(Keyword::HAVING);
     ParserKeyword s_window(Keyword::WINDOW);
+    ParserKeyword s_qualify(Keyword::QUALIFY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
     ParserKeyword s_limit(Keyword::LIMIT);
     ParserKeyword s_settings(Keyword::SETTINGS);
@@ -86,6 +87,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr group_expression_list;
     ASTPtr having_expression;
     ASTPtr window_list;
+    ASTPtr qualify_expression;
     ASTPtr order_expression_list;
     ASTPtr interpolate_expression_list;
     ASTPtr limit_by_length;
@@ -264,6 +266,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             return false;
         }
+    }
+
+    /// QUALIFY expr
+    if (s_qualify.ignore(pos, expected))
+    {
+        if (!exp_elem.parse(pos, qualify_expression, expected))
+            return false;
     }
 
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
@@ -489,6 +498,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::HAVING, std::move(having_expression));
     select_query->setExpression(ASTSelectQuery::Expression::WINDOW, std::move(window_list));
+    select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, std::move(qualify_expression));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));

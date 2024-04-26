@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-from copy import deepcopy
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
@@ -37,7 +37,7 @@ class Runners(metaclass=WithIter):
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
-class Labels(metaclass=WithIter):
+class CILabels(metaclass=WithIter):
     """
     Label names or commit tokens in normalized form
     """
@@ -46,9 +46,14 @@ class Labels(metaclass=WithIter):
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     CI_SET_REDUCED = "ci_set_reduced"
+    CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
     CI_SET_ANALYZER = "ci_set_analyzer"
+    CI_SET_STATLESS = "ci_set_stateless"
+    CI_SET_STATEFUL = "ci_set_stateful"
+    CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
+    CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
 
     libFuzzer = "libFuzzer"
 
@@ -73,7 +78,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_COMPAT = "binary_amd64_compat"
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
-    BINARY_S390X = "binary_s390x"
+    # BINARY_S390X = "binary_s390x" # disabled because s390x refused to build in the migration to OpenSSL
     FUZZERS = "fuzzers"
 
 
@@ -94,7 +99,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
     STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE = (
-        "Stateless tests (release, analyzer, s3, DatabaseReplicated)"
+        "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
     # merged into STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE:
     # STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
@@ -127,7 +132,7 @@ class JobNames(metaclass=WithIter):
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
-    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, analyzer)"
+    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
     INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
@@ -176,6 +181,13 @@ class JobNames(metaclass=WithIter):
     BUGFIX_VALIDATE = "Bugfix validation"
 
 
+class StatusNames(metaclass=WithIter):
+    "Class with statuses that aren't related to particular jobs"
+    CI = "CI running"
+    MERGEABLE = "Mergeable Check"
+    SYNC = "A Sync"
+
+
 # dynamically update JobName with Build jobs
 for attr_name in dir(Build):
     if not attr_name.startswith("__") and not callable(getattr(Build, attr_name)):
@@ -215,7 +227,7 @@ class JobConfig:
     digest: DigestConfig = field(default_factory=DigestConfig)
     # will be triggered for the job if omited in CI workflow yml
     run_command: str = ""
-    # job timeout
+    # job timeout, seconds
     timeout: Optional[int] = None
     # sets number of batches for multi-batch job
     num_batches: int = 1
@@ -270,7 +282,7 @@ builds_job_config = JobConfig(
     run_command="build_check.py $BUILD_NAME",
 )
 fuzzer_build_job_config = deepcopy(builds_job_config)
-fuzzer_build_job_config.run_by_label = Labels.libFuzzer
+fuzzer_build_job_config.run_by_label = CILabels.libFuzzer
 
 
 @dataclass
@@ -380,7 +392,11 @@ upgrade_check_digest = DigestConfig(
     docker=["clickhouse/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
-    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
+    include_paths=[
+        "./tests/ci/integration_test_check.py",
+        "./tests/ci/integration_tests_runner.py",
+        "./tests/integration/",
+    ],
     exclude_files=[".md"],
     docker=IMAGES.copy(),
 )
@@ -508,10 +524,11 @@ clickbench_test_params = {
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
 }
-install_test_params = {
-    "digest": install_check_digest,
-    "run_command": 'install_check.py "$CHECK_NAME"',
-}
+install_test_params = JobConfig(
+    digest=install_check_digest,
+    run_command='install_check.py "$CHECK_NAME"',
+    timeout=900,
+)
 
 
 @dataclass
@@ -808,22 +825,28 @@ class CIConfig:
 
 CI_CONFIG = CIConfig(
     label_configs={
-        Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        Labels.CI_SET_ARM: LabelConfig(
+        CILabels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        CILabels.CI_SET_FAST: LabelConfig(
             run_jobs=[
-                # JobNames.STYLE_CHECK,
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+            ]
+        ),
+        CILabels.CI_SET_ARM: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
                 Build.PACKAGE_AARCH64,
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        Labels.CI_SET_INTEGRATION: LabelConfig(
+        CILabels.CI_SET_INTEGRATION: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 Build.PACKAGE_RELEASE,
                 JobNames.INTEGRATION_TEST,
             ]
         ),
-        Labels.CI_SET_ANALYZER: LabelConfig(
+        CILabels.CI_SET_ANALYZER: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
@@ -833,7 +856,39 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
-        Labels.CI_SET_REDUCED: LabelConfig(
+        CILabels.CI_SET_STATLESS: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATELESS_TEST_RELEASE,
+            ]
+        ),
+        CILabels.CI_SET_STATLESS_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATELESS_TEST_ASAN,
+            ]
+        ),
+        CILabels.CI_SET_STATEFUL: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATEFUL_TEST_RELEASE,
+            ]
+        ),
+        CILabels.CI_SET_STATEFUL_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATEFUL_TEST_ASAN,
+            ]
+        ),
+        CILabels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
                 for job in JobNames
@@ -844,6 +899,7 @@ CI_CONFIG = CIConfig(
                         "tsan",
                         "msan",
                         "ubsan",
+                        "coverage",
                         # skip build report jobs as not all builds will be done
                         "build check",
                     )
@@ -973,12 +1029,13 @@ CI_CONFIG = CIConfig(
             package_type="binary",
             static_binary_name="riscv64",
         ),
-        Build.BINARY_S390X: BuildConfig(
-            name=Build.BINARY_S390X,
-            compiler="clang-17-s390x",
-            package_type="binary",
-            static_binary_name="s390x",
-        ),
+        # disabled because s390x refused to build in the migration to OpenSSL
+        # Build.BINARY_S390X: BuildConfig(
+        #     name=Build.BINARY_S390X,
+        #     compiler="clang-17-s390x",
+        #     package_type="binary",
+        #     static_binary_name="s390x",
+        # ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-17",
@@ -1008,7 +1065,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_DARWIN_AARCH64,
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
-                Build.BINARY_S390X,
+                # Build.BINARY_S390X, # disabled because s390x refused to build in the migration to OpenSSL
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
@@ -1057,10 +1114,10 @@ CI_CONFIG = CIConfig(
     },
     test_configs={
         JobNames.INSTALL_TEST_AMD: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**install_test_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=install_test_params
         ),
         JobNames.INSTALL_TEST_ARM: TestConfig(
-            Build.PACKAGE_AARCH64, job_config=JobConfig(**install_test_params)  # type: ignore
+            Build.PACKAGE_AARCH64, job_config=install_test_params
         ),
         JobNames.STATEFUL_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
@@ -1285,7 +1342,7 @@ CI_CONFIG = CIConfig(
         JobNames.LIBFUZZER_TEST: TestConfig(
             Build.FUZZERS,
             job_config=JobConfig(
-                run_by_label=Labels.libFuzzer,
+                run_by_label=CILabels.libFuzzer,
                 timeout=10800,
                 run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
             ),
@@ -1298,7 +1355,7 @@ CI_CONFIG.validate()
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
     "PR Check",
-    "A Sync",  # Cloud sync
+    StatusNames.SYNC,
     JobNames.BUILD_CHECK,
     JobNames.BUILD_CHECK_SPECIAL,
     JobNames.DOCS_CHECK,
@@ -1411,9 +1468,9 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Integration tests ("),
     ),
     CheckDescription(
-        "Mergeable Check",
+        StatusNames.MERGEABLE,
         "Checks if all other necessary checks are successful",
-        lambda x: x == "Mergeable Check",
+        lambda x: x == StatusNames.MERGEABLE,
     ),
     CheckDescription(
         "Performance Comparison",

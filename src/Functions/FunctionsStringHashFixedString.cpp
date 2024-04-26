@@ -17,11 +17,7 @@
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
-#    if USE_BORINGSSL
-#        include <openssl/digest.h>
-#    else
-#        include <openssl/evp.h>
-#    endif
+#    include <openssl/evp.h>
 #endif
 
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
@@ -274,7 +270,7 @@ public:
             const typename ColumnIPv6::Container & data = col_from_ip->getData();
             const auto size = col_from_ip->size();
             auto & chars_to = col_to->getChars();
-            const auto length = IPV6_BINARY_LENGTH;
+            const auto length = sizeof(IPv6::UnderlyingType);
             chars_to.resize(size * Impl::length);
             for (size_t i = 0; i < size; ++i)
             {

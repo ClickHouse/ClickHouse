@@ -583,7 +583,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             database_name,
             table_name,
             RowPolicyFilterType::SELECT_FILTER);
-        if (row_policy_filter_ptr)
+        if (row_policy_filter_ptr && !row_policy_filter_ptr->empty())
         {
             row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
             row_policy_data_opt->extendNames(real_column_names);
@@ -678,13 +678,13 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (auto * column = node->as<ColumnNode>(); column != nullptr)
+        if (auto * column = node->as<ColumnNode>())
         {
             if (column->hasExpression())
             {
-                auto column_name = column->getColumnName();
-                node = column->getExpressionOrThrow();
-                node->setAlias(column_name);
+                QueryTreeNodePtr column_expression = column->getExpressionOrThrow();
+                column_expression->setAlias(column->getColumnName());
+                node = std::move(column_expression);
             }
             else
                 column->setColumnSource(replacement_table_expression);
@@ -902,15 +902,27 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
         {
             auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
-            table_name_node->setAlias("_table");
-            column_name_to_node.emplace("_table", table_name_node);
+            auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
+
+            auto function_node = std::make_shared<FunctionNode>("__actionName");
+            function_node->getArguments().getNodes().push_back(std::move(table_name_node));
+            function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+
+            column_name_to_node.emplace("_table", function_node);
         }
 
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_database"))
         {
             auto database_name_node = std::make_shared<ConstantNode>(current_storage_id.database_name);
-            database_name_node->setAlias("_database");
-            column_name_to_node.emplace("_database", database_name_node);
+            auto database_name_alias = std::make_shared<ConstantNode>("__table1._database");
+
+            auto function_node = std::make_shared<FunctionNode>("__actionName");
+            function_node->getArguments().getNodes().push_back(std::move(database_name_node));
+            function_node->getArguments().getNodes().push_back(std::move(database_name_alias));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+
+            column_name_to_node.emplace("_database", function_node);
         }
 
         auto storage_columns = storage_snapshot_->metadata->getColumns();
@@ -1061,7 +1073,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
 
             if (has_database_virtual_column && common_header.has(database_column)
-                && (storage_stage == QueryProcessingStage::FetchColumns || !pipe_header.has("'" + database_name + "'_String")))
+                && storage_stage == QueryProcessingStage::FetchColumns && !pipe_header.has(database_column))
             {
                 ColumnWithTypeAndName column;
                 column.name = database_column;
@@ -1077,7 +1089,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             }
 
             if (has_table_virtual_column && common_header.has(table_column)
-                && (storage_stage == QueryProcessingStage::FetchColumns || !pipe_header.has("'" + table_name + "'_String")))
+                && storage_stage == QueryProcessingStage::FetchColumns && !pipe_header.has(table_column))
             {
                 ColumnWithTypeAndName column;
                 column.name = table_column;
@@ -1663,9 +1675,9 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
-bool StorageMerge::supportsTrivialCountOptimization() const
+bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr ctx) const
 {
-    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(); }) == nullptr;
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(storage_snapshot, ctx); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const

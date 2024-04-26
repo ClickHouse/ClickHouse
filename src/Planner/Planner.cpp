@@ -1,9 +1,10 @@
 #include <Planner/Planner.h>
 
-#include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -1029,9 +1030,12 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
-    UInt64 limit_offset = query_analysis_result.limit_offset;
-    auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
-    query_plan.addStep(std::move(offsets_step));
+    /// If there is not a LIMIT but an offset
+    if (!query_analysis_result.limit_length && query_analysis_result.limit_offset)
+    {
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), query_analysis_result.limit_offset);
+        query_plan.addStep(std::move(offsets_step));
+    }
 }
 
 void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
@@ -1363,6 +1367,16 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
 
+    if (!select_query_info.has_window && query_node.hasQualify())
+    {
+        if (query_node.hasHaving())
+            query_node.getHaving() = mergeConditionNodes({query_node.getHaving(), query_node.getQualify()}, query_context);
+        else
+            query_node.getHaving() = query_node.getQualify();
+
+        query_node.getQualify() = {};
+    }
+
     if (!select_query_info.need_aggregate && query_node.hasHaving())
     {
         if (query_node.hasWhere())
@@ -1631,6 +1645,9 @@ void Planner::buildPlanForQueryNode()
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
+
+            if (expression_analysis_result.hasQualify())
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", result_actions_to_execute);
 
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", result_actions_to_execute);

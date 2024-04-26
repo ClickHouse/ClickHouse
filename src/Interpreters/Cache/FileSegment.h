@@ -171,11 +171,13 @@ public:
      * ========== Methods used by `cache` ========================
      */
 
-    FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
+    FileSegmentGuard::Lock lock() const;
 
     Priority::IteratorPtr getQueueIterator() const;
 
     void setQueueIterator(Priority::IteratorPtr iterator);
+
+    void resetQueueIterator();
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -241,7 +243,6 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
-    FileSegmentGuard::Lock lockFileSegment() const;
 
     String tryGetPath() const;
 

@@ -27,6 +27,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace CurrentMetrics
 {
@@ -562,7 +564,7 @@ void BackupsWorker::doBackup(
 
     /// Checks access rights if this is not ON CLUSTER query.
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = getRequiredAccessToBackup(backup_query->elements);
+    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
         context->checkAccess(required_access);
 
@@ -597,6 +599,7 @@ void BackupsWorker::doBackup(
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
+    backup_create_params.azure_attempt_to_create_container = backup_settings.azure_attempt_to_create_container;
     backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
     backup_create_params.write_settings = getWriteSettingsForBackup(context);
     backup = BackupFactory::instance().createBackup(backup_create_params);
@@ -702,51 +705,27 @@ void BackupsWorker::writeBackupEntries(
             backup_entries.size());
     }
 
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
+
+    std::atomic_bool failed = false;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP_COPY_FILES);
-    auto thread_group = CurrentThread::getGroup();
 
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
+        if (failed)
+            break;
+
         auto & entry = backup_entries[i].second;
         const auto & file_info = file_infos[i];
 
+        auto job = [&]()
         {
-            std::unique_lock lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
-
-        auto job = [&](bool async)
-        {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-
+            if (failed)
+                return;
             try
             {
-                if (async && thread_group)
-                    CurrentThread::attachToGroup(thread_group);
-
-                if (async)
-                    setThreadName("BackupWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
-
                 if (process_list_element)
                     process_list_element->checkTimeLimit();
 
@@ -769,27 +748,21 @@ void BackupsWorker::writeBackupEntries(
             }
             catch (...)
             {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
+                failed = true;
+                throw;
             }
         };
 
         if (always_single_threaded)
         {
-            job(false);
+            job();
             continue;
         }
 
-        thread_pool.scheduleOrThrowOnError([job] { job(true); });
+        runner(std::move(job));
     }
 
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 
@@ -939,6 +912,7 @@ void BackupsWorker::doRestore(
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
     backup_open_params.read_settings = getReadSettingsForRestore(context);
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
+    backup_open_params.is_internal_backup = restore_settings.internal;
     BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
     String current_database = context->getCurrentDatabase();
