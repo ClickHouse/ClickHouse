@@ -18,7 +18,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include <Disks/DiskFactory.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
 #include <Common/randomSeed.h>
