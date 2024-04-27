@@ -477,7 +477,7 @@ try
 
     processConfig();
 
-    SCOPE_EXIT({ cleanup(); })
+    SCOPE_EXIT({ cleanup(); });
 
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
