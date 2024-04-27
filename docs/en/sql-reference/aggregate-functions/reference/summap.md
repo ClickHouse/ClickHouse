@@ -5,7 +5,7 @@ sidebar_position: 141
 
 # sumMap
 
-Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys without overflow.
 
 **Syntax**
 
@@ -24,6 +24,10 @@ Passing a tuple of key and value arrays is a synonym to passing seperately an ar
 :::note 
 The number of elements in `key` and `value` must be the same for each row that is totaled.
 :::
+
+**Returned Value** 
+
+- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 **Example**
 
@@ -73,5 +77,6 @@ Result:
 ```
 
 **See Also**
-    
+
 - [Map combinator for Map datatype](../combinators.md#-map)
+- [sumMapWithOverflow](../reference/summapwithoverflow.md)

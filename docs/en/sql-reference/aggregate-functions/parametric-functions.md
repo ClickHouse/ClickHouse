@@ -505,9 +505,13 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` calculates the number of unique `UserID` values for each `SearchPhrase`, but it only counts up to 4 unique values. If there are more than 4 unique `UserID` values for a `SearchPhrase`, the function returns 5 (4 + 1). The `HAVING` clause then filters out the `SearchPhrase` values for which the number of unique `UserID` values is less than 5. This will give you a list of search keywords that were used by at least 5 unique users.
 
-## sumMapFiltered(keys_to_keep)(keys, values)
+## sumMapFiltered
 
 Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
+
+**Syntax**
+
+`sumMapFiltered(keys_to_keep)(keys, values)`
 
 ## sumMapFilteredWithOverflow
 
