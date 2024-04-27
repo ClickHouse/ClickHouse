@@ -52,11 +52,17 @@ SELECT generateUUIDv4(1), generateUUIDv4(2);
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## generateUUIDv7
+## generateUUIDv7 {#uuidv7-function-generate}
 
 Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
 
 The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
+At any given new timestamp in unix_ts_ms, the counter starts from some random value and then it's being increased by 1 on each new UUID v7 with counter generation until current timestamp changes.
+The counter overflow causes unix_ts_ms field increment by 1 and the counter restart from a random value. Counter increment monotony at one timestamp is guaranteed across all `generateUUIDv7` functions running simultaneously.
+
+:::note
+As of April 2024 UUIDv7 is only a draft and the layout may change in future.
+:::
 
 ```
  0                   1                   2                   3
@@ -64,9 +70,9 @@ The generated UUID contains the current Unix timestamp in milliseconds (48 bits)
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
 |                           unix_ts_ms                          |
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|          unix_ts_ms           |  ver  |       rand_a          |
+|          unix_ts_ms           |  ver  |   counter_high_bits   |
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|var|                        rand_b                             |
+|var|                   counter_low_bits                        |
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
 |                            rand_b                             |
 └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
@@ -110,69 +116,6 @@ SELECT * FROM tab;
 SELECT generateUUIDv7(1), generateUUIDv7(2);
 
 ┌─generateUUIDv7(1)────────────────────┬─generateUUIDv7(2)────────────────────┐
-│ 018f05b1-8c2e-7567-a988-48d09606ae8c │ 018f05b1-8c2e-7946-895b-fcd7635da9a0 │
-└──────────────────────────────────────┴──────────────────────────────────────┘
-```
-
-## generateUUIDv7WithCounter
-
-Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
-
-The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
-At any given new timestamp in unix_ts_ms, the counter starts from some random value and then it's being increased by 1 on each new UUID v7 with counter generation until current timestamp changes.
-The counter overflow causes unix_ts_ms field increment by 1 and the counter restart from a random value. Counter increment monotony at one timestamp is guaranteed across all `generateUUIDv7WithCounter` functions running simultaneously.
-```
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                           unix_ts_ms                          |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|          unix_ts_ms           |  ver  |   counter_high_bits   |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|var|                   counter_low_bits                        |
-├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
-|                            rand_b                             |
-└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
-```
-
-**Syntax**
-
-``` sql
-generateUUIDv7WithCounter([x])
-```
-
-**Arguments**
-
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
-
-**Returned value**
-
-A value of type UUIDv7.
-
-**Usage example**
-
-First, create a table with a column of type UUID, then insert a generated UUIDv7 into the table.
-
-``` sql
-CREATE TABLE tab (uuid UUID) ENGINE = Memory;
-
-INSERT INTO tab SELECT generateUUIDv7WithCounter();
-
-SELECT * FROM tab;
-```
-
-```response
-┌─────────────────────────────────uuid─┐
-│ 018f05c7-56e3-7ac3-93e9-1d93c4218e0e │
-└──────────────────────────────────────┘
-```
-
-**Example where multiple UUIDs are generated per row**
-
-```sql
-SELECT generateUUIDv7WithCounter(1), generateUUIDv7WithCounter(2);
-
-┌─generateUUIDv7WithCounter(1)─────────┬─generateUUIDv7WithCounter(2)─────────┐
 │ 018f05c9-4ab8-7b86-b64e-c9f03fbd45d1 │ 018f05c9-4ab8-7b86-b64e-c9f12efb7e16 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
@@ -181,7 +124,7 @@ SELECT generateUUIDv7WithCounter(1), generateUUIDv7WithCounter(2);
 
 Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
 
-This function behaves like `generateUUIDv7WithCounter` but gives no guarantee on counter monotony across different requests running simultaneously. Counter increment monotony at one timestamp is guaranteed only within one thread calling this function to generate many UUIDs.
+This function behaves like [generateUUIDv7](#uuidv7-function-generate) but gives no guarantee on counter monotony across different requests running simultaneously. Counter increment monotony at one timestamp is guaranteed only within one thread calling this function to generate many UUIDs.
 
 **Syntax**
 
@@ -222,6 +165,74 @@ SELECT generateUUIDv7WithFastCounter(1), generateUUIDv7WithFastCounter(2);
 
 ┌─generateUUIDv7WithFastCounter(1)─────┬─generateUUIDv7WithFastCounter(2)─────┐
 │ 018f05e1-14ee-7bc5-9906-207153b400b1 │ 018f05e1-14ee-7bc5-9906-2072b8e96758 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+
+## generateUUIDv7NonMonotonic
+
+Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+
+The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits) and a random field (76 bits) (including a variant field "2", 2 bit).
+The monotonicity within one timestamp is not guaranteed at all. This is the fastest version of `generateUUIDv7*` functions family.
+
+:::note
+As of April 2024 UUIDv7 is only a draft and the layout may change in future.
+:::
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |       rand_a          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                        rand_b                             |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
+**Syntax**
+
+``` sql
+generateUUIDv7NonMonotonic([x])
+```
+
+**Arguments**
+
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
+
+**Returned value**
+
+A value of type UUIDv7.
+
+**Example**
+
+First, create a table with a column of type UUID, then insert a generated UUIDv7 into the table.
+
+``` sql
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
+
+INSERT INTO tab SELECT generateUUIDv7NonMonotonic();
+
+SELECT * FROM tab;
+```
+
+```response
+┌─────────────────────────────────uuid─┐
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b │
+└──────────────────────────────────────┘
+```
+
+**Example where multiple UUIDs are generated per row**
+
+```sql
+SELECT generateUUIDv7NonMonotonic(1), generateUUIDv7NonMonotonic(2);
+
+┌─generateUUIDv7NonMonotonic(1) ───────┬─generateUUIDv7(2)NonMonotonic────────┐
+│ 018f05b1-8c2e-7567-a988-48d09606ae8c │ 018f05b1-8c2e-7946-895b-fcd7635da9a0 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
