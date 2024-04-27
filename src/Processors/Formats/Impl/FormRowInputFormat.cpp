@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-namespace 
+namespace
 {
     String readFieldName(ReadBuffer & buf)
     {
