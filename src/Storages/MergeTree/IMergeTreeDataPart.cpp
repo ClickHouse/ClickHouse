@@ -340,7 +340,7 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 }
 
 
-const IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
+IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
     if (!index_loaded)

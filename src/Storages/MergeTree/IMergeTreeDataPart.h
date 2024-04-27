@@ -367,7 +367,7 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    const Index getIndex() const;
+    Index getIndex() const;
     void setIndex(Index index_);
     void unloadIndex();
 
