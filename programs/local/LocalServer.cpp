@@ -249,15 +249,14 @@ void LocalServer::tryInitPath()
         LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    fs::create_directories(config().getString("user_defined_path", fs::path(path) / "user_defined/"));
-    fs::create_directories(fs::path(path) / "data/");
-    fs::create_directories(fs::path(path) / "metadata/");
-    fs::create_directories(fs::path(path) / "metadata_dropped/");
+    fs::create_directories(config().getString("user_defined_path", fs::path(path) / "user_defined" / ""));
+    fs::create_directories(fs::path(path) / "data" / "");
+    fs::create_directories(fs::path(path) / "metadata" / "");
 
     global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp/", 0);
-    global_context->setFlagsPath(fs::path(path) / "flags");
+    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
+    global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
 
