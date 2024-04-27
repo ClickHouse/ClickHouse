@@ -295,10 +295,9 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
-            const auto dir = *temporary_directory_to_delete;
+            LOG_DEBUG(&logger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
+            fs::remove_all(*temporary_directory_to_delete);
             temporary_directory_to_delete.reset();
-            LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
-            remove_all(dir);
         }
     }
     catch (...)
@@ -477,6 +476,9 @@ try
     registerFormats();
 
     processConfig();
+
+    SCOPE_EXIT({ cleanup(); })
+
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
@@ -527,16 +529,12 @@ try
 }
 catch (const DB::Exception & e)
 {
-    cleanup();
-
     bool need_print_stack_trace = config().getBool("stacktrace", false);
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
     return e.code() ? e.code() : -1;
 }
 catch (...)
 {
-    cleanup();
-
     std::cerr << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
 }
