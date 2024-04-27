@@ -8393,4 +8393,29 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     }
     return true;
 }
+
+bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove)
+{
+    for (const auto & command : commands)
+    {
+        if (AlterConversions::supportsMutationCommandType(command.type))
+        {
+            if (remove)
+            {
+                --alter_conversions_mutations;
+                if (alter_conversions_mutations < 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly mutations counter is negative ({})", alter_conversions_mutations);
+            }
+            else
+            {
+                if (alter_conversions_mutations < 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly mutations counter is negative ({})", alter_conversions_mutations);
+                ++alter_conversions_mutations;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 }

@@ -169,6 +169,8 @@ private:
     std::map<String, std::set<Int64>> committing_block_numbers;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
+    /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
+    std::atomic<ssize_t> alter_conversions_mutations = 0;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};

@@ -1481,6 +1481,7 @@ const char * ParserAlias::restricted_keywords[] =
     "USING",
     "WHERE",
     "WINDOW",
+    "QUALIFY",
     "WITH",
     "INTERSECT",
     "EXCEPT",

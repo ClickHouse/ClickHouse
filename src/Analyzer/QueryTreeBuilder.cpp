@@ -330,6 +330,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (window_list)
         current_query_tree->getWindowNode() = buildWindowList(window_list, current_context);
 
+    auto qualify_expression = select_query_typed.qualify();
+    if (qualify_expression)
+        current_query_tree->getQualify() = buildExpression(qualify_expression, current_context);
+
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
         current_query_tree->getOrderByNode() = buildSortList(select_order_by_list, current_context);

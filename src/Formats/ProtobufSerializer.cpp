@@ -3736,6 +3736,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support type recursion ({})", field_descriptor->full_name());
         }
         pending_resolution.emplace(field_descriptor);
+        SCOPE_EXIT({ pending_resolution.erase(field_descriptor); });
 
         if (allow_repeat && field_descriptor->is_map())
         {

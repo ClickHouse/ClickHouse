@@ -197,6 +197,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getWindow().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasQualify())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "QUALIFY\n";
+        getQualify()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasOrderBy())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "ORDER BY\n";
@@ -380,6 +386,9 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasWindow())
         select_query->setExpression(ASTSelectQuery::Expression::WINDOW, getWindow().toAST(options));
+
+    if (hasQualify())
+        select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, getQualify()->toAST(options));
 
     if (hasOrderBy())
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST(options));
