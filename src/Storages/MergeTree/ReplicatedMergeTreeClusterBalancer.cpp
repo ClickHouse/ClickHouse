@@ -292,6 +292,7 @@ void ReplicatedMergeTreeClusterBalancer::replicatePartition(const zkutil::ZooKee
     {
         bool shutdown = storage.partial_shutdown_called || storage.shutdown_called;
         bool deadline = watch.elapsedMilliseconds() > DISTRIBUTOR_MIGRATION_TIMEOUT_MS;
+        /// NOTE: in case DROP REPLICA we should ignore is_readonly and is_stopped?
         return deadline || shutdown || storage.is_dropped || storage.is_readonly || is_stopped;
     };
 
