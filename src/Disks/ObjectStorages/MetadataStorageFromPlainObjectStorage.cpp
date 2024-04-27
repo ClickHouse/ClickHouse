@@ -14,14 +14,9 @@ namespace DB
 namespace
 {
 
-std::filesystem::path normalizePath(const std::filesystem::path & path)
-{
-    return std::filesystem::path(path).lexically_normal();
-}
-
 std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 {
-    return normalizePath(path) / "";
+    return path / "";
 }
 
 }
