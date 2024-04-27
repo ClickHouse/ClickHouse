@@ -62,8 +62,8 @@ template <> struct InstructionValueTypeMap<DataTypeInt16>      { using Instructi
 template <> struct InstructionValueTypeMap<DataTypeUInt16>     { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeInt32>      { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeUInt32>     { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt32; };
+template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = Int64; };
+template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt64; };
 template <> struct InstructionValueTypeMap<DataTypeDate>       { using InstructionValueType = UInt16; };
 template <> struct InstructionValueTypeMap<DataTypeDate32>     { using InstructionValueType = Int32; };
 template <> struct InstructionValueTypeMap<DataTypeDateTime>   { using InstructionValueType = UInt32; };
@@ -1017,7 +1017,7 @@ public:
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, *time_zone);
+                    instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
             *pos++ = '\0';
 
@@ -1073,7 +1073,7 @@ public:
         {
             /// DateTime/DateTime64 --> insert instruction
             /// Other types cannot provide the requested data --> write out template
-            if constexpr (is_any_of<T, UInt32, Int64>)
+            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
             {
                 Instruction<T> instruction;
                 instruction.setMysqlFunc(std::move(func));
@@ -1539,7 +1539,7 @@ public:
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
         {
-            if constexpr (is_any_of<T, UInt32, Int64>)
+            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
             {
                 Instruction<T> instruction;
                 instruction.setJodaFunc(std::move(func));
