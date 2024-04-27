@@ -12,6 +12,7 @@ OPTIONS:
     -l LIB          link against LIB (only for -I or -C)
     -b STEPS_NUM    make program to benchmark specified code snippet and run tests with STEPS_NUM each
     -b perf-top     run infinite benchmark and show perf top
+    -B build-dir    build directory for -I (default: "build")
     -t TESTS_NUM    make program to benchmark specified code snippet and run TESTS_NUM tests
     -o FILE         do not run, just save binary executable file
     -O CXX_OPTS     forward option compiler (e.g. -O "-O3 -std=c++20")
@@ -37,6 +38,7 @@ GLOBAL=
 OUTPUT_EXECUTABLE=
 INCS="vector iostream typeinfo cstdlib cmath sys/time.h"
 LIBS=""
+BUILD_DIR=build
 BENCHMARK_STEPS=0
 RUN_PERFTOP=
 BENCHMARK_TESTS=5
@@ -51,7 +53,7 @@ CMD_PARAMS=
 #
 
 if [ "$1" == "--help" ] || [ -z "$1" ]; then usage; fi
-while getopts "vc:CIi:l:b:t:o:O:g:" OPT; do
+while getopts "vc:CIi:l:bB:t:o:O:g:" OPT; do
     case "$OPT" in
     v)      set -x; ;;
     c)      CXX="$OPTARG"; ;;
@@ -60,6 +62,7 @@ while getopts "vc:CIi:l:b:t:o:O:g:" OPT; do
     i)      INCS="$INCS $OPTARG"; ;;
     l)      LIBS="$LIBS $OPTARG"; ;;
     b)      if [ "$OPTARG" = perf-top ]; then BENCHMARK_STEPS=-1; RUN_PERFTOP=y; else BENCHMARK_STEPS="$OPTARG"; fi; ;;
+    B)      BUILD_DIR="$OPTARG"; ;;
     t)      BENCHMARK_TESTS="$OPTARG"; ;;
     o)      OUTPUT_EXECUTABLE="$OPTARG"; ;;
     O)      CXX_OPTS="$CXX_OPTS $OPTARG"; ;;
@@ -110,11 +113,11 @@ find_clickhouse_root () {
 
 find_clickhouse_build () {
     local CLICKHOUSE_ROOT="`find_clickhouse_root`"
-    if [ -e "$CLICKHOUSE_ROOT/build/CMakeCache.txt" ]; then
-        echo "$CLICKHOUSE_ROOT/build"
+    if [ -e "$CLICKHOUSE_ROOT/$BUILD_DIR/CMakeCache.txt" ]; then
+        echo "$CLICKHOUSE_ROOT/$BUILD_DIR"
         return 0
     fi
-    echo "error: $CLICKHOUSE_ROOT/build/CMakeCache.txt doesn't exist"
+    echo "error: $CLICKHOUSE_ROOT/$BUILD_DIR/CMakeCache.txt doesn't exist"
     return 1
 }
 
