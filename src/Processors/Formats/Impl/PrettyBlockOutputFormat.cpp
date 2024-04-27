@@ -38,6 +38,8 @@ void PrettyBlockOutputFormat::calculateWidths(
     max_padded_widths.resize_fill(num_columns);
     name_widths.resize(num_columns);
 
+    const bool no_need_cut_to_width = !format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0;
+
     /// Calculate widths of all values.
     String serialized_value;
     size_t prefix = 2; // Tab character adjustment
@@ -68,7 +70,7 @@ void PrettyBlockOutputFormat::calculateWidths(
             }
 
             widths[i][j] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
-            if (serialized_value.contains('\n'))
+            if (serialized_value.contains('\n') && !no_need_cut_to_width)
             {
                 size_t row_width = 0;
                 size_t row_start = 0;
@@ -438,7 +440,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    if (size_t line_breake_pos = serialized_value.find_first_of('\n'); line_breake_pos != String::npos)
+    if (size_t line_breake_pos = serialized_value.find_first_of('\n'); line_breake_pos != String::npos && cut_to_width)
     {
         has_break_line = true;
         serialized_value = serialized_value.substr(0, line_breake_pos);
@@ -462,7 +464,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         value_width = format_settings.pretty.max_value_width;
     }
-    else if (!has_break_line)
+    else if (!has_break_line && cut_to_width)
         serialized_value += ' ';
 
     auto write_padding = [&]()
