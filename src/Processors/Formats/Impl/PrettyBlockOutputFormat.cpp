@@ -70,7 +70,7 @@ void PrettyBlockOutputFormat::calculateWidths(
             }
 
             widths[i][j] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
-            if (serialized_value.contains('\n') && !no_need_cut_to_width)
+            if (!no_need_cut_to_width && serialized_value.contains('\n'))
             {
                 size_t row_width = 0;
                 size_t row_start = 0;
@@ -440,7 +440,10 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    if (size_t line_breake_pos = serialized_value.find_first_of('\n'); line_breake_pos != String::npos && cut_to_width)
+    size_t line_breake_pos = String::npos;
+    if (cut_to_width)
+        line_breake_pos = serialized_value.find_first_of('\n');
+    if (line_breake_pos != String::npos)
     {
         has_break_line = true;
         serialized_value = serialized_value.substr(0, line_breake_pos);
