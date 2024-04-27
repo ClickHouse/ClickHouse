@@ -448,6 +448,14 @@ jobs:
       test_name: Stateless tests (debug)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatelessTestAsanAzure:
+    needs: [RunConfig, BuilderDebAsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateless tests (azure, asan)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
 ##############################################################################################
@@ -596,6 +604,14 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (tsan)
+      runner_type: stress-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  StressTestTsanAzure:
+    needs: [RunConfig, BuilderDebTsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stress test (azure, tsan)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestMsan:

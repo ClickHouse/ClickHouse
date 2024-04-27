@@ -107,6 +107,7 @@ class JobNames(metaclass=WithIter):
     # STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
+    STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
 
     STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
@@ -129,6 +130,7 @@ class JobNames(metaclass=WithIter):
     STRESS_TEST_UBSAN = "Stress test (ubsan)"
     STRESS_TEST_MSAN = "Stress test (msan)"
     STRESS_TEST_DEBUG = "Stress test (debug)"
+    STRESS_TEST_AZURE_TSAN = "Stress test (azure, tsan)"
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
@@ -1201,6 +1203,10 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_DEBUG,
             job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
         ),
+        JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
+            Build.PACKAGE_ASAN,
+            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True),  # type: ignore
+        ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
@@ -1222,6 +1228,9 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
+        ),
+        JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
+            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
