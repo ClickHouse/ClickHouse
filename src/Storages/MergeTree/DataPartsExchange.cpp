@@ -318,7 +318,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     }
 
     if (!from_remote_disk && isFullPartStorage(part->getDataPartStorage()))
-        part->checksums.checkEqual(data_checksums, false);
+        part->checksums.checkEqual(data_checksums, false, part->name);
 
     return data_checksums;
 }
@@ -906,7 +906,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
-            new_data_part->checksums.checkEqual(data_checksums, false);
+            new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

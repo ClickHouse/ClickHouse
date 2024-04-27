@@ -87,6 +87,10 @@ IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::B
      {"save",   QueryCacheNondeterministicFunctionHandling::Save},
      {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
 
+IMPLEMENT_SETTING_ENUM(QueryCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryCacheSystemTableHandling::Throw},
+     {"save",   QueryCacheSystemTableHandling::Save},
+     {"ignore", QueryCacheSystemTableHandling::Ignore}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
@@ -225,4 +229,8 @@ IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
      {"INVOKER", SQLSecurityType::INVOKER},
      {"NONE", SQLSecurityType::NONE}})
+
+IMPLEMENT_SETTING_ENUM(FirstDayOfWeek, ErrorCodes::BAD_ARGUMENTS,
+                       {{"Monday", FirstDayOfWeek::Monday},
+                        {"Sunday", FirstDayOfWeek::Sunday}})
 }

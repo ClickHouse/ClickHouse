@@ -39,15 +39,8 @@ Every month we get together with the community (users, contributors, customers, 
 
 ## Upcoming Events
 
-Keep an eye out for upcoming meetups and eventsaround the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
+Keep an eye out for upcoming meetups and events around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
-* [ClickHouse Meetup in Bellevue](https://www.meetup.com/clickhouse-seattle-user-group/events/298650371/) - Mar 11
-* [ClickHouse Meetup at Ramp's Offices in NYC](https://www.meetup.com/clickhouse-new-york-user-group/events/298640542/) - Mar 19
-* [ClickHouse Melbourne Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/299479750/) - Mar 20
-* [ClickHouse Meetup in Paris](https://www.meetup.com/clickhouse-france-user-group/events/298997115/) - Mar 21
-* [ClickHouse Meetup in Bengaluru](https://www.meetup.com/clickhouse-bangalore-user-group/events/299479850/) - Mar 23
-* [ClickHouse Meetup in Zurich](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/299628922/) - Apr 16
-* [ClickHouse Meetup in Copenhagen](https://www.meetup.com/clickhouse-denmark-meetup-group/events/299629133/) - Apr 23
 * [ClickHouse Meetup in Dubai](https://www.meetup.com/clickhouse-dubai-meetup-group/events/299629189/) - May 28
 
 
