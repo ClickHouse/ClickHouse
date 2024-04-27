@@ -18,7 +18,7 @@ Aliases: `SVG`, `svg`
 
 **Parameters**
 
-- `geometry` - Geo data. [Geo](../../data-types/geo).
+- `geometry` — Geo data. [Geo](../../data-types/geo).
 - `style` — Optional style name. [String](../../data-types/string).
 
 **Returned value**
