@@ -195,7 +195,8 @@ DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
 template <typename FillPolicy>
-class FunctionGenerateUUIDv7Base : public IFunction,  public FillPolicy {
+class FunctionGenerateUUIDv7Base : public IFunction, public FillPolicy
+{
 public:
     using FillPolicy::name;
     using FillPolicyData = typename FillPolicy::Data;
