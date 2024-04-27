@@ -509,6 +509,8 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
 
+## sumMapFilteredWithOverflow
+
 ## sequenceNextNode
 
 Returns a value of the next event that matched an event chain.
