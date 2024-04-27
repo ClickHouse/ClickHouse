@@ -56,7 +56,6 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_asan--> All with ASAN
 - [ ] <!---ci_include_tsan--> All with TSAN
 - [ ] <!---ci_include_analyzer--> All with Analyzer
-- [ ] <!---ci_include_azure--> All with Azure storage
 - [ ] <!---ci_include_KEYWORD--> Add your option here
 
 #### Exclude tests:
@@ -71,7 +70,7 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_ubsan--> All with UBSAN
 - [ ] <!---ci_exclude_coverage--> All with Coverage
 - [ ] <!---ci_exclude_aarch64--> All with Aarch64
-- [ ] <!---ci_include_azure--> All with Azure storage
+- [ ] <!---ci_exclude_KEYWORD--> Add your option here
 
 #### Extra options:
 - [ ] <!---do_not_test--> do not test (only style check)
@@ -81,3 +80,5 @@ At a minimum, the following information should be added (but add more as needed)
 #### Only specified batches in multi-batch jobs:
 - [ ] <!---batch_0--> 1
 - [ ] <!---batch_1--> 2
+- [ ] <!---batch_2--> 3
+- [ ] <!---batch_3--> 4
