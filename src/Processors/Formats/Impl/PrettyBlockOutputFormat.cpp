@@ -464,7 +464,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         value_width = format_settings.pretty.max_value_width;
     }
-    else if (!has_break_line && cut_to_width)
+    else if (!has_break_line)
         serialized_value += ' ';
 
     auto write_padding = [&]()
