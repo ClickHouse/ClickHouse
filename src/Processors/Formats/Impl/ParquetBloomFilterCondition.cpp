@@ -124,10 +124,14 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
         {
             rpn_stack.emplace_back(true, true);
         }
-        else if (element.function == RPNElement::FUNCTION_IN
+        else if (element.function == RPNElement::FUNCTION_EQUALS
+                 || element.function == RPNElement::FUNCTION_NOT_EQUALS
+                 || element.function == RPNElement::FUNCTION_HAS
+                 || element.function == RPNElement::FUNCTION_HAS_ANY
+                 || element.function == RPNElement::FUNCTION_HAS_ALL
+                 || element.function == RPNElement::FUNCTION_IN
                  || element.function == RPNElement::FUNCTION_NOT_IN
-                 || element.function == RPNElement::FUNCTION_EQUALS
-                 || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+                 || element.function == RPNElement::ALWAYS_FALSE)
         {
             bool match_rows = true;
             bool match_all = element.function == RPNElement::FUNCTION_HAS_ALL;
@@ -389,7 +393,11 @@ bool ParquetBloomFilterCondition::traverseFunction(
                 }
             }
         }
-        else if (function_name == "equals" || function_name == "notEquals")
+        else if (function_name == "equals" ||
+                 function_name == "notEquals" ||
+                 function_name == "has" ||
+                 function_name == "hasAny" ||
+                 function_name == "hasAll")
         {
             Field const_value;
             DataTypePtr const_type;
