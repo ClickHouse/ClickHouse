@@ -1,4 +1,4 @@
-#include<Processors/Formats/Impl/FormInputFormat.h>
+#include<Processors/Formats/Impl/FormRowInputFormat.h>
 #include "Formats/EscapingRuleUtils.h"
 #include <Formats/FormatFactory.h>
 
@@ -10,7 +10,18 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
+namespace 
+{
+    String readFieldName(ReadBuffer & buf)
+    {
+        String field;
+        readStringUntilEquals(field, buf);
+        assertChar('=', buf);
+        return field;
+    }
+}
+
+FormRowInputFormat::FormRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
     size_t num_columns = header.columns();
@@ -18,44 +29,36 @@ FormInputFormat::FormInputFormat(ReadBuffer & in_, Block header_, Params params_
         name_map[header.getByPosition(i).name] = i;
 }
 
-void FormInputFormat::readPrefix()
+void FormRowInputFormat::readPrefix()
 {
     skipBOMIfExists(*in);
 }
 
-const String & FormInputFormat::columnName(size_t i) const
+const String & FormRowInputFormat::columnName(size_t i) const
 {
     return getPort().getHeader().getByPosition(i).name;
 }
 
-void FormInputFormat::readField(size_t index, MutableColumns & columns)
+void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     if (seen_columns[index])
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
 
-    seen_columns[index] = read_columns[index] = true;
+    seen_columns[index] = true;
     const auto & serialization = serializations[index];
 
     String encoded_str, decoded_str;
     readStringUntilAmpersand(encoded_str,*in);
 
     if (!in->eof())
-        assertChar('&',*in);
+        assertChar('&', *in);
 
     Poco::URI::decode(encoded_str, decoded_str);
     ReadBufferFromString buf(decoded_str);
     serialization->deserializeWholeText(*columns[index], buf, format_settings);
 }
 
-String readFieldName(ReadBuffer & buf)
-{
-    String field;
-    readStringUntilEquals(field, buf);
-    assertChar('=', buf);
-    return field;
-}
-
-void FormInputFormat::readFormData(MutableColumns & columns)
+void FormRowInputFormat::readFormData(MutableColumns & columns)
 {
     size_t index = 0;
     StringRef name_ref;
@@ -74,15 +77,12 @@ void FormInputFormat::readFormData(MutableColumns & columns)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref.toString());
 
             /// Skip the value if key is not found.
-            NullOutput sink;
             String encoded_str;
-            readStringUntilAmpersand(encoded_str,*in);
+            readStringUntilAmpersand(encoded_str, *in);
 
             if (!in->eof())
                 assertChar('&',*in);
 
-            ReadBufferFromString buf(encoded_str);
-            readStringInto(sink, buf);
         }
         else
         {
@@ -92,14 +92,12 @@ void FormInputFormat::readFormData(MutableColumns & columns)
     }
 }
 
-bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+bool FormRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     if (in->eof())
         return false;
 
     size_t num_columns = columns.size();
-
-    read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
 
     readFormData(columns);
@@ -113,16 +111,15 @@ bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
     /// Return info about defaults set.
     /// If defaults_for_omitted_fields is set to 0, then we leave already inserted defaults.
     if (format_settings.defaults_for_omitted_fields)
-        ext.read_columns = read_columns;
+        ext.read_columns = seen_columns;
     else
-        ext.read_columns.assign(read_columns.size(), true);
+        ext.read_columns.assign(seen_columns.size(), true);
     return true;
 }
 
-void FormInputFormat::resetParser()
+void FormRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    read_columns.clear();
     seen_columns.clear();
 }
 
@@ -134,12 +131,13 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
-    String field, value;
+    String field, value, decoded_value;
     do
     {
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
-        auto type = tryInferDataTypeByEscapingRule(value, settings, FormatSettings::EscapingRule::Raw);
+        Poco::URI::decode(value, decoded_value);
+        auto type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
         names_and_types.emplace_back(name, type);
     }
     while (checkChar('&',in));
@@ -164,7 +162,7 @@ void registerInputFormatForm(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<FormInputFormat>(buf, sample, std::move(params),settings);
+        return std::make_shared<FormRowInputFormat>(buf, sample, std::move(params),settings);
     });
 }
 

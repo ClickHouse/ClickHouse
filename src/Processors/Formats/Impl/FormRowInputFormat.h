@@ -10,10 +10,10 @@ namespace DB
 
 class ReadBuffer;
 
-class FormInputFormat final : public IRowInputFormat
+class FormRowInputFormat final : public IRowInputFormat
 {
 public:
-    FormInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
+    FormRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "FormInputFormat"; }
     void resetParser() override;
 
@@ -30,7 +30,6 @@ private:
 
 protected:
     const FormatSettings format_settings;
-    std::vector<UInt8> read_columns;
     std::vector<UInt8> seen_columns;
 };
 
@@ -42,8 +41,6 @@ private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     NamesAndTypesList readRowAndGetNamesAndDataTypesForForm(ReadBuffer & in, const FormatSettings & settings);
 };
-
-String readFieldName(ReadBuffer & buf);
 
 }
 
