@@ -742,6 +742,10 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
+        <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
+             however you can change this behaviour by setting this to true -->
+        <table_engines_require_grant>false</table_engines_require_grant>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
@@ -1536,6 +1540,8 @@
         <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
         <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
+        <!-- Send LOGICAL_ERRORs as well (default: false) -->
+        <send_logical_errors>false</send_logical_errors>
     </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
@@ -1578,6 +1584,42 @@
         </tables>
     </rocksdb>
     -->
+
+    <!-- <kafka> -->
+        <!-- Global configuration properties -->
+        <!--
+        NOTE: statistics should be consumed, otherwise it creates too much
+              entries in the queue, that leads to memory leak and slow shutdown.
+        default value: 0
+        <statistics_interval_ms>3000</statistics_interval_ms>
+        -->
+
+        <!-- Topic configuration properties -->
+        <!--
+        <kafka_topic>
+              <name>football</name>
+              <request_timeout_ms>6000</request_timeout_ms>
+        </kafka_topic>
+        -->
+
+        <!-- Producer configuration -->
+        <!--
+        <producer>
+            <compression_codec>gzip</compression_codec>
+            <kafka_topic>
+                <name>football</name>
+                <request_timeout_ms>6000</request_timeout_ms>
+            </kafka_topic>
+        </producer>
+        -->
+
+        <!-- Consumer configuration -->
+        <!--
+        <consumer>
+            <enable_auto_commit>true</enable_auto_commit>
+        </consumer>
+        -->
+    <!-- </kafka> -->
 
     <!-- Configuration for the query cache -->
     <query_cache>
