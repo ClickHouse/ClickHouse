@@ -249,7 +249,6 @@ void LocalServer::tryInitPath()
         LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    fs::create_directories(config().getString("user_defined_path", fs::path(path) / "user_defined" / ""));
     fs::create_directories(fs::path(path) / "data" / "");
     fs::create_directories(fs::path(path) / "metadata" / "");
 
