@@ -231,7 +231,7 @@ public:
         if (size)
         {
             vec_to.resize(size);
-          
+
             /// Not all random bytes produced here are required for the UUIDv7 but it's the simplest way to get the required number of them by using RandImpl
             RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
             auto ts = getTimestampMillisecond();
