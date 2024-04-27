@@ -3,6 +3,8 @@
 #include <Processors/Chunk.h>
 #include <Processors/Sources/QueueSubscriptionSourceAdapter.h>
 
+#include <Storages/Streaming/DynamicBlockTransformer.h>
+
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -22,9 +24,9 @@ class MergeTreePartSequentialReader
 {
 public:
     MergeTreePartSequentialReader(
-        const Block & header_,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
+        DynamicBlockTransformer & transformer_,
         MarkCachePtr mark_cache_,
         Names columns_to_read_,
         RangesInDataPart part_ranges_,
@@ -36,9 +38,9 @@ public:
     Chunk readNext();
 
 private:
-    const Block & header;
     const MergeTreeData & storage;
     const StorageSnapshotPtr & storage_snapshot;
+    DynamicBlockTransformer & transformer;
     MarkCachePtr mark_cache;
     Names columns_to_read;
     RangesInDataPart part_ranges;
@@ -74,6 +76,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     std::optional<MergeTreePartSequentialReader> reader;
 
+    DynamicBlockTransformer transformer;
     std::map<String, std::shared_ptr<PartitionIdChunkInfo>> partition_infos;
 };
 

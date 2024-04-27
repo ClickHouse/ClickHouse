@@ -4,6 +4,8 @@
 
 #include <Processors/Sources/QueueSubscriptionSourceAdapter.h>
 
+#include <Storages/Streaming/DynamicBlockTransformer.h>
+
 namespace DB
 {
 
@@ -19,16 +21,9 @@ public:
 protected:
     Chunk useCachedData() override;
 
-    /// Converts block from subscription to output header metadata chunk.
-    /// It is possible for sinks to change chunk somehow before pushing it to subscribers
-    /// or it can be an alter table metadata change
-    Chunk ProjectBlock(Block block);
-
 private:
     StreamSubscriptionPtr subscription_holder;
-
-    Block subscription_stream_metadata;
-    ExpressionActionsPtr stream_converter;
+    DynamicBlockTransformer transformer;
 };
 
 }

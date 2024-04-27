@@ -20,18 +20,18 @@ PartitionIdChunkInfo::PartitionIdChunkInfo(String partition_id_) : partition_id(
 }
 
 MergeTreePartSequentialReader::MergeTreePartSequentialReader(
-    const Block & header_,
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
+    DynamicBlockTransformer & transformer_,
     MarkCachePtr mark_cache_,
     Names columns_to_read_,
     RangesInDataPart part_ranges_,
     std::shared_ptr<PartitionIdChunkInfo> info_)
-    : header{header_}
-    , storage{storage_}
-    , storage_snapshot{storage_snapshot_}
-    , mark_cache{std::move(mark_cache_)}
-    , columns_to_read{std::move(columns_to_read_)}
+    : storage(storage_)
+    , storage_snapshot(storage_snapshot_)
+    , transformer(transformer_)
+    , mark_cache(std::move(mark_cache_))
+    , columns_to_read(std::move(columns_to_read_))
     , part_ranges(std::move(part_ranges_))
     , info(std::move(info_))
 {
@@ -49,12 +49,7 @@ MergeTreePartSequentialReader::MergeTreePartSequentialReader(
         storage.supportsSubcolumns(),
         columns_to_read);
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-                       .withExtendedObjects()
-                       .withVirtuals()
-                       .withSubcolumns(storage.supportsSubcolumns());
-
-    NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
+    NamesAndTypesList columns_for_reader = part_ranges.data_part->getColumns().addTypes(columns_to_read);
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
@@ -113,22 +108,25 @@ Chunk MergeTreePartSequentialReader::readNext()
 
     /// Reorder columns and fill result block.
     size_t num_columns = sample.size();
-    Columns res_columns;
+    ColumnsWithTypeAndName res_columns;
     res_columns.reserve(num_columns);
 
     auto it = sample.begin();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (header.has(it->name))
+        if (transformer.getHeader().has(it->name))
         {
             columns[i]->assumeMutableRef().shrinkToFit();
-            res_columns.emplace_back(std::move(columns[i]));
+            res_columns.emplace_back(std::move(columns[i]), it->type, it->name);
         }
 
         ++it;
     }
 
-    Chunk chunk(std::move(res_columns), rows_read);
+    Block result_block(std::move(res_columns));
+    transformer.transform(result_block);
+
+    Chunk chunk(result_block.getColumns(), rows_read);
     chunk.setChunkInfo(info, PartitionIdChunkInfo::info_slot);
 
     return chunk;
@@ -142,6 +140,7 @@ MergeTreePartitionSequentialSource::MergeTreePartitionSequentialSource(
     , subscription_holder(std::move(subscription_))
     , columns_to_read(std::move(columns_to_read_))
     , storage_snapshot(std::move(storage_snapshot_))
+    , transformer(getPort().getHeader())
 {
 }
 
@@ -200,9 +199,9 @@ void MergeTreePartitionSequentialSource::initNextReader()
     chassert(info_it != partition_infos.end());
 
     reader.emplace(
-        getPort().getHeader(),
         storage,
         storage_snapshot,
+        transformer,
         storage.getContext()->getMarkCache(),
         columns_to_read,
         std::move(ranges_in_data_part),
