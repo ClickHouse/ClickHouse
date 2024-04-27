@@ -83,8 +83,6 @@ struct FillAllRandomPolicy
     static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), and a random field (74 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit). It is the fastest version of generateUUIDv7* functions family.";
     struct Data
     {
-        Data() {}
-
         void generate(UUID & uuid, uint64_t ts)
         {
             setTimestamp(uuid, ts);
