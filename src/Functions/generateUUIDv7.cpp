@@ -116,7 +116,7 @@ struct CounterFields
         }
         else
         {
-            UUIDHelpers::getHighBytes(uuid) = (timestamp << 16) | 0x7000 | (counter >> counter_low_bits_count); 
+            UUIDHelpers::getHighBytes(uuid) = (timestamp << 16) | 0x7000 | (counter >> counter_low_bits_count);
             UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_with_counter_bits_mask) | variant_2_mask | ((counter & counter_low_bits_mask) << rand_b_low_bits_count);
         }
     }
