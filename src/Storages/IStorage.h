@@ -14,13 +14,13 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
 
 #include <optional>
-#include <compare>
 
 
 namespace DB
@@ -126,6 +126,9 @@ public:
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
+
+    /// Returns true if the storage supports queries with the STREAM section.
+    virtual bool supportsStreaming() const { return true; }
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
@@ -282,6 +285,9 @@ private:
     MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:
+    /// Structure for managing subscriptions
+    mutable StreamSubscriptionManager subscription_manager;
+
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
@@ -356,6 +362,10 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Creates subscription for capturing storage changes
+    /// By default calls subscribe on subscription manager
+    virtual StreamSubscriptionPtr subscribeForChanges() const;
+
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
@@ -413,6 +423,18 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Version of read for streaming queries
+    /// Default implementation calls default read and constructs reading from subscription pipeline
+    virtual void streamingRead(
+        QueryPlan & query_plan,
+        const Names & /*column_names*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/);
+
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.
@@ -432,6 +454,8 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }
+
+    virtual Chain toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/);
 
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed
@@ -715,22 +739,16 @@ public:
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.
-    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
-    {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-    }
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const;
+    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const;
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
-    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
-    {
-        return getStorageSnapshot(metadata_snapshot, query_context);
-    }
+    StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const;
+    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const;
 
     /// Creates a storage snapshot but without holding a data specific to storage.
-    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
-    {
-        return getStorageSnapshot(metadata_snapshot, query_context);
-    }
+    StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const;
+    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const;
 
     /// Re initialize disks in case the underlying storage policy changed
     virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }

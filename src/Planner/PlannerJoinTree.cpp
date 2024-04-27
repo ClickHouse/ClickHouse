@@ -721,16 +721,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             if (table_expression_query_info.table_expression_modifiers)
             {
                 const auto & table_expression_modifiers = table_expression_query_info.table_expression_modifiers;
+                bool has_stream = table_expression_modifiers->hasStream();
                 auto sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
                 auto sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
 
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
+                    has_stream,
                     sample_size_ratio,
                     sample_offset_ratio);
             }
             else
             {
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
+                    false,
                     {} /*sample_size_ratio*/,
                     {} /*sample_offset_ratio*/);
             }
@@ -811,8 +814,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                     bool is_final = table_expression_query_info.table_expression_modifiers
                         && table_expression_query_info.table_expression_modifiers->hasFinal();
+                    bool is_stream = table_expression_query_info.table_expression_modifiers
+                        && table_expression_query_info.table_expression_modifiers->hasStream();
                     bool optimize_move_to_prewhere
-                        = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
+                        = settings.optimize_move_to_prewhere && !is_stream && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
                     auto supported_prewhere_columns = storage->supportedPrewhereColumns();
                     if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
@@ -874,15 +879,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 from_stage = storage->getQueryProcessingStage(
                     query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
-                storage->read(
-                    query_plan,
-                    columns_names,
-                    storage_snapshot,
-                    table_expression_query_info,
-                    query_context,
-                    from_stage,
-                    max_block_size,
-                    max_streams);
+                if (table_expression_query_info.isStream() && query_context->getSettingsRef().allow_experimental_streaming)
+                    storage->streamingRead(query_plan, columns_names, storage_snapshot, table_expression_query_info,
+                                           query_context, from_stage, max_block_size, max_streams);
+                else
+                    storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info,
+                                  query_context, from_stage, max_block_size, max_streams);
 
                 const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)

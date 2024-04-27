@@ -9,8 +9,14 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/Chain.h>
+#include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/SinkToSubscribers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Backups/RestorerFromBackup.h>
@@ -116,6 +122,11 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
+StreamSubscriptionPtr IStorage::subscribeForChanges() const
+{
+    return subscription_manager.subscribe();
+}
+
 Pipe IStorage::watch(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
@@ -179,6 +190,56 @@ void IStorage::readFromPipe(
         auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, context, query_info);
         query_plan.addStep(std::move(read_step));
     }
+}
+
+void IStorage::streamingRead(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    /// prepare read from storage plan
+    QueryPlanPtr storage_query_plan = std::make_unique<QueryPlan>();
+    read(*storage_query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+
+    if (!storage_query_plan->isInitialized())
+    {
+        auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+        Pipe pipe(std::make_shared<NullSource>(source_header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource");
+        storage_query_plan->addStep(std::move(read_from_pipe));
+    }
+
+    /// prepare read from subscription plan
+    QueryPlanPtr subscription_query_plan = std::make_unique<QueryPlan>();
+    auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
+        getInMemoryMetadata().getSampleBlock(),
+        storage_snapshot->getSampleBlockForColumns(column_names),
+        storage_snapshot->getStreamSubscription());
+    subscription_query_plan->addStep(std::move(subscription_source));
+
+    /// unite plans with streaming adapter
+    auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
+        storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
+
+    std::vector<QueryPlanPtr> plans;
+    plans.reserve(2);
+
+    plans.push_back(std::move(storage_query_plan));
+    plans.push_back(std::move(subscription_query_plan));
+
+    query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
+}
+
+Chain IStorage::toSubscribersWrite(const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
+{
+    auto sink_to_subscribers = std::make_shared<SinkToSubscribers>(metadata_snapshot->getSampleBlock(), subscription_manager);
+    return Chain(std::move(sink_to_subscribers));
 }
 
 std::optional<QueryPipeline> IStorage::distributedWrite(
@@ -309,6 +370,36 @@ void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String
     if (!filenames.empty())
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
                         getStorageID().getFullTableName(), data_path_in_backup);
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getStorageSnapshot(metadata_snapshot, query_context, {});
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/, const StorageSnapshotSettings & /*additional_settings*/) const
+{
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const
+{
+    return getStorageSnapshotForQuery(metadata_snapshot, query, query_context, {});
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const
+{
+    return getStorageSnapshot(metadata_snapshot, query_context, additional_settings);
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getStorageSnapshotWithoutData(metadata_snapshot, query_context, {});
+}
+
+StorageSnapshotPtr IStorage::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const
+{
+    return getStorageSnapshot(metadata_snapshot, query_context, additional_settings);
 }
 
 std::string PrewhereInfo::dump() const

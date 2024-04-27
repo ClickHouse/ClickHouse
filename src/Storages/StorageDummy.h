@@ -37,7 +37,9 @@ public:
         return original_storage_snapshot ? original_storage_snapshot->storage.hasEvenlyDistributedRead() : false;
     }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+    using IStorage::getStorageSnapshot;
+    StorageSnapshotPtr getStorageSnapshot(
+        const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/, const StorageSnapshotSettings& /*additional_settings*/) const override
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
     }

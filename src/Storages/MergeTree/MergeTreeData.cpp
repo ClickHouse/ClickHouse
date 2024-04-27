@@ -8190,25 +8190,33 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr &,
     return !hasLightweightDeletedMask();
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageSnapshotPtr MergeTreeData::getStorageSnapshot(
+    const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
     ColumnsDescription object_columns_copy;
+    StreamSubscriptionPtr stream_subscription = nullptr;
 
     {
         auto lock = lockParts();
+
         snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
         object_columns_copy = object_columns;
+
+        if (additional_settings.need_to_create_subscription)
+            stream_subscription = subscribeForChanges();
     }
 
     snapshot_data->alter_conversions.reserve(snapshot_data->parts.size());
     for (const auto & part : snapshot_data->parts)
         snapshot_data->alter_conversions.push_back(getAlterConversionsForPart(part));
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(
+        *this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data), additional_settings, std::move(stream_subscription));
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(
+    const StorageMetadataPtr & metadata_snapshot, ContextPtr, const StorageSnapshotSettings &) const
 {
     auto lock = lockParts();
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());

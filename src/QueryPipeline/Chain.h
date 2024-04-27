@@ -36,6 +36,8 @@ public:
     void addSink(ProcessorPtr processor);
     void appendChain(Chain chain);
 
+    static Chain concat(Chain lhs, Chain rhs);
+
     IProcessor & getSource();
     IProcessor & getSink();
 

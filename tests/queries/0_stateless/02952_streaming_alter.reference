@@ -1,0 +1,12 @@
+started 0
+0 0
+== Alter table: add column c ==
+0 0
+1 1
+== Alter table: drop column c ==
+0 0
+== Alter table: change type b ==
+0 0
+1 1
+== Alter table: drop column b ==
+THERE_IS_NO_COLUMN

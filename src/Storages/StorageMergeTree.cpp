@@ -284,6 +284,7 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
     return getTotalActiveSizeInBytes();
 }
 
+
 std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &) const
 {
     UInt64 res = 0;
@@ -301,6 +302,11 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
+}
+
+Chain StorageMergeTree::toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
+{
+    return Chain();
 }
 
 void StorageMergeTree::checkTableCanBeDropped(ContextPtr query_context) const

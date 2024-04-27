@@ -1,3 +1,4 @@
+#include <optional>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Common/checkStackSize.h>
@@ -115,6 +116,8 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_FINAL;
+    extern const int ILLEGAL_STREAM;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
@@ -250,6 +253,9 @@ struct IdentifierLookup
 {
     Identifier identifier;
     IdentifierLookupContext lookup_context;
+
+    // additional field of IdentifierNode - can be set only for Table/TableFunction Identifiers
+    std::optional<TableExpressionModifiers> table_expression_modifiers = std::nullopt;
 
     bool isExpressionLookup() const
     {
@@ -1329,7 +1335,7 @@ private:
 
     /// Resolve identifier functions
 
-    static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
+    static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const IdentifierLookup & identifier_lookup, ContextPtr context);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
         size_t identifier_bind_size,
@@ -2387,6 +2393,22 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "Storage {} doesn't support sampling",
                     storage->getStorageID().getFullNameNotQuoted());
+
+            if (table_expression_modifiers->hasStream())
+            {
+                if (scope.context && !scope.context->getSettingsRef().allow_experimental_streaming)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming Mode support is disabled");
+
+                if (storage->isSystemStorage())
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM, "Streaming Mode is not supported for system tables");
+
+                if (!storage->supportsStreaming())
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM, "Streaming Mode is not supported for storage: {}", storage->getName());
+
+                if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Streaming query is not compatible with other table expression modifiers (sampling or FINAL)");
+            }
         }
     }
 }
@@ -2598,8 +2620,11 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context)
+QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(const IdentifierLookup & identifier_lookup, ContextPtr context)
 {
+    const auto & table_identifier = identifier_lookup.identifier;
+    const auto & table_expression_modifiers = identifier_lookup.table_expression_modifiers;
+
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
         throw Exception(ErrorCodes::INVALID_IDENTIFIER,
@@ -2634,8 +2659,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
         return {};
 
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context, StorageSnapshotSettings{
+        .need_to_create_subscription = table_expression_modifiers.has_value() && table_expression_modifiers->hasStream(),
+    });
+
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
 
@@ -4171,7 +4200,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result.resolved_identifier = tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        resolve_result.resolved_identifier = tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup, scope.context);
 
         if (resolve_result.resolved_identifier)
             resolve_result.resolve_place = IdentifierResolvePlace::DATABASE_CATALOG;
@@ -5369,7 +5398,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context);
+                // table expression modifiers here must be empty, since the arguments of the function cannot be a table expression.
+                IdentifierLookup table_lookup{identifier, IdentifierLookupContext::TABLE_EXPRESSION};
+
+                auto table_node = tryResolveTableIdentifierFromDatabaseCatalog(table_lookup, scope.context);
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -5570,9 +5602,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         if (query_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
                         {
-                            auto replacement_table_expression = std::make_shared<TableNode>(storage, scope.context);
-                            if (std::optional<TableExpressionModifiers> table_expression_modifiers = query_table_node->getTableExpressionModifiers())
+                            const auto & table_expression_modifiers = query_table_node->getTableExpressionModifiers();
+
+                            auto replacement_table_expression = std::make_shared<TableNode>(storage, scope.context, StorageSnapshotSettings{
+                                .need_to_create_subscription = table_expression_modifiers.has_value() && table_expression_modifiers->hasStream(),
+                            });
+
+                            if (table_expression_modifiers.has_value())
                                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+
                             in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression));
                         }
                     }
@@ -6834,9 +6872,15 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             case QueryTreeNodeType::IDENTIFIER:
             {
                 auto & from_table_identifier = current_join_tree_node->as<IdentifierNode &>();
-                auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-
                 auto from_table_identifier_alias = from_table_identifier.getAlias();
+                auto table_expression_modifiers = from_table_identifier.getTableExpressionModifiers();
+
+                IdentifierLookup table_identifier_lookup
+                {
+                    from_table_identifier.getIdentifier(),
+                    IdentifierLookupContext::TABLE_EXPRESSION,
+                    table_expression_modifiers,
+                };
 
                 IdentifierResolveSettings resolve_settings;
                 /// In join tree initialization ignore join tree as identifier lookup source
@@ -6871,8 +6915,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 auto table_expression_it = scope.alias_name_to_table_expression_node.find(from_table_identifier_alias);
                 if (table_expression_it != scope.alias_name_to_table_expression_node.end())
                     table_expression_it->second = resolved_identifier;
-
-                auto table_expression_modifiers = from_table_identifier.getTableExpressionModifiers();
 
                 auto * resolved_identifier_query_node = resolved_identifier->as<QueryNode>();
                 auto * resolved_identifier_union_node = resolved_identifier->as<UnionNode>();

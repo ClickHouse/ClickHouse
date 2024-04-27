@@ -23,6 +23,7 @@ while (false)
 
 void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    hash_state.update(stream);
     hash_state.update(final);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
@@ -122,6 +123,12 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
     {
         settings.ostr << settings.nl_or_ws << indent_str;
         subquery->formatImpl(settings, state, frame);
+    }
+
+    if (stream)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
+            << "STREAM" << (settings.hilite ? hilite_none : "");
     }
 
     if (final)

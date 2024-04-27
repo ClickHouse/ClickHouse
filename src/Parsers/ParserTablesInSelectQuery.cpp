@@ -8,7 +8,6 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
 
-
 namespace DB
 {
 
@@ -29,6 +28,10 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         && !ParserWithOptionalAlias(std::make_unique<ParserTableAsStringLiteralIdentifier>(), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected))
         return false;
+
+    /// STREAM
+    if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
+        res->stream = true;
 
     /// FINAL
     if (ParserKeyword(Keyword::FINAL).ignore(pos, expected))
