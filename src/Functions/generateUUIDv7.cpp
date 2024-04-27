@@ -279,7 +279,8 @@ private:
 };
 
 template<typename FillPolicy>
-void registerUUIDv7Generator(auto& factory) {
+void registerUUIDv7Generator(auto& factory)
+{
     static constexpr auto doc_syntax_format = "{}([expression])";
     static constexpr auto example_format = "SELECT {}()";
     static constexpr auto multiple_example_format = "SELECT {f}(1), {f}(2)";
