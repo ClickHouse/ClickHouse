@@ -113,8 +113,7 @@ private:
 public:
     explicit LoadFromSQL(ContextPtr context_)
         : WithContext(context_)
-        , metadata_path(
-            fs::canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
+        , metadata_path(fs::weakly_canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
     {
         if (fs::exists(metadata_path))
             cleanup();
