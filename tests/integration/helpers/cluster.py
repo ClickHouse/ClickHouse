@@ -1601,7 +1601,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        use_old_analyzer=False,
+        use_old_analyzer=None,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -4405,10 +4405,12 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-        if (
-            os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
-            or self.use_old_analyzer
-        ):
+
+        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        # Prefer specified in the test option:
+        if self.use_old_analyzer is not None:
+            use_old_analyzer = self.use_old_analyzer
+        if use_old_analyzer:
             write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
