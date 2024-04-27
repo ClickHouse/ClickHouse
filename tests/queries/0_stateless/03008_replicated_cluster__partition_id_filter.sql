@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer=0; -- FIXME: analyzer is not supported yet
+
 -- TODO(cluster): _partition_id filter should be improved by filtering out unused replicas on the initiator
 
 drop table if exists data_r1;

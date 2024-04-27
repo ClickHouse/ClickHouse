@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer=0; -- FIXME: analyzer is not supported yet
+
 drop table if exists data_r1;
 drop table if exists data_r2;
 

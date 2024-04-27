@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer=0; -- FIXME: analyzer is not supported yet
+
 -- Tags: no-random-merge-tree-settings
 
 drop table if exists data_r1;

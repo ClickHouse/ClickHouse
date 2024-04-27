@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer=0; -- FIXME: analyzer is not supported yet
+
 -- FIXME: simple count() cannot be used because in this case we rely on the
 -- implicit smallest column, which can be different on various tables (i.e.
 -- data_r1 can have 0 rows and will have "key" as a smallet column, data_r2
