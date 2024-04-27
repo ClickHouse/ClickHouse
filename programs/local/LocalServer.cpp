@@ -211,7 +211,7 @@ void LocalServer::tryInitPath()
     else
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
-        // (or in the current dir if temporary don't exist)
+        // (or in the current dir if the temporary doesn't exist)
         LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
@@ -249,27 +249,23 @@ void LocalServer::tryInitPath()
         LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    if (path.back() != '/')
-        path += '/';
-
-    fs::create_directories(fs::path(path) / "user_defined/");
+    fs::create_directories(config().getString("user_defined_path", fs::path(path) / "user_defined/"));
     fs::create_directories(fs::path(path) / "data/");
     fs::create_directories(fs::path(path) / "metadata/");
     fs::create_directories(fs::path(path) / "metadata_dropped/");
 
-    global_context->setPath(path);
+    global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(path + "tmp/", 0);
-    global_context->setFlagsPath(path + "flags");
+    global_context->setTemporaryStoragePath(fs::path(path) / "tmp/", 0);
+    global_context->setFlagsPath(fs::path(path) / "flags");
 
-    global_context->setUserFilesPath(""); // user's files are everywhere
+    global_context->setUserFilesPath(""); /// user's files are everywhere
 
     std::string user_scripts_path = config().getString("user_scripts_path", fs::path(path) / "user_scripts/");
     global_context->setUserScriptsPath(user_scripts_path);
-    fs::create_directories(user_scripts_path);
 
     /// top_level_domains_lists
-    const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
+    const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
     if (!top_level_domains_path.empty())
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
 }
