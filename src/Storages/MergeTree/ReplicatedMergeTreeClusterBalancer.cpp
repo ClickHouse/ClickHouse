@@ -307,8 +307,13 @@ void ReplicatedMergeTreeClusterBalancer::replicatePartition(const zkutil::ZooKee
         Stopwatch entry_watch;
         if (!zookeeper->waitForDisappear(entry->znode_name, stop_waiting))
         {
-            throw Exception(ErrorCodes::ABORTED, "Processing of {} had been aborted (or timeout had been exceeded, took {} ms).",
-                entry->znode_name, watch.elapsedMilliseconds());
+            throw Exception(ErrorCodes::ABORTED, "Processing of {} had been aborted (shutdown={}, is_dropped={}, is_readonly={}, is_stopped={}, took={} ms).",
+                entry->znode_name,
+                storage.partial_shutdown_called || storage.shutdown_called,
+                storage.is_dropped,
+                storage.is_readonly,
+                is_stopped,
+                watch.elapsedMilliseconds());
         }
         LOG_INFO(log, "Waiting for entry {} ({}). Took {} ms.",
             entry->getDescriptionForLogs(storage.format_version), entry->znode_name, watch.elapsedMilliseconds());
