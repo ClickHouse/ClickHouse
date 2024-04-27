@@ -410,6 +410,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         try
         {
+            if (LoadingStrictnessLevel::ATTACH == mode && current_zookeeper && current_zookeeper->exists(replica_path + "/is_active"))
+            {
+                throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "There already is an active replica with this replica path {}", replica_path);
+            }
+
             if (current_zookeeper && current_zookeeper->exists(replica_path + "/host"))
             {
                 /// Check it earlier if we can (we don't want incompatible version to start).
@@ -6041,11 +6046,24 @@ bool StorageReplicatedMergeTree::optimize(
 
             if (select_decision != SelectPartsDecision::SELECTED)
             {
-                constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
-                assert(disable_reason.text != unknown_disable_reason);
-                if (!partition_id.empty())
-                    disable_reason.text += fmt::format(" (in partition {})", partition_id);
-                return handle_noop(message_fmt, disable_reason.text);
+                if (try_no + 1 < max_retries)
+                {
+                    /// Here we trying to have a similar behaviour to ordinary MergeTree: if some merges are already in progress - let's wait for them to finish.
+                    /// This way `optimize final` won't just silently be a noop (if also `optimize_throw_if_noop=false`), but will wait for the active merges and repeat an attempt to schedule final merge.
+                    /// This guarantees are enough for tests, because there we have full control over insertions.
+                    const auto wait_timeout = query_context->getSettingsRef().receive_timeout.totalMilliseconds() / max_retries;
+                    /// DEFAULT (and not LIGHTWEIGHT) because merges are not condidered lightweight; empty `source_replicas` means "all replicas"
+                    waitForProcessingQueue(wait_timeout, SyncReplicaMode::DEFAULT, {});
+                    continue;
+                }
+                else
+                {
+                    constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
+                    assert(disable_reason.text != unknown_disable_reason);
+                    if (!partition_id.empty())
+                        disable_reason.text += fmt::format(" (in partition {})", partition_id);
+                    return handle_noop(message_fmt, disable_reason.text);
+                }
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
@@ -8449,15 +8467,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 {
     if (cluster.has_value())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is clustered, MOVE PARTITION is not implemented for this mode.", getStorageID().getNameForLogs());
-    if (StorageReplicatedMergeTree * dest_replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(dest_table.get()))
-    {
-        if (dest_replicated_table->cluster.has_value())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is clustered, MOVE PARTITION is not implemented for this mode.", dest_table->getStorageID().getNameForLogs());
-    }
-
-    auto lock1 = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
-    auto lock2 = dest_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
-    auto storage_settings_ptr = getSettings();
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
     if (!dest_table_storage)
@@ -8471,6 +8480,13 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                         getStorageID().getNameForLogs(), getStorageID().getNameForLogs(),
                         this->getStoragePolicy()->getName(), getStorageID().getNameForLogs(),
                         dest_table_storage->getStoragePolicy()->getName());
+
+    // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
+    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, query_context, true);
+
+    auto lock1 = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+    auto lock2 = dest_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+    auto storage_settings_ptr = getSettings();
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();

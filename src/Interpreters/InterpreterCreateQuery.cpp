@@ -258,15 +258,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_mysql to use it");
     }
 
-    if (create.storage->engine->name == "Replicated"
-        && !getContext()->getSettingsRef().allow_experimental_database_replicated
-        && !internal && !create.attach)
-    {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
-                        "Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it");
-    }
-
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql
         && !internal && !create.attach)
@@ -732,11 +723,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
-    {
-        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
-        if (source_access_type != AccessType::NONE)
-            getContext()->checkAccess(source_access_type);
-    }
+        getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
     TableProperties properties;
     TableLockHolder as_storage_lock;
@@ -793,6 +780,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
+
+        if (!create.comment && !as_storage_metadata->comment.empty())
+            create.set(create.comment, std::make_shared<ASTLiteral>(as_storage_metadata->comment));
 
         /// Secondary indices and projections make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
@@ -1842,11 +1832,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, create.to_table_id.database_name, create.to_table_id.table_name);
 
     if (create.storage && create.storage->engine)
-    {
-        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
-        if (source_access_type != AccessType::NONE)
-            required_access.emplace_back(source_access_type);
-    }
+        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
     return required_access;
 }

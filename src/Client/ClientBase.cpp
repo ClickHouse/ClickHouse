@@ -2955,7 +2955,8 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Common options for clickhouse-client and clickhouse-local.
     options_description.main_description->add_options()
-        ("help", "produce help message")
+        ("help", "print usage summary, combine with --verbose to display all options")
+        ("verbose", "print query and other debugging info")
         ("version,V", "print version information and exit")
         ("version-clean", "print version in machine-readable format and exit")
 
@@ -2979,7 +2980,6 @@ void ClientBase::init(int argc, char ** argv)
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
 
         ("echo", "in batch mode, print query before execution")
-        ("verbose", "print query and other debugging info")
 
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
@@ -3007,6 +3007,8 @@ void ClientBase::init(int argc, char ** argv)
     ;
 
     addOptions(options_description);
+
+    OptionsDescription options_description_non_verbose = options_description;
 
     auto getter = [](const auto & op)
     {
@@ -3042,11 +3044,17 @@ void ClientBase::init(int argc, char ** argv)
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
+    if (options.count("verbose"))
+        config().setBool("verbose", true);
+
     /// Output of help message.
     if (options.count("help")
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
-        printHelpMessage(options_description);
+        if (config().getBool("verbose", false))
+            printHelpMessage(options_description, true);
+        else
+            printHelpMessage(options_description_non_verbose, false);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
@@ -3113,8 +3121,6 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
         config().setString("history_file", options["history_file"].as<std::string>());
-    if (options.count("verbose"))
-        config().setBool("verbose", true);
     if (options.count("interactive"))
         config().setBool("interactive", true);
     if (options.count("pager"))
