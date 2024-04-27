@@ -5,7 +5,7 @@
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
-#include <unordered_map>
+#include <map>
 
 namespace DB
 {
@@ -28,7 +28,7 @@ class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
 public:
     /// Local path prefixes mapped to storage key prefixes.
-    using PathMap = std::unordered_map<std::string, std::string>;
+    using PathMap = std::map<std::filesystem::path, std::string>;
 
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;

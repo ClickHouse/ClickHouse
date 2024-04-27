@@ -69,10 +69,12 @@ std::vector<std::string> getDirectChildrenOnRewritableDisk(
 
     {
         std::shared_lock lock(shared_mutex);
-        for (const auto & [k, v] : local_path_prefixes)
+        auto end_it = local_path_prefixes.end();
+        for (auto it = local_path_prefixes.lower_bound(local_path); it != end_it; ++it)
         {
+            const auto & [k, v] = std::make_tuple(it->first.string(), it->second);
             if (!k.starts_with(local_path))
-                continue;
+                break;
 
             auto slash_num = count(k.begin() + local_path.size(), k.end(), '/');
             if (slash_num != 1)
