@@ -295,7 +295,6 @@ def test_replicated_database(cluster):
     node1 = cluster.instances["node3"]
     node1.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
-        settings={"allow_experimental_database_replicated": 1},
     )
 
     global uuids
@@ -312,7 +311,6 @@ def test_replicated_database(cluster):
     node2 = cluster.instances["node2"]
     node2.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r2')",
-        settings={"allow_experimental_database_replicated": 1},
     )
     node2.query("SYSTEM SYNC DATABASE REPLICA rdb")
 
