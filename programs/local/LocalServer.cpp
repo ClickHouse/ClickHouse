@@ -249,9 +249,6 @@ void LocalServer::tryInitPath()
         LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    fs::create_directories(fs::path(path) / "data" / "");
-    fs::create_directories(fs::path(path) / "metadata" / "");
-
     global_context->setPath(fs::path(path) / "");
 
     global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
