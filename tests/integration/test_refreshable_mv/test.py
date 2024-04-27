@@ -48,34 +48,53 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         )
 
     # Table engine check.
-    assert "BAD_ARGUMENTS" in node1.query_and_get_error("create materialized view re.a refresh every 1 second (x Int64) engine Memory as select 1 as x")
+    assert "BAD_ARGUMENTS" in node1.query_and_get_error(
+        "create materialized view re.a refresh every 1 second (x Int64) engine Memory as select 1 as x"
+    )
 
     # Basic refreshing.
-    node1.query("create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)")
+    node1.query(
+        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)"
+    )
     node1.query("system sync database replica re")
     for node in nodes:
         node.query("system wait view re.a")
         assert node.query("select * from re.a order by all") == "0\n10\n"
-        assert node.query("select database, view, last_success_time != 0, last_refresh_time != 0, next_refresh_time != 0, last_refresh_replica in ('1','2'), exception from system.view_refreshes") == "re\ta\t1\t1\t1\t1\t\n"
+        assert (
+            node.query(
+                "select database, view, last_success_time != 0, last_refresh_time != 0, next_refresh_time != 0, last_refresh_replica in ('1','2'), exception from system.view_refreshes"
+            )
+            == "re\ta\t1\t1\t1\t1\t\n"
+        )
 
     # Append mode, with and without coordination.
     for coordinated in [True, False]:
         name = "append" if coordinated else "append_uncoordinated"
         refresh_settings = "" if coordinated else " settings all_replicas = 1"
-        node2.query(f"create materialized view re.{name} refresh every 1 year{refresh_settings} append (x Int64) engine ReplicatedMergeTree order by x as select rand() as x")
+        node2.query(
+            f"create materialized view re.{name} refresh every 1 year{refresh_settings} append (x Int64) engine ReplicatedMergeTree order by x as select rand() as x"
+        )
         # Stop the clocks.
         for node in nodes:
-            node.query(f"system test view re.{name} set fake time '2040-01-01 00:00:01'")
+            node.query(
+                f"system test view re.{name} set fake time '2040-01-01 00:00:01'"
+            )
         # Wait for quiescence.
         for node in nodes:
             node.query(f"system wait view re.{name}")
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
         for node in nodes:
-            node.query(f"system test view re.{name} set fake time '2041-01-01 00:00:01'")
+            node.query(
+                f"system test view re.{name} set fake time '2041-01-01 00:00:01'"
+            )
         # Wait for refresh.
         for node in nodes:
-            assert_eq_with_retry(node, f"select status, last_success_time from system.view_refreshes where view = '{name}'", "Scheduled\t2041-01-01 00:00:01")
+            assert_eq_with_retry(
+                node,
+                f"select status, last_success_time from system.view_refreshes where view = '{name}'",
+                "Scheduled\t2041-01-01 00:00:01",
+            )
             node.query(f"system wait view re.{name}")
         # Check results.
         rows_after = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
@@ -83,32 +102,57 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         assert rows_after - rows_before == expected
 
     # Uncoordinated append to unreplicated table.
-    node1.query("create materialized view re.unreplicated_uncoordinated refresh every 1 second settings all_replicas = 1 append (x String) engine Memory as select 1 as x")
+    node1.query(
+        "create materialized view re.unreplicated_uncoordinated refresh every 1 second settings all_replicas = 1 append (x String) engine Memory as select 1 as x"
+    )
     node2.query("system sync database replica re")
     for node in nodes:
         node.query("system wait view re.unreplicated_uncoordinated")
-        assert node.query("select distinct x from re.unreplicated_uncoordinated") == "1\n"
+        assert (
+            node.query("select distinct x from re.unreplicated_uncoordinated") == "1\n"
+        )
 
     # Rename.
-    node2.query("create materialized view re.c refresh every 1 year (x Int64) engine ReplicatedMergeTree order by x empty as select rand() as x")
+    node2.query(
+        "create materialized view re.c refresh every 1 year (x Int64) engine ReplicatedMergeTree order by x empty as select rand() as x"
+    )
     node1.query("system sync database replica re")
     node1.query("rename table re.c to re.d")
-    node1.query("alter table re.d modify query select number + sleepEachRow(1) as x from numbers(5) settings max_block_size = 1")
+    node1.query(
+        "alter table re.d modify query select number + sleepEachRow(1) as x from numbers(5) settings max_block_size = 1"
+    )
     # Rename while refreshing.
     node1.query("system refresh view re.d")
-    assert_eq_with_retry(node2, "select status from system.view_refreshes where view = 'd'", "RunningOnAnotherReplica")
+    assert_eq_with_retry(
+        node2,
+        "select status from system.view_refreshes where view = 'd'",
+        "RunningOnAnotherReplica",
+    )
     node2.query("rename table re.d to re.e")
     node1.query("system wait view re.e")
     assert node1.query("select * from re.e order by x") == "0\n1\n2\n3\n4\n"
 
     # A view that will be stuck refreshing until dropped.
-    node1.query("create materialized view re.f refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select sleepEachRow(1) as x from numbers(1000000) settings max_block_size = 1")
-    assert_eq_with_retry(node2, "select status in ('Running', 'RunningOnAnotherReplica') from system.view_refreshes where view = 'f'", "1")
+    node1.query(
+        "create materialized view re.f refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select sleepEachRow(1) as x from numbers(1000000) settings max_block_size = 1"
+    )
+    assert_eq_with_retry(
+        node2,
+        "select status in ('Running', 'RunningOnAnotherReplica') from system.view_refreshes where view = 'f'",
+        "1",
+    )
 
     # Locate coordination znodes.
-    znode_exists = lambda uuid: nodes[randint(0, 1)].query(f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'") == "1\n"
+    znode_exists = (
+        lambda uuid: nodes[randint(0, 1)].query(
+            f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'"
+        )
+        == "1\n"
+    )
     tables = []
-    for row in node1.query("select table, uuid from system.tables where database = 're'").split("\n")[:-1]:
+    for row in node1.query(
+        "select table, uuid from system.tables where database = 're'"
+    ).split("\n")[:-1]:
         name, uuid = row.split("\t")
         print(f"found table {name} {uuid}")
         if name.startswith("."):
@@ -116,10 +160,17 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         coordinated = not name.endswith("uncoordinated")
         tables.append((name, uuid, coordinated))
         assert coordinated == znode_exists(uuid)
-    assert sorted([name for (name, _, _) in tables]) == ["a", "append", "append_uncoordinated", "e", "f", "unreplicated_uncoordinated"]
+    assert sorted([name for (name, _, _) in tables]) == [
+        "a",
+        "append",
+        "append_uncoordinated",
+        "e",
+        "f",
+        "unreplicated_uncoordinated",
+    ]
 
     # Drop all tables and check that coordination znodes were deleted.
-    for (name, uuid, coordinated) in tables:
+    for name, uuid, coordinated in tables:
         maybe_sync = " sync" if randint(0, 1) == 0 else ""
         nodes[randint(0, 1)].query(f"drop table re.{name}{maybe_sync}")
         # TODO: After https://github.com/ClickHouse/ClickHouse/issues/61065 is done (for MVs, not ReplicatedMergeTree), check the parent znode instead.
@@ -129,7 +180,9 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     # drop happens while creating/exchanging/dropping the inner table.
     for i in range(20):
         maybe_empty = " empty" if randint(0, 2) == 0 else ""
-        nodes[randint(0, 1)].query(f"create materialized view re.g refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x{maybe_empty} as select 1 as x")
+        nodes[randint(0, 1)].query(
+            f"create materialized view re.g refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x{maybe_empty} as select 1 as x"
+        )
         r = randint(0, 5)
         if r == 0:
             pass
