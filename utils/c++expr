@@ -7,6 +7,7 @@ USAGE: c++expr [-c CXX | -C | -I] [-i INCLUDE] [-l LIB] [-b STEPS] [-t TESTS] [-
 OPTIONS:
     -c CXX          use specified c++ compiler
     -C              use cmake
+    -k              keep generated worktree
     -I              integrate into ClickHouse build tree in current directory
     -i INC          add #include <INC>
     -l LIB          link against LIB (only for -I or -C)
@@ -47,13 +48,14 @@ USE_CLICKHOUSE=
 CXX=g++
 CXX_OPTS=
 CMD_PARAMS=
+KEEP_WORKTREE=0
 
 #
 # Parse command line
 #
 
 if [ "$1" == "--help" ] || [ -z "$1" ]; then usage; fi
-while getopts "vc:CIi:l:bB:t:o:O:g:" OPT; do
+while getopts "vc:CIi:l:bkB:t:o:O:g:" OPT; do
     case "$OPT" in
     v)      set -x; ;;
     c)      CXX="$OPTARG"; ;;
@@ -63,6 +65,7 @@ while getopts "vc:CIi:l:bB:t:o:O:g:" OPT; do
     l)      LIBS="$LIBS $OPTARG"; ;;
     b)      if [ "$OPTARG" = perf-top ]; then BENCHMARK_STEPS=-1; RUN_PERFTOP=y; else BENCHMARK_STEPS="$OPTARG"; fi; ;;
     B)      BUILD_DIR="$OPTARG"; ;;
+    k)      KEEP_WORKTREE=1; ;;
     t)      BENCHMARK_TESTS="$OPTARG"; ;;
     o)      OUTPUT_EXECUTABLE="$OPTARG"; ;;
     O)      CXX_OPTS="$CXX_OPTS $OPTARG"; ;;
@@ -147,13 +150,17 @@ if [ -n "$USE_CLICKHOUSE" ]; then
     echo "add_subdirectory ($SUBDIR)" >>$CALL_DIR/CMakeLists.txt
     cleanup() {
         mv $CALL_DIR/CMakeLists.txt.backup.$$ $CALL_DIR/CMakeLists.txt
-        rm -rf $WORKDIR
-        rm -rf ${BUILD_ROOT}${CLICKHOUSE_PATH}
+        if [ $KEEP_WORKTREE -eq 0 ]; then
+            rm -rf $WORKDIR
+            rm -rf ${BUILD_ROOT}${CLICKHOUSE_PATH}
+        fi
     }
 else
     WORKDIR=/var/tmp/cppexpr_$$
     cleanup() {
-        rm -rf $WORKDIR
+        if [ $KEEP_WORKTREE -eq 0 ]; then
+            rm -rf $WORKDIR
+        fi
     }
 fi
 
