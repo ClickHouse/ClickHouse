@@ -89,9 +89,9 @@ print '-- Summarize following sort --';
 Customers | sort by FirstName | summarize count() by Occupation | sort by Occupation;
 
 print '-- summarize with bin --';
-EventLog | summarize count=count() by bin(Created, 1000);
-EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s);
-EventLog | summarize count=count() by time_label=bin(Created/1000, 1s);
+EventLog | summarize count=count() by bin(Created, 1000) | sort by Created asc;
+EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s) | sort by Columns1 asc;
+EventLog | summarize count=count() by time_label=bin(Created/1000, 1s) | sort by time_label asc;
 Dates | project bin(datetime(EventTime), 1m);
 print '-- make_list_with_nulls --';
 Customers | summarize t = make_list_with_nulls(FirstName);

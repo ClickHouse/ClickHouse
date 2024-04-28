@@ -80,6 +80,8 @@ public:
 
     void initialize();
 
+    bool isInitialized() const;
+
     const String & getBasePath() const;
 
     static Key createKeyForPath(const String & path);
