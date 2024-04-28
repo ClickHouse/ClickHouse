@@ -32,12 +32,10 @@ public:
         ConfigurationPtr configuration,
         const ReadFromFormatInfo & info,
         std::optional<FormatSettings> format_settings_,
-        const StorageObjectStorage::QuerySettings & query_settings_,
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
-        bool need_only_count_,
-        SchemaCache & schema_cache_);
+        bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
 
@@ -62,7 +60,6 @@ protected:
     ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const std::optional<FormatSettings> format_settings;
-    const StorageObjectStorage::QuerySettings query_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
     const ReadFromFormatInfo read_from_format_info;

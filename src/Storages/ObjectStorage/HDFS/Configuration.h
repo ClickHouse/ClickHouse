@@ -28,19 +28,22 @@ public:
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override { paths = paths_; }
+    std::string getPathWithoutGlobs() const override;
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() override { return url; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     ConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
-    void addStructureAndFormatToArgs(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 
-    std::string getPathWithoutGlobs() const override;
+    void addStructureAndFormatToArgs(
+        ASTs & args,
+        const String & structure_,
+        const String & format_,
+        ContextPtr context) override;
 
 private:
     void fromNamedCollection(const NamedCollection &) override;

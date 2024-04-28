@@ -2,7 +2,6 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
 
@@ -59,7 +58,7 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context),
+        configuration->createObjectStorage(context, /* is_readonly */false),
         args.getContext(),
         args.table_id,
         args.columns,

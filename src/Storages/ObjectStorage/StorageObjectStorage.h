@@ -92,8 +92,6 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    SchemaCache & getSchemaCache(const ContextPtr & context);
-
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
     static ColumnsDescription resolveSchemaFromData(
@@ -132,7 +130,6 @@ protected:
     const bool distributed_processing;
 
     LoggerPtr log;
-    std::mutex configuration_update_mutex;
 };
 
 class StorageObjectStorage::Configuration
@@ -175,7 +172,7 @@ public:
     virtual void check(ContextPtr context) const;
     virtual void validateNamespace(const String & /* name */) const {}
 
-    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) = 0; /// NOLINT
+    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
     virtual ConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }
 

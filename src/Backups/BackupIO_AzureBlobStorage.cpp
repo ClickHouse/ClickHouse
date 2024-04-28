@@ -36,7 +36,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
-    auto client_ptr = configuration.createClient(/* is_read_only */ false, /* attempt_to_create_container */true);
+    auto client_ptr = configuration.createClient(/* is_readonly */false, /* attempt_to_create_container */true);
     object_storage = std::make_unique<AzureObjectStorage>("BackupReaderAzureBlobStorage",
                                                           std::move(client_ptr),
                                                           configuration.createSettings(context_),
@@ -121,7 +121,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
-    auto client_ptr = configuration.createClient(/* is_read_only */ false, attempt_to_create_container);
+    auto client_ptr = configuration.createClient(/* is_readonly */false, attempt_to_create_container);
     object_storage = std::make_unique<AzureObjectStorage>("BackupWriterAzureBlobStorage",
                                                           std::move(client_ptr),
                                                           configuration.createSettings(context_),

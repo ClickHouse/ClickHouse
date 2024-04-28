@@ -138,7 +138,7 @@ StorageS3Queue::StorageS3Queue(
 
     checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef());
 
-    object_storage = configuration->createObjectStorage(context_);
+    object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
@@ -361,12 +361,10 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         configuration,
         info,
         format_settings,
-        configuration->getQuerySettings(local_context),
         local_context,
         max_block_size,
         file_iterator,
-        false,
-        StorageObjectStorage::getSchemaCache(local_context, configuration->getTypeName()));
+        false);
 
     auto file_deleter = [=, this](const std::string & path) mutable
     {

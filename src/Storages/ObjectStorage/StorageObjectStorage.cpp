@@ -91,6 +91,7 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
 
 void StorageObjectStorage::updateConfiguration(ContextPtr context)
 {
+    /// FIXME: we should be able to update everything apart from client if static_configuration == true.
     if (!configuration->isStaticConfiguration())
         object_storage->applyNewSettings(context->getConfigRef(), "s3.", context);
 }
@@ -113,7 +114,6 @@ public:
         const std::optional<DB::FormatSettings> & format_settings_,
         bool distributed_processing_,
         ReadFromFormatInfo info_,
-        SchemaCache & schema_cache_,
         const bool need_only_count_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -121,11 +121,9 @@ public:
         : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
-        , schema_cache(schema_cache_)
         , info(std::move(info_))
         , virtual_columns(virtual_columns_)
         , format_settings(format_settings_)
-        , query_settings(configuration->getQuerySettings(context_))
         , name(name_ + "Source")
         , need_only_count(need_only_count_)
         , max_block_size(max_block_size_)
@@ -154,8 +152,8 @@ public:
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
-                getName(), object_storage, configuration, info, format_settings, query_settings,
-                context, max_block_size, iterator_wrapper, need_only_count, schema_cache);
+                getName(), object_storage, configuration, info, format_settings,
+                context, max_block_size, iterator_wrapper, need_only_count);
 
             source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));
@@ -175,12 +173,10 @@ private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
     std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
-    SchemaCache & schema_cache;
 
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
     const std::optional<DB::FormatSettings> format_settings;
-    const StorageObjectStorage::QuerySettings query_settings;
     const String name;
     const bool need_only_count;
     const size_t max_block_size;
@@ -233,7 +229,6 @@ void StorageObjectStorage::read(
         format_settings,
         distributed_processing,
         read_from_format_info,
-        getSchemaCache(local_context),
         need_only_count,
         local_context,
         max_block_size,
@@ -369,11 +364,6 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
     configuration->format = format;
     return std::pair(columns, format);
-}
-
-SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context)
-{
-    return getSchemaCache(context, configuration->getTypeName());
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)

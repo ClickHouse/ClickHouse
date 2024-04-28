@@ -3,7 +3,6 @@
 #include "config.h"
 
 #if USE_AWS_S3
-
 #include <Storages/StorageS3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -35,13 +34,16 @@ public:
 
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;
-
     ConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
     bool isStaticConfiguration() const override { return static_configuration; }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+
     void addStructureAndFormatToArgs(
-        ASTs & args, const String & structure, const String & format, ContextPtr context) override;
+        ASTs & args,
+        const String & structure,
+        const String & format,
+        ContextPtr context) override;
 
 private:
     void fromNamedCollection(const NamedCollection & collection) override;

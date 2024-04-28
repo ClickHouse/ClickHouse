@@ -38,7 +38,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode)
     {
-        auto object_storage = base_configuration->createObjectStorage(context);
+        auto object_storage = base_configuration->createObjectStorage(context, /* is_readonly */true);
         DataLakeMetadataPtr metadata;
         NamesAndTypesList schema_from_metadata;
 
@@ -96,8 +96,6 @@ public:
 
     void updateConfiguration(ContextPtr local_context) override
     {
-        std::lock_guard lock(Storage::configuration_update_mutex);
-
         Storage::updateConfiguration(local_context);
 
         auto new_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);

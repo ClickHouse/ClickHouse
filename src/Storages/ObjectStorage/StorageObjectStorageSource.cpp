@@ -44,19 +44,16 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ConfigurationPtr configuration_,
     const ReadFromFormatInfo & info,
     std::optional<FormatSettings> format_settings_,
-    const StorageObjectStorage::QuerySettings & query_settings_,
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
-    bool need_only_count_,
-    SchemaCache & schema_cache_)
+    bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
     , format_settings(format_settings_)
-    , query_settings(query_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
     , read_from_format_info(info)
@@ -67,7 +64,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
         1/* max_threads */))
     , columns_desc(info.columns_description)
     , file_iterator(file_iterator_)
-    , schema_cache(schema_cache_)
+    , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
 {
 }
@@ -229,6 +226,8 @@ std::optional<size_t> StorageObjectStorageSource::tryGetNumRowsFromCache(const O
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(size_t processor)
 {
     ObjectInfoPtr object_info;
+    auto query_settings = configuration->getQuerySettings(getContext());
+
     do
     {
         object_info = file_iterator->next(processor);

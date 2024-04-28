@@ -3,7 +3,6 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <filesystem>
@@ -36,20 +35,25 @@ public:
     const Paths & getPaths() const override { return blobs_paths; }
     void setPaths(const Paths & paths) override { blobs_paths = paths; }
 
-    String getDataSourceDescription() override { return std::filesystem::path(connection_url) / container; }
     String getNamespace() const override { return container; }
+    String getDataSourceDescription() override { return std::filesystem::path(connection_url) / container; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     ConfigurationPtr clone() override { return std::make_shared<StorageAzureConfiguration>(*this); }
 
-    void fromNamedCollection(const NamedCollection & collection) override;
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+
     void addStructureAndFormatToArgs(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context) override;
+        ASTs & args,
+        const String & structure_,
+        const String & format_,
+        ContextPtr context) override;
 
 protected:
+    void fromNamedCollection(const NamedCollection & collection) override;
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+
     using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
     using AzureClientPtr = std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient>;
 
