@@ -282,12 +282,17 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
+    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
+    if (write_settings.azure_allow_parallel_part_upload)
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
+
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
         buf_size,
         patchSettings(write_settings),
-        settings.get());
+        settings.get(),
+        std::move(scheduler));
 }
 
 void AzureObjectStorage::removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists)
