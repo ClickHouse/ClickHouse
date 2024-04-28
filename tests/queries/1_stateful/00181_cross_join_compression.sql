@@ -1,3 +1,3 @@
-CREATE VIEW trunc_hits AS (SELECT * FROM test.hits LIMIT 1);
+CREATE VIEW unit AS (SELECT 1);
 
-SELECT WatchID, CounterID, StartURL FROM trunc_hits, test.visits ORDER BY (WatchID, CounterID, StartURL) DESC LIMIT 1000;
+SELECT CounterID, StartURL FROM unit, test.visits ORDER BY (CounterID, StartURL) DESC LIMIT 1000;
