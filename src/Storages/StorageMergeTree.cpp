@@ -2099,7 +2099,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = cloneAndLoadDataPart(
+        if (replace)
+        {
+            /// Replace can only work on the same disk
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
             src_part,
             TMP_PREFIX,
             dst_part_info,
@@ -2107,8 +2110,23 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             clone_params,
             local_context->getReadSettings(),
             local_context->getWriteSettings());
-        dst_parts.emplace_back(std::move(dst_part));
-        dst_parts_locks.emplace_back(std::move(part_lock));
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        } 
+        else 
+        {
+            /// Attach can work on another disk
+            auto [dst_part, part_lock] = cloneAndLoadDataPart(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                my_metadata_snapshot,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings());
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
     }
 
     /// ATTACH empty part set
