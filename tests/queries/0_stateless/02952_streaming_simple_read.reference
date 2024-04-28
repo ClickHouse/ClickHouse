@@ -1,4 +1,4 @@
-=== Test Single Streams (MergeTree() ORDER BY (a)) ===
+=== Test Single Streams (MergeTree ORDER BY a SETTINGS queue_mode=1) ===
 started started-started 0
 0 0-0 0
 1 1-1 1
@@ -18,7 +18,7 @@ Killing process
 Removing FIFO
 ****************
 
-=== Test Multiple Streams (MergeTree() ORDER BY (a)) ===
+=== Test Multiple Streams (MergeTree ORDER BY a SETTINGS queue_mode=1) ===
 started
 started
 same-x-2

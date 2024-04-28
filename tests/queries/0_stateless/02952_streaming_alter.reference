@@ -1,3 +1,4 @@
+=== Alter test (MergeTree ORDER BY a SETTINGS queue_mode=1) ===
 started 0
 0 0
 == Alter table: add column c ==
@@ -9,4 +10,17 @@ started 0
 0 0
 1 1
 == Alter table: drop column b ==
-THERE_IS_NO_COLUMN
+COLUMN
+=== Alter test (Memory) ===
+started 0
+0 0
+== Alter table: add column c ==
+0 0
+1 1
+== Alter table: drop column c ==
+0 0
+== Alter table: change type b ==
+0 0
+1 1
+== Alter table: drop column b ==
+COLUMN

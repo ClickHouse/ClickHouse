@@ -58,7 +58,7 @@ function run_test
     cleanup "$fifo_1" "$pid_1"
 }
 
-for engine_type in 'MergeTree() ORDER BY (a)' 'TinyLog' 'StripeLog' 'Memory';
+for engine_type in 'MergeTree ORDER BY a SETTINGS queue_mode=1' 'TinyLog' 'StripeLog' 'Memory';
 do
    run_test "$engine_type"
 done

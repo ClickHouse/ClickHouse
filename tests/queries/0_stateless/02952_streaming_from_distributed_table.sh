@@ -17,7 +17,7 @@ opts=(
 # setup
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "DROP TABLE IF EXISTS t_streaming_test;"
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "DROP TABLE IF EXISTS t_streaming_dist;"
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree() ORDER BY (a)"
+$CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS queue_mode=1"
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_dist as t_streaming_test engine=Distributed(test_cluster_two_shards, currentDatabase(), t_streaming_test, b);"
 
 echo "=== Test Streaming read from shards ==="
