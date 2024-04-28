@@ -27,6 +27,8 @@ public:
 
     /// returns count of currently running subcriptions
     uint64_t getSubscriptionsCount() const;
+    bool isEmpty() const;
+    bool hasSome() const;
 
 private:
     /// Lock required for all changes with subscriptions:

@@ -6625,7 +6625,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
 
-        if (settings->queue_mode && data.subscription_manager.getSubscriptionsCount() > 0)
+        if (settings->queue_mode && data.subscription_manager.hasSome())
             data.background_streaming_assignee->trigger();
     }
 
@@ -7549,6 +7549,9 @@ StorageMergeTree::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
 
 bool MergeTreeData::scheduleStreamingJob([[maybe_unused]] BackgroundJobsAssignee & assignee)
 {
+    if (subscription_manager.isEmpty())
+        return false;
+
     Stopwatch logging_stopwatch;
 
     logging_stopwatch.start();

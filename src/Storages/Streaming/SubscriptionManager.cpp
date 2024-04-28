@@ -55,6 +55,16 @@ size_t StreamSubscriptionManager::getSubscriptionsCount() const
     return subscriptions_count.load();
 }
 
+bool StreamSubscriptionManager::isEmpty() const
+{
+    return getSubscriptionsCount() == 0;
+}
+
+bool StreamSubscriptionManager::hasSome() const
+{
+    return getSubscriptionsCount() != 0;
+}
+
 void StreamSubscriptionManager::clean()
 {
     auto lock = lockExclusive();
