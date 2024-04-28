@@ -186,11 +186,11 @@ def test_only_destination_replicated(start_cluster):
 
     cleanup([replica1, replica2])
 
-def test_replace_partition_not_work_on_different_disk(start_cluster):
+def test_not_work_on_different_disk(start_cluster):
     # Should not work on replace
     create_source_table(replica1, "source", False)
     create_destination_table(replica2, "destination", False)
 
     replica1.query_and_get_error(f"ALTER TABLE destination REPLACE PARTITION tuple() FROM source")
-
+    replica1.query_and_get_error(f"ALTER TABLE destination MOVE PARTITION tuple() FROM source")
     cleanup([replica1, replica2])
