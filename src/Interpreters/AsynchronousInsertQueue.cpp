@@ -11,6 +11,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -148,19 +149,25 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(
 {
 }
 
+void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
+{
+    if (chunk.empty())
+        return;
+
+    // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
+    // Entries data must be destroyed in context of user who runs async insert.
+    // Each entry in the list may correspond to a different user,
+    // so we need to switch current thread's MemoryTracker.
+    MemoryTrackerSwitcher switcher(user_memory_tracker);
+    chunk = {};
+}
+
 void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr exception_)
 {
     if (finished.exchange(true))
         return;
 
-    {
-        // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
-        // Entries data must be destroyed in context of user who runs async insert.
-        // Each entry in the list may correspond to a different user,
-        // so we need to switch current thread's MemoryTracker.
-        MemoryTrackerSwitcher switcher(user_memory_tracker);
-        chunk = {};
-    }
+    resetChunk();
 
     if (exception_)
     {
@@ -212,7 +219,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
         dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
 }
 
-AsynchronousInsertQueue::~AsynchronousInsertQueue()
+void AsynchronousInsertQueue::flushAndShutdown()
 {
     try
     {
@@ -224,7 +231,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
             auto & shard = queue_shards[i];
 
             shard.are_tasks_available.notify_one();
-            assert(dump_by_first_update_threads[i].joinable());
+            chassert(dump_by_first_update_threads[i].joinable());
             dump_by_first_update_threads[i].join();
 
             if (flush_on_shutdown)
@@ -251,6 +258,19 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     }
 }
 
+AsynchronousInsertQueue::~AsynchronousInsertQueue()
+{
+    for (const auto & shard : queue_shards)
+    {
+        for (const auto & [first_update, elem] : shard.queue)
+        {
+            const auto & insert_query = elem.key.query->as<const ASTInsertQuery &>();
+            LOG_WARNING(log, "Has unprocessed async insert for {}.{}",
+                        backQuoteIfNeed(insert_query.getDatabase()), backQuoteIfNeed(insert_query.getTable()));
+        }
+    }
+}
+
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
     const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num)
 {
@@ -261,10 +281,19 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
 
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError(
-        [this, key, global_context, shard_num, my_data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
-        { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
-        priority);
+    auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
+    try
+    {
+        pool.scheduleOrThrowOnError(
+            [this, key, global_context, shard_num, my_data = data_shared]() mutable
+            { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
+            priority);
+    }
+    catch (...)
+    {
+        for (auto & entry : (**data_shared).entries)
+            entry->finish(std::current_exception());
+    }
 }
 
 void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context)
@@ -274,7 +303,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 
     InterpreterInsertQuery interpreter(query, query_context, query_context->getSettingsRef().insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
-    auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
+    auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
@@ -510,14 +539,13 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
     /// Adaptive timeout settings.
     const auto min_ms = std::chrono::milliseconds(settings.async_insert_busy_timeout_min_ms);
 
-    if (min_ms > max_ms)
-        if (log)
-            LOG_WARNING(
-                log,
-                "Setting 'async_insert_busy_timeout_min_ms'={} is greater than 'async_insert_busy_timeout_max_ms'={}. Ignoring "
-                "'async_insert_busy_timeout_min_ms'",
-                min_ms.count(),
-                max_ms.count());
+    if (min_ms > max_ms && log)
+        LOG_WARNING(
+            log,
+            "Setting 'async_insert_busy_timeout_min_ms'={} is greater than 'async_insert_busy_timeout_max_ms'={}. Ignoring "
+            "'async_insert_busy_timeout_min_ms'",
+            min_ms.count(),
+            max_ms.count());
 
     if (settings.async_insert_busy_timeout_increase_rate <= 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_increase_rate' must be greater than zero");
@@ -905,7 +933,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     const InsertDataPtr & data,
     const Block & header,
     const ContextPtr & insert_context,
-    const LoggerPtr logger,
+    LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
@@ -953,14 +981,18 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer);
+
         total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
 
         add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes, data->timeout_ms);
+
         current_exception.clear();
+        entry->resetChunk();
     }
 
     Chunk chunk(executor.getResultColumns(), total_rows);
@@ -1011,6 +1043,8 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 
         const auto & query_for_logging = get_query_by_format(entry->format);
         add_to_async_insert_log(entry, query_for_logging, "", block->rows(), block->bytes(), data->timeout_ms);
+
+        entry->resetChunk();
     }
 
     Chunk chunk(std::move(result_columns), total_rows);

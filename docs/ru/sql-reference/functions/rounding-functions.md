@@ -24,6 +24,42 @@ N может быть отрицательным.
 Возвращает наименьшее круглое число, которое больше или равно, чем x.
 В остальном, аналогично функции floor, см. выше.
 
+## trunc(x\[, N\]), truncate(x\[, N\])
+
+Возвращает круглое число с наибольшим абсолютным значением, абсолютное значение которого меньше или равно значению `x`. Во всех остальных отношениях она аналогична функции 'floor' (см. выше).
+
+**Синтаксис**
+
+```sql
+trunc(input, precision)
+```
+
+Alias: `truncate`.
+
+**Параметры**
+
+- `input` - число для округления. Может быть в любом чисельном формате ([Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md) или [Integer](/docs/en/sql-reference/data-types/int-uint.md)).
+- `precision` - точность округления, [целочисельный](/docs/en/sql-reference/data-types/int-uint.md) тип.
+
+**Возвращаемое значение**
+
+- Тип даных в `input`.
+
+**Пример**
+
+Query:
+
+```sql
+SELECT trunc(123.499, 1) as res;
+```
+
+```response
+┌───res─┐
+│ 123.4 │
+└───────┘
+```
+
+
 ## round(x\[, N\]) {#rounding_functions-round}
 
 Округляет значение до указанного десятичного разряда.

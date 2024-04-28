@@ -45,7 +45,7 @@ namespace
             const String & dest_container_for_logging_,
             const String & dest_blob_,
             std::shared_ptr<const AzureObjectStorageSettings> settings_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_azure_blob_storage_,
             const Poco::Logger * log_)
             : create_read_buffer(create_read_buffer_)
@@ -72,7 +72,7 @@ namespace
         const String & dest_container_for_logging;
         const String & dest_blob;
         std::shared_ptr<const AzureObjectStorageSettings> settings;
-        ThreadPoolCallbackRunner<void> schedule;
+        ThreadPoolCallbackRunnerUnsafe<void> schedule;
         bool for_disk_azure_blob_storage;
         const Poco::Logger * log;
         size_t max_single_part_upload_size;
@@ -269,7 +269,7 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_azure_blob_storage)
 {
     UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
@@ -288,7 +288,7 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_azure_blob_storage)
 {
 
