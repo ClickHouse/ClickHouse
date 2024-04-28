@@ -330,6 +330,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (window_list)
         current_query_tree->getWindowNode() = buildWindowList(window_list, current_context);
 
+    auto qualify_expression = select_query_typed.qualify();
+    if (qualify_expression)
+        current_query_tree->getQualify() = buildExpression(qualify_expression, current_context);
+
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
         current_query_tree->getOrderByNode() = buildSortList(select_order_by_list, current_context);
@@ -444,8 +448,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             nulls_sort_direction = order_by_element.nulls_direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
 
         std::shared_ptr<Collator> collator;
-        if (order_by_element.collation)
-            collator = std::make_shared<Collator>(order_by_element.collation->as<ASTLiteral &>().value.get<String &>());
+        if (order_by_element.getCollation())
+            collator = std::make_shared<Collator>(order_by_element.getCollation()->as<ASTLiteral &>().value.get<String &>());
 
         const auto & sort_expression_ast = order_by_element.children.at(0);
         auto sort_expression = buildExpression(sort_expression_ast, context);
@@ -455,12 +459,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             std::move(collator),
             order_by_element.with_fill);
 
-        if (order_by_element.fill_from)
-            sort_node->getFillFrom() = buildExpression(order_by_element.fill_from, context);
-        if (order_by_element.fill_to)
-            sort_node->getFillTo() = buildExpression(order_by_element.fill_to, context);
-        if (order_by_element.fill_step)
-            sort_node->getFillStep() = buildExpression(order_by_element.fill_step, context);
+        if (order_by_element.getFillFrom())
+            sort_node->getFillFrom() = buildExpression(order_by_element.getFillFrom(), context);
+        if (order_by_element.getFillTo())
+            sort_node->getFillTo() = buildExpression(order_by_element.getFillTo(), context);
+        if (order_by_element.getFillStep())
+            sort_node->getFillStep() = buildExpression(order_by_element.getFillStep(), context);
 
         list_node->getNodes().push_back(std::move(sort_node));
     }
@@ -558,7 +562,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
-        if (function->is_lambda_function)
+        if (function->is_lambda_function || isASTLambdaFunction(*function))
         {
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();

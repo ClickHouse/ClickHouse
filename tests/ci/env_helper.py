@@ -5,7 +5,7 @@ import os
 from os import path as p
 from typing import Tuple
 
-from build_download_helper import get_gh_api
+from build_download_helper import APIException, get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
@@ -42,23 +42,37 @@ _GITHUB_JOB_URL = ""
 _GITHUB_JOB_API_URL = ""
 
 
-def GITHUB_JOB_ID() -> str:
+def GITHUB_JOB_ID(safe: bool = True) -> str:
     global _GITHUB_JOB_ID
     global _GITHUB_JOB_URL
     global _GITHUB_JOB_API_URL
     if _GITHUB_JOB_ID:
         return _GITHUB_JOB_ID
-    _GITHUB_JOB_ID, _GITHUB_JOB_URL, _GITHUB_JOB_API_URL = get_job_id_url(GITHUB_JOB)
+    try:
+        _GITHUB_JOB_ID, _GITHUB_JOB_URL, _GITHUB_JOB_API_URL = get_job_id_url(
+            GITHUB_JOB
+        )
+    except APIException as e:
+        logging.warning("Unable to retrieve the job info from GH API: %s", e)
+        if not safe:
+            raise e
     return _GITHUB_JOB_ID
 
 
-def GITHUB_JOB_URL() -> str:
-    GITHUB_JOB_ID()
+def GITHUB_JOB_URL(safe: bool = True) -> str:
+    try:
+        GITHUB_JOB_ID()
+    except APIException:
+        if safe:
+            logging.warning("Using run URL as a fallback to not fail the job")
+            return GITHUB_RUN_URL
+        raise
+
     return _GITHUB_JOB_URL
 
 
-def GITHUB_JOB_API_URL() -> str:
-    GITHUB_JOB_ID()
+def GITHUB_JOB_API_URL(safe: bool = True) -> str:
+    GITHUB_JOB_ID(safe)
     return _GITHUB_JOB_API_URL
 
 
@@ -93,7 +107,6 @@ def get_job_id_url(job_name: str) -> Tuple[str, str, str]:
         ):
             job_id = "0"
 
-    # FIXME: until it's here, we can't move to reusable workflows
     if not job_url:
         # This is a terrible workaround for the case of another broken part of
         # GitHub actions. For nested workflows it doesn't provide a proper job_name
