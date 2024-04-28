@@ -41,7 +41,6 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/Streaming/StreamingUtils.h>
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <QueryPipeline/Pipe.h>
@@ -1642,24 +1641,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
 
     return scheduled;
-}
-
-bool StorageMergeTree::scheduleStreamingJob([[maybe_unused]] BackgroundJobsAssignee & assignee)
-{
-    LOG_INFO(log, "Started scheduleStreamingJob");
-
-    auto parts_index = buildRightPartsIndex(getDataPartsVectorForInternalUsage());
-    auto promoters = buildPromoters();
-    bool scheduled_reading = false;
-
-    auto promote = [&](StreamSubscriptionPtr & subscription)
-    {
-        scheduled_reading = scheduled_reading | enrichSubscription(subscription, *this, parts_index, promoters);
-    };
-
-    subscription_manager.executeOnEachSubscription(promote);
-
-    return scheduled_reading;
 }
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(

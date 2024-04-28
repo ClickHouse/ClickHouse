@@ -72,6 +72,9 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/StreamingUtils.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -534,6 +537,11 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::Replacing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
+}
+
+bool MergeTreeData::supportsStreaming() const
+{
+    return getSettings()->queue_mode;
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
@@ -7537,6 +7545,33 @@ StorageMergeTree::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
 {
     std::lock_guard lock(pinned_part_uuids_mutex);
     return pinned_part_uuids;
+}
+
+bool MergeTreeData::scheduleStreamingJob([[maybe_unused]] BackgroundJobsAssignee & assignee)
+{
+    Stopwatch logging_stopwatch;
+
+    logging_stopwatch.start();
+    auto parts_index = buildRightPartsIndex(getDataPartsVectorForInternalUsage());
+    auto parts_index_build_elapsed_ms = logging_stopwatch.elapsedMilliseconds();
+
+    logging_stopwatch.restart();
+    auto promoters = buildPromoters();
+    auto promoters_build_elapsed_ms = logging_stopwatch.elapsedMilliseconds();
+
+    LOG_INFO(log, "Started scheduleStreamingJob | building parts_index took: {} ms, building promoters took: {} ms",
+        parts_index_build_elapsed_ms, promoters_build_elapsed_ms);
+
+    bool scheduled_reading = false;
+
+    auto promote = [&](StreamSubscriptionPtr & subscription)
+    {
+        scheduled_reading = scheduled_reading | enrichSubscription(subscription, *this, parts_index, promoters);
+    };
+
+    subscription_manager.executeOnEachSubscription(promote);
+
+    return scheduled_reading;
 }
 
 MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_)

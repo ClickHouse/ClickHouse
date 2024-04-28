@@ -432,6 +432,8 @@ public:
 
     bool supportsFinal() const override;
 
+    bool supportsStreaming() const override;
+
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsTTL() const override { return true; }
@@ -1038,7 +1040,7 @@ public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
 
     /// Schedules job to push new data to subscribers.
-    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & assignee);
 
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);

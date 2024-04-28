@@ -1899,6 +1899,72 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
     return ReplicatedMergeTreeMergePredicate(*this, zookeeper, std::move(partition_ids_hint));
 }
 
+std::map<String, MergeTreeCursorPromoter> ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr & zookeeper)
+{
+    Strings partition_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+    LOG_DEBUG(log, "partition_ids: {}", fmt::join(partition_ids, ", "));
+
+    std::vector<zkutil::ZooKeeper::FutureGetChildren> get_locks_futures;
+    for (const auto & partition_id : partition_ids)
+        get_locks_futures.push_back(zookeeper->asyncGetChildren(fs::path(zookeeper_path) / "block_numbers" / partition_id));
+
+    /// find committing block_numbers
+    std::map<String, std::set<Int64>> committing_block_numbers;
+
+    for (size_t i = 0; i < partition_ids.size(); ++i)
+    {
+        const auto & partition_id = partition_ids[i];
+        auto response = get_locks_futures[i].get();
+
+        if (response.error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(response.error, fs::path(zookeeper_path) / "block_numbers" / partition_id);
+
+        committing_block_numbers[partition_id] = {};
+        const Strings & partition_block_numbers = response.names;
+
+        for (const String & entry : partition_block_numbers)
+        {
+            if (!startsWith(entry, "block-"))
+                continue;
+
+            Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
+            committing_block_numbers[partition_id].insert(block_number);
+        }
+    }
+
+    /// find virtual parts ranges snapshot
+    pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::OTHER);
+
+    std::vector<MergeTreePartInfo> infos;
+    std::map<String, PartBlockNumberRanges> partition_ranges;
+
+    {
+        std::lock_guard lock(state_mutex);
+        infos = virtual_parts.getPartInfos();
+    }
+
+    for (const auto & info : infos)
+        partition_ranges[info.partition_id].addPart(info.min_block, info.max_block);
+
+    /// combine to partition promoters
+    std::map<String, MergeTreeCursorPromoter> promoters;
+
+    for (auto && [partition_id, ranges] : partition_ranges)
+    {
+        if (auto it = committing_block_numbers.find(partition_id); it != committing_block_numbers.end())
+            promoters.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(partition_id),
+                std::forward_as_tuple(std::move(it->second), std::move(ranges)));
+        else
+            promoters.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(partition_id),
+                std::forward_as_tuple(std::set<Int64>{}, std::move(ranges)));
+    }
+
+    return promoters;
+}
 
 MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
