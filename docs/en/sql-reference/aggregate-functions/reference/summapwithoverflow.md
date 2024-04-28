@@ -6,7 +6,7 @@ sidebar_position: 141
 # sumMapWithOverflow
 
 Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
-It differs from the [sumMap](../reference/summap.md) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument type.
+It differs from the [sumMap](../reference/summap.md) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 **Syntax**
 
@@ -15,14 +15,18 @@ It differs from the [sumMap](../reference/summap.md) function in that it does su
 
 **Arguments** 
 
-- `key`. [Array](../../data-types/array.md) of keys.
-- `value`. [Array](../../data-types/array.md) of values.
+- `key`: [Array](../../data-types/array.md) of keys.
+- `value`: [Array](../../data-types/array.md) of values.
 
 Passing a tuple of key and value arrays is a synonym to passing seperately an array of keys and an array of values.
 
 :::note 
 The number of elements in `key` and `value` must be the same for each row that is totaled.
 :::
+
+**Returned Value** 
+
+- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 **Example**
 

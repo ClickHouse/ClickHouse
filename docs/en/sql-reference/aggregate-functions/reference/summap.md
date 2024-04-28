@@ -16,8 +16,8 @@ Alias: `sumMappedArrays`.
 
 **Arguments** 
 
-- `key`. [Array](../../data-types/array.md) of keys.
-- `value`. [Array](../../data-types/array.md) of values.
+- `key`: [Array](../../data-types/array.md) of keys.
+- `value`: [Array](../../data-types/array.md) of values.
 
 Passing a tuple of key and value arrays is a synonym to passing seperately an array of keys and an array of values.
 
