@@ -2910,8 +2910,32 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     }
 
     /// Check positional options.
-    if (std::ranges::count_if(parsed.options, [](const auto & op){ return !op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--"); }) > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+    for (const auto & op : parsed.options)
+    {
+        if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
+            && !op.original_tokens[0].empty() && !op.value.empty())
+        {
+            /// Two special cases for better usability:
+            /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
+            /// - otherwise if it contains a dot it might be a queries file: clickhouse file.sql
+            /// These are relevant for interactive usage - user-friendly, but questionable in general.
+            /// In case of ambiguity or for scripts, prefer using proper options.
+
+            const auto & token = op.original_tokens[0];
+            po::variable_value value(boost::any(op.value), false);
+
+            const char * option;
+            if (token.contains(' '))
+                option = "query";
+            else if (token.contains('.'))
+                option = "queries-file";
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
+
+            if (!options.emplace(option, value).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
+        }
+    }
 
     po::store(parsed, options);
 }
