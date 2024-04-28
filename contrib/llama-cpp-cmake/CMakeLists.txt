@@ -84,7 +84,7 @@ endif()
 # GGML library
 #
 
-add_library(_ggml OBJECT
+add_library(_ggml
     ${GGML_SRCS} ${GGML_HDRS}
 )
 target_include_directories(_ggml PUBLIC ${LLAMA_CPP_SOURCE_DIR})
