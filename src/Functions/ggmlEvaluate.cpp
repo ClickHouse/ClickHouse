@@ -19,7 +19,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <fstream>
-#include <regex>
+#include <Common/re2.h>
 
 namespace DB
 {
@@ -398,15 +398,21 @@ private:
 
     void gpt_split_words(std::string str, std::vector<std::string>& words) const {
         const std::string pattern = R"('s|'t|'re|'ve|'m|'ll|'d| ?[[:alpha:]]+| ?[[:digit:]]+| ?[^\s[:alpha:][:digit:]]+|\s+(?!\S)|\s+)";
-        const std::regex re(pattern);
-        std::smatch m;
+        const RE2 re(pattern);
 
-        while (std::regex_search(str, m, re)) {
-            for (auto x : m) {
-                words.push_back(x);
-            }
-            str = m.suffix();
+        std::string match;
+
+        re2::StringPiece input(str);
+
+        while (RE2::FindAndConsume(&input, pattern, &match)) {
+            words.push_back(match);
         }
+    }
+
+    std::string regex_replace(const std::string& input, const re2::RE2& pattern, const std::string& replace_with) const {
+        std::string output = input;
+        while (RE2::Replace(&output, pattern, replace_with)) { }
+        return output;
     }
 
     std::vector<gpt_vocab::id> gpt_tokenize(const gpt_vocab & vocab, const std::string & text) const {
@@ -418,26 +424,37 @@ private:
 
             // Generate the subpattern from the special_tokens vector if it's not empty
             if (!vocab.special_tokens.empty()) {
-                const std::regex escape(R"([\[\\\^\$\.\|\?\*\+\(\)\{\}])");
+                const RE2 escape(R"([\[\\\^\$\.\|\?\*\+\(\)\{\}])");
                 std::string special_tokens_subpattern;
                 for (const auto & token : vocab.special_tokens) {
                     if (!special_tokens_subpattern.empty()) {
                         special_tokens_subpattern += "|";
                     }
-                    special_tokens_subpattern += std::regex_replace(token, escape, R"(\$&)");
+                    special_tokens_subpattern += regex_replace(token, escape, R"(\$&)");
                 }
 
-                std::regex re(special_tokens_subpattern);
-                std::smatch m;
-                // Split the text by special tokens.
-                while (std::regex_search(str, m, re)) {
-                    // Split the substrings in-between special tokens into words.
-                    gpt_split_words(m.prefix(), words);
-                    // Add matched special tokens as words.
-                    for (auto x : m) {
-                        words.push_back(x);
-                    }
-                    str = m.suffix();
+                // std::regex re(special_tokens_subpattern);
+                // std::smatch m;
+                // // Split the text by special tokens.
+                // while (std::regex_search(str, m, re)) {
+                //     // Split the substrings in-between special tokens into words.
+                //     gpt_split_words(m.prefix(), words);
+                //     // Add matched special tokens as words.
+                //     for (auto x : m) {
+                //         words.push_back(x);
+                //     }
+                //     str = m.suffix();
+                // }
+                const RE2 re(special_tokens_subpattern);
+                re2::StringPiece input(str);  // Wrap the std::string in a StringPiece
+                std::string match;
+                while (RE2::FindAndConsume(&input, re, &match)) {
+                    // Split the substrings in-between special tokens into words
+                    gpt_split_words(std::string(input.substr(0, input.size() - match.size() - str.size())), words);
+                    // Add matched special tokens as words
+                    words.push_back(match);
+                    // Adjust input to remove the processed part including the current match
+                    str = std::string(input);  // Update str to remaining input for any necessary reason outside the loop
                 }
                 // Remaining text without special tokens will be handled below.
             }
@@ -514,9 +531,23 @@ public:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "No");
         }
 
-        std::vector<gpt_vocab::id> embd_inp = gpt_tokenize(vocab, params.prompt);
-        params.n_predict = std::min(params.n_predict, model.hparams.n_ctx - static_cast<int>(embd_inp.size()));
-        std::vector<gpt_vocab::id> embd;
+        const auto& vals = *arguments[0].column.get();
+
+        for (size_t i = 0; i < input_rows_count; ++i) {
+            Field field;
+            field = vals[i]; // get(i, field);
+            std::string val;
+            if (!field.tryGet(val)) {
+                std::cout << "Ploho!" << std::endl;
+            }
+            else {
+                std::cout << "Ne Ploho! " << val << std::endl;
+            }
+        }
+
+        // std::vector<gpt_vocab::id> embd_inp = gpt_tokenize(vocab, );
+        // params.n_predict = std::min(params.n_predict, model.hparams.n_ctx - static_cast<int>(embd_inp.size()));
+        // std::vector<gpt_vocab::id> embd;
 
         // size_t mem_per_token = 0;
         // gptj_eval(model, params.n_threads, 0, { 0, 1, 2, 3 }, logits, mem_per_token);
