@@ -2644,20 +2644,48 @@ SELECT
 └──────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## timeSlots(StartTime, Duration,\[, Size\])
+## timeSlots
 
-For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
+For a time interval starting at `StartTime` and continuing for `Duration` seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the `Size` in seconds. 
 This is necessary, for example, when searching for pageviews in the corresponding session.
-Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
-Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
 
-Example:
+**Syntax**
+
+```sql
+timeSlots(StartTime, Duration [, Size])
+```
+
+**Parameters**
+
+- `StartTime`: Starting time. [DateTime](../data-types/datetime.md), [DateTime64](../data-types/datetime64.md)
+- `Duration`: Duration of the time interval. 
+- `Size`: Optional parameter set to `1800` seconds (`30` minutes) by default.
+
+The type of `Duration` and `Size` are determined by the type of `StartTime` and should be [UInt32](../data-types/int-uint.md) for `DateTime`, [Decimal64](../data-types/decimal.md) for `DateTime64`.
+
+**Returned value**
+
+Returns an array of moments in time, consisting of points from the set interval rounded down to the `Size` in seconds. [Array](../data-types/array.md)([DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md)) - type matching `StartTime`.
+
+**Implementation Details**
+
+:::note
+For `DateTime64`, the return value's scale can differ from the scale of `StartTime` - the highest scale among all given arguments is taken.
+:::
+
+**Example**
+
+Query:
+
 ```sql
 SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
 SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
 SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
 ```
-``` text
+
+Result:
+
+```response
 ┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
 │ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
 └─────────────────────────────────────────────────────────────┘
