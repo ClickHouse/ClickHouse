@@ -1,19 +1,15 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsRandom.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 namespace
 {
 
-/* Bit layouts of the UUIDv7
+/* Bit layouts of UUIDv7
 
 without counter:
  0                   1                   2                   3
@@ -42,7 +38,7 @@ with counter:
 └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
 */
 
-// bit counts
+/// bit counts
 constexpr auto rand_a_bits_count = 12;
 constexpr auto rand_b_bits_count = 62;
 constexpr auto rand_b_low_bits_count = 32;
@@ -51,15 +47,15 @@ constexpr auto counter_low_bits_count = 30;
 constexpr auto bits_in_counter = counter_high_bits_count + counter_low_bits_count;
 constexpr uint64_t counter_limit = (1ull << bits_in_counter);
 
-// bit masks for UUIDv7 parts
+/// bit masks for UUIDv7 components
 constexpr uint64_t variant_2_mask  = (2ull << rand_b_bits_count);
 constexpr uint64_t rand_a_bits_mask = (1ull << rand_a_bits_count) - 1;
 constexpr uint64_t rand_b_bits_mask = (1ull << rand_b_bits_count) - 1;
 constexpr uint64_t rand_b_with_counter_bits_mask = (1ull << rand_b_low_bits_count) - 1;
 constexpr uint64_t counter_low_bits_mask = (1ull << counter_low_bits_count) - 1;
-constexpr auto counter_high_bits_mask = rand_a_bits_mask;
+constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
 
-inline uint64_t getTimestampMillisecond()
+uint64_t getTimestampMillisecond()
 {
     timespec tp;
     clock_gettime(CLOCK_REALTIME, &tp);
@@ -67,12 +63,12 @@ inline uint64_t getTimestampMillisecond()
     return sec * 1000 + tp.tv_nsec / 1000000;
 }
 
-inline void setTimestamp(UUID & uuid, uint64_t timestamp)
+void setTimestampAndVersion(UUID & uuid, uint64_t timestamp)
 {
-    UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & rand_a_bits_mask) | ( timestamp << 16) | 0x7000; // version 7
+    UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & rand_a_bits_mask) | (timestamp << 16) | 0x7000;
 }
 
-inline void setVariant(UUID & uuid)
+void setVariant(UUID & uuid)
 {
     UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_bits_mask) | variant_2_mask;
 }
@@ -85,7 +81,7 @@ struct FillAllRandomPolicy
     {
         void generate(UUID & uuid, uint64_t ts)
         {
-            setTimestamp(uuid, ts);
+            setTimestampAndVersion(uuid, ts);
             setVariant(uuid);
         }
     };
@@ -93,97 +89,90 @@ struct FillAllRandomPolicy
 
 struct CounterFields
 {
-    uint64_t timestamp = 0;
+    uint64_t last_timestamp = 0;
     uint64_t counter = 0;
 
-    void resetCounter(const UUID& uuid)
+    void resetCounter(const UUID & uuid)
     {
-        const uint64_t counterLowBits = (UUIDHelpers::getLowBytes(uuid) >> rand_b_low_bits_count) & counter_low_bits_mask;
-        const uint64_t counterHighBits = UUIDHelpers::getHighBytes(uuid) & counter_high_bits_mask;
-        counter = (counterHighBits << 30) | counterLowBits;
+        const uint64_t counter_low_bits = (UUIDHelpers::getLowBytes(uuid) >> rand_b_low_bits_count) & counter_low_bits_mask;
+        const uint64_t counter_high_bits = UUIDHelpers::getHighBytes(uuid) & counter_high_bits_mask;
+        counter = (counter_high_bits << 30) | counter_low_bits;
     }
 
-    void incrementCounter(UUID& uuid)
+    void incrementCounter(UUID & uuid)
     {
         if (++counter == counter_limit) [[unlikely]]
         {
-            ++timestamp;
+            ++last_timestamp;
             resetCounter(uuid);
-            setTimestamp(uuid, timestamp);
+            setTimestampAndVersion(uuid, last_timestamp);
             setVariant(uuid);
         }
         else
         {
-            UUIDHelpers::getHighBytes(uuid) = (timestamp << 16) | 0x7000 | (counter >> counter_low_bits_count);
+            UUIDHelpers::getHighBytes(uuid) = (last_timestamp << 16) | 0x7000 | (counter >> counter_low_bits_count);
             UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_with_counter_bits_mask) | variant_2_mask | ((counter & counter_low_bits_mask) << rand_b_low_bits_count);
         }
     }
 
-    void generate(UUID& new_uuid, uint64_t unix_time_ms)
+    void generate(UUID & uuid, uint64_t timestamp)
     {
-        const bool need_to_increment_counter = (timestamp == unix_time_ms) || ((timestamp > unix_time_ms) & (timestamp < unix_time_ms + 10000));
+        const bool need_to_increment_counter = (last_timestamp == timestamp) || ((last_timestamp > timestamp) & (last_timestamp < timestamp + 10000));
         if (need_to_increment_counter)
         {
-            incrementCounter(new_uuid);
+            incrementCounter(uuid);
         }
         else
         {
-            timestamp = unix_time_ms;
-            resetCounter(new_uuid);
-            setTimestamp(new_uuid, timestamp);
-            setVariant(new_uuid);
+            last_timestamp = timestamp;
+            resetCounter(uuid);
+            setTimestampAndVersion(uuid, last_timestamp);
+            setVariant(uuid);
         }
     }
 };
 
 
-struct CounterDataCommon
-{
-    CounterFields& fields;
-    explicit CounterDataCommon(CounterFields & f)
-        : fields(f)
-    {}
-
-    void generate(UUID& uuid, uint64_t ts)
-    {
-        fields.generate(uuid, ts);
-    }
-};
-
-struct ThreadLocalCounter
-{
-    static constexpr auto name = "generateUUIDv7WithFastCounter";
-    static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). Counter increment monotony at one timestamp is guaraneed only within one thread running generateUUIDv7 function.";
-
-    struct Data : CounterDataCommon
-    {
-        // Implement counter monotony only within one thread so function doesn't require mutexes and doesn't affect performance of the same function running simultenaously on other threads
-        static inline thread_local CounterFields thread_local_fields;
-        Data()
-            : CounterDataCommon(thread_local_fields)
-        {
-        }
-    };
-};
-
-struct GlobalCounter
+struct GlobalCounterPolicy
 {
     static constexpr auto name = "generateUUIDv7";
-    static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). Counter increment monotony at one timestamp is guaraneed across all generateUUIDv7 functions running simultaneously.";
+    static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). Counter increment monotonocity at one timestamp is guaraneed across all generateUUIDv7 functions running simultaneously.";
 
-    struct Data : CounterDataCommon
+    /// Guarantee counter monotonocity within one timestamp across all threads generating UUIDv7 simultaneously.
+    struct Data
     {
-        // Implement counter monotony within one timestamp across all threads generating UUIDv7 with counter simultaneously
-        static inline CounterFields static_fields;
-        static inline SharedMutex mtx;
-        std::lock_guard<SharedMutex> guard; // SharedMutex works a little bit faster than std::mutex here
+        static inline CounterFields fields;
+        static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
+        std::lock_guard<SharedMutex> guard;
+
         Data()
-            : CounterDataCommon(static_fields)
-            , guard(mtx)
+            : guard(mutex)
+        {}
+
+        void generate(UUID & uuid, uint64_t timestamp)
         {
+            fields.generate(uuid, timestamp);
         }
     };
 };
+
+struct ThreadLocalCounterPolicy
+{
+    static constexpr auto name = "generateUUIDv7ThreadMonotonic";
+    static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). Counter increment monotonocity at one timestamp is guaraneed only within one thread running generateUUIDv7 function.";
+
+    /// Guarantee counter monotonocity within one timestamp within the same thread. Faster than GlobalCounterPolicy if a query uses multiple threads.
+    struct Data
+    {
+        static inline thread_local CounterFields fields;
+
+        void generate(UUID & uuid, uint64_t timestamp)
+        {
+            fields.generate(uuid, timestamp);
+        }
+    };
+};
+
 }
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
@@ -196,10 +185,7 @@ template <typename FillPolicy>
 class FunctionGenerateUUIDv7Base : public IFunction, public FillPolicy
 {
 public:
-    using FillPolicy::name;
-    using FillPolicyData = typename FillPolicy::Data;
-
-    String getName() const final {  return name; }
+    String getName() const final {  return FillPolicy::name; }
 
     size_t getNumberOfArguments() const final { return 0; }
     bool isDeterministic() const override { return false; }
@@ -208,14 +194,13 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
-                getName(),
-                arguments.size());
+        FunctionArgumentDescriptors mandatory_args;
+        FunctionArgumentDescriptors optional_args{
+            {"expr", nullptr, nullptr, "Arbitrary Expression"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUUID>();
     }
@@ -225,18 +210,20 @@ public:
         auto col_res = ColumnVector<UUID>::create();
         typename ColumnVector<UUID>::Container & vec_to = col_res->getData();
 
-        size_t size = input_rows_count;
-        if (size)
+        if (input_rows_count)
         {
-            vec_to.resize(size);
+            vec_to.resize(input_rows_count);
 
             /// Not all random bytes produced here are required for the UUIDv7 but it's the simplest way to get the required number of them by using RandImpl
             RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
-            auto ts = getTimestampMillisecond();
-            for (UUID & new_uuid : vec_to)
+
+            /// Note: For performance reasons, clock_gettime is called once per chunk instead of once per UUID. This reduces precision but
+            /// it still complies with the UUID standard.
+            uint64_t timestamp = getTimestampMillisecond();
+            for (UUID & uuid : vec_to)
             {
-                FillPolicyData data;
-                data.generate(new_uuid, ts);
+                typename FillPolicy::Data data;
+                data.generate(uuid, timestamp);
             }
         }
         return col_res;
@@ -256,10 +243,10 @@ public:
     {
         selector.registerImplementation<TargetArch::Default, Parent>();
 
-    #if USE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
         using ParentAVX2 = TargetSpecific::AVX2::FunctionGenerateUUIDv7Base<FillPolicy>;
         selector.registerImplementation<TargetArch::AVX2, ParentAVX2>();
-    #endif
+#endif
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -289,14 +276,15 @@ void registerUUIDv7Generator(auto& factory)
     FunctionDocumentation::ReturnedValue doc_returned_value = "A value of type UUID version 7.";
     FunctionDocumentation::Examples doc_examples = {{"uuid", fmt::format(example_format, FillPolicy::name), ""}, {"multiple", fmt::format(multiple_example_format, fmt::arg("f", FillPolicy::name)), ""}};
     FunctionDocumentation::Categories doc_categories = {"UUID"};
+
     factory.template registerFunction<FunctionGenerateUUIDv7Base<FillPolicy>>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
-    registerUUIDv7Generator<GlobalCounter>(factory);
+    registerUUIDv7Generator<GlobalCounterPolicy>(factory);
+    registerUUIDv7Generator<ThreadLocalCounterPolicy>(factory);
     registerUUIDv7Generator<FillAllRandomPolicy>(factory);
-    registerUUIDv7Generator<ThreadLocalCounter>(factory);
+}
 }
 
-}

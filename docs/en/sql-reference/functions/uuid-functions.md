@@ -8,17 +8,17 @@ sidebar_label: UUIDs
 
 ## generateUUIDv4
 
-Generates a [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
+Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](../data-types/uuid.md).
 
 **Syntax**
 
 ``` sql
-generateUUIDv4([x])
+generateUUIDv4([expr])
 ```
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
+- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -36,13 +36,15 @@ INSERT INTO tab SELECT generateUUIDv4();
 SELECT * FROM tab;
 ```
 
+Result:
+
 ```response
 ┌─────────────────────────────────uuid─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
 ```
 
-**Example where multiple UUIDs are generated per row**
+**Example with multiple UUIDs generated per row**
 
 ```sql
 SELECT generateUUIDv4(1), generateUUIDv4(2);
@@ -52,17 +54,15 @@ SELECT generateUUIDv4(1), generateUUIDv4(2);
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## generateUUIDv7 {#uuidv7-function-generate}
+## generateUUIDv7 {#generateUUIDv7}
 
-Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
+Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
 The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
-At any given new timestamp in unix_ts_ms, the counter starts from some random value and then it's being increased by 1 on each new UUID v7 with counter generation until current timestamp changes.
-The counter overflow causes unix_ts_ms field increment by 1 and the counter restart from a random value. Counter increment monotony at one timestamp is guaranteed across all `generateUUIDv7` functions running simultaneously.
+For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes.
+In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
 
-:::note
-As of April 2024 UUIDv7 is only a draft and the layout may change in future.
-:::
+Function `generateUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
 
 ```
  0                   1                   2                   3
@@ -78,15 +78,19 @@ As of April 2024 UUIDv7 is only a draft and the layout may change in future.
 └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
 ```
 
+:::note
+As of April 2024, version 7 UUIDs are in draft status and their layout may change in future.
+:::
+
 **Syntax**
 
 ``` sql
-generateUUIDv7([x])
+generateUUIDv7([expr])
 ```
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
+- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -104,13 +108,15 @@ INSERT INTO tab SELECT generateUUIDv7();
 SELECT * FROM tab;
 ```
 
+Result:
+
 ```response
 ┌─────────────────────────────────uuid─┐
 │ 018f05af-f4a8-778f-beee-1bedbc95c93b │
 └──────────────────────────────────────┘
 ```
 
-**Example where multiple UUIDs are generated per row**
+**Example with multiple UUIDs generated per row**
 
 ```sql
 SELECT generateUUIDv7(1), generateUUIDv7(2);
@@ -120,21 +126,44 @@ SELECT generateUUIDv7(1), generateUUIDv7(2);
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## generateUUIDv7WithFastCounter
+## generateUUIDv7ThreadMonotonic
 
 Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
 
-This function behaves like [generateUUIDv7](#uuidv7-function-generate) but gives no guarantee on counter monotony across different requests running simultaneously. Counter increment monotony at one timestamp is guaranteed only within one thread calling this function to generate many UUIDs.
+The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
+For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes.
+In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
+
+This function behaves like [generateUUIDv7](#generateUUIDv7) but gives no guarantee on counter monotony across different simultaneous requests.
+Monotonocity within one timestamp is guaranteed only within the same thread calling this function to generate UUIDs.
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |   counter_high_bits   |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                   counter_low_bits                        |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+
+:::note
+As of April 2024, version 7 UUIDs are in draft status and their layout may change in future.
+:::
 
 **Syntax**
 
 ``` sql
-generateUUIDv7WithFastCounter([x])
+generateUUIDv7ThreadMonotonic([expr])
 ```
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -147,10 +176,12 @@ First, create a table with a column of type UUID, then insert a generated UUIDv7
 ``` sql
 CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 
-INSERT INTO tab SELECT generateUUIDv7WithFastCounter();
+INSERT INTO tab SELECT generateUUIDv7ThreadMonotonic();
 
 SELECT * FROM tab;
 ```
+
+Result:
 
 ```response
 ┌─────────────────────────────────uuid─┐
@@ -158,27 +189,23 @@ SELECT * FROM tab;
 └──────────────────────────────────────┘
 ```
 
-**Example where multiple UUIDs are generated per row**
+**Example with multiple UUIDs generated per row**
 
 ```sql
-SELECT generateUUIDv7WithFastCounter(1), generateUUIDv7WithFastCounter(2);
+SELECT generateUUIDv7ThreadMonotonic(1), generateUUIDv7ThreadMonotonic(2);
 
-┌─generateUUIDv7WithFastCounter(1)─────┬─generateUUIDv7WithFastCounter(2)─────┐
-│ 018f05e1-14ee-7bc5-9906-207153b400b1 │ 018f05e1-14ee-7bc5-9906-2072b8e96758 │
+┌─generateUUIDv7ThreadMonotonic(1)─────┬─generateUUIDv7ThreadMonotonic(2)─────┐
+  018f05e1-14ee-7bc5-9906-207153b400b1 │ 018f05e1-14ee-7bc5-9906-2072b8e96758 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
-
 
 ## generateUUIDv7NonMonotonic
 
 Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
 
-The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits) and a random field (76 bits) (including a variant field "2", 2 bit).
-The monotonicity within one timestamp is not guaranteed at all. This is the fastest version of `generateUUIDv7*` functions family.
+The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits) and random values (76 bits, including a 2-bit variant field "2").
 
-:::note
-As of April 2024 UUIDv7 is only a draft and the layout may change in future.
-:::
+This function is the fastest `generateUUIDv7*` function but it gives no monotonocity guarantees within a timestamp.
 
 ```
  0                   1                   2                   3
@@ -194,15 +221,19 @@ As of April 2024 UUIDv7 is only a draft and the layout may change in future.
 └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
 ```
 
+:::note
+As of April 2024, version 7 UUIDs are in draft status and their layout may change in future.
+:::
+
 **Syntax**
 
 ``` sql
-generateUUIDv7NonMonotonic([x])
+generateUUIDv7NonMonotonic([expr])
 ```
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The expression is used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query but otherwise ignored. Optional.
+- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -220,13 +251,15 @@ INSERT INTO tab SELECT generateUUIDv7NonMonotonic();
 SELECT * FROM tab;
 ```
 
+Result:
+
 ```response
 ┌─────────────────────────────────uuid─┐
 │ 018f05af-f4a8-778f-beee-1bedbc95c93b │
 └──────────────────────────────────────┘
 ```
 
-**Example where multiple UUIDs are generated per row**
+**Example with multiple UUIDs generated per row**
 
 ```sql
 SELECT generateUUIDv7NonMonotonic(1), generateUUIDv7NonMonotonic(2);
@@ -338,6 +371,8 @@ The UUID type value.
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
+Result:
+
 ```response
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
@@ -370,6 +405,9 @@ This first example returns the first argument converted to a UUID type as it can
 ``` sql
 SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
 ```
+
+Result:
+
 ```response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', CAST('59f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID'))─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
@@ -381,6 +419,8 @@ This second example returns the second argument (the provided default UUID) as t
 ```sql
 SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
 ```
+
+Result:
 
 ```response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', CAST('59f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID'))─┐
@@ -406,6 +446,8 @@ The Nullable(UUID) type value.
 SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
+Result:
+
 ```response
 ┌─uuid─┐
 │ ᴺᵁᴸᴸ │
@@ -429,6 +471,8 @@ The UUID type value.
 ``` sql
 SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
+
+Result:
 
 ```response
 ┌─────────────────────────────────uuid─┐
@@ -463,6 +507,8 @@ SELECT
     UUIDStringToNum(uuid) AS bytes
 ```
 
+Result:
+
 ```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
@@ -474,6 +520,8 @@ SELECT
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
     UUIDStringToNum(uuid, 2) AS bytes
 ```
+
+Result:
 
 ```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
@@ -508,6 +556,8 @@ SELECT
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
 ```
 
+Result:
+
 ```response
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
@@ -520,6 +570,8 @@ SELECT
     UUIDNumToString(toFixedString(bytes, 16), 2) AS uuid
 ```
 
+Result:
+
 ```response
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ @</a;]~!p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
@@ -528,7 +580,7 @@ SELECT
 
 ## UUIDToNum
 
-Accepts `UUID` and returns a [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default). This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so intermediate conversion from UUID to string is not required to extract bytes from a UUID.
+Accepts a [UUID](../../sql-reference/data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../../sql-reference/data-types/fixedstring.md), with its format optionally specified by `variant` (`Big-endian` by default). This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
 
 **Syntax**
 
@@ -543,7 +595,7 @@ UUIDToNum(uuid[, variant = 1])
 
 **Returned value**
 
-FixedString(16)
+The binary representation of the UUID.
 
 **Usage examples**
 
@@ -552,6 +604,8 @@ SELECT
     toUUID('612f3c40-5d3b-217e-707b-6a546a3d7b29') AS uuid,
     UUIDToNum(uuid) AS bytes
 ```
+
+Result:
 
 ```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
@@ -565,6 +619,8 @@ SELECT
     UUIDToNum(uuid, 2) AS bytes
 ```
 
+Result:
+
 ```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ @</a;]~!p{jTj={) │
@@ -573,7 +629,7 @@ SELECT
 
 ## UUIDv7ToDateTime
 
-Accepts `UUID` having version 7 and extracts the timestamp from it. 
+Returns the timestamp component of a UUID version 7.
 
 **Syntax**
 
@@ -588,7 +644,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 **Returned value**
 
-- Timestamp with milliseconds precision (1970-01-01 00:00:00.000 in case of non version 7 UUID).
+- Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000.
 
 Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
 
@@ -597,6 +653,8 @@ Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
 ``` sql
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 ```
+
+Result:
 
 ```response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
@@ -608,6 +666,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')
 ```
 
+Result:
+
 ```response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
 │                                                              2024-04-22 08:30:29.048 │
@@ -616,7 +676,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ## serverUUID()
 
-Returns the random and unique UUID, which is generated when the server is first started and stored forever. The result writes to the file `uuid` created in the ClickHouse server directory `/var/lib/clickhouse/`. 
+Returns the random UUID generated during the first start of the ClickHouse server. The UUID is stored in file `uuid` in the ClickHouse server directory (e.g. `/var/lib/clickhouse/`) and retained between server restarts.
 
 **Syntax**
 
@@ -626,10 +686,10 @@ serverUUID()
 
 **Returned value**
 
-- The UUID of the server. 
+- The UUID of the server.
 
 Type: [UUID](../data-types/uuid.md).
 
-## See Also
+## See also
 
 - [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)

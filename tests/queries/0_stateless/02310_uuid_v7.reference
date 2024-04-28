@@ -5,7 +5,7 @@ UUID
 0
 0
 1
--- generateUUIDv7WithFastCounter --
+-- generateUUIDv7ThreadMonotonic --
 UUID
 7
 2

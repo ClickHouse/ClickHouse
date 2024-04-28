@@ -21,11 +21,11 @@
 
 namespace DB::ErrorCodes
 {
-extern const int ARGUMENT_OUT_OF_BOUND;
-extern const int ILLEGAL_COLUMN;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int LOGICAL_ERROR;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -36,7 +36,7 @@ enum class Representation
     LittleEndian
 };
 
-std::pair<int, int> determineBinaryStartIndexWithIncrement(const ptrdiff_t num_bytes, const Representation representation)
+std::pair<int, int> determineBinaryStartIndexWithIncrement(ptrdiff_t num_bytes, Representation representation)
 {
     if (representation == Representation::BigEndian)
         return {0, 1};
@@ -46,7 +46,7 @@ std::pair<int, int> determineBinaryStartIndexWithIncrement(const ptrdiff_t num_b
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "{} is not handled yet", magic_enum::enum_name(representation));
 }
 
-void formatHex(const std::span<const UInt8> src, UInt8 * dst, const Representation representation)
+void formatHex(const std::span<const UInt8> src, UInt8 * dst, Representation representation)
 {
     const auto src_size = std::ssize(src);
     const auto [src_start_index, src_increment] = determineBinaryStartIndexWithIncrement(src_size, representation);
@@ -54,7 +54,7 @@ void formatHex(const std::span<const UInt8> src, UInt8 * dst, const Representati
         writeHexByteLowercase(src[src_pos], dst + dst_pos);
 }
 
-void parseHex(const UInt8 * __restrict src, const std::span<UInt8> dst, const Representation representation)
+void parseHex(const UInt8 * __restrict src, const std::span<UInt8> dst, Representation representation)
 {
     const auto dst_size = std::ssize(dst);
     const auto [dst_start_index, dst_increment] = determineBinaryStartIndexWithIncrement(dst_size, representation);
@@ -332,6 +332,7 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
@@ -354,14 +355,13 @@ public:
         return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
         const bool defaultFormat = (parseVariant(arguments) == UUIDSerializer::Variant::Default);
+
         if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
         {
             const auto & vec_in = col_in->getData();
@@ -403,11 +403,13 @@ class FunctionUUIDv7ToDateTime : public IFunction
 {
 public:
     static constexpr auto name = "UUIDv7ToDateTime";
-    static constexpr UInt32 DATETIME_SCALE = 3;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDv7ToDateTime>(); }
+
+    static constexpr UInt32 datetime_scale = 3;
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
@@ -438,10 +440,8 @@ public:
                     getName());
         }
 
-        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE, timezone);
+        return std::make_shared<DataTypeDateTime64>(datetime_scale, timezone);
     }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -454,7 +454,7 @@ public:
             const UUID * uuids = vec_in.data();
             const size_t size = vec_in.size();
 
-            auto col_res = ColumnDateTime64::create(size, DATETIME_SCALE);
+            auto col_res = ColumnDateTime64::create(size, datetime_scale);
             auto & vec_res = col_res->getData();
 
             for (size_t i = 0; i < size; ++i)
@@ -464,7 +464,7 @@ public:
                 {
                     uint64_t ms = hiBytes >> 16;
                     vec_res[i] = DecimalUtils::decimalFromComponents<DateTime64>(
-                        ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
+                        ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
                 }
             }
 
