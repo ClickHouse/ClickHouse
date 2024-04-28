@@ -9,6 +9,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -144,6 +145,7 @@ private:
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     std::vector<JoinAlgorithm> join_algorithm;
+    const UInt64 cross_join_max_bytes_inmemory = 1000000;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -187,6 +189,8 @@ private:
     std::unordered_map<String, String> right_key_aliases;
 
     VolumePtr tmp_volume;
+
+    TemporaryDataOnDiskScopePtr tmp_data;
 
     std::shared_ptr<StorageJoin> right_storage_join;
 
@@ -233,7 +237,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, VolumePtr tmp_volume_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -259,6 +263,8 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
+
     ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
@@ -274,6 +280,8 @@ public:
     }
 
     bool allowParallelHashJoin() const;
+
+    UInt64 crossJoinMaxBytesInmemory() const { return cross_join_max_bytes_inmemory; }
 
     bool joinUseNulls() const { return join_use_nulls; }
 

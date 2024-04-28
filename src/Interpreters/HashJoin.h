@@ -26,6 +26,7 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
@@ -414,6 +415,15 @@ public:
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
+    TemporaryFileStream* getStreamForCrossJoin()
+    {
+        auto streams = tmp_data->getStreams();
+        assert(streams.size() <= 1);
+        if (streams.empty())
+            return nullptr;
+        return streams[0];
+    }
+
 private:
     friend class NotJoinedHash;
 
@@ -441,6 +451,10 @@ private:
     mutable JoinStuff::JoinUsedFlags used_flags;
     RightTableDataPtr data;
     std::vector<Sizes> key_sizes;
+
+    /// Needed to do external cross join
+    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;

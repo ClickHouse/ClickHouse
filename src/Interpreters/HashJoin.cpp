@@ -35,6 +35,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
+#include "Core/Joins.h"
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
@@ -249,11 +250,13 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
+    , tmp_data(std::make_unique<TemporaryDataOnDisk>(table_join_->getTempDataOnDisk()))
     , right_sample_block(right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
+    LOG_INFO(log, "KEK CONSTRUCTOR {}\n", reserve_num);
     LOG_TRACE(log, "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id, TableJoin::formatClauses(table_join->getClauses(), true), data->type, kind, strictness, right_sample_block.dumpStructure());
 
@@ -827,6 +830,16 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
+
+    if (kind == JoinKind::Cross)
+    {
+        if (tmp_stream == nullptr)
+        {
+            tmp_stream = &tmp_data->createStream(right_sample_block);
+        }
+        tmp_stream->write(block_to_save);
+    }
+
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -928,6 +941,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
             if (!flag_per_row && !is_inserted)
             {
+                LOG_INFO(log, "LOL\n\n\n\n\n\n");
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->blocks_allocated_size -= stored_block->allocatedBytes();
                 data->blocks.pop_back();
@@ -943,7 +957,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     }
 
     shrinkStoredBlocksToFit(total_bytes);
-
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
@@ -2275,13 +2288,13 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
     for (size_t left_row = start_left_row; left_row < rows_left; ++left_row)
     {
         size_t block_number = 0;
-        for (const Block & compressed_block_right : data->blocks)
+
+        auto process_right_block = [&](const Block & block_right)
         {
             ++block_number;
             if (block_number < start_right_block)
-                continue;
+                return;
 
-            auto block_right = compressed_block_right.decompress();
 
             size_t rows_right = block_right.rows();
             rows_added += rows_right;
@@ -2294,6 +2307,22 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
                 const IColumn & column_right = *block_right.getByPosition(col_num).column;
                 dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
             }
+        };
+
+        if (tmp_stream)
+        {
+            tmp_stream->finishWritingAsyncSafe();
+            auto reader = tmp_stream->getReadStream();
+            while (auto block_right = reader->read())
+            {
+                process_right_block(block_right);
+            }
+        }
+
+        for (const Block & compressed_block_right : data->blocks)
+        {
+            auto block_right = compressed_block_right.decompress();
+            process_right_block(block_right);
         }
 
         start_right_block = 0;

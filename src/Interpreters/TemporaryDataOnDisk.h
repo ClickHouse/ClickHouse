@@ -1,7 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <boost/noncopyable.hpp>
 
+#include <IO/ReadBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Formats/NativeReader.h>
 #include <Core/Block.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -130,6 +134,19 @@ private:
     typename CurrentMetrics::Metric current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
 };
 
+struct InputReader
+{
+    InputReader(const String & path, const Block & header_, size_t size = 0);
+
+    explicit InputReader(const String & path, size_t size = 0);
+
+    Block read();
+
+    ReadBufferFromFile in_file_buf;
+    CompressedReadBuffer in_compressed_buf;
+    NativeReader in_reader;
+};
+
 /*
  * Data can be written into this stream and then read.
  * After finish writing, call `finishWriting` and then `read` to read the data.
@@ -154,7 +171,10 @@ public:
     void flush();
 
     Stat finishWriting();
+    Stat finishWritingAsyncSafe();
     bool isWriteFinished() const;
+
+    std::unique_ptr<InputReader> getReadStream();
 
     Block read();
 
@@ -184,10 +204,15 @@ private:
 
     Stat stat;
 
+    /// 0 - means that we haven't requested any read, 1 - read from function TemporaryFileStream::read, 2 - 
+    std::atomic_char read_type{0};
+
+    mutable std::mutex finish_writing;
+    std::atomic_bool writing_finished{false};
+
     struct OutputWriter;
     std::unique_ptr<OutputWriter> out_writer;
 
-    struct InputReader;
     std::unique_ptr<InputReader> in_reader;
 };
 

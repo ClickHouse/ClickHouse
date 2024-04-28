@@ -1,12 +1,11 @@
+#include <atomic>
+#include <mutex>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressedReadBuffer.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Formats/NativeWriter.h>
-#include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/DiskLocal.h>
@@ -14,6 +13,7 @@
 
 #include <Core/Defines.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include "Common/Exception.h"
 
 namespace ProfileEvents
 {
@@ -224,33 +224,26 @@ struct TemporaryFileStream::OutputWriter
     bool finalized = false;
 };
 
-struct TemporaryFileStream::InputReader
+InputReader::InputReader(const String & path, const Block & header_, size_t size)
+    : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    , in_compressed_buf(in_file_buf)
+    , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
 {
-    InputReader(const String & path, const Block & header_, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
-    {
-        LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
-    }
+    LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
+}
 
-    explicit InputReader(const String & path, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
-    {
-        LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
-    }
+InputReader::InputReader(const String & path, size_t size)
+    : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    , in_compressed_buf(in_file_buf)
+    , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
+{
+    LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
+}
 
-    Block read()
-    {
-        return in_reader.read();
-    }
-
-    ReadBufferFromFile in_file_buf;
-    CompressedReadBuffer in_compressed_buf;
-    NativeReader in_reader;
-};
+Block InputReader::read()
+{
+    return in_reader.read();
+}
 
 TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_)
     : parent(parent_)
@@ -310,6 +303,20 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
     return stat;
 }
 
+TemporaryFileStream::Stat TemporaryFileStream::finishWritingAsyncSafe()
+{
+    if (!writing_finished.load(std::memory_order_relaxed))
+    {
+        std::lock_guard lock(finish_writing);
+        if (!writing_finished.load())
+        {
+            return finishWriting();
+        }
+        writing_finished.store(true);
+    }
+    return stat;
+}
+
 bool TemporaryFileStream::isWriteFinished() const
 {
     assert(in_reader == nullptr || out_writer == nullptr);
@@ -324,6 +331,12 @@ Block TemporaryFileStream::read()
     if (isEof())
         return {};
 
+    if (auto type = read_type.exchange(1); type == 2)
+    {
+        read_type.store(2);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Different type of reading was requested earlier");
+    }
+
     if (!in_reader)
     {
         in_reader = std::make_unique<InputReader>(getPath(), header, getSize());
@@ -334,8 +347,26 @@ Block TemporaryFileStream::read()
     {
         /// finalize earlier to release resources, do not wait for the destructor
         this->release();
+        in_reader.reset();
     }
     return block;
+}
+
+std::unique_ptr<InputReader> TemporaryFileStream::getReadStream()
+{
+    if (!isWriteFinished())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
+
+    if (isEof())
+        return nullptr;
+
+    if (auto type = read_type.exchange(2); type == 1)
+    {
+        read_type.store(1);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Different type of reading was requested earlier");
+    }
+
+    return std::make_unique<InputReader>(getPath(), header, getSize());
 }
 
 void TemporaryFileStream::updateAllocAndCheck()
