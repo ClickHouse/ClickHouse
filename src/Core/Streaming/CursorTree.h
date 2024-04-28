@@ -8,10 +8,11 @@
 #include <Core/Field.h>
 #include <base/types.h>
 
-#include <Interpreters/Context.h>
-
 namespace DB
 {
+
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;

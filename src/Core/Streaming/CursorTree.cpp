@@ -9,6 +9,7 @@
 
 #include <Core/Streaming/CursorTree.h>
 
+#include <Interpreters/Context.h>
 
 namespace DB
 {

@@ -11,6 +11,7 @@ struct CursorData
     std::optional<String> keeper_key;
 };
 
+/// full storage name -> CursorData
 using CursorDataMap = std::map<String, CursorData>;
 
 void readBinary(CursorDataMap & data_map, ReadBuffer & buf);

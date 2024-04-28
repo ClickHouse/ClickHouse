@@ -4,6 +4,9 @@
 #include <Core/Streaming/CursorTree.h>
 #include <Core/Streaming/CursorData.h>
 
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
 

@@ -1,11 +1,12 @@
 #pragma once
 
-#include <base/types.h>
-#include <Core/Field.h>
-
-#include <unordered_map>
 #include <vector>
+#include <unordered_map>
 
+#include <base/types.h>
+
+#include <Core/Field.h>
+#include <Core/Streaming/CursorData.h>
 
 namespace DB
 {
@@ -34,9 +35,9 @@ struct BlockInfo
     */
 
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M) \
-    M(bool,     is_overflows,     false,     1) \
-    M(Int32,    bucket_num,       -1,        2) \
-    M(Map,      cursor,           {},        3) \
+    M(bool,               is_overflows,     false,     1) \
+    M(Int32,              bucket_num,       -1,        2) \
+    M(CursorDataMap,      cursors,          {},        3) \
 
 #define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
     TYPE NAME = DEFAULT;
