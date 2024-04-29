@@ -2523,6 +2523,9 @@ sumWithOverflow
 sumcount
 sumkahan
 summap
+summapwithoverflow
+sumMapWithOverflow
+sumMapFilteredWithOverflow
 summingmergetree
 sumwithoverflow
 superaggregates
