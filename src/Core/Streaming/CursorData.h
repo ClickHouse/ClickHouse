@@ -1,6 +1,13 @@
 #pragma once
 
-#include <Core/Streaming/CursorTree.h>
+#include <map>
+
+#include <base/types.h>
+
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+
+#include <Core/Streaming/CursorTree_fwd.h>
 
 namespace DB
 {

@@ -5,8 +5,10 @@
 
 #include <Poco/JSON/Object.h>
 
-#include <Core/Field.h>
 #include <base/types.h>
+
+#include <Core/Field.h>
+#include <Core/Streaming/CursorTree_fwd.h>
 
 namespace DB
 {
@@ -14,19 +16,18 @@ namespace DB
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
-class CursorTreeNode;
-using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
-
 /// TODO
 class CursorTreeNode
 {
     using Data = std::map<String, std::variant<Int64, CursorTreeNodePtr>>;
 
 public:
+    bool hasSubtree(const String & key) const;
     const CursorTreeNodePtr & getSubtree(const String & key) const;
     CursorTreeNodePtr & setSubtree(const String & key, CursorTreeNodePtr tree);
     CursorTreeNodePtr & next(const String & key);
 
+    bool hasValue(const String & key) const;
     const Int64 & getValue(const String & key) const;
     Int64 & setValue(const String & key, Int64 value);
 

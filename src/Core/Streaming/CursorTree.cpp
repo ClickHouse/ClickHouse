@@ -1,3 +1,4 @@
+#include <variant>
 #include <vector>
 
 #include <boost/algorithm/string/classification.hpp>
@@ -45,6 +46,16 @@ static std::map<String, Int64> collapseTree(CursorTreeNode * node)
     return collapsed_tree;
 }
 
+bool CursorTreeNode::hasSubtree(const String & key) const
+{
+    auto it = data.find(key);
+
+    if (it == data.end())
+        return false;
+
+    return std::holds_alternative<CursorTreeNodePtr>(it->second);
+}
+
 const CursorTreeNodePtr & CursorTreeNode::getSubtree(const String & key) const
 {
     auto it = data.find(key);
@@ -69,6 +80,16 @@ CursorTreeNodePtr & CursorTreeNode::next(const String & key)
         return setSubtree(key, std::make_shared<CursorTreeNode>());
 
     return std::get<CursorTreeNodePtr>(it->second);
+}
+
+bool CursorTreeNode::hasValue(const String & key) const
+{
+    auto it = data.find(key);
+
+    if (it == data.end())
+        return false;
+
+    return std::holds_alternative<Int64>(it->second);
 }
 
 const Int64 & CursorTreeNode::getValue(const String & key) const
