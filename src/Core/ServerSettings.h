@@ -60,7 +60,6 @@ namespace DB
     M(Double, cgroup_memory_watcher_soft_limit_ratio, 0.9, "Sort memory limit ratio limit for cgroup memory usage observer", 0) \
     M(UInt64, async_insert_threads, 16, "Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled", 0) \
     M(Bool, async_insert_queue_flush_on_shutdown, true, "If true queue of asynchronous inserts is flushed on graceful shutdown", 0) \
-    M(Bool, ignore_empty_sql_security_in_create_view_query, true, "If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. This setting is only necessary for the migration period and will become obsolete in 24.4", 0)  \
     \
     M(UInt64, max_concurrent_queries, 0, "Maximum number of concurrently executed queries. Zero means unlimited.", 0) \
     M(UInt64, max_concurrent_insert_queries, 0, "Maximum number of concurrently INSERT queries. Zero means unlimited.", 0) \
@@ -144,7 +143,18 @@ namespace DB
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in StorageSystemServerSettings.cpp
 
-DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, SERVER_SETTINGS)
+#define MAKE_OBSOLETE(M, TYPE, NAME, DEFAULT) \
+    M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
+
+#define OBSOLETE_SETTINGS(M, ALIAS) \
+    MAKE_OBSOLETE(M, Bool, ignore_empty_sql_security_in_create_view_query, false)  \
+
+
+#define LIST_OF_SETTINGS(M, ALIAS) \
+    SERVER_SETTINGS(M, ALIAS)      \
+    OBSOLETE_SETTINGS(M, ALIAS)    \
+
+DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SETTINGS)
 
 struct ServerSettings : public BaseSettings<ServerSettingsTraits>
 {

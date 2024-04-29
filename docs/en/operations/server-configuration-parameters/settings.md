@@ -3009,4 +3009,4 @@ This setting is only necessary for the migration period and will become obsolete
 
 Type: Bool
 
-Default: 1
+Default: 0
