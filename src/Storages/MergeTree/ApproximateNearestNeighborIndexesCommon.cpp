@@ -226,8 +226,6 @@ bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, R
             function->name == "dotProduct" ||
             function->name == "LpDistance")
             out.function = RPNElement::FUNCTION_DISTANCE;
-        else if (function->name == "tuple")
-            out.function = RPNElement::FUNCTION_TUPLE;
         else if (function->name == "array")
             out.function = RPNElement::FUNCTION_ARRAY;
         else if (function->name == "less" ||
@@ -285,14 +283,6 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
             out.function = RPNElement::FUNCTION_INT_LITERAL;
             out.int_literal.emplace(const_value.get<Int64>());
             out.func_name = "Int literal";
-            return true;
-        }
-
-        if (const_value.getType() == Field::Types::Tuple)
-        {
-            out.function = RPNElement::FUNCTION_LITERAL_TUPLE;
-            out.tuple_literal = const_value.get<Tuple>();
-            out.func_name = "Tuple literal";
             return true;
         }
 
@@ -433,14 +423,8 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
     }
 
-    if (iter->function == RPNElement::FUNCTION_TUPLE || iter->function == RPNElement::FUNCTION_ARRAY)
+    if (iter->function == RPNElement::FUNCTION_ARRAY)
         ++iter;
-
-    if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
-    {
-        extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
-        ++iter;
-    }
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
@@ -448,21 +432,16 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
     }
 
-    /// further conditions are possible if there is no tuple or array, or no identifier is found
-    /// the tuple or array can be inside a cast function. For other cases, see the loop after this condition
+    /// further conditions are possible if there is no array, or no identifier is found
+    /// the array can be inside a cast function. For other cases, see the loop after this condition
     if (iter != end && iter->function == RPNElement::FUNCTION_CAST)
     {
         ++iter;
-        /// Cast should be made to array or tuple
-        if (!iter->func_name.starts_with("Array") && !iter->func_name.starts_with("Tuple"))
+        /// Cast should be made to array
+        if (!iter->func_name.starts_with("Array"))
             return false;
         ++iter;
-        if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
-        {
-            extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
-            ++iter;
-        }
-        else if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
+        if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
             extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
             ++iter;
