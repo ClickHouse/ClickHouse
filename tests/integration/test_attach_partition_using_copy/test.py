@@ -188,7 +188,7 @@ def test_only_destination_replicated(start_cluster):
 
 
 def test_not_work_on_different_disk(start_cluster):
-    # Should not work on replace
+    # Replace and move should not work on replace
     create_source_table(replica1, "source", False)
     create_destination_table(replica2, "destination", False)
 
