@@ -4102,7 +4102,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
              * SELECT id FROM ( SELECT ... ) AS subquery ARRAY JOIN [0] AS id INNER JOIN second_table USING (id)
              * In the example, identifier `id` should be resolved into one from USING (id) column.
              */
-            auto alias_it = scope.alias_name_to_expression_node.find(identifier_lookup.identifier.front());
+            auto alias_it = scope.alias_name_to_expression_node.find(identifier_lookup.identifier.getFullName());
             if (alias_it != scope.alias_name_to_expression_node.end() && alias_it->second->getNodeType() == QueryTreeNodeType::COLUMN)
             {
                 const auto & column_node = alias_it->second->as<ColumnNode &>();
