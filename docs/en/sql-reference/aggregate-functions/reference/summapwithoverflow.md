@@ -18,7 +18,7 @@ It differs from the [sumMap](../reference/summap.md) function in that it does su
 - `key`: [Array](../../data-types/array.md) of keys.
 - `value`: [Array](../../data-types/array.md) of values.
 
-Passing a tuple of key and value arrays is a synonym to passing seperately an array of keys and an array of values.
+Passing a tuple of key and value arrays is a synonym to passing separately an array of keys and an array of values.
 
 :::note 
 The number of elements in `key` and `value` must be the same for each row that is totaled.
