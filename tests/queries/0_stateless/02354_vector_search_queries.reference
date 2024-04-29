@@ -1,4 +1,4 @@
-ARRAY, 10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block
+10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block
 - Annoy: WHERE-type
 5	[0,2]	0
 6	[0,2.1]	0.09999990463256836
@@ -77,7 +77,7 @@ Expression (Projection)
             Description: usearch GRANULARITY 100000000
             Parts: 1/1
             Granules: 1/1
-ARRAY vectors, 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
+12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
 - Annoy: WHERE-type
 6	[0,2]	0
 7	[0,2.1]	0.09999990463256836
@@ -156,23 +156,23 @@ Expression (Projection)
             Description: usearch GRANULARITY 2
             Parts: 1/1
             Granules: 2/4
-TUPLE vectors and special cases
+Special cases
 - Annoy: WHERE-type
-0	(4.6,2.3)	0.5527864045000421
-1	(2,3.2)	0.15200169244542905
-2	(4.2,3.4)	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
+1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
 - Annoy: ORDER-BY-type
-6	(1,9.3)	0.005731362878640178
-1	(2,3.2)	0.15200169244542905
-7	(5.5,4.7)	0.3503476876550442
+6	[1,9.3]	0.005731362878640178
+1	[2,3.2]	0.15200169244542905
+7	[5.5,4.7]	0.3503476876550442
 - Usearch: WHERE-type
-0	(4.6,2.3)	0.5527864045000421
-1	(2,3.2)	0.15200169244542905
-2	(4.2,3.4)	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
+1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
 - Usearch: ORDER-BY-type
-6	(1,9.3)	0.005731362878640178
-1	(2,3.2)	0.15200169244542905
-7	(5.5,4.7)	0.3503476876550442
+6	[1,9.3]	0.005731362878640178
+1	[2,3.2]	0.15200169244542905
+7	[5.5,4.7]	0.3503476876550442
 - Special case: MaximumDistance is negative
 - Special case: MaximumDistance is negative
 - Special case: setting "annoy_index_search_k_nodes"

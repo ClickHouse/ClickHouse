@@ -118,9 +118,6 @@ private:
             /// DistanceFunctions
             FUNCTION_DISTANCE,
 
-            //tuple(0.1, ..., 0.1)
-            FUNCTION_TUPLE,
-
             //array(0.1, ..., 0.1)
             FUNCTION_ARRAY,
 
@@ -138,9 +135,6 @@ private:
 
             /// Unknown, can be any value
             FUNCTION_UNKNOWN,
-
-            /// (0.1, ...., 0.1) vector without word 'tuple'
-            FUNCTION_LITERAL_TUPLE,
 
             /// [0.1, ...., 0.1] vector without word 'array'
             FUNCTION_LITERAL_ARRAY,
@@ -166,7 +160,6 @@ private:
         std::optional<String> identifier;
         std::optional<int64_t> int_literal;
 
-        std::optional<Tuple> tuple_literal;
         std::optional<Array> array_literal;
 
         UInt32 dim = 0;

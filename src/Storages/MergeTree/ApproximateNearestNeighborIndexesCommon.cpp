@@ -226,8 +226,6 @@ bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, R
             function->name == "dotProduct" ||
             function->name == "LpDistance")
             out.function = RPNElement::FUNCTION_DISTANCE;
-        else if (function->name == "tuple")
-            out.function = RPNElement::FUNCTION_TUPLE;
         else if (function->name == "array")
             out.function = RPNElement::FUNCTION_ARRAY;
         else if (function->name == "less" ||
@@ -288,14 +286,6 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
             return true;
         }
 
-        if (const_value.getType() == Field::Types::Tuple)
-        {
-            out.function = RPNElement::FUNCTION_LITERAL_TUPLE;
-            out.tuple_literal = const_value.get<Tuple>();
-            out.func_name = "Tuple literal";
-            return true;
-        }
-
         if (const_value.getType() == Field::Types::Array)
         {
             out.function = RPNElement::FUNCTION_LITERAL_ARRAY;
@@ -329,7 +319,7 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
     ann_info.type = ApproximateNearestNeighborInformation::Type::Where;
 
     /// WHERE section must have at least 5 expressions
-    /// Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(ReferenceVector(floats))
+    /// Operator->Distance(float)->DistanceFunc->Column->ArrayFunc(ReferenceVector(floats))
     if (rpn.size() < 5)
         return false;
 
@@ -410,7 +400,7 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
 {
     bool identifier_found = false;
 
-    /// Matches DistanceFunc->[Column]->[Tuple(array)Func]->ReferenceVector(floats)->[Column]
+    /// Matches DistanceFunc->[Column]->[ArrayFunc]->ReferenceVector(floats)->[Column]
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
@@ -433,14 +423,8 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
     }
 
-    if (iter->function == RPNElement::FUNCTION_TUPLE || iter->function == RPNElement::FUNCTION_ARRAY)
+    if (iter->function == RPNElement::FUNCTION_ARRAY)
         ++iter;
-
-    if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
-    {
-        extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
-        ++iter;
-    }
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
@@ -448,21 +432,16 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
     }
 
-    /// further conditions are possible if there is no tuple or array, or no identifier is found
-    /// the tuple or array can be inside a cast function. For other cases, see the loop after this condition
+    /// further conditions are possible if there is no array, or no identifier is found
+    /// the array can be inside a cast function. For other cases, see the loop after this condition
     if (iter != end && iter->function == RPNElement::FUNCTION_CAST)
     {
         ++iter;
-        /// Cast should be made to array or tuple
-        if (!iter->func_name.starts_with("Array") && !iter->func_name.starts_with("Tuple"))
+        /// Cast should be made to array
+        if (!iter->func_name.starts_with("Array"))
             return false;
         ++iter;
-        if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
-        {
-            extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->tuple_literal);
-            ++iter;
-        }
-        else if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
+        if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
             extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
             ++iter;

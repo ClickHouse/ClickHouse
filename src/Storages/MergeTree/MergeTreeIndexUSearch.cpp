@@ -9,7 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -220,39 +219,8 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, rc.computed_distances);
         }
     }
-    else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
-    {
-        const auto & column_tuple_columns = column_tuple->getColumns();
-        std::vector<std::vector<Float32>> data(column_tuple->size(), std::vector<Float32>());
-        for (const auto & column : column_tuple_columns)
-        {
-            const auto & pod_array = typeid_cast<const ColumnFloat32 *>(column.get())->getData();
-            for (size_t i = 0; i < pod_array.size(); ++i)
-                data[i].push_back(pod_array[i]);
-        }
-
-        if (data.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
-
-        if (!index)
-            index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size(), scalar_kind);
-
-        if (!index->reserve(unum::usearch::ceil2(index->size() + data.size())))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
-
-        for (const auto & item : data)
-        {
-            auto rc = index->add(static_cast<uint32_t>(index->size()), item.data());
-            if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
-
-            ProfileEvents::increment(ProfileEvents::USearchAddCount);
-            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
-            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, rc.computed_distances);
-        }
-    }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array or Tuple column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float32) column");
 
     *pos += rows_read;
 }
@@ -433,7 +401,7 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "USearch can only be created on columns of type Array(Float32) and Tuple(Float32[, Float32[, ...]])");
+            "USearch indexes can only be created on columns of type Array(Float32))");
     };
 
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
@@ -443,16 +411,6 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
             throw_unsupported_underlying_column_exception();
-    }
-    else if (const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(data_type.get()))
-    {
-        const DataTypes & inner_types = data_type_tuple->getElements();
-        for (const auto & inner_type : inner_types)
-        {
-            TypeIndex nested_type_index = inner_type->getTypeId();
-            if (!WhichDataType(nested_type_index).isFloat32())
-                throw_unsupported_underlying_column_exception();
-        }
     }
     else
         throw_unsupported_underlying_column_exception();
