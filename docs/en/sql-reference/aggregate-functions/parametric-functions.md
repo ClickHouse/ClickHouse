@@ -575,7 +575,7 @@ This function behaves the same as [sumMap](../../sql-reference/aggregate-functio
 
 **Example**
 
-In this example we create a table `sum_map`, insert some data into it and then use both `sumMapFilteredWithOverflow` and `sumMapFiltered` and the `toTypeName` function for comparison of the result. Where `requests` was of type `UInt8` in the created table, `sumMapFiltered` has promoted the type of the summed values to `UInt64` to avoid overflow whereas `sumMapFilteredWithOverflow` has kept the type as `UInt8` which is not large enough to store the result - i.e. overflow has occured.
+In this example we create a table `sum_map`, insert some data into it and then use both `sumMapFilteredWithOverflow` and `sumMapFiltered` and the `toTypeName` function for comparison of the result. Where `requests` was of type `UInt8` in the created table, `sumMapFiltered` has promoted the type of the summed values to `UInt64` to avoid overflow whereas `sumMapFilteredWithOverflow` has kept the type as `UInt8` which is not large enough to store the result - i.e. overflow has occurred.
 
 Query:
 
