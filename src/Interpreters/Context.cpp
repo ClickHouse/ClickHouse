@@ -1378,14 +1378,14 @@ contextSanityClampSettingsWithLock(const Context & context, Settings & settings,
 {
     const auto type = context.getApplicationType();
     if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 ALWAYS_INLINE inline void contextSanityClampSettings(const Context & context, Settings & settings)
 {
     const auto type = context.getApplicationType();
     if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 }
 
@@ -2191,35 +2191,35 @@ void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & p
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, change, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings);
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2243,7 +2243,7 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
 {
     SharedLockGuard lock(mutex);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
-    doSettingsSanityCheckClamp(settings);
+    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -4484,7 +4484,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name);
 
     applySettingsQuirks(settings, getLogger("SettingsQuirks"));
-    doSettingsSanityCheckClamp(settings);
+    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());

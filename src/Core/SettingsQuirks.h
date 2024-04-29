@@ -11,5 +11,5 @@ struct Settings;
 void applySettingsQuirks(Settings & settings, LoggerPtr log = nullptr);
 
 /// Verify that some settings have sane values. Alters the value to a reasonable one if not
-void doSettingsSanityCheckClamp(Settings & settings);
+void doSettingsSanityCheckClamp(Settings & settings, LoggerPtr log);
 }
