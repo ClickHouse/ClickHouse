@@ -195,7 +195,7 @@ Result:
 SELECT generateUUIDv7ThreadMonotonic(1), generateUUIDv7ThreadMonotonic(2);
 
 ┌─generateUUIDv7ThreadMonotonic(1)─────┬─generateUUIDv7ThreadMonotonic(2)─────┐
-  018f05e1-14ee-7bc5-9906-207153b400b1 │ 018f05e1-14ee-7bc5-9906-2072b8e96758 │
+│ 018f05e1-14ee-7bc5-9906-207153b400b1 │ 018f05e1-14ee-7bc5-9906-2072b8e96758 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 

@@ -76,7 +76,7 @@ void setVariant(UUID & uuid)
 struct FillAllRandomPolicy
 {
     static constexpr auto name = "generateUUIDv7NonMonotonic";
-    static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), and a random field (74 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit). It is the fastest version of generateUUIDv7* functions family.";
+    static constexpr auto doc_description = "Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), and a random field (74 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit). This function is the fastest generateUUIDv7* function but it gives no monotonocity guarantees within a timestamp.";
     struct Data
     {
         void generate(UUID & uuid, uint64_t ts)
@@ -136,7 +136,7 @@ struct CounterFields
 struct GlobalCounterPolicy
 {
     static constexpr auto name = "generateUUIDv7";
-    static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). Counter increment monotonocity at one timestamp is guaraneed across all generateUUIDv7 functions running simultaneously.";
+    static constexpr auto doc_description = "Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. Function generateUUIDv7 guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.";
 
     /// Guarantee counter monotonocity within one timestamp across all threads generating UUIDv7 simultaneously.
     struct Data
@@ -159,7 +159,7 @@ struct GlobalCounterPolicy
 struct ThreadLocalCounterPolicy
 {
     static constexpr auto name = "generateUUIDv7ThreadMonotonic";
-    static constexpr auto doc_description = "Generates a UUID of version 7 containing the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). Counter increment monotonocity at one timestamp is guaraneed only within one thread running generateUUIDv7 function.";
+    static constexpr auto doc_description = "Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version \"7\" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field \"2\", 2 bit), and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. This function behaves like generateUUIDv7 but gives no guarantee on counter monotony across different simultaneous requests. Monotonocity within one timestamp is guaranteed only within the same thread calling this function to generate UUIDs.";
 
     /// Guarantee counter monotonocity within one timestamp within the same thread. Faster than GlobalCounterPolicy if a query uses multiple threads.
     struct Data
