@@ -66,13 +66,13 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (!open.ignore(pos))
+    if (!open.ignore(pos, expected))
         return false;
 
     if (!columns_p.parse(pos, columns, expected))
         return false;
 
-    if (!close.ignore(pos))
+    if (!close.ignore(pos, expected))
         return false;
 
     auto func = std::make_shared<ASTFunction>();
