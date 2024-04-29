@@ -27,6 +27,8 @@ namespace ErrorCodes
 struct FileSegmentMetadata : private boost::noncopyable
 {
     using Priority = IFileCachePriority;
+    using QueueEntryState = IFileCachePriority::Entry::State;
+    using QueueEntryStateHolderPtr = IFileCachePriority::Entry::StateHolderPtr;
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
@@ -34,48 +36,21 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator || removed)
-            return false;
-        return iterator->getEntry()->isEvicting(lock);
-    }
-
-    bool isEvictingOrRemoved(const LockedKey & lock) const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator || removed)
-            return false;
-        return iterator->getEntry()->isEvicting(lock);
-    }
-
-    void setEvictingFlag(const LockedKey & locked_key, const CachePriorityGuard::Lock & lock) const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->setEvictingFlag(locked_key, lock);
-    }
-
-    void setRemovedFlag(const LockedKey &, const CachePriorityGuard::Lock &)
-    {
-        removed = true;
-    }
-
-    void resetEvictingFlag() const
-    {
-        auto iterator = getQueueIterator();
-        if (!iterator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->resetEvictingFlag();
-    }
+    QueueEntryStateHolderPtr getQueueEntryState() const { return state; }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
+    template <typename Lock>
+    bool isEvictingOrRemoved(const Lock & lock)
+    {
+        auto s = state->getState(lock);
+        return s == QueueEntryState::Evicting || s == QueueEntryState::Evicted;
+    }
+
     FileSegmentPtr file_segment;
+
 private:
-    bool removed = false;
+    QueueEntryStateHolderPtr state;
 };
 
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;

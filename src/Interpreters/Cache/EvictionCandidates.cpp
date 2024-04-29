@@ -49,7 +49,10 @@ EvictionCandidates::~EvictionCandidates()
         // Reset the evicting state
         // (as the corresponding file segments were not yet removed).
         for (const auto & candidate : key_candidates.candidates)
-            candidate->resetEvictingFlag();
+        {
+            auto state = candidate->getQueueEntryState();
+            state->resetEvictingState();
+        }
     }
 }
 
@@ -63,8 +66,10 @@ void EvictionCandidates::add(
         it->second.key_metadata = locked_key.getKeyMetadata();
 
     it->second.candidates.push_back(candidate);
-    candidate->setEvictingFlag(locked_key, lock);
     ++candidates_size;
+
+    auto state = candidate->getQueueEntryState();
+    state->setState(IFileCachePriority::Entry::State::Evicting, locked_key, lock);
 }
 
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
@@ -91,7 +96,8 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
             /// In ordinary eviction we use `evicting` flag for this purpose,
             /// but here we cannot, because `evicting` is a property of a queue entry,
             /// but at this point for dynamic cache resize we have already deleted all queue entries.
-            candidate->setRemovedFlag(*locked_key, lock);
+            auto state = candidate->getQueueEntryState();
+            state->setState(IFileCachePriority::Entry::State::Evicted, *locked_key, lock);
 
             queue_iterator->remove(lock);
         }

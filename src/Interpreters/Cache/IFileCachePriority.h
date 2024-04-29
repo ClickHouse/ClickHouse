@@ -8,9 +8,15 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/UserInfo.h>
+#include <magic_enum.hpp>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 struct FileCacheReserveStat;
 class EvictionCandidates;
 
@@ -27,6 +33,8 @@ public:
         Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_);
         Entry(const Entry & other);
 
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
+
         const Key key;
         const size_t offset;
         const KeyMetadataPtr key_metadata;
@@ -34,35 +42,56 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
-        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
-
-        bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
-        bool isEvicting(const LockedKey &) const { return evicting; }
-        /// This does not look good to have isEvicting with two options for locks,
-        /// but still it is valid as we do setEvicting always under both of them.
-        /// (Well, not always - only always for setting it to True,
-        /// but for False we have lower guarantees and allow a logical race,
-        /// physical race is not possible because the value is atomic).
-        /// We can avoid this ambiguity for isEvicting by introducing
-        /// a separate lock `EntryGuard::Lock`, it will make this part of code more coherent,
-        /// but it will introduce one more mutex while it is avoidable.
-        /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
-        void setEvictingFlag(const LockedKey &, const CachePriorityGuard::Lock &) const
+        enum class State {
+            None, /// Queue entry is not created yet.
+            Created, /// Queue entry created.
+            Evicting, /// Queue entry is in process of eviction.
+            Evicted, /// Queue entry is evicted.
+        };
+        struct StateHolder
         {
-            auto prev = evicting.exchange(true, std::memory_order_relaxed);
-            chassert(!prev);
-            UNUSED(prev);
-        }
+            State getState(const CachePriorityGuard::Lock &) { return state; }
+            State getState(const LockedKey &) { return state; }
+            /// This does not look good to have getState with two options for locks,
+            /// but still it is valid as we do setState always under both of them.
+            /// (Well, not always - only always for setting it to True,
+            /// but for False we have lower guarantees and allow a logical race,
+            /// physical race is not possible because the value is atomic).
+            /// We can avoid this ambiguity for getState by introducing
+            /// a separate lock `EntryGuard::Lock`, it will make this part of code more coherent,
+            /// but it will introduce one more mutex while it is avoidable.
+            /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
 
-        void resetEvictingFlag() const
-        {
-            auto prev = evicting.exchange(false, std::memory_order_relaxed);
-            chassert(prev);
-            UNUSED(prev);
-        }
+            void setState(State state_, const LockedKey &, const CachePriorityGuard::Lock &)
+            {
+                setStateImpl(state_);
+            }
+
+            void resetEvictingState()
+            {
+                if (state != State::Evicting)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Expected state `Evicting`, got: {}",
+                                    magic_enum::enum_name(state.load()));
+                }
+                setStateImpl(State::Created);
+            }
+
+        private:
+            std::atomic<State> state;
+
+            void setStateImpl(State state_)
+            {
+                auto prev = state.exchange(state_, std::memory_order_relaxed);
+                chassert(prev != state_);
+                UNUSED(prev);
+            }
+        };
+        using StateHolderPtr = std::shared_ptr<StateHolder>;
 
     private:
-        mutable std::atomic<bool> evicting = false;
+        StatePtr state;
     };
     using EntryPtr = std::shared_ptr<Entry>;
 
