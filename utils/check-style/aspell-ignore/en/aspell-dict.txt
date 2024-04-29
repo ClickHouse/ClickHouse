@@ -563,6 +563,7 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+Monotonicity
 mortonDecode
 mortonEncode
 MsgPack
@@ -925,6 +926,7 @@ TAVG
 TCPConnection
 TCPThreads
 TDigest
+ThreadMonotonic
 TINYINT
 TLSv
 TMAX

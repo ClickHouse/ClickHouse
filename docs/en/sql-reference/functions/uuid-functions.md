@@ -135,7 +135,7 @@ For any given timestamp (unix_ts_ms), the counter starts at a random value and i
 In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
 
 This function behaves like [generateUUIDv7](#generateUUIDv7) but gives no guarantee on counter monotony across different simultaneous requests.
-Monotonocity within one timestamp is guaranteed only within the same thread calling this function to generate UUIDs.
+Monotonicity within one timestamp is guaranteed only within the same thread calling this function to generate UUIDs.
 
 ```
  0                   1                   2                   3
@@ -205,7 +205,7 @@ Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.iet
 
 The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits) and random values (76 bits, including a 2-bit variant field "2").
 
-This function is the fastest `generateUUIDv7*` function but it gives no monotonocity guarantees within a timestamp.
+This function is the fastest `generateUUIDv7*` function but it gives no monotonicity guarantees within a timestamp.
 
 ```
  0                   1                   2                   3
