@@ -12,4 +12,4 @@ select clamp(1, 5, nan);
 select clamp(toInt64(number), toInt64(number-1), toInt64(number+1)) from numbers(3);
 select clamp(number, number-1, number+1) from numbers(3);   -- { serverError NO_COMMON_TYPE }
 select clamp(1, 3, 2);   -- { serverError BAD_ARGUMENTS } 
-select clamp(1, data[1], data[2])from (select arrayJoin([[1, 2], [2,3], [3,2], [4, 4]]) as data);   -- { serverError 36 } 
+select clamp(1, data[1], data[2])from (select arrayJoin([[1, 2], [2,3], [3,2], [4, 4]]) as data);   -- { serverError BAD_ARGUMENTS } 
