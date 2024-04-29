@@ -340,8 +340,10 @@ public:
             return *this;
         }
 
-        void swap(QueryAccessInfo & rhs) noexcept
+        void swap(QueryAccessInfo & rhs) noexcept TSA_NO_THREAD_SAFETY_ANALYSIS
         {
+            /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't support scoped_lock
+            std::scoped_lock lck{mutex, rhs.mutex};
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
@@ -352,12 +354,12 @@ public:
 
         /// To prevent a race between copy-constructor and other uses of this structure.
         mutable std::mutex mutex{};
-        std::set<std::string> databases{};
-        std::set<std::string> tables{};
-        std::set<std::string> columns{};
-        std::set<std::string> partitions{};
-        std::set<std::string> projections{};
-        std::set<std::string> views{};
+        std::set<std::string> databases TSA_GUARDED_BY(mutex){};
+        std::set<std::string> tables TSA_GUARDED_BY(mutex){};
+        std::set<std::string> columns TSA_GUARDED_BY(mutex){};
+        std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
+        std::set<std::string> projections TSA_GUARDED_BY(mutex){};
+        std::set<std::string> views TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -388,15 +390,15 @@ public:
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
 
-        std::unordered_set<std::string> aggregate_functions;
-        std::unordered_set<std::string> aggregate_function_combinators;
-        std::unordered_set<std::string> database_engines;
-        std::unordered_set<std::string> data_type_families;
-        std::unordered_set<std::string> dictionaries;
-        std::unordered_set<std::string> formats;
-        std::unordered_set<std::string> functions;
-        std::unordered_set<std::string> storages;
-        std::unordered_set<std::string> table_functions;
+        std::unordered_set<std::string> aggregate_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> aggregate_function_combinators TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> database_engines TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> data_type_families TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> dictionaries TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> formats TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> storages TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
     };
