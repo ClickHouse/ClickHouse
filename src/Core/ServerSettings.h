@@ -143,18 +143,18 @@ namespace DB
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in StorageSystemServerSettings.cpp
 
-#define MAKE_OBSOLETE(M, TYPE, NAME, DEFAULT) \
+#define MAKE_OBSOLETE_SERVER_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
 
-#define OBSOLETE_SETTINGS(M, ALIAS) \
-    MAKE_OBSOLETE(M, Bool, ignore_empty_sql_security_in_create_view_query, false)  \
+#define OBSOLETE_SERVER_SETTINGS(M, ALIAS) \
+    MAKE_OBSOLETE_SERVER_SETTING(M, Bool, ignore_empty_sql_security_in_create_view_query, false)  \
 
 
-#define LIST_OF_SETTINGS(M, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS(M, ALIAS) \
     SERVER_SETTINGS(M, ALIAS)      \
-    OBSOLETE_SETTINGS(M, ALIAS)    \
+    OBSOLETE_SERVER_SETTINGS(M, ALIAS)    \
 
-DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SETTINGS)
+DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS)
 
 struct ServerSettings : public BaseSettings<ServerSettingsTraits>
 {
