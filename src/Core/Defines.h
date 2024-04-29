@@ -67,6 +67,9 @@ static constexpr auto DBMS_DEFAULT_MAX_PARSER_DEPTH = 1000;
 /// Default limit on the amount of backtracking of recursive descend parser.
 static constexpr auto DBMS_DEFAULT_MAX_PARSER_BACKTRACKS = 1000000;
 
+/// Default limit on recursive CTE evaluation depth.
+static constexpr auto DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH = 1000;
+
 /// Default limit on query size.
 static constexpr auto DBMS_DEFAULT_MAX_QUERY_SIZE = 262144;
 
