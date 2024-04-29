@@ -257,7 +257,7 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
-    
+
     virtual std::shared_ptr<IDataPartStorage> freezeRemote(
     const std::string & to,
     const std::string & dir_path,

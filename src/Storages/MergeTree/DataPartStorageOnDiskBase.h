@@ -69,7 +69,7 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const override;
-    
+
     MutableDataPartStoragePtr freezeRemote(
     const std::string & to,
     const std::string & dir_path,

@@ -2133,8 +2133,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 local_context->getWriteSettings());
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
-        } 
-        else 
+        }
+        else
         {
             /// Attach can work on another disk
             auto [dst_part, part_lock] = cloneAndLoadDataPart(
