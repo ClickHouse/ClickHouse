@@ -38,14 +38,6 @@ void StorageLoop::read(
     query_plan.addStep(std::make_unique<ReadFromLoopStep>(
         column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, max_block_size, num_streams
         ));
-    /*inner_storage->read(query_plan,
-                        column_names,
-                        storage_snapshot,
-                        query_info,
-                        context,
-                        processed_stage,
-                        max_block_size,
-                        num_streams);*/
 }
 
 void registerStorageLoop(StorageFactory & factory)

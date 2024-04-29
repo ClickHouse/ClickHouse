@@ -93,12 +93,9 @@ void TableFunctionLoop::parseArguments(const ASTPtr & ast_function, ContextPtr c
     }
 }
 
-ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
 {
-    auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
-
-    return inner_table_function->getActualTableStructure(context, is_insert_query);
-
+    return ColumnsDescription();
 }
 
 StoragePtr TableFunctionLoop::executeImpl(
