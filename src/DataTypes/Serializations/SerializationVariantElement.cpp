@@ -38,13 +38,13 @@ void SerializationVariantElement::enumerateStreams(
     callback(settings.path);
     settings.path.pop_back();
 
-    const auto * deserialize_prefix_state = data.deserialize_prefix_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_prefix_state) : nullptr;
+    const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_state) : nullptr;
     addVariantToPath(settings.path);
     auto nested_data = SubstreamData(nested_serialization)
                        .withType(data.type ? removeNullableOrLowCardinalityNullable(data.type) : nullptr)
                        .withColumn(data.column ? removeNullableOrLowCardinalityNullable(data.column) : nullptr)
                        .withSerializationInfo(data.serialization_info)
-                       .withDeserializePrefix(deserialize_prefix_state ? deserialize_prefix_state->variant_element_state : nullptr);
+                       .withDeserializeState(deserialize_state ? deserialize_state->variant_element_state : nullptr);
     settings.path.back().data = data;
     nested_serialization->enumerateStreams(settings, callback, data);
     removeVariantFromPath(settings.path);

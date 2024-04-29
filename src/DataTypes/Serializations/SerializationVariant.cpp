@@ -45,7 +45,7 @@ void SerializationVariant::enumerateStreams(
 {
     const auto * type_variant = data.type ? &assert_cast<const DataTypeVariant &>(*data.type) : nullptr;
     const auto * column_variant = data.column ? &assert_cast<const ColumnVariant &>(*data.column) : nullptr;
-    const auto * variant_deserialize_prefix_state = data.deserialize_prefix_state ? checkAndGetState<DeserializeBinaryBulkStateVariant>(data.deserialize_prefix_state) : nullptr;
+    const auto * variant_deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariant>(data.deserialize_state) : nullptr;
 
     auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
@@ -71,7 +71,7 @@ void SerializationVariant::enumerateStreams(
                              .withType(type_variant ? type_variant->getVariant(i) : nullptr)
                              .withColumn(column_variant ? column_variant->getVariantPtrByGlobalDiscriminator(i) : nullptr)
                              .withSerializationInfo(data.serialization_info)
-                             .withDeserializePrefix(variant_deserialize_prefix_state ? variant_deserialize_prefix_state->states[i] : nullptr);
+                             .withDeserializeState(variant_deserialize_state ? variant_deserialize_state->states[i] : nullptr);
 
         addVariantElementToPath(settings.path, i);
         settings.path.back().data = variant_data;
@@ -144,12 +144,13 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
 }
 
 
-void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
+void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(
     const IColumn & column,
     size_t offset,
     size_t limit,
     SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+    SerializeBinaryBulkStatePtr & state,
+    std::unordered_map<String, size_t> & variants_statistics) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
     if (const size_t size = col.size(); limit == 0 || offset + limit > size)
@@ -188,6 +189,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
         {
             addVariantElementToPath(settings.path, i);
             variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), 0, 0, settings, variant_state->states[i]);
+            variants_statistics[variant_names[i]] += col.getVariantByGlobalDiscriminator(i).size();
             settings.path.pop_back();
         }
         settings.path.pop_back();
@@ -208,6 +210,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
         addVariantElementToPath(settings.path, non_empty_global_discr);
         /// We can use the same offset/limit as for whole Variant column
         variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->states[non_empty_global_discr]);
+        variants_statistics[variant_names[non_empty_global_discr]] += limit;
         settings.path.pop_back();
         settings.path.pop_back();
         return;
@@ -247,12 +250,23 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
                 variant_offsets_and_limits[i].second,
                 settings,
                 variant_state->states[i]);
+            variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
             settings.path.pop_back();
         }
     }
     settings.path.pop_back();
 }
 
+void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
+    const DB::IColumn & column,
+    size_t offset,
+    size_t limit,
+    DB::ISerialization::SerializeBinaryBulkSettings & settings,
+    DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
+{
+    std::unordered_map<String, size_t> tmp_statistics;
+    serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics);
+}
 
 void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,

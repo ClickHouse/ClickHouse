@@ -44,18 +44,29 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
-}
-
-void MergeTreeDataPartWriterCompact::initStreamsIfNeeded(const Block & block)
-{
-    if (!compressed_streams.empty())
-        return;
 
     auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
         auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, block.getByName(column.name).column, compression);
+        addStreams(column, nullptr, compression);
+    }
+}
+
+void MergeTreeDataPartWriterCompact::initDynamicStreamsIfNeeded(const Block & block)
+{
+    if (is_dynamic_streams_initialized)
+        return;
+
+    is_dynamic_streams_initialized = true;
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
+    for (const auto & column : columns_list)
+    {
+        if (column.type->hasDynamicSubcolumns())
+        {
+            auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
+            addStreams(column, block.getByName(column.name).column, compression);
+        }
     }
 }
 
@@ -155,7 +166,8 @@ void writeColumnSingleGranule(
 
 void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
 {
-    initStreamsIfNeeded(block);
+    /// On first block of data initialize streams for dynamic subcolumns.
+    initDynamicStreamsIfNeeded(block);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,

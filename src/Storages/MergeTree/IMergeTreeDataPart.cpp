@@ -2392,12 +2392,14 @@ void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
     exception_code = code;
 }
 
-ColumnPtr IMergeTreeDataPart::readColumnSample(const NameAndTypePair & column) const
+ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) const
 {
     const size_t total_mark = getMarksCount();
-    if (!total_mark)
+    /// If column doesn't have dynamic subcolumns or part has no data, just create column using it's type.
+    if (!column.type->hasDynamicSubcolumns() || !total_mark)
         return column.type->createColumn();
 
+    /// Otherwise, read sample column with 0 rows from the part, so it will load dynamic structure.
     NamesAndTypesList cols;
     cols.emplace_back(column);
 

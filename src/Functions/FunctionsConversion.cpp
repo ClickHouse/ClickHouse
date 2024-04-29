@@ -66,8 +66,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -4050,9 +4048,9 @@ private:
             casted_variant_columns.reserve(variant_types.size());
             for (size_t i = 0; i != variant_types.size(); ++i)
             {
-                auto variant_col = column_variant.getVariantPtrByLocalDiscriminator(i);
+                auto variant_col = column_variant.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
-                const auto & variant_wrapper = variant_wrappers[column_variant.globalDiscriminatorByLocal(i)];
+                const auto & variant_wrapper = variant_wrappers[i];
                 casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
             }
 
@@ -4062,11 +4060,11 @@ private:
             res->reserve(input_rows_count);
             for (size_t i = 0; i != input_rows_count; ++i)
             {
-                auto local_discr = local_discriminators[i];
-                if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                     res->insertDefault();
                 else
-                    res->insertFrom(*casted_variant_columns[local_discr], column_variant.offsetAt(i));
+                    res->insertFrom(*casted_variant_columns[global_discr], column_variant.offsetAt(i));
             }
 
             return res;
@@ -4236,14 +4234,14 @@ private:
         return createColumnToVariantWrapper(from_type, assert_cast<const DataTypeVariant &>(*to_type));
     }
 
-    WrapperType createDynamicToColumnWrapper(const DataTypePtr & to_type) const
+    WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const
     {
-        return [this, to_type]
+        return [this]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
         {
             const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
             const auto & variant_info = column_dynamic.getVariantInfo();
-            auto variant_wrapper = createVariantToColumnWrapper(assert_cast<const DataTypeVariant &>(*variant_info.variant_type), to_type);
+            auto variant_wrapper = createVariantToColumnWrapper(assert_cast<const DataTypeVariant &>(*variant_info.variant_type), result_type);
             ColumnsWithTypeAndName args = {ColumnWithTypeAndName(column_dynamic.getVariantColumnPtr(), variant_info.variant_type, "")};
             return variant_wrapper(args, result_type, col_nullable, input_rows_count);
         };
@@ -4279,8 +4277,6 @@ private:
         size_t max_result_num_variants,
         const ColumnDynamic::Statistics & statistics = {}) const
     {
-        LOG_DEBUG(getLogger("FunctionsConversion"), "getReducedVariant for variant {} with size {}", variant_type->getName(), variant_column.size());
-
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
         /// First check if we don't exceed the limit in current Variant column.
         if (variant_types.size() < max_result_num_variants || (variant_types.size() == max_result_num_variants && variant_name_to_discriminator.contains("String")))
@@ -4296,12 +4292,11 @@ private:
         {
             /// String variant won't be removed.
             String variant_name = variant_types[i]->getName();
-            LOG_DEBUG(getLogger("FunctionsConversion"), "Variant {}/{} size: {}, statistics: {}", variant_name, i, variant_column.getVariantByGlobalDiscriminator(i).size(), statistics.data.contains(variant_name) ? toString(statistics.data.at(variant_name)) : "none");
 
             if (variant_name == "String")
             {
                 old_string_discriminator = i;
-                /// For simplicity, add this variant to the list that will be converted string,
+                /// For simplicity, add this variant to the list that will be converted to string,
                 /// so we will process it with other variants when constructing the new String variant.
                 variants_to_convert_to_string.push_back(i);
             }
@@ -4361,11 +4356,9 @@ private:
         {
             auto string_type = std::make_shared<DataTypeString>();
             auto string_wrapper = prepareUnpackDictionaries(variant_types[discr], string_type);
-            LOG_DEBUG(getLogger("FunctionsConversion"), "Convert variant {} with size {} to String", variant_types[discr]->getName(), variant_column.getVariantPtrByGlobalDiscriminator(discr)->size());
             auto column_to_convert = ColumnWithTypeAndName(variant_column.getVariantPtrByGlobalDiscriminator(discr), variant_types[discr], "");
             ColumnsWithTypeAndName args = {column_to_convert};
             auto variant_string_column = string_wrapper(args, string_type, nullptr, column_to_convert.column->size());
-            LOG_DEBUG(getLogger("FunctionsConversion"), "Got String column with size {}", variant_string_column->size());
             string_variant_size += variant_string_column->size();
             variants_converted_to_string[discr] = variant_string_column;
         }
@@ -4381,11 +4374,9 @@ private:
         new_offsets_data.reserve(variant_column.size());
         const auto & old_local_discriminators = variant_column.getLocalDiscriminators();
         const auto & old_offsets = variant_column.getOffsets();
-        LOG_DEBUG(getLogger("FunctionsConversion"), "Discriminators size: {}. Offsets size: {}", old_local_discriminators.size(), old_offsets.size());
         for (size_t i = 0; i != old_local_discriminators.size(); ++i)
         {
             auto old_discr = variant_column.globalDiscriminatorByLocal(old_local_discriminators[i]);
-            LOG_DEBUG(getLogger("FunctionsConversion"), "Row {}, discriminator {}", i, UInt64(old_discr));
 
             if (old_discr == ColumnVariant::NULL_DISCRIMINATOR)
             {
@@ -4398,12 +4389,10 @@ private:
             new_discriminators_data.push_back(new_discr);
             if (new_discr != string_variant_discriminator)
             {
-                LOG_DEBUG(getLogger("FunctionsConversion"), "Keep variant {}", UInt64(old_discr));
                 new_offsets_data.push_back(old_offsets[i]);
             }
             else
             {
-                LOG_DEBUG(getLogger("FunctionsConversion"), "Get string value of variant {} with String column with size {} at offset {}", UInt64(old_discr), variants_converted_to_string[old_discr]->size(), old_offsets[i]);
                 new_offsets_data.push_back(string_variant->size());
                 string_variant->insertFrom(*variants_converted_to_string[old_discr], old_offsets[i]);
             }

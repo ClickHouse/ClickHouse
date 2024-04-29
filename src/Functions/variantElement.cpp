@@ -171,10 +171,10 @@ REGISTER_FUNCTION(VariantElement)
 Extracts a column with specified type from a `Variant` column.
 )",
         .syntax{"variantElement(variant, type_name, [, default_value])"},
-        .arguments{{
+        .arguments{
             {"variant", "Variant column"},
             {"type_name", "The name of the variant type to extract"},
-            {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}}},
+            {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}},
         .examples{{{
             "Example",
             R"(

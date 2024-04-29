@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /**
  * Column for storing Dynamic type values.
  * Dynamic column allows to insert and store values of any data types inside.
@@ -340,7 +335,7 @@ private:
     /// Combine current variant with the other variant and return global discriminators mapping
     /// from other variant to the combined one. It's used for inserting from
     /// different variants.
-    /// Returns nullptr if maximum number of Variants is reached and tne new Variant cannot be created.
+    /// Returns nullptr if maximum number of Variants is reached and the new Variant cannot be created.
     std::vector<UInt8> * combineVariants(const VariantInfo & other_variant_info);
 
     void updateVariantInfoAndExpandVariantColumn(const DataTypePtr & new_variant_type);

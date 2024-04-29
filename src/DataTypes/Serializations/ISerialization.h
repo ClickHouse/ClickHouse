@@ -138,9 +138,9 @@ public:
             return *this;
         }
 
-        SubstreamData & withDeserializePrefix(DeserializeBinaryBulkStatePtr deserialize_prefix_state_)
+        SubstreamData & withDeserializeState(DeserializeBinaryBulkStatePtr deserialize_state_)
         {
-            deserialize_prefix_state = std::move(deserialize_prefix_state_);
+            deserialize_state = std::move(deserialize_state_);
             return *this;
         }
 
@@ -148,7 +148,11 @@ public:
         DataTypePtr type;
         ColumnPtr column;
         SerializationInfoPtr serialization_info;
-        DeserializeBinaryBulkStatePtr deserialize_prefix_state;
+
+        /// For types with dynamic subcolumns deserialize state contains information
+        /// about current dynamic structure. And this information can be useful
+        /// when we call enumerateStreams to enumerate dynamic streams.
+        DeserializeBinaryBulkStatePtr deserialize_state;
     };
 
     struct Substream

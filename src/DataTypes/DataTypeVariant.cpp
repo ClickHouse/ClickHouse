@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Common/assert_cast.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/IAST.h>
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int EMPTY_DATA_PASSED;
 }
 
 

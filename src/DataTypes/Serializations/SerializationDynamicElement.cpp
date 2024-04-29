@@ -33,21 +33,21 @@ void SerializationDynamicElement::enumerateStreams(
 
     /// If we didn't deserialize prefix yet, we don't know if we actually have this variant in Dynamic column,
     /// so we cannot enumerate variant streams.
-    if (!data.deserialize_prefix_state)
+    if (!data.deserialize_state)
         return;
 
-    auto * deserialize_prefix_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(data.deserialize_prefix_state);
+    auto * deserialize_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(data.deserialize_state);
     /// If we don't have this variant, no need to enumerate streams for it as we won't read from any stream.
-    if (!deserialize_prefix_state->variant_serialization)
+    if (!deserialize_state->variant_serialization)
         return;
 
     settings.path.push_back(Substream::DynamicData);
-    auto variant_data = SubstreamData(deserialize_prefix_state->variant_serialization)
+    auto variant_data = SubstreamData(deserialize_state->variant_serialization)
                             .withType(data.type)
                             .withColumn(data.column)
                             .withSerializationInfo(data.serialization_info)
-                            .withDeserializePrefix(deserialize_prefix_state->variant_element_state);
-    deserialize_prefix_state->variant_serialization->enumerateStreams(settings, callback, variant_data);
+                            .withDeserializeState(deserialize_state->variant_element_state);
+    deserialize_state->variant_serialization->enumerateStreams(settings, callback, variant_data);
     settings.path.pop_back();
 }
 

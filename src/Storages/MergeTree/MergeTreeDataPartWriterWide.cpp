@@ -89,19 +89,29 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
            indices_to_recalc_, stats_to_recalc_, marks_file_extension_,
            default_codec_, settings_, index_granularity_)
 {
-}
-
-void MergeTreeDataPartWriterWide::initStreamsIfNeeded(const DB::Block & block)
-{
-    if (!column_streams.empty())
-        return;
-
-    block_sample = block.cloneEmpty();
     auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
         auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, block_sample.getByName(column.name).column, compression);
+        addStreams(column, nullptr, compression);
+    }
+}
+
+void MergeTreeDataPartWriterWide::initDynamicStreamsIfNeeded(const DB::Block & block)
+{
+    if (is_dynamic_streams_initialized)
+        return;
+
+    is_dynamic_streams_initialized = true;
+    block_sample = block.cloneEmpty();
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
+    for (const auto & column : columns_list)
+    {
+        if (column.type->hasDynamicSubcolumns())
+        {
+            auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
+            addStreams(column, block_sample.getByName(column.name).column, compression);
+        }
     }
 }
 
@@ -123,16 +133,16 @@ void MergeTreeDataPartWriterWide::addStreams(
         else
             stream_name = full_stream_name;
 
+        /// Shared offsets for Nested type.
+        if (column_streams.contains(stream_name))
+            return;
+
         auto it = stream_name_to_full_name.find(stream_name);
         if (it != stream_name_to_full_name.end() && it->second != full_stream_name)
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
                 "Stream with name {} already created (full stream name: {}). Current full stream name: {}."
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
-
-        /// Shared offsets for Nested type.
-        if (column_streams.contains(stream_name))
-            return;
 
         const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
@@ -231,7 +241,8 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
 
 void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Permutation * permutation)
 {
-    initStreamsIfNeeded(block);
+    /// On first block of data initialize streams for dynamic subcolumns.
+    initDynamicStreamsIfNeeded(block);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -604,7 +615,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
                             " index granularity size {}, last rows {}",
                             column->size(), mark_num, index_granularity.getMarksCount(), index_granularity_rows);
     }
-
 }
 
 void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove)

@@ -399,7 +399,7 @@ void SerializationMap::enumerateStreams(
         .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
         .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
         .withSerializationInfo(data.serialization_info)
-        .withDeserializePrefix(data.deserialize_prefix_state);
+        .withDeserializeState(data.deserialize_state);
 
     nested->enumerateStreams(settings, callback, next_data);
 }

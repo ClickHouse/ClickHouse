@@ -567,7 +567,7 @@ void SerializationTuple::enumerateStreams(
     const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
     const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
     const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
-    const auto * tuple_deserialize_prefix_state = data.deserialize_prefix_state ? checkAndGetState<DeserializeBinaryBulkStateTuple>(data.deserialize_prefix_state) : nullptr;
+    const auto * tuple_deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateTuple>(data.deserialize_state) : nullptr;
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
@@ -575,7 +575,7 @@ void SerializationTuple::enumerateStreams(
             .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
             .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
             .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr)
-            .withDeserializePrefix(tuple_deserialize_prefix_state ? tuple_deserialize_prefix_state->states[i] : nullptr);
+            .withDeserializeState(tuple_deserialize_state ? tuple_deserialize_state->states[i] : nullptr);
 
         elems[i]->enumerateStreams(settings, callback, next_data);
     }

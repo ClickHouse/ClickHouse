@@ -87,7 +87,7 @@ private:
         const ColumnPtr & column,
         const ASTPtr & effective_codec_desc);
 
-    void initStreamsIfNeeded(const Block & block);
+    void initDynamicStreamsIfNeeded(const Block & block);
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -135,6 +135,8 @@ private:
     size_t rows_written_in_last_mark = 0;
 
     Block block_sample;
+
+    bool is_dynamic_streams_initialized = false;
 };
 
 }

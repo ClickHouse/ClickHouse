@@ -149,24 +149,30 @@ private:
 
 REGISTER_FUNCTION(DynamicElement)
 {
-//    factory.registerFunction<FunctionDynamicElement>(FunctionDocumentation{
-//        .description = R"(
-//Extracts a column with specified type from a `Dynamic` column.
-//)",
-//        .syntax{"dynamicElement(dynamic, type_name)"},
-//        .arguments{{
-//            {"dynamic", "Dynamic column"},
-//            {"type_name", "The name of the variant type to extract"}}},
-//        .examples{{{
-//            "Example",
-//            R"(
-//)",
-//            R"(
-//)"}}},
-//        .categories{"Dynamic"},
-//    });
-
-    factory.registerFunction<FunctionDynamicElement>();
+    factory.registerFunction<FunctionDynamicElement>(FunctionDocumentation{
+        .description = R"(
+Extracts a column with specified type from a `Dynamic` column.
+)",
+        .syntax{"dynamicElement(dynamic, type_name)"},
+        .arguments{
+            {"dynamic", "Dynamic column"},
+            {"type_name", "The name of the variant type to extract"}},
+        .examples{{{
+            "Example",
+            R"(
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test;)",
+            R"(
+┌─d─────────────┬─dynamicType(d)─┬─dynamicElement(d, 'String')─┬─dynamicElement(d, 'Int64')─┬─dynamicElement(d, 'Array(Int64)')─┬─dynamicElement(d, 'Date')─┬─dynamicElement(d, 'Array(String)')─┐
+│ ᴺᵁᴸᴸ          │ None           │ ᴺᵁᴸᴸ                        │                       ᴺᵁᴸᴸ │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
+│ 42            │ Int64          │ ᴺᵁᴸᴸ                        │                         42 │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
+│ Hello, World! │ String         │ Hello, World!               │                       ᴺᵁᴸᴸ │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
+│ [1,2,3]       │ Array(Int64)   │ ᴺᵁᴸᴸ                        │                       ᴺᵁᴸᴸ │ [1,2,3]                           │                      ᴺᵁᴸᴸ │ []                                 │
+└───────────────┴────────────────┴─────────────────────────────┴────────────────────────────┴───────────────────────────────────┴───────────────────────────┴────────────────────────────────────┘
+)"}}},
+        .categories{"Dynamic"},
+    });
 }
 
 }

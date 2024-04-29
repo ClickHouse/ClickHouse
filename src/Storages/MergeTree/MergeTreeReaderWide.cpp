@@ -349,7 +349,7 @@ void MergeTreeReaderWide::prefetchForColumn(
         }
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializePrefix(deserialize_binary_bulk_state_map[name_and_type.name]);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
     ISerialization::EnumerateStreamsSettings settings;
     serialization->enumerateStreams(settings, callback, data);
 }

@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -30,15 +31,9 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
     ISerialization::SerializeBinaryBulkStatePtr variant_state;
 
     /// Variants statistics. Map (Variant name) -> (Variant size).
-    ColumnDynamic::Statistics statistics = { .source =ColumnDynamic::Statistics::Source::READ };
+    ColumnDynamic::Statistics statistics = { .source = ColumnDynamic::Statistics::Source::READ };
 
     SerializeBinaryBulkStateDynamic(UInt64 structure_version_) : structure_version(structure_version_) {}
-
-    void updateStatistics(const ColumnVariant & column_variant)
-    {
-        for (size_t i = 0; i != variant_names.size(); ++i)
-            statistics.data[variant_names[i]] += column_variant.getVariantPtrByGlobalDiscriminator(i)->size();
-    }
 };
 
 struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBinaryBulkState
@@ -58,13 +53,13 @@ void SerializationDynamic::enumerateStreams(
     settings.path.pop_back();
 
     const auto * column_dynamic = data.column ? &assert_cast<const ColumnDynamic &>(*data.column) : nullptr;
-    const auto * deserialize_prefix_state = data.deserialize_prefix_state ? checkAndGetState<DeserializeBinaryBulkStateDynamic>(data.deserialize_prefix_state) : nullptr;
+    const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateDynamic>(data.deserialize_state) : nullptr;
 
-    /// If column is nullptr and we didn't deserizlize prefix yet, nothing to enumerate as we don't have any variants.
-    if (!column_dynamic && !deserialize_prefix_state)
+    /// If column is nullptr and we don't have deserialize state yet, nothing to enumerate as we don't have any variants.
+    if (!column_dynamic && !deserialize_state)
         return;
 
-    const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_prefix_state->structure_state)->variant_type;
+    const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state)->variant_type;
     auto variant_serialization = variant_type->getDefaultSerialization();
 
     settings.path.push_back(Substream::DynamicData);
@@ -72,7 +67,7 @@ void SerializationDynamic::enumerateStreams(
                          .withType(variant_type)
                          .withColumn(column_dynamic ? column_dynamic->getVariantColumnPtr() : nullptr)
                          .withSerializationInfo(data.serialization_info)
-                         .withDeserializePrefix(deserialize_prefix_state ? deserialize_prefix_state->variant_state : nullptr);
+                         .withDeserializeState(deserialize_state ? deserialize_state->variant_state : nullptr);
     settings.path.back().data = variant_data;
     variant_serialization->enumerateStreams(settings, callback, variant_data);
     settings.path.pop_back();
@@ -124,11 +119,11 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         {
             size_t size = 0;
             /// Use statistics from column if it was created during merge.
-            if (statistics.data.empty() || statistics.source != ColumnDynamic::Statistics::Source::MERGE)
-                size = variant_column.getVariantByGlobalDiscriminator(i).size();
+            if (!statistics.data.empty() && statistics.source == ColumnDynamic::Statistics::Source::MERGE)
+                size = statistics.data.at(variant_info.variant_names[i]);
             /// Otherwise we can use only variant sizes from current column.
             else
-                size = statistics.data.at(variant_info.variant_names[i]);
+                size = variant_column.getVariantByGlobalDiscriminator(i).size();
             writeVarUInt(size, *stream);
         }
     }
@@ -243,12 +238,9 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreams(
     if (!variant_info.variant_type->equals(*dynamic_state->variant_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", dynamic_state->variant_type->getName(), variant_info.variant_type->getName());
 
-    /// Update statistics.
-    if (offset == 0)
-        dynamic_state->updateStatistics(*variant_column);
-
     settings.path.push_back(Substream::DynamicData);
-    dynamic_state->variant_serialization->serializeBinaryBulkWithMultipleStreams(*variant_column, offset, limit, settings, dynamic_state->variant_state);
+    assert_cast<const SerializationVariant &>(*dynamic_state->variant_serialization)
+        .serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(*variant_column, offset, limit, settings, dynamic_state->variant_state, dynamic_state->statistics.data);
     settings.path.pop_back();
 }
 
