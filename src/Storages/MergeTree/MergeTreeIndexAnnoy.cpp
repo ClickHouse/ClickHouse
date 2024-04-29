@@ -6,7 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -194,30 +193,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
             index->add_item(index->get_n_items(), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
     }
-    else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
-    {
-        const auto & column_tuple_columns = column_tuple->getColumns();
-
-        /// TODO check if calling index->add_item() directly on the block's tuples is faster than materializing everything
-        std::vector<std::vector<Float32>> data(column_tuple->size(), std::vector<Float32>());
-        for (const auto & column : column_tuple_columns)
-        {
-            const auto & pod_array = typeid_cast<const ColumnFloat32 *>(column.get())->getData();
-            for (size_t i = 0; i < pod_array.size(); ++i)
-                data[i].push_back(pod_array[i]);
-        }
-
-        if (data.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
-
-        if (!index)
-            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
-
-        for (const auto & item : data)
-            index->add_item(index->get_n_items(), item.data());
-    }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array or Tuple column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float32) column");
 
     *pos += rows_read;
 }
@@ -385,7 +362,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32[, Float32[, ...]])");
+            "Annoy indexes can only be created on columns of type Array(Float32)");
     };
 
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
@@ -395,16 +372,6 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
             throw_unsupported_underlying_column_exception();
-    }
-    else if (const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(data_type.get()))
-    {
-        const DataTypes & inner_types = data_type_tuple->getElements();
-        for (const auto & inner_type : inner_types)
-        {
-            TypeIndex nested_type_index = inner_type->getTypeId();
-            if (!WhichDataType(nested_type_index).isFloat32())
-                throw_unsupported_underlying_column_exception();
-        }
     }
     else
         throw_unsupported_underlying_column_exception();

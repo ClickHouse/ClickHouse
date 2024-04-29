@@ -33,7 +33,7 @@ SELECT 'Must be created on single column';
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx (vec, id) TYPE annoy()) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx (vec, id) TYPE usearch()) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
 
-SELECT 'Must be created on Array(Float32) or Tuple(Float32, Float, ...) columns';
+SELECT 'Must be created on Array(Float32) columns';
 
 SET allow_suspicious_low_cardinality_types = 1;
 
@@ -42,9 +42,6 @@ CREATE TABLE tab(id Int32, vec Float32, INDEX idx vec TYPE usearch()) ENGINE = M
 
 CREATE TABLE tab(id Int32, vec Array(Float64), INDEX idx vec TYPE annoy()) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE tab(id Int32, vec Array(Float64), INDEX idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_COLUMN }
-
-CREATE TABLE tab(id Int32, vec Tuple(Float64), INDEX idx vec TYPE annoy()) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_COLUMN }
-CREATE TABLE tab(id Int32, vec Tuple(Float64), INDEX idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_COLUMN }
 
 CREATE TABLE tab(id Int32, vec LowCardinality(Float32), INDEX idx vec TYPE annoy()) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE tab(id Int32, vec LowCardinality(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id; -- { serverError ILLEGAL_COLUMN }
