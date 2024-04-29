@@ -48,11 +48,6 @@ bool queryProfilerWorks() { return false; }
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int INVALID_SETTING_VALUE;
-}
-
 /// Update some settings defaults to avoid some known issues.
 void applySettingsQuirks(Settings & settings, LoggerPtr log)
 {
