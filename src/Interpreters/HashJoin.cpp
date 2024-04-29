@@ -236,11 +236,13 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
 }
 
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_,
-                   bool any_take_last_row_, size_t reserve_num, const String & instance_id_)
+                   bool any_take_last_row_, size_t reserve_num_, const String & instance_id_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
     , any_take_last_row(any_take_last_row_)
+    , reserve_num(reserve_num_)
+    , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
     , right_sample_block(right_sample_block_)
@@ -325,7 +327,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     }
 
     for (auto & maps : data->maps)
-        dataMapInit(maps, reserve_num);
+        dataMapInit(maps);
 }
 
 HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -487,9 +489,8 @@ struct KeyGetterForType
     using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
 };
 
-void HashJoin::dataMapInit(MapsVariant & map, size_t reserve_num)
+void HashJoin::dataMapInit(MapsVariant & map)
 {
-
     if (kind == JoinKind::Cross)
         return;
     joinDispatchInit(kind, strictness, map);

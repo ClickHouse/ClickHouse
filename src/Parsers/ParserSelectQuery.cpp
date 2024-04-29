@@ -46,6 +46,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_group_by(Keyword::GROUP_BY);
     ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_recursive(Keyword::RECURSIVE);
     ParserKeyword s_totals(Keyword::TOTALS);
     ParserKeyword s_having(Keyword::HAVING);
     ParserKeyword s_window(Keyword::WINDOW);
@@ -103,6 +104,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_with.ignore(pos, expected))
         {
+            select_query->recursive_with = s_recursive.ignore(pos, expected);
+
             if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
                      .parse(pos, with_expression_list, expected))
                 return false;
