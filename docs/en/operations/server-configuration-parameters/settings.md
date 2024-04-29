@@ -523,7 +523,7 @@ See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watche
 
 Type: Double
 
-Default: 0.95
+Default: 0.9
 
 ## max_table_size_to_drop
 

@@ -1,0 +1,6 @@
+-- { echoOn }
+select table, errorCodeToName(error), count() from system.part_log where database = currentDatabase() and error > 0 and errorCodeToName(error) not in ('FAULT_INJECTED', 'NO_REPLICA_HAS_PART', 'ATTEMPT_TO_READ_AFTER_EOF') group by 1, 2 order by 1, 2;
+select count() from data_r1;
+100000
+select count() from data_r2;
+100000

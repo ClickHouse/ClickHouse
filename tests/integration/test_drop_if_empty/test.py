@@ -37,18 +37,13 @@ def start_cluster():
 
 
 def test_drop_if_empty(start_cluster):
-    settings = {
-        "allow_experimental_database_replicated": 1,
-    }
     node1.query(
         "CREATE DATABASE replicateddb "
         "ENGINE = Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')",
-        settings=settings,
     )
     node2.query(
         "CREATE DATABASE replicateddb "
         "ENGINE = Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')",
-        settings=settings,
     )
     node1.query(
         "CREATE TABLE default.tbl ON CLUSTER 'cluster' ("
