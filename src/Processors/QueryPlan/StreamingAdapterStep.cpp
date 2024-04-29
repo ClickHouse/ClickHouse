@@ -24,23 +24,23 @@ static Block checkHeaders(DataStream storage_stream, DataStream subscription_str
 }
 
 StreamingAdapterStep::StreamingAdapterStep(DataStream subscription_stream_)
-    : input_streams_count(1), output_header(subscription_stream_.header)
+    : output_header(subscription_stream_.header)
 {
     updateInputStreams({std::move(subscription_stream_)});
 }
 
 StreamingAdapterStep::StreamingAdapterStep(DataStream storage_stream_, DataStream subscription_stream_)
-    : input_streams_count(2), output_header(checkHeaders(storage_stream_, subscription_stream_))
+    : output_header(checkHeaders(storage_stream_, subscription_stream_))
 {
     updateInputStreams({std::move(storage_stream_), std::move(subscription_stream_)});
 }
 
 QueryPipelineBuilderPtr StreamingAdapterStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
-    if (input_streams_count == 1 && pipelines.size() != 1)
+    if (input_streams.size() == 1 && pipelines.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single subscription pipeline in StreamingAdapterStep::updatePipeline");
 
-    if (input_streams_count == 2 && pipelines.size() != 2)
+    if (input_streams.size() == 2 && pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected storage and subscription pipelines in StreamingAdapterStep::updatePipeline");
 
     /// simple case when step is used only to update DataStream with infinite flag

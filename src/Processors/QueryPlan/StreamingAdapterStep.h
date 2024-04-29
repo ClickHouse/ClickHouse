@@ -9,7 +9,7 @@ class StreamingAdapterStep final : public IQueryPlanStep
 {
 public:
     explicit StreamingAdapterStep(DataStream subscription_stream_);
-    explicit StreamingAdapterStep(DataStream storage_stream_, DataStream subscription_stream_);
+    StreamingAdapterStep(DataStream storage_stream_, DataStream subscription_stream_);
 
     ~StreamingAdapterStep() override = default;
 
@@ -24,7 +24,6 @@ public:
 private:
     void updateOutputStream() override;
 
-    size_t input_streams_count;
     Block output_header;
 };
 
