@@ -17,7 +17,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
-[ SETTINGS optimize_for_bulk_insert = (0|1)]
+[ SETTINGS name=value, ... ]
 ```
 
 Engine parameters:
@@ -32,7 +32,8 @@ Engine parameters:
 
 Engine settings:
 
-- `optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables).
+- `optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables); default value: `1`.
+- `bulk_insert_block_size` - Minimum size of SST files (in term of rows) created by bulk insertion; default value: `1048449`.
 
 Example:
 
