@@ -52,7 +52,6 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
@@ -72,7 +71,7 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Randomize cache policies.
 cache_policy=""
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+if [ $((RANDOM % 2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
     cache_policy="LRU"
@@ -86,6 +85,25 @@ if [ "$cache_policy" = "SLRU" ]; then
     > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
+
+# Disable experimental WINDOW VIEW tests for stress tests, since they may be
+# created with old analyzer and then, after server restart it will refuse to
+# start.
+# FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
+sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_window_view>false</allow_experimental_window_view>
+            <constraints>
+               <allow_experimental_window_view>
+                   <readonly/>
+               </allow_experimental_window_view>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
 
 start_server
 
@@ -196,6 +214,7 @@ stop_server
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
+export THREAD_POOL_FAULT_INJECTION=1
 configure
 
 # But we still need default disk because some tables loaded only into it

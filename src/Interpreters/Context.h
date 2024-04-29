@@ -677,15 +677,17 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
-    const Scalars & getScalars() const;
-    const Block & getScalar(const String & name) const;
+    Scalars getScalars() const;
+    Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    const Block * tryGetSpecialScalar(const String & name) const;
+    std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/ipv6
-sidebar_position: 60
+sidebar_position: 30
 sidebar_label: IPv6
 ---
 

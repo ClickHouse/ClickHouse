@@ -122,7 +122,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        config_processor.setConfigPath(fs::path(config_path).parent_path());
+        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -413,8 +413,20 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config(), "localhost");
+
+    ReadBuffer * in;
+    auto table_file = config().getString("table-file", "-");
+    if (table_file == "-" || table_file == "stdin")
+    {
+        in = &std_in;
+    }
+    else
+    {
+        input = std::make_unique<ReadBufferFromFile>(table_file);
+        in = input.get();
+    }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -559,6 +571,7 @@ void LocalServer::processConfig()
     const std::string clickhouse_dialect{"clickhouse"};
     load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
         && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
+    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -761,10 +774,12 @@ void LocalServer::processConfig()
 }
 
 
-void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
+void LocalServer::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
+    if (verbose)
+        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
@@ -835,6 +850,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
+    if (options.count("wait_for_suggestions_to_load"))
+        config().setBool("wait_for_suggestions_to_load", true);
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)

@@ -56,7 +56,8 @@ public:
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    Strings getAllTableNames(ContextPtr context) const override;
 
     void alterTable(
         ContextPtr context,
@@ -85,7 +86,7 @@ protected:
 private:
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
-    String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);
+    String getConvertToReplicatedFlagPath(const String & name, StoragePolicyPtr storage_policy, bool tableStarted);
 };
 
 }

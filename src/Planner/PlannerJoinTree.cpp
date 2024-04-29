@@ -225,7 +225,8 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-    if (!storage->supportsTrivialCountOptimization())
+    if (!storage->supportsTrivialCountOptimization(
+            table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
     auto storage_id = storage->getStorageID();
@@ -262,9 +263,6 @@ bool applyTrivialCountIfPossible(
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
         return false;
 
-    if (storage->hasLightweightDeletedMask())
-        return false;
-
     if (settings.allow_experimental_query_deduplication
         || settings.empty_result_for_aggregation_by_empty_set)
         return false;
@@ -296,7 +294,7 @@ bool applyTrivialCountIfPossible(
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        query_context->setSetting("max_parallel_replicas", UInt64{0});
+        query_context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
@@ -307,7 +305,7 @@ bool applyTrivialCountIfPossible(
     AggregateDataPtr place = state.data();
     agg_count.create(place);
     SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    agg_count.set(place, num_rows.value());
+    AggregateFunctionCount::set(place, num_rows.value());
 
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
@@ -779,7 +777,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         planner_context->getMutableQueryContext()->setSetting(
                             "allow_experimental_parallel_reading_from_replicas", Field(0));
-                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{0});
+                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
                         LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                     }
                     else if (number_of_replicas_to_use < settings.max_parallel_replicas)
@@ -816,7 +814,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     bool optimize_move_to_prewhere
                         = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
-                    if (storage->supportsPrewhere() && optimize_move_to_prewhere)
+                    auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
                             prewhere_info = std::make_shared<PrewhereInfo>();
@@ -1089,18 +1088,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
-    // }
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
-    // }
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
