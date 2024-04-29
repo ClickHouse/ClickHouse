@@ -259,7 +259,10 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
     /// creation of the view (PushingToViews chain) or while executing its internal SELECT
-    const auto & access_info = context_ptr->getQueryAccessInfo();
+
+    /// We copy QueryAccessInfo for thread-safety, because it is possible that query context can be modified by some processor even
+    /// after query is finished
+    ContextData::QueryAccessInfo access_info(context_ptr->getQueryAccessInfo());
     element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
     element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
     element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
@@ -267,7 +270,9 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
     element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
-    const auto factories_info = context_ptr->getQueryFactoriesInfo();
+    /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
+    /// after query is finished
+    Context::QueryFactoriesInfo factories_info(context_ptr->getQueryFactoriesInfo());
     element.used_aggregate_functions = factories_info.aggregate_functions;
     element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
     element.used_database_engines = factories_info.database_engines;

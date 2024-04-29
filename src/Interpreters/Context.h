@@ -315,6 +315,7 @@ protected:
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
 
+public:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -360,10 +361,12 @@ protected:
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
+protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
     /// Therefore, query_access_info must be a pointer.
     QueryAccessInfoPtr query_access_info;
 
+public:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
@@ -398,6 +401,7 @@ protected:
         mutable std::mutex mutex;
     };
 
+protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
