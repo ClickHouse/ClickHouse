@@ -2965,7 +2965,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
 
     for (const auto & disk : getDisks())
-        if (!disk->isMutable())
+        if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE is not supported for immutable disk '{}'", disk->getName());
 
     /// Set of columns that shouldn't be altered.
@@ -3339,7 +3339,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
 {
     for (const auto & disk : getDisks())
-        if (!disk->isMutable())
+        if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 }
 
@@ -4831,7 +4831,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
     for (const auto & disk : getDisks())
-        if (!disk->isMutable())
+        if (!disk->supportsHardLinks())
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE PARTITION is not supported for immutable disk '{}'", disk->getName());
 

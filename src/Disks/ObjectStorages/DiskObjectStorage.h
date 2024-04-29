@@ -183,7 +183,7 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
-    bool isMutable() const override;
+    bool supportsHardLinks() const override;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)

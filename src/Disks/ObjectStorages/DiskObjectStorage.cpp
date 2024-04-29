@@ -435,7 +435,7 @@ bool DiskObjectStorage::isWriteOnce() const
     return object_storage->isWriteOnce();
 }
 
-bool DiskObjectStorage::isMutable() const
+bool DiskObjectStorage::supportsHardLinks() const
 {
     return !isWriteOnce() && !object_storage->isPlain();
 }
