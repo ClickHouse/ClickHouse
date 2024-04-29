@@ -27,6 +27,12 @@ class AtomicLogger;
 
 [[noreturn]] void abortOnFailedAssertion(const String & description);
 
+#ifdef ABORT_ON_LOGICAL_ERROR
+#  define MAYBE_ABORT_ON_FAILED_ASSERTION(description) abortOnFailedAssertion(description)
+#else
+#  define MAYBE_ABORT_ON_FAILED_ASSERTION(description) do {} while (false)
+#endif
+
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
 

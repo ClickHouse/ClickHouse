@@ -5,8 +5,7 @@
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
 
-#include <base/scope_guard.h>
-
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -61,7 +60,7 @@ void WriteBufferToFileSegment::nextImpl()
                         downloader, file_segment->getInfoForLog());
     }
 
-    SCOPE_EXIT({
+    SCOPE_EXIT_CHECKED({
         if (file_segment->isDownloader())
             file_segment->completePartAndResetDownloader();
         else

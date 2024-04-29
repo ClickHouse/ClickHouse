@@ -63,3 +63,19 @@
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);          \
     }                                                             \
 )
+
+/// Same as SCOPE_EXIT() but logs exceptions, and tries not to crash on exception in release build.
+/// Treats exception as a logical error: starts the log messages with "LOGICAL_ERROR" (to trigger an
+/// alert) and aborts if ABORT_ON_LOGICAL_ERROR.
+#define SCOPE_EXIT_CHECKED(...) SCOPE_EXIT(                          \
+    try                                                              \
+    {                                                                \
+        __VA_ARGS__;                                                 \
+    }                                                                \
+    catch (...)                                                      \
+    {                                                                \
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__, "LOGICAL_ERROR: exception in SCOPE_EXIT"); \
+        MAYBE_ABORT_ON_FAILED_ASSERTION("exception in scope guard"); \
+        throw;                                                       \
+    }                                                                \
+)

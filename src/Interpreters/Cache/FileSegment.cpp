@@ -572,6 +572,9 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
 
     if (cache_writer)
     {
+        /// Note: this shouldn't throw because (1) we called cache_writer->next() after every write
+        /// to cache_writer, so there are no bytes to flush, and (2) cache_writer is a
+        /// WriteBufferFromFile, and its finalize() doesn't do anything if there's nothing to flush.
         cache_writer->finalize();
         cache_writer.reset();
         remote_file_reader.reset();
