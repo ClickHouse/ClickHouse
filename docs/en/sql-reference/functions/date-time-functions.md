@@ -2413,6 +2413,47 @@ The same as ‘today() - 1’.
 
 Rounds the time to the half hour.
 
+**Syntax**
+
+```sql
+timeSlot(time)
+```
+**Parameters**
+
+- `time`: Date and Time for which to round to the half hour. [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [Date32](../data-types/date32.md), [DateTime64](../data-types/datetime64.md).
+
+:::note
+Though this function can take values of the extended types `Date32` and `DateTime64` as an argument, passing a time outside the normal range (year `1970` to `2149` for `Date` / `2106` for `DateTime`) will produce wrong results.
+:::
+
+**Returned value**
+
+:::note
+The return type of `timeslot` is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
+
+For:
+- `enable_extended_results_for_datetime_functions = 0` the return type is `DateTime`.
+- `enable_extended_results_for_datetime_functions = 1` the return type is `DateTime` if the argument type is a `Date` or `DateTime`, and returns `DateTime64` if the argument type is a `Date32` or `DateTime64`.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'));
+```
+
+Result:
+
+```response
+┌─timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))─┐
+│                                2000-01-02 03:00:00 │
+└────────────────────────────────────────────────────┘
+```
+
+
+
 ## toYYYYMM
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
@@ -2603,20 +2644,48 @@ SELECT
 └──────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## timeSlots(StartTime, Duration,\[, Size\])
+## timeSlots
 
-For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
+For a time interval starting at `StartTime` and continuing for `Duration` seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the `Size` in seconds. 
 This is necessary, for example, when searching for pageviews in the corresponding session.
-Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
-Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
 
-Example:
+**Syntax**
+
+```sql
+timeSlots(StartTime, Duration [, Size])
+```
+
+**Parameters**
+
+- `StartTime`: Starting time. [DateTime](../data-types/datetime.md), [DateTime64](../data-types/datetime64.md)
+- `Duration`: Duration of the time interval. 
+- `Size`: Optional parameter set to `1800` seconds (`30` minutes) by default.
+
+The type of `Duration` and `Size` are determined by the type of `StartTime` and should be [UInt32](../data-types/int-uint.md) for `DateTime`, [Decimal64](../data-types/decimal.md) for `DateTime64`.
+
+**Returned value**
+
+Returns an array of moments in time, consisting of points from the set interval rounded down to the `Size` in seconds. [Array](../data-types/array.md)([DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md)) - type matching `StartTime`.
+
+**Implementation Details**
+
+:::note
+For `DateTime64`, the return value's scale can differ from the scale of `StartTime` - the highest scale among all given arguments is taken.
+:::
+
+**Example**
+
+Query:
+
 ```sql
 SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
 SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
 SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
 ```
-``` text
+
+Result:
+
+```response
 ┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
 │ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
 └─────────────────────────────────────────────────────────────┘
