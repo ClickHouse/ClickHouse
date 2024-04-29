@@ -1,3 +1,5 @@
+#include "config.h"
+
 #ifdef USE_PCO
 #if USE_PCO
 
@@ -8,8 +10,6 @@
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
-
-#include "config.h"
 
 #include <pco.h>
 

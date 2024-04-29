@@ -3,6 +3,7 @@
 
 DROP TABLE IF EXISTS codecTest;
 
+SET allow_experimental_codecs = 1;
 SET cross_to_inner_join_rewrite = 1;
 
 CREATE TABLE codecTest (
