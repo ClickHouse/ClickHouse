@@ -102,7 +102,7 @@ EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
         if (fs::exists(insert_directory_queue))
             fs::remove_all(insert_directory_queue);
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Error while removing temporary directory {}:", insert_directory_queue));
     }
