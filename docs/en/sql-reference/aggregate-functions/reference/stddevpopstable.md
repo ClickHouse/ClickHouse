@@ -7,10 +7,6 @@ sidebar_position: 30
 
 The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varpop.md). Unlike [`stddevPop`](../reference/stddevpop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
 
-:::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevPopStable` function. It works slower but provides a lower computational error.
-:::
-
 **Syntax**
 
 ```sql
@@ -23,7 +19,7 @@ stddevPopStable(x)
 
 **Returned value**
 
-Standard deviation of `x`. [Float64](../../data-types/float.md).
+Square root of standard deviation of `x`. [Float64](../../data-types/float.md).
 
 **Example**
 
