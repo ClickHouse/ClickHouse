@@ -378,7 +378,7 @@ std::optional<Chain> generateViewChain(
                 out.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                true));
+                out.getNumThreads()));
         }
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
@@ -629,7 +629,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline.getHeader(),
         context->getSettingsRef().min_insert_block_size_rows,
         context->getSettingsRef().min_insert_block_size_bytes,
-        true));
+        pipeline.getNumStreams()));
     pipeline.addTransform(std::make_shared<SquashingChunksTransformForBalancing>(
         pipeline.getHeader(),
         context->getSettingsRef().min_insert_block_size_rows,
