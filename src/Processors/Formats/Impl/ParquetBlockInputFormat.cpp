@@ -270,7 +270,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
 static auto bloomFilterMaybeContains(
     int row_group, ActionsDAGPtr filter_dag,
     const Block & header,
-    const std::unordered_map<std::string, int> & column_name_to_index,
+    const auto & column_name_to_index,
     auto arrow_file,
     auto metadata,
     auto context)

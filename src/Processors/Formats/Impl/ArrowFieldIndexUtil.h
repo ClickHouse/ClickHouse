@@ -67,9 +67,9 @@ public:
 
     /// Only collect the required fields' indices. Eg. when just read a field of a struct,
     /// don't need to collect the whole indices in this struct.
-    std::unordered_map<std::string, int> findRequiredIndices(const Block & header, const arrow::Schema & schema)
+    std::vector<std::pair<std::string, int>> findRequiredIndices(const Block & header, const arrow::Schema & schema)
     {
-        std::unordered_map<std::string, int> required_indices;
+        std::vector<std::pair<std::string, int>> required_indices;
         std::unordered_set<int> added_indices;
         /// Flat all named fields' index information into a map.
         auto fields_indices = calculateFieldIndices(schema);
@@ -172,7 +172,7 @@ private:
         DataTypePtr data_type,
         const std::unordered_map<std::string, std::pair<int, int>> & field_indices,
         std::unordered_set<int> & added_indices,
-        std::unordered_map<std::string, int> & required_indices)
+        std::vector<std::pair<std::string, int>> & required_indices)
     {
         auto nested_type = removeNullable(data_type);
         if (const DB::DataTypeTuple * type_tuple = typeid_cast<const DB::DataTypeTuple *>(nested_type.get()))
@@ -216,7 +216,7 @@ private:
                 auto index = it->second.first + j;
                 if (added_indices.insert(index).second)
                 {
-                    required_indices[name] = index;
+                    required_indices.emplace_back(name, index);
                 }
             }
         }
