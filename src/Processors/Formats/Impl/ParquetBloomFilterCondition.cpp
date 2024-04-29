@@ -397,6 +397,7 @@ bool ParquetBloomFilterCondition::traverseFunction(
                  function_name == "notEquals" ||
                  function_name == "has" ||
                  function_name == "hasAny" ||
+                 function_name == "hasAll" ||
                  function_name == "hasAll")
         {
             Field const_value;
@@ -460,7 +461,39 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
         }
         else if (function_name == "hasAny" || function_name == "hasAll")
         {
-            throw std::runtime_error {"Arthur check this"};
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
+
+            if (value_field.getType() != Field::Types::Array)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array.", function_name);
+
+            const DataTypePtr actual_type = getPrimitiveType(array_type->getNestedType());
+            ColumnPtr column;
+
+            {
+                const bool is_nullable = actual_type->isNullable();
+                auto mutable_column = actual_type->createColumn();
+
+                for (const auto & f : value_field.get<Array>())
+                {
+                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
+                        return false;
+
+                    auto converted = convertFieldToType(f, *actual_type);
+                    if (converted.isNull())
+                        return false;
+
+                    mutable_column->insert(converted);
+                }
+
+                column = std::move(mutable_column);
+            }
+
+            out.function = function_name == "hasAny" ?
+                                                     RPNElement::FUNCTION_HAS_ANY :
+                                                     RPNElement::FUNCTION_HAS_ALL;
+
+            out.predicate.emplace_back(std::make_pair(position, column));
         }
         else
         {
