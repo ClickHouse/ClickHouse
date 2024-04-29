@@ -27,6 +27,7 @@ stddevPop(x)
 
 Square root of standard deviation of `x`. [Float64](../../data-types/float.md).
 
+
 **Example**
 
 Query:
