@@ -208,7 +208,7 @@ translateUTF8(s, from, to)
 
 **Returned value**
 
-- `s`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
 
 **Examples**
 

@@ -1618,6 +1618,33 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
+void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
+    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
+
+    std::lock_guard lock(mutex);
+    auto it = external_tables_mapping.find(table_name);
+    if (it == external_tables_mapping.end())
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exists", backQuoteIfNeed(table_name));
+    it->second = std::move(temporary_table_ptr);
+}
+
+void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
+    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
+
+    std::lock_guard lock(mutex);
+    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table_ptr);
+    if (!inserted)
+        it->second = std::move(temporary_table_ptr);
+}
+
 std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
 {
     if (isGlobalContext())
@@ -5256,6 +5283,7 @@ WriteSettings Context::getWriteSettings() const
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
+    res.azure_allow_parallel_part_upload = settings.azure_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
