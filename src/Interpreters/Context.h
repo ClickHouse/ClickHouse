@@ -642,7 +642,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -677,15 +677,17 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
-    const Scalars & getScalars() const;
-    const Block & getScalar(const String & name) const;
+    Scalars getScalars() const;
+    Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    const Block * tryGetSpecialScalar(const String & name) const;
+    std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
