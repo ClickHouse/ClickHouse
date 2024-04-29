@@ -1,0 +1,18 @@
+0	0
+0	0
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (ReadFromStorage)
+    Zeros 0 → 1

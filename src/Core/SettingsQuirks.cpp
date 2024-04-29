@@ -95,7 +95,7 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
     }
 }
 
-void doSettingsSanityCheck(const Settings & current_settings)
+void doSettingsSanityCheckClamp(Settings & current_settings)
 {
     auto getCurrentValue = [&current_settings](const std::string_view name) -> Field
     {
@@ -106,8 +106,9 @@ void doSettingsSanityCheck(const Settings & current_settings)
     };
 
     UInt64 max_threads = getCurrentValue("max_threads").get<UInt64>();
-    if (max_threads > getNumberOfPhysicalCPUCores() * 65536)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: Too many threads requested ({})", max_threads);
+    UInt64 max_threads_max_value = 256 * getNumberOfPhysicalCPUCores();
+    if (max_threads > max_threads_max_value)
+        current_settings.set("max_threads", max_threads_max_value);
 
     constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
     std::unordered_set<String> block_rows_settings{
@@ -122,7 +123,7 @@ void doSettingsSanityCheck(const Settings & current_settings)
     {
         auto block_size = getCurrentValue(setting).get<UInt64>();
         if (block_size > max_sane_block_rows_size)
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: '{}' value is too high ({})", setting, block_size);
+            current_settings.set(setting, max_sane_block_rows_size);
     }
 }
 }
