@@ -10,7 +10,7 @@ SELECT UUIDToNum(toUUID('00112233-4455-6677-8899-aabbccddeeff'), '1'); -- { serv
 SELECT '-- UUIDv7toDateTime --';
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York');
 SELECT UUIDv7ToDateTime(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 1) -- { serverError ILLEGAL_COLUMN }
+SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 1); -- { serverError ILLEGAL_COLUMN }
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York', 1);  -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT UUIDv7ToDateTime('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1');  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/NewYork'); -- { serverError BAD_ARGUMENTS }
