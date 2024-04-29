@@ -184,12 +184,12 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         storage_snapshot,
         *mark_ranges,
         /*virtual_fields=*/ {},
-        /*uncompressed_cache=*/ {},
+        /*uncompressed_cache=*/{},
         mark_cache.get(),
         alter_conversions,
         reader_settings,
-        /*avg_value_size_hints=*/ {},
-        /*profile_callback=*/ {});
+        {},
+        {});
 }
 
 static void fillBlockNumberColumns(
@@ -230,7 +230,6 @@ try
     const auto & header = getPort().getHeader();
     /// Part level is useful for next step for merging non-merge tree table
     bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    size_t num_marks_in_part = data_part->getMarksCount();
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -239,7 +238,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_read = reader->readRows(current_mark, num_marks_in_part, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, data_part->getMarksCount(), continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {

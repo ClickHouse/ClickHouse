@@ -788,20 +788,15 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    std::vector<std::future<void>> futures;
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        futures.push_back(scheduleFromThreadPool<void>([&]()
+        runner([&]()
         {
             makeBackupEntriesForTableData(table_name);
-        }, threadpool, "BackupCollect"));
+        });
     }
-    /// Wait for all tasks.
-    for (auto & future : futures)
-        future.wait();
-    /// Make sure there is no exception.
-    for (auto & future : futures)
-        future.get();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)

@@ -523,7 +523,7 @@ See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watche
 
 Type: Double
 
-Default: 0.95
+Default: 0.9
 
 ## max_table_size_to_drop
 
@@ -1517,6 +1517,7 @@ The server will need access to the public Internet via IPv4 (at the time of writ
 Keys:
 
 - `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.
+- `send_logical_errors` – `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (default: `false`).
 - `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.
 - `anonymize` - Avoid attaching the server hostname to the crash report.
 - `http_proxy` - Configure HTTP proxy for sending crash reports.

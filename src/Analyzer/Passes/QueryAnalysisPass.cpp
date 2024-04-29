@@ -5174,8 +5174,8 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Lambda {} expect {} arguments. Actual {}. In scope {}",
             lambda_to_resolve.formatASTForErrorMessage(),
-            arguments_size,
             lambda_arguments_nodes_size,
+            arguments_size,
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
@@ -5624,16 +5624,34 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name,
                 scope.scope_node->formatASTForErrorMessage());
 
+        bool argument_is_constant = false;
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
             argument_column.column = constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
             argument_column.type = constant_node->getResultType();
+            argument_is_constant = true;
         }
-        else
+        else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
+                get_scalar_function_node && get_scalar_function_node->getFunctionName() == "__getScalar")
         {
-            all_arguments_constants = false;
+            /// Allow constant folding through getScalar
+            const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
+            if (get_scalar_const_arg && scope.context->hasQueryContext())
+            {
+                auto query_context = scope.context->getQueryContext();
+                auto scalar_string = toString(get_scalar_const_arg->getValue());
+                if (query_context->hasScalar(scalar_string))
+                {
+                    auto scalar = query_context->getScalar(scalar_string);
+                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
+                    argument_column.type = get_scalar_function_node->getResultType();
+                    argument_is_constant = true;
+                }
+            }
         }
+
+        all_arguments_constants &= argument_is_constant;
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
@@ -7146,7 +7164,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(function_ast, database_name, table_name);
         if (parametrized_view_storage)
         {
-            table_function_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
+            auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
+            fake_table_node->setAlias(table_function_node->getAlias());
+            table_function_node = fake_table_node;
             return;
         }
 
@@ -7875,6 +7895,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
+    if (query_node_typed.hasQualify() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
+
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope);
 
@@ -7898,6 +7921,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasWindow())
         visitor.visit(query_node_typed.getWindowNode());
+
+    if (query_node_typed.hasQualify())
+        visitor.visit(query_node_typed.getQualify());
 
     if (query_node_typed.hasOrderBy())
         visitor.visit(query_node_typed.getOrderByNode());
@@ -8046,6 +8072,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasWindow())
         resolveWindowNodeList(query_node_typed.getWindowNode(), scope);
+
+    if (query_node_typed.hasQualify())
+        resolveExpressionNode(query_node_typed.getQualify(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasOrderBy())
     {
