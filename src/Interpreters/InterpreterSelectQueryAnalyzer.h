@@ -27,7 +27,9 @@ public:
         const StoragePtr & storage_,
         const SelectQueryOptions & select_query_options_);
 
-    /// Initialize interpreter with query tree
+    /** Initialize interpreter with query tree.
+      * No query tree passes are applied.
+      */
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_);
