@@ -94,6 +94,12 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) 
     if (settings_changes != rhs_typed.settings_changes)
         return false;
 
+    /// For table functions, we should always compare aliases
+    /// because entries of table functions with the same name and arguments but with different aliases in a query
+    /// refer to different reads.
+    if (getAlias() != rhs_typed.getAlias())
+        return false;
+
     return table_expression_modifiers == rhs_typed.table_expression_modifiers;
 }
 

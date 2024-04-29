@@ -3389,19 +3389,15 @@ private:
     const ContextPtr & context;
 };
 
-/// Compare resolved identifiers considering columns that become nullable after JOIN
 bool resolvedIdenfiersFromJoinAreEquals(
     const QueryTreeNodePtr & left_resolved_identifier,
-    const QueryTreeNodePtr & right_resolved_identifier,
-    const IdentifierResolveScope & scope)
+    const QueryTreeNodePtr & right_resolved_identifier)
 {
-    auto left_original_node = ReplaceColumnsVisitor::findTransitiveReplacement(left_resolved_identifier, scope.join_columns_with_changed_types);
-    const auto & left_resolved_to_compare = left_original_node ? left_original_node : left_resolved_identifier;
+    auto * left_resolved_column_to_compare = left_resolved_identifier->as<ColumnNode>();
+    auto * right_resolved_column_to_compare = right_resolved_identifier->as<ColumnNode>();
 
-    auto right_original_node = ReplaceColumnsVisitor::findTransitiveReplacement(right_resolved_identifier, scope.join_columns_with_changed_types);
-    const auto & right_resolved_to_compare = right_original_node ? right_original_node : right_resolved_identifier;
-
-    return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
+    return left_resolved_column_to_compare && right_resolved_column_to_compare
+        && left_resolved_column_to_compare->getColumnName() == right_resolved_column_to_compare->getColumnName();
 }
 
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -3544,42 +3540,34 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
             resolved_identifier = std::move(result_column_node);
         }
-        else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
+        else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier))
         {
             const auto & identifier_path_part = identifier_lookup.identifier.front();
-            auto * left_resolved_identifier_column = left_resolved_identifier->as<ColumnNode>();
-            auto * right_resolved_identifier_column = right_resolved_identifier->as<ColumnNode>();
+            const auto & left_resolved_identifier_column = left_resolved_identifier->as<ColumnNode &>();
+            const auto & right_resolved_identifier_column = right_resolved_identifier->as<ColumnNode &>();
 
-            if (left_resolved_identifier_column && right_resolved_identifier_column)
+            const auto & left_column_source_alias = left_resolved_identifier_column.getColumnSource()->getAlias();
+            const auto & right_column_source_alias = right_resolved_identifier_column.getColumnSource()->getAlias();
+
+            /** If column from right table was resolved using alias, we prefer column from right table.
+                *
+                * Example: SELECT dummy FROM system.one JOIN system.one AS A ON A.dummy = system.one.dummy;
+                *
+                * If alias is specified for left table, and alias is not specified for right table and identifier was resolved
+                * without using left table alias, we prefer column from right table.
+                *
+                * Example: SELECT dummy FROM system.one AS A JOIN system.one ON A.dummy = system.one.dummy;
+                *
+                * Otherwise we prefer column from left table.
+                */
+            bool column_resolved_using_right_alias = identifier_path_part == right_column_source_alias;
+            bool column_resolved_without_using_left_alias = !left_column_source_alias.empty()
+                                                            && right_column_source_alias.empty()
+                                                            && identifier_path_part != left_column_source_alias;
+            if (column_resolved_using_right_alias || column_resolved_without_using_left_alias)
             {
-                const auto & left_column_source_alias = left_resolved_identifier_column->getColumnSource()->getAlias();
-                const auto & right_column_source_alias = right_resolved_identifier_column->getColumnSource()->getAlias();
-
-                /** If column from right table was resolved using alias, we prefer column from right table.
-                  *
-                  * Example: SELECT dummy FROM system.one JOIN system.one AS A ON A.dummy = system.one.dummy;
-                  *
-                  * If alias is specified for left table, and alias is not specified for right table and identifier was resolved
-                  * without using left table alias, we prefer column from right table.
-                  *
-                  * Example: SELECT dummy FROM system.one AS A JOIN system.one ON A.dummy = system.one.dummy;
-                  *
-                  * Otherwise we prefer column from left table.
-                  */
-                bool column_resolved_using_right_alias = identifier_path_part == right_column_source_alias;
-                bool column_resolved_without_using_left_alias = !left_column_source_alias.empty()
-                                                                && right_column_source_alias.empty()
-                                                                && identifier_path_part != left_column_source_alias;
-                if (column_resolved_using_right_alias || column_resolved_without_using_left_alias)
-                {
-                    resolved_side = JoinTableSide::Right;
-                    resolved_identifier = right_resolved_identifier;
-                }
-                else
-                {
-                    resolved_side = JoinTableSide::Left;
-                    resolved_identifier = left_resolved_identifier;
-                }
+                resolved_side = JoinTableSide::Right;
+                resolved_identifier = right_resolved_identifier;
             }
             else
             {
