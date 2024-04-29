@@ -17,7 +17,9 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
@@ -36,6 +38,10 @@
 #include <cassert>
 #include <stack>
 #include <limits>
+
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry/geometries/multi_polygon.hpp>
 
 
 namespace DB
@@ -448,6 +454,14 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             // ranges, instead will use the inverse of (-Inf, +Inf). The inversion happens in
             // checkInHyperrectangle.
             out.range = Range::createWholeUniverseWithoutNull();
+            return true;
+        }
+    },
+    {
+        "pointInPolygon",
+        [] (RPNElement & out, const Field &)
+        {
+            out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
             return true;
         }
     }
@@ -1602,6 +1616,56 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        auto analyze_point_in_polygon = [&, this]() -> bool
+        {
+            /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
+            if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
+                return false;
+            if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+                return false;
+
+            const auto atom_it = atom_map.find(func_name);
+
+            /// Analyze (x, y)
+            RPNElement::MultiColumnsFunctionDescription column_desc;
+            column_desc.function_name = func_name;
+            auto first_argument = func.getArgumentAt(0).toFunctionNode();
+            chassert(first_argument.getArgumentsSize() == 2);
+            chassert(first_argument.getFunctionName() == "tuple");
+
+            for (size_t i =0; i< first_argument.getArgumentsSize(); i++)
+            {
+                auto name = first_argument.getArgumentAt(i).getColumnName();
+                auto it = key_columns.find(name);
+                if (it == key_columns.end())
+                    return false;
+                column_desc.key_columns.push_back(name);
+                column_desc.key_column_poss.push_back(key_columns[name]);
+            }
+            out.point_in_polygon_column_description = column_desc;
+
+//            auto col = func.getArgumentAt(1).getConstantColumn();
+//            const auto & second_argument = typeid_cast<const ColumnConst &>(*col.column);
+//            const auto const_col = second_argument.getDataColumnPtr();
+//            auto points = ColumnToPointsConverter<RPNElement::Point>::convert(const_col);
+//            for (auto & p : points)
+//                out.polygon.outer().push_back(p);
+
+            /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
+            chassert(WhichDataType(const_type).isArray());
+            for (const auto & ele : const_value.get<Array>())
+            {
+                chassert(ele.getType() == Field::Types::Tuple);
+                const auto & ele_tuple = ele.get<Tuple>();
+                chassert(ele_tuple.size() == 2);
+                auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[0]);
+                auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[1]);
+                out.polygon.outer().push_back({x, y});
+            }
+            boost::geometry::correct(out.polygon);
+            return atom_it->second(out, const_value);
+        };
+
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -1643,6 +1707,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 }
                 else
                     return false;
+            }
+            else if (func_name == "pointInPolygon")
+            {
+                /// Case1 no holes in polygon
+                return analyze_point_in_polygon();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
@@ -1801,7 +1870,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         }
         else
-            return false;
+        {
+            if (func_name == "pointInPolygon")
+            {
+                /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
+                return analyze_point_in_polygon();
+            }
+            else
+                return false;
+        }
 
         const auto atom_it = atom_map.find(func_name);
 
@@ -2785,6 +2862,55 @@ BoolMask KeyCondition::checkInHyperrectangle(
               * represented by a set of hyperrectangles.
               */
         }
+        else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
+        {
+            /** There are 2 kinds of polygons:
+              *   1. Polygon by minmax index
+              *   2. Polygons which is provided by user
+              *
+              * Polygon by minmax index:
+              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *
+              * Algorithm:
+              *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
+              */
+            bool has_intersection = false;
+            const auto & key_column_poss = element.point_in_polygon_column_description->key_column_poss;
+
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[0]].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[0]].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].right);
+
+            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            std::vector<RPNElement::Point> points_by_minmax_index;
+            points_by_minmax_index.push_back({x_min, y_min});
+            points_by_minmax_index.push_back({x_min, y_max});
+            points_by_minmax_index.push_back({x_max, y_max});
+            points_by_minmax_index.push_back({x_max, y_min});
+
+            RPNElement::Polygon polygon_by_minmax_index;
+            for (const auto & point : points_by_minmax_index)
+                polygon_by_minmax_index.outer().push_back(point);
+
+            /// Close ring
+            boost::geometry::correct(polygon_by_minmax_index);
+
+            using MultiPolygon = boost::geometry::model::multi_polygon<RPNElement::Polygon>;
+            MultiPolygon intersection{};
+            boost::geometry::intersection(polygon_by_minmax_index, element.polygon, intersection);
+            has_intersection = !intersection.empty();
+
+            if (has_intersection)
+                rpn_stack.emplace_back(true, true);
+            else
+                rpn_stack.emplace_back(false, true);
+        }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
@@ -2865,6 +2991,15 @@ String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
         return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+    else if (point_in_polygon_column_description)
+    {
+        return toString(
+            fmt::format(
+                "column ({}, {})",
+                point_in_polygon_column_description->key_columns[0],
+                point_in_polygon_column_description->key_columns[1]),
+            false);
+    }
     else
         return toString(fmt::format("column {}", key_column), false);
 }
@@ -2944,6 +3079,23 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             buf << ")";
             return buf.str();
         }
+        case FUNCTION_POINT_IN_POLYGON:
+        {
+            auto points_in_polygon = polygon.outer();
+            buf << "(";
+            print_wrapped_column(buf);
+            buf << " in ";
+            buf << "[";
+            for (size_t i = 0; i < points_in_polygon.size(); ++i)
+            {
+                if (i != 0)
+                    buf << ", ";
+                buf << "(" << points_in_polygon[i].x() << ", " << points_in_polygon[i].y() << ")";
+            }
+            buf << "]";
+            buf << ")";
+            return buf.str();
+        }
         case FUNCTION_IS_NULL:
         case FUNCTION_IS_NOT_NULL:
         {
@@ -2997,6 +3149,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             || element.function == RPNElement::FUNCTION_IN_SET
             || element.function == RPNElement::FUNCTION_NOT_IN_SET
             || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
+            || element.function == RPNElement::FUNCTION_POINT_IN_POLYGON
             || element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL
             || element.function == RPNElement::ALWAYS_FALSE)
