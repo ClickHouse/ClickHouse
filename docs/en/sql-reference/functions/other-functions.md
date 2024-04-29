@@ -1024,7 +1024,7 @@ The result of the function depends on the affected data blocks and the order of 
 
 :::note
 Only returns neighbor inside the currently processed data block.
-Because of this error-prone behavior the function is DEPRECATED.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The order of rows during calculation of `neighbor()` can differ from the order of rows returned to the user.
@@ -1135,7 +1135,7 @@ Returns 0 for the first row, and for subsequent rows the difference to the previ
 
 :::note
 Only returns differences inside the currently processed data block.
-Because of this error-prone behavior the function is DEPRECATED.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The result of the function depends on the affected data blocks and the order of data in the block.
@@ -1936,7 +1936,7 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 :::note
 The state is reset for each new block of data.
-Because of this error-prone behavior the function is DEPRECATED.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 **Syntax**

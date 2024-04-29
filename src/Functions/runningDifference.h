@@ -143,7 +143,7 @@ public:
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
                 "Function {} is deprecated since its usage is error-prone (see docs)."
-                "Set `allow_deprecated_functions` setting to enable it",
+                "Please use proper window function or set `allow_deprecated_functions` setting to enable it",
                 name);
 
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
