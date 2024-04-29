@@ -734,9 +734,9 @@ def get_localzone():
 
 class SettingsRandomizer:
     settings = {
-        "max_insert_threads": lambda: 0
-        if random.random() < 0.5
-        else random.randint(1, 16),
+        "max_insert_threads": lambda: (
+            0 if random.random() < 0.5 else random.randint(1, 16)
+        ),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -1484,7 +1484,7 @@ class TestCase:
                     body = read_file_as_binary_string(file_path)
                     clickhouse_execute(
                         args,
-                        f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        f"INSERT INTO system.coverage_log SETTINGS async_insert=1, wait_for_async_insert=0 SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
                         body=body,
                         retry_error_codes=True,
                     )
@@ -1492,6 +1492,8 @@ class TestCase:
                     print("Cannot insert coverage data: ", str(e))
                 # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
                 os.remove(file_path)
+
+            _ = clickhouse_execute(args, "SYSTEM FLUSH ASYNC INSERT QUEUE")
 
             coverage = clickhouse_execute(
                 args,
