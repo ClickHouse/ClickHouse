@@ -101,7 +101,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     };
 
     UInt64 max_threads = getCurrentValue("max_threads").get<UInt64>();
-    UInt64 max_threads_max_value = 65536 * getNumberOfPhysicalCPUCores();
+    UInt64 max_threads_max_value = 256 * getNumberOfPhysicalCPUCores();
     if (max_threads > max_threads_max_value)
     {
         if (log)
