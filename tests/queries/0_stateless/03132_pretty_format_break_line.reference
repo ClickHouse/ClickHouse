@@ -1,8 +1,44 @@
-┌─id─┬─value─┐
-│  0 │ hello…│
-│    │…world │
-└────┴───────┘
-   ┌─id─┬─value─┐
-1. │  0 │ hello…│
-   │    │…world │
-   └────┴───────┘
+┌─id─┬─value─┬─value1──────┐
+│  0 │ hello…│ hello world │
+│    │…world │             │
+└────┴───────┴─────────────┘
+   ┌─id─┬─value─┬─value1──────┐
+1. │  0 │ hello…│ hello world │
+   │    │…world │             │
+   └────┴───────┴─────────────┘
+   ┌─id─┬─value─┬─value1──────┐
+1. │  0 │ hello…│ hello world │
+   │    │…world │             │
+   └────┴───────┴─────────────┘
+   ┏━━━━┳━━━━━━━┳━━━━━━━━━━━━━┓
+   ┃ id ┃ value ┃ value1      ┃
+   ┡━━━━╇━━━━━━━╇━━━━━━━━━━━━━┩
+1. │  0 │ hello…│ hello world │
+   │    │…world │             │
+   └────┴───────┴─────────────┘
+ id   value   value1     
+
+  0   hello…  hello world 
+     …world               
+    id   value   value1     
+
+1.   0   hello…  hello world 
+        …world               
+┏━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ id ┃ value       ┃ value1      ┃
+┡━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━┩
+│  0 │ hello      …│ hello world │
+│    │…world       │             │
+├────┼─────────────┼─────────────┤
+│  1 │ hello world │ hello      …│
+│    │             │…world       │
+└────┴─────────────┴─────────────┘
+   ┏━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┓
+   ┃ id ┃ value       ┃ value1      ┃
+   ┡━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━┩
+1. │  1 │ hello world │ hello      …│
+   │    │             │…world       │
+   ├────┼─────────────┼─────────────┤
+2. │  0 │ hello      …│ hello world │
+   │    │…world       │             │
+   └────┴─────────────┴─────────────┘

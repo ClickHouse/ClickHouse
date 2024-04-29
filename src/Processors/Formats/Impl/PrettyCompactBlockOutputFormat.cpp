@@ -198,7 +198,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
     writeCString("\n", out);
 
     if (has_transferred_row)
-        writeTransferredRow(max_widths, transferred_row);
+        writeTransferredRow(max_widths, transferred_row, false);
 }
 
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)

@@ -50,7 +50,7 @@ protected:
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number, bool & has_break_line);
 
-    void writeTransferredRow(const Widths & max_widths, const std::vector<String> & transferred_row);
+    void writeTransferredRow(const Widths & max_widths, const std::vector<String> & transferred_row, const bool & space_block);
 
     void resetFormatterImpl() override
     {

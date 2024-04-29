@@ -350,7 +350,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         writeCString("\n", out);
 
         if (has_transferred_row)
-            writeTransferredRow(max_widths, transferred_row);
+            writeTransferredRow(max_widths, transferred_row, false);
     }
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
@@ -440,13 +440,13 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    size_t line_breake_pos = String::npos;
+    size_t break_line_pos = String::npos;
     if (cut_to_width)
-        line_breake_pos = serialized_value.find_first_of('\n');
-    if (line_breake_pos != String::npos)
+        break_line_pos = serialized_value.find_first_of('\n');
+    if (break_line_pos != String::npos)
     {
         has_break_line = true;
-        serialized_value = serialized_value.substr(0, line_breake_pos);
+        serialized_value = serialized_value.substr(0, break_line_pos);
         value_width = serialized_value.size() - 1;
     }
 
@@ -496,7 +496,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         writeString("…", out);
 }
 
-void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, const std::vector<String> & transferred_row)
+void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, const std::vector<String> & transferred_row, const bool & space_block)
 {
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
                                         utf8_grid_symbols :
@@ -508,15 +508,19 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
         for (size_t i = 0; i < row_number_width; ++i)
             writeChar(' ', out);
 
-    writeCString(grid_symbols.bar, out);
+    if (!space_block)
+        writeCString(grid_symbols.bar, out);
+
     std::vector<String> new_transferred_row(num_columns);
     bool has_transferred_row = false;
     size_t cur_width = 0;
 
     for (size_t j = 0; j < num_columns; ++j)
     {
-        if (j != 0)
+        if (j != 0 && !space_block)
             writeCString(grid_symbols.bar, out);
+        else if (j != 0)
+            writeCString(" ", out);
 
         String value = transferred_row[j];
         cur_width = value.size();
@@ -552,11 +556,12 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
             writeChar(' ', out);
     }
 
-    writeCString(grid_symbols.bar, out);
+    if (!space_block)
+        writeCString(grid_symbols.bar, out);
     writeCString("\n", out);
 
     if (has_transferred_row)
-        writeTransferredRow(max_widths, new_transferred_row);
+        writeTransferredRow(max_widths, new_transferred_row, space_block);
 }
 
 
