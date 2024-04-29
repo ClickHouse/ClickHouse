@@ -2,6 +2,7 @@
 
 #include <Core/Streaming/CursorTree.h>
 #include <Core/Streaming/CursorData.h>
+#include <Core/Streaming/CursorMerger.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -143,4 +144,63 @@ GTEST_TEST(CursorData, RoundTripSerialization)
         ASSERT_EQ(data.keeper_key, data_2.keeper_key);
         ASSERT_EQ(cursorTreeToString(data.tree), cursorTreeToString(data_2.tree));
     }
+}
+
+GTEST_TEST(CursorData, Merge)
+{
+    Map collapsed_tree_1 = {
+        Tuple{"1.all.block_number", 10},
+        Tuple{"1.all.block_offset", 42},
+    };
+
+    Map collapsed_tree_2 = {
+        Tuple{"2.all.block_number", 110},
+        Tuple{"2.all.block_offset", 142},
+    };
+
+    Map collapsed_tree_3 = {
+        Tuple{"1.all.block_number", 50},
+        Tuple{"1.all.block_offset", 150},
+    };
+
+    CursorDataMap data_map_1 = {
+        {"table-1",
+         CursorData{
+             .tree = buildCursorTree(collapsed_tree_1),
+             .keeper_key = "keeper-key",
+         }},
+    };
+
+    CursorDataMap data_map_2 = {
+        {"table-1",
+         CursorData{
+             .tree = buildCursorTree(collapsed_tree_2),
+             .keeper_key = "keeper-key",
+         }},
+    };
+
+    CursorDataMap data_map_3 = {
+        {"table-1",
+         CursorData{
+             .tree = buildCursorTree(collapsed_tree_3),
+             .keeper_key = "keeper-key",
+         }},
+    };
+
+
+    CursorMerger merger;
+    merger.add(data_map_1);
+    merger.add(data_map_2);
+    merger.add(data_map_3);
+
+    auto finalized = merger.finalize();
+
+    ASSERT_EQ(finalized.size(), 1);
+    CursorData data = finalized.at("table-1");
+
+    ASSERT_EQ(data.keeper_key, "keeper-key");
+    ASSERT_EQ(data.tree->getSubtree("1")->getSubtree("all")->getValue("block_number"), 50);
+    ASSERT_EQ(data.tree->getSubtree("1")->getSubtree("all")->getValue("block_offset"), 150);
+    ASSERT_EQ(data.tree->getSubtree("2")->getSubtree("all")->getValue("block_number"), 110);
+    ASSERT_EQ(data.tree->getSubtree("2")->getSubtree("all")->getValue("block_offset"), 142);
 }

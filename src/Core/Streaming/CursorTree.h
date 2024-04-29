@@ -50,4 +50,6 @@ CursorTreeNodePtr buildCursorTree(const String & serialized_tree);
 CursorTreeNodePtr buildCursorTree(const Poco::JSON::Object::Ptr & json);
 CursorTreeNodePtr buildCursorTree(const ContextPtr & context, const std::optional<String> & keeper_key, const std::optional<Map> & collapsed_tree);
 
+void mergeCursors(CursorTreeNodePtr into, CursorTreeNodePtr from);
+
 }

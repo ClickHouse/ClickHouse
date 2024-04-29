@@ -213,4 +213,21 @@ CursorTreeNodePtr buildCursorTree(const ContextPtr & context, const std::optiona
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper cursors unimplemented");
 }
 
+void mergeCursors(CursorTreeNodePtr into, CursorTreeNodePtr from)
+{
+    for (const auto & [key, value] : *from)
+    {
+        if (std::holds_alternative<Int64>(value))
+        {
+            chassert(!into->hasSubtree(key));
+            into->setValue(key, std::get<Int64>(value));
+        }
+        else
+        {
+            chassert(!into->hasValue(key));
+            mergeCursors(into->next(key), std::get<CursorTreeNodePtr>(value));
+        }
+    }
+}
+
 }
