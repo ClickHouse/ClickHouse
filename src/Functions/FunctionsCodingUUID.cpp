@@ -403,84 +403,6 @@ public:
     }
 };
 
-class FunctionUUIDv7ToDateTime : public IFunction
-{
-public:
-    static constexpr auto name = "UUIDv7ToDateTime";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDv7ToDateTime>(); }
-
-    static constexpr UInt32 datetime_scale = 3;
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isVariadic() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: should be 1 or 2", getName());
-
-        if (!checkAndGetDataType<DataTypeUUID>(arguments[0].type.get()))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected UUID",
-                arguments[0].type->getName(),
-                getName());
-        }
-
-        String timezone;
-        if (arguments.size() == 2)
-        {
-            timezone = extractTimeZoneNameFromColumn(arguments[1].column.get(), arguments[1].name);
-
-            if (timezone.empty())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
-                    getName());
-        }
-
-        return std::make_shared<DataTypeDateTime64>(datetime_scale, timezone);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
-    {
-        const ColumnWithTypeAndName & col_type_name = arguments[0];
-        const ColumnPtr & column = col_type_name.column;
-
-        if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
-        {
-            const auto & vec_in = col_in->getData();
-            const UUID * uuids = vec_in.data();
-            const size_t size = vec_in.size();
-
-            auto col_res = ColumnDateTime64::create(size, datetime_scale);
-            auto & vec_res = col_res->getData();
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
-                if ((hiBytes & 0xf000) == 0x7000)
-                {
-                    uint64_t ms = hiBytes >> 16;
-                    vec_res[i] = DecimalUtils::decimalFromComponents<DateTime64>(
-                        ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
-                }
-            }
-
-            return col_res;
-        }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
-    }
-};
-
 REGISTER_FUNCTION(CodingUUID)
 {
     factory.registerFunction<FunctionUUIDNumToString>();
@@ -499,19 +421,6 @@ This function accepts a UUID and returns a FixedString(16) as its binary represe
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │ @</a];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┴──────────────────┘
 )"}},
-            .categories{"UUID"}},
-        FunctionFactory::CaseSensitive);
-
-    factory.registerFunction<FunctionUUIDv7ToDateTime>(
-        FunctionDocumentation{
-            .description = R"(
-This function extracts the timestamp from a UUID and returns it as a DateTime64(3) typed value.
-The function expects the UUID having version 7 to be provided as the first argument.
-An optional second argument can be passed to specify a timezone for the timestamp.
-)",
-            .examples{
-                {"uuid","select UUIDv7ToDateTime(generateUUIDv7())", ""},
-                {"uuid","select generateUUIDv7() as uuid, UUIDv7ToDateTime(uuid), UUIDv7ToDateTime(uuid, 'America/New_York')", ""}},
             .categories{"UUID"}},
         FunctionFactory::CaseSensitive);
 }

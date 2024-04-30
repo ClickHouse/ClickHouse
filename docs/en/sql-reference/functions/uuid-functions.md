@@ -627,53 +627,6 @@ Result:
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-## UUIDv7ToDateTime
-
-Returns the timestamp component of a UUID version 7.
-
-**Syntax**
-
-``` sql
-UUIDv7ToDateTime(uuid[, timezone])
-```
-
-**Arguments**
-
-- `uuid` — [UUID](../data-types/uuid.md) of version 7.
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
-- Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000.
-
-Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
-
-**Usage examples**
-
-``` sql
-SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
-```
-
-Result:
-
-```response
-┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 15:30:29.048 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')
-```
-
-Result:
-
-```response
-┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                              2024-04-22 08:30:29.048 │
-└──────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ## serverUUID()
 
 Returns the random UUID generated during the first start of the ClickHouse server. The UUID is stored in file `uuid` in the ClickHouse server directory (e.g. `/var/lib/clickhouse/`) and retained between server restarts.
