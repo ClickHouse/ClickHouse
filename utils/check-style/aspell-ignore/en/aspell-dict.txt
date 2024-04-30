@@ -2442,6 +2442,10 @@ stddevPop
 stddevSamp
 stddevpop
 stddevsamp
+stddevpopstable
+stddevPopStable
+stddevsampstable
+stddevSampStable
 stderr
 stdin
 stdout
@@ -2523,6 +2527,9 @@ sumWithOverflow
 sumcount
 sumkahan
 summap
+summapwithoverflow
+sumMapWithOverflow
+sumMapFilteredWithOverflow
 summingmergetree
 sumwithoverflow
 superaggregates

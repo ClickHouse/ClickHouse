@@ -2013,6 +2013,63 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameS
     return res;
 }
 
+bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header)
+{
+    const auto * filter_node = tryFindInOutputs(filter_name);
+    if (!filter_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Outputs for ActionsDAG does not contain filter column name {}. DAG:\n{}",
+                        filter_name,
+                        dumpDAG());
+
+    std::unordered_map<std::string, ColumnWithTypeAndName> input_node_name_to_default_input_column;
+
+    for (const auto * input : inputs)
+    {
+        if (!input_stream_header.has(input->result_name))
+            continue;
+
+        if (input->column)
+            continue;
+
+        auto constant_column = input->result_type->createColumnConst(0, input->result_type->getDefault());
+        auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
+        input_node_name_to_default_input_column.emplace(input->result_name, std::move(constant_column_with_type_and_name));
+    }
+
+    ActionsDAGPtr filter_with_default_value_inputs;
+
+    try
+    {
+        filter_with_default_value_inputs = buildFilterActionsDAG({filter_node}, input_node_name_to_default_input_column);
+    }
+    catch (const Exception &)
+    {
+        /** It is possible that duing DAG construction, some functions cannot be executed for constant default value inputs
+          * and exception will be thrown.
+          */
+        return false;
+    }
+
+    const auto * filter_with_default_value_inputs_filter_node = filter_with_default_value_inputs->getOutputs()[0];
+    if (!filter_with_default_value_inputs_filter_node->column || !isColumnConst(*filter_with_default_value_inputs_filter_node->column))
+        return false;
+
+    const auto & constant_type = filter_with_default_value_inputs_filter_node->result_type;
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return false;
+
+    Field value;
+    filter_with_default_value_inputs_filter_node->column->get(0, value);
+
+    if (value.isNull())
+        return true;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value == 0;
+}
+
 ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
 {
     const auto * node = tryFindInOutputs(column_name);

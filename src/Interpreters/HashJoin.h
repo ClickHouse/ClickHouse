@@ -148,12 +148,25 @@ class HashJoin : public IJoin
 public:
     HashJoin(
         std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block,
-        bool any_take_last_row_ = false, size_t reserve_num = 0, const String & instance_id_ = "");
+        bool any_take_last_row_ = false, size_t reserve_num_ = 0, const String & instance_id_ = "");
 
     ~HashJoin() override;
 
     std::string getName() const override { return "HashJoin"; }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
+
+    bool isCloneSupported() const override
+    {
+        return true;
+    }
+
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        const Block &,
+        const Block & right_sample_block_) const override
+    {
+        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
+    }
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -412,7 +425,9 @@ private:
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
-    bool any_take_last_row; /// Overwrite existing values when encountering the same key again
+    const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
+    const size_t reserve_num;
+    const String instance_id;
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
 
@@ -454,7 +469,7 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    void dataMapInit(MapsVariant &, size_t);
+    void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
 
