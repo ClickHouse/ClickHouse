@@ -473,7 +473,6 @@ try
 
     SCOPE_EXIT({ cleanup(); });
 
-    adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
