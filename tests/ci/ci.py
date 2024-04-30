@@ -1369,7 +1369,11 @@ def _configure_jobs(
             continue
         if job_config.pr_only and pr_info.is_release_branch:
             continue
-        if job_config.release_only and not job_config.run_by_ci_option and not pr_info.is_release_branch:
+        if (
+            job_config.release_only
+            and not job_config.run_by_ci_option
+            and not pr_info.is_release_branch
+        ):
             continue
 
         # fill job randomization buckets (for jobs with configured @random_bucket property))
