@@ -322,4 +322,3 @@ def test_backup_restore_on_merge_tree(cluster):
     )
     azure_query(node, f"DROP TABLE test_simple_merge_tree")
     azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")
-
