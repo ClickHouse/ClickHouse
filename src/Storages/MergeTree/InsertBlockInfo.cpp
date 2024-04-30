@@ -121,7 +121,7 @@ void AsyncInsertBlockInfo::filterBlockDuplicate(const std::vector<String> & bloc
 std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(
     const BlockWithPartition & block,
     String partition_id,
-    const std::function<bool(const String&)>& column_filter)
+    const std::function<bool(const String &)> & column_filter)
 {
     size_t start = 0;
     std::vector<String> block_id_vec;
@@ -152,9 +152,9 @@ std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(
 
 String SyncInsertBlockInfo::getHashForBlock(
     const BlockWithPartition & block,
-    const String& token,
-    const String& partition_id,
-    const std::function<bool(const String&)>& column_filter)
+    const String & token,
+    const String & partition_id,
+    const std::function<bool(const String &)> & column_filter)
 {
     if (!token.empty())
         return partition_id + "_" + token;

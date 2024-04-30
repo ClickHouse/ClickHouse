@@ -24,9 +24,9 @@ struct SyncInsertBlockInfo
 
     static String getHashForBlock(
         const BlockWithPartition & block,
-        const String& token,
-        const String& partition_id,
-        const std::function<bool(const String&)>& column_filter = {});
+        const String & token,
+        const String & partition_id,
+        const std::function<bool(const String &)> & column_filter = {});
 };
 
 struct AsyncInsertBlockInfo
@@ -58,7 +58,7 @@ struct AsyncInsertBlockInfo
     static std::vector<String> getHashesForBlocks(
         const BlockWithPartition & block,
         String partition_id,
-        const std::function<bool(const String&)>& column_filter = {});
+        const std::function<bool(const String &)> & column_filter = {});
 };
 
 }

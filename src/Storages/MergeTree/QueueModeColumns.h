@@ -29,6 +29,6 @@ struct QueuePartitionIdColumn
 
 bool isQueueModeColumn(const String & column_name);
 
-void materializeQueueSortingColumns(Block & block, const String & partition_id, int64_t block_number);
+void materializeSortingColumnsForQueueMode(Block & block, const String & partition_id, int64_t block_number);
 
 }

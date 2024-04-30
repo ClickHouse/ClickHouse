@@ -27,34 +27,34 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
-/// settings extenders
-KeyDescription::Builder::Builder(std::optional<AdditionalSettings> settings_) : settings{std::move(settings_)}
+KeyDescription::Builder::Builder(std::optional<AdditionalColumns> additional_columns_)
+    : additional_columns(std::move(additional_columns_))
 {
 }
 
 KeyDescription::Builder & KeyDescription::Builder::withExtFrontColumns(std::vector<String> ext_columns_front_)
 {
-    if (!settings.has_value())
-        settings = AdditionalSettings{};
+    if (!additional_columns.has_value())
+        additional_columns = AdditionalColumns{};
 
-    settings->ext_columns_front = std::move(ext_columns_front_);
+    additional_columns->ext_columns_front = std::move(ext_columns_front_);
 
     return *this;
 }
 
 KeyDescription::Builder & KeyDescription::Builder::withExtBackColumns(std::vector<String> ext_columns_back_)
 {
-    if (!settings.has_value())
-        settings = AdditionalSettings{};
+    if (!additional_columns.has_value())
+        additional_columns = AdditionalColumns{};
 
-    settings->ext_columns_back = std::move(ext_columns_back_);
+    additional_columns->ext_columns_back = std::move(ext_columns_back_);
 
     return *this;
 }
 
 KeyDescription KeyDescription::Builder::buildEmpty()
 {
-    chassert(!settings.has_value());
+    chassert(!additional_columns.has_value());
 
     KeyDescription result;
     result.expression_list_ast = std::make_shared<ASTExpressionList>();
@@ -69,17 +69,17 @@ KeyDescription::Builder::buildFromAST(const ASTPtr & definition_ast_, const Colu
     KeyDescription result;
     result.definition_ast = definition_ast_;
     result.expression_list_ast = extractKeyExpressionList(definition_ast_);
-    result.additional_settings = settings;
+    result.additional_columns = additional_columns;
 
-    if (settings.has_value())
+    if (additional_columns.has_value())
     {
-        for (const auto & additional_column : std::ranges::views::reverse(settings->ext_columns_front))
+        for (const auto & additional_column : std::ranges::views::reverse(additional_columns->ext_columns_front))
         {
             ASTPtr column_identifier = std::make_shared<ASTIdentifier>(additional_column);
             result.expression_list_ast->children.insert(result.expression_list_ast->children.begin(), column_identifier);
         }
 
-        for (const auto & additional_column : settings->ext_columns_back)
+        for (const auto & additional_column : additional_columns->ext_columns_back)
         {
             ASTPtr column_identifier = std::make_shared<ASTIdentifier>(additional_column);
             result.expression_list_ast->children.push_back(column_identifier);
@@ -133,7 +133,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
     , data_types(other.data_types)
-    , additional_settings(other.additional_settings)
+    , additional_columns(other.additional_columns)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -165,10 +165,10 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     data_types = other.data_types;
 
     /// additional_column is constant property It should never be lost.
-    if (additional_settings.has_value() && !other.additional_settings.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_settings");
+    if (additional_columns.has_value() && !other.additional_columns.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_columns");
 
-    additional_settings = other.additional_settings;
+    additional_columns = other.additional_columns;
 
     return *this;
 }
@@ -176,12 +176,12 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
 void KeyDescription::recalculateWithNewAST(const ASTPtr & new_ast, const ColumnsDescription & columns, ContextPtr context)
 {
-    *this = Builder(std::move(additional_settings)).buildFromAST(new_ast, columns, context);
+    *this = Builder(std::move(additional_columns)).buildFromAST(new_ast, columns, context);
 }
 
 void KeyDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = Builder(std::move(additional_settings)).buildFromAST(definition_ast, new_columns, context);
+    *this = Builder(std::move(additional_columns)).buildFromAST(definition_ast, new_columns, context);
 }
 
 bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)

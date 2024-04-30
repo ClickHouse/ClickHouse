@@ -13,11 +13,11 @@ namespace ProfileEvents
 namespace DB
 {
 
-struct CommittingBlockNumberTagger
+struct CommittingBlockNumberTagger : private boost::noncopyable
 {
     std::mutex & committing_block_numbers_mutex;
     std::set<Int64> & committing_block_numbers;
-    std::optional<Int64> block_number;
+    Int64 block_number;
 
     CommittingBlockNumberTagger(std::mutex & committing_block_numbers_mutex_, std::set<Int64> & committing_block_numbers_, Int64 block_number_)
         : committing_block_numbers_mutex{committing_block_numbers_mutex_}
@@ -26,22 +26,11 @@ struct CommittingBlockNumberTagger
     {
     }
 
-    CommittingBlockNumberTagger(CommittingBlockNumberTagger && other) noexcept
-        : committing_block_numbers_mutex{other.committing_block_numbers_mutex}
-        , committing_block_numbers{other.committing_block_numbers}
-        , block_number{other.block_number}
-    {
-        other.block_number.reset();
-    }
-
     ~CommittingBlockNumberTagger()
     {
-        if (block_number.has_value())
-        {
-            std::lock_guard guard(committing_block_numbers_mutex);
-            size_t removed_count = committing_block_numbers.erase(block_number.value());
-            chassert(removed_count == 1);
-        }
+        std::lock_guard guard(committing_block_numbers_mutex);
+        size_t removed_count = committing_block_numbers.erase(block_number);
+        chassert(removed_count == 1);
     }
 };
 
@@ -53,7 +42,7 @@ struct MergeTreeSink::DelayedChunk
         UInt64 elapsed_ns;
         String block_dedup_token;
         ProfileEvents::Counters part_counters;
-        std::optional<CommittingBlockNumberTagger> committing_block_number_tagger;
+        std::unique_ptr<CommittingBlockNumberTagger> committing_block_number_tagger;
     };
 
     std::vector<Partition> partitions;
@@ -108,7 +97,7 @@ void MergeTreeSink::consume(Chunk chunk)
 
     for (auto & current_block : part_blocks)
     {
-        std::optional<CommittingBlockNumberTagger> committing_block_number_tagger;
+        std::unique_ptr<CommittingBlockNumberTagger> committing_block_number_tagger;
 
         if (storage.getSettings()->queue_mode)
         {
@@ -118,17 +107,18 @@ void MergeTreeSink::consume(Chunk chunk)
                 std::lock_guard guard(storage.committing_block_numbers_mutex);
 
                 Int64 block_number = storage.increment.get();
-                auto [_, inserted] = storage.committing_block_numbers[partition_id].insert(block_number);
+                auto & partition_committing_block_numbers = storage.committing_block_numbers[partition_id];
+                auto [_, inserted] = partition_committing_block_numbers.insert(block_number);
                 chassert(inserted);
 
-                committing_block_number_tagger.emplace(
+                committing_block_number_tagger = std::make_unique<CommittingBlockNumberTagger>(
                     storage.committing_block_numbers_mutex,
-                    storage.committing_block_numbers.at(partition_id),
+                    partition_committing_block_numbers,
                     block_number
                 );
             }
 
-            materializeQueueSortingColumns(current_block.block, partition_id, committing_block_number_tagger->block_number.value());
+            materializeSortingColumnsForQueueMode(current_block.block, partition_id, committing_block_number_tagger->block_number);
         }
 
         ProfileEvents::Counters part_counters;
@@ -223,7 +213,7 @@ void MergeTreeSink::finishDelayedChunk()
         auto & part = partition.temp_part.part;
 
         std::optional<Int64> block_number;
-        if (partition.committing_block_number_tagger.has_value())
+        if (partition.committing_block_number_tagger)
             block_number = partition.committing_block_number_tagger->block_number;
 
         bool added = false;
@@ -252,7 +242,7 @@ void MergeTreeSink::finishDelayedChunk()
             transaction.commit(&lock);
         }
 
-        /// Explicitly committing block number after commit
+        /// Explicitly drop committing block number after commit
         partition.committing_block_number_tagger.reset();
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added

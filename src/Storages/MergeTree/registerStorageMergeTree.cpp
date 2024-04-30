@@ -442,8 +442,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     /// This merging param maybe used as part of sorting key
-    std::optional<KeyDescription::AdditionalSettings> additional_sorting_key_settings;
-    std::optional<KeyDescription::AdditionalSettings> additional_primary_key_settings;
+    std::optional<KeyDescription::AdditionalColumns> additional_sorting_key_columns;
+    std::optional<KeyDescription::AdditionalColumns> additional_primary_key_columns;
 
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
@@ -512,7 +512,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         --arg_cnt;
 
         /// Version collapsing is the only engine which add additional column to sorting key.
-        additional_sorting_key_settings = KeyDescription::AdditionalSettings{
+        additional_sorting_key_columns = KeyDescription::AdditionalColumns{
             .ext_columns_back = {merging_params.version_column},
         };
     }
@@ -564,14 +564,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_column(QueueBlockNumberColumn::name, QueueBlockNumberColumn::type, QueueBlockNumberColumn::codec);
             add_column(QueueBlockOffsetColumn::name, QueueBlockOffsetColumn::type, QueueBlockOffsetColumn::codec);
 
-            /// mode is ordinary -> additional_sorting_key_settings must be empty
-            chassert(!additional_sorting_key_settings.has_value());
+            /// mode is ordinary -> additional_sorting_key_columns must be empty
+            chassert(!additional_sorting_key_columns.has_value());
 
-            additional_sorting_key_settings = KeyDescription::AdditionalSettings{};
-            additional_sorting_key_settings->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+            additional_sorting_key_columns = KeyDescription::AdditionalColumns{};
+            additional_sorting_key_columns->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
 
-            additional_primary_key_settings = KeyDescription::AdditionalSettings{};
-            additional_primary_key_settings->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+            additional_primary_key_columns = KeyDescription::AdditionalColumns{};
+            additional_primary_key_columns->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
         }
 
         ASTPtr partition_by_key;
@@ -608,7 +608,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// NOTE: store merging_param_key_arg as additional key column. We do it
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
-        metadata.sorting_key = KeyDescription::Builder(additional_sorting_key_settings).buildFromAST(
+        metadata.sorting_key = KeyDescription::Builder(additional_sorting_key_columns).buildFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, context);
         if (!local_settings.allow_suspicious_primary_key)
             verifySortingKey(metadata.sorting_key);
@@ -616,12 +616,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
-            metadata.primary_key = KeyDescription::Builder(additional_primary_key_settings).buildFromAST(
+            metadata.primary_key = KeyDescription::Builder(additional_primary_key_columns).buildFromAST(
                 args.storage_def->primary_key->ptr(), metadata.columns, context);
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by
         {
-            metadata.primary_key = KeyDescription::Builder(additional_primary_key_settings).buildFromAST(
+            metadata.primary_key = KeyDescription::Builder(additional_primary_key_columns).buildFromAST(
                 args.storage_def->order_by->ptr(), metadata.columns, context);
 
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
@@ -723,13 +723,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// NOTE: store merging_param_key_arg as additional key column. We do it
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
-        metadata.sorting_key = KeyDescription::Builder(additional_sorting_key_settings).buildFromAST(
+        metadata.sorting_key = KeyDescription::Builder(additional_sorting_key_columns).buildFromAST(
             engine_args[arg_num], metadata.columns, context);
         if (!local_settings.allow_suspicious_primary_key)
             verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
-        metadata.primary_key = KeyDescription::Builder(additional_primary_key_settings).buildFromAST(
+        metadata.primary_key = KeyDescription::Builder(additional_primary_key_columns).buildFromAST(
             engine_args[arg_num], metadata.columns, context);
 
         /// But it's not explicitly defined, so we evaluate definition to

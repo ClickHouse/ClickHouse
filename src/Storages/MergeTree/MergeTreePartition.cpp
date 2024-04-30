@@ -485,7 +485,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// Implementation of modulo function was changed from 8bit result type to 16bit. For backward compatibility partition by expression is always
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
-        return KeyDescription::Builder(partition_key.additional_settings).buildFromAST(ast_copy, metadata_snapshot->columns, context);
+        return KeyDescription::Builder(partition_key.additional_columns).buildFromAST(ast_copy, metadata_snapshot->columns, context);
 
     return partition_key;
 }

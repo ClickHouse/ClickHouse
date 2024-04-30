@@ -74,7 +74,7 @@ bool isQueueModeColumn(const String & column_name)
         || column_name == QueuePartitionIdColumn::name;
 }
 
-void materializeQueueSortingColumns(Block & block, const String & partition_id, int64_t block_number)
+void materializeSortingColumnsForQueueMode(Block & block, const String & partition_id, int64_t block_number)
 {
     /// because queue columns are materialized
     /// in insert they will be filled with default value

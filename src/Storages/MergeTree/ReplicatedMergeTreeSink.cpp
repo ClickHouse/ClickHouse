@@ -341,7 +341,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             lock_holder = storage.allocateBlockNumber(partition_id, zookeeper, /*zookeeper_block_id_path=*/String{});
 
             /// after block_number is allocated let's materialize queue sorting key
-            materializeQueueSortingColumns(current_block.block, partition_id, lock_holder->getNumber());
+            materializeSortingColumnsForQueueMode(current_block.block, partition_id, lock_holder->getNumber());
         }
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
@@ -860,18 +860,18 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
         /// Will store current try block number lock here if lock_holder does not specified
-        std::optional<EphemeralLockInZooKeeper> current_try_block_number_lock;
+        std::optional<EphemeralLockInZooKeeper> current_block_number_lock;
 
         auto is_block_number_lock_provided = [&]() { return lock_holder && lock_holder->has_value(); };
 
         if (!is_block_number_lock_provided())
         {
             /// Allocate new block number and check for duplicates
-            current_try_block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path); /// 1 RTT
+            current_block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path); /// 1 RTT
 
             ThreadFuzzer::maybeInjectSleep();
 
-            if (!current_try_block_number_lock.has_value())
+            if (!current_block_number_lock.has_value())
             {
                 return CommitRetryContext::DUPLICATED_PART;
             }
@@ -882,7 +882,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 /// This is a restriction of Keeper. Here I would like to use vector because
                 /// I wanna keep extensibility for future optimization, for instance, using
                 /// cache to resolve conflicts in advance.
-                String conflict_path = current_try_block_number_lock->getConflictPath();
+                String conflict_path = current_block_number_lock->getConflictPath();
                 if (!conflict_path.empty())
                 {
                     LOG_TRACE(log, "Cannot get lock, the conflict path is {}", conflict_path);
@@ -894,6 +894,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else
         {
+            /// Explicitly check that current branch only for queue mode.
+            chassert(storage.getSettings()->queue_mode);
+
             /// Check node liveness and deduplicate
             auto conflict_path = checkLockAndDeduplicate(lock_holder->value(), block_id_path); /// 1 RTT
 
@@ -911,7 +914,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        auto & block_number_lock = is_block_number_lock_provided() ? *lock_holder : current_try_block_number_lock;
+        auto & block_number_lock = is_block_number_lock_provided() ? *lock_holder : current_block_number_lock;
         chassert(block_number_lock.has_value());
 
         auto block_number = block_number_lock->getNumber();
