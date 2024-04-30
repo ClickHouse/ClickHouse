@@ -93,7 +93,10 @@ enable_language(ASM)
 
 if(COMPILER_CLANG)
     add_definitions(-Wno-unused-command-line-argument)
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
+    # Note that s390x build uses mold linker
+    if(NOT ARCH_S390X)
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
+    endif()
 endif()
 
 if(ARCH_AMD64)
