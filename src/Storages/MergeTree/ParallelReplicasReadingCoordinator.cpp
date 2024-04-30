@@ -17,6 +17,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <fmt/core.h>
 #include <fmt/format.h>
+#include <Common/ThreadFuzzer.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -428,6 +429,7 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
 
     LOG_DEBUG(log, "Initial request from replica {}: {}", announcement.replica_num, announcement.describe());
 
+    ThreadFuzzer::maybeInjectSleep();
     initializeReadingState(std::move(announcement));
 
     if (replica_num >= stats.size())
@@ -739,6 +741,8 @@ size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
     LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
+
+    ThreadFuzzer::maybeInjectSleep();
 
     ParallelReadResponse response;
 

@@ -1,6 +1,6 @@
 #include <iterator>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
-
+#include <Common/ThreadFuzzer.h>
 
 namespace DB
 {
@@ -45,6 +45,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     if (no_more_tasks_available)
         return nullptr;
 
+    ThreadFuzzer::maybeInjectSleep();
     if (buffered_ranges.empty())
     {
         auto result = extension.callback(ParallelReadRequest(

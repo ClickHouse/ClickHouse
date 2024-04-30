@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
+#include <Common/ThreadFuzzer.h>
 
 namespace DB
 {
@@ -70,6 +71,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
         return std::nullopt;
     };
 
+    ThreadFuzzer::maybeInjectSleep();
     if (auto result = get_from_buffer(); result)
         return createTask(per_part_infos[task_idx], std::move(*result), previous_task);
 
