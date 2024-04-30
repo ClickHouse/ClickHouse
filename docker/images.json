@@ -1,6 +1,10 @@
 {
-    "docker/packager/binary": {
+    "docker/packager/binary-builder": {
         "name": "clickhouse/binary-builder",
+        "dependent": []
+    },
+    "docker/packager/cctools": {
+        "name": "clickhouse/cctools",
         "dependent": []
     },
     "docker/test/compatibility/centos": {
@@ -30,7 +34,6 @@
     "docker/test/util": {
         "name": "clickhouse/test-util",
         "dependent": [
-            "docker/packager/binary",
             "docker/test/base",
             "docker/test/fasttest"
         ]
@@ -62,13 +65,14 @@
         "dependent": []
     },
     "docker/test/integration/runner": {
-        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },
     "docker/test/fasttest": {
         "name": "clickhouse/fasttest",
-        "dependent": []
+        "dependent": [
+            "docker/packager/binary-builder"
+        ]
     },
     "docker/test/style": {
         "name": "clickhouse/style-test",

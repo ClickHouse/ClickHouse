@@ -11,16 +11,22 @@ on: # yamllint disable-line rule:truthy
       - 'master'
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
+      - name: DebugInfo
+        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Merge sync PR
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 sync_pr.py --merge || :
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -33,11 +39,9 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
-            echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --rebuild-all-binaries --outfile ${{ runner.temp }}/ci_run_data.json
-            echo "::endgroup::"
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
 
-            echo "::group::CI run configure results"
+            echo "::group::CI configuration"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
@@ -55,7 +59,6 @@ jobs:
     uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
-      set_latest: true
   StyleCheck:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -74,8 +77,6 @@ jobs:
       test_name: Compatibility check (amd64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
   CompatibilityCheckAarch64:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
@@ -84,8 +85,6 @@ jobs:
       test_name: Compatibility check (aarch64)
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
@@ -96,6 +95,14 @@ jobs:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: package_release
+      checkout_depth: 0
+      data: ${{ needs.RunConfig.outputs.data }}
+  BuilderDebReleaseCoverage:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: package_release_coverage
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebAarch64:
@@ -231,33 +238,34 @@ jobs:
       build_name: binary_riscv64
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
-  BuilderBinS390X:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_s390x
-      data: ${{ needs.RunConfig.outputs.data }}
-      checkout_depth: 0
+  # disabled because s390x refused to build in the migration to OpenSSL
+  # BuilderBinS390X:
+  #   needs: [RunConfig, BuilderDebRelease]
+  #   if: ${{ !failure() && !cancelled() }}
+  #   uses: ./.github/workflows/reusable_build.yml
+  #   with:
+  #     build_name: binary_s390x
+  #     data: ${{ needs.RunConfig.outputs.data }}
+  #     checkout_depth: 0
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
-  DockerServerImages:
+  DockerServerImage:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Docker server and keeper images
+      test_name: Docker server image
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      # FIXME: avoid using 0 checkout
-      checkout_depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
-      run_command: |
-        cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type head \
-          --image-repo clickhouse/clickhouse-server --image-path docker/server
-        python3 docker_server.py --release-type head \
-          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+  DockerKeeperImage:
+    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Docker keeper image
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -266,7 +274,6 @@ jobs:
     if: ${{ !cancelled() }}
     needs:
       - RunConfig
-      - BuilderBinRelease
       - BuilderDebAarch64
       - BuilderDebAsan
       - BuilderDebDebug
@@ -277,14 +284,8 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
   BuilderSpecialReport:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() }}
@@ -296,22 +297,18 @@ jobs:
       - BuilderBinFreeBSD
       - BuilderBinPPC64
       - BuilderBinRISCV64
-      - BuilderBinS390X
+      # - BuilderBinS390X # disabled because s390x refused to build in the migration to OpenSSL
       - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
       - BuilderBinAmd64Musl
+      - BuilderDebReleaseCoverage
+      - BuilderBinRelease
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
     needs:
@@ -321,11 +318,25 @@ jobs:
       - BuilderDebAarch64
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Debug
+        run: |
+          echo need with different filters
+          cat << 'EOF'
+          ${{ toJSON(needs) }}
+          ${{ toJSON(needs.*.result) }}
+          no failures ${{ !contains(needs.*.result, 'failure') }}
+          no skips ${{ !contains(needs.*.result, 'skipped') }}
+          no both ${{ !(contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
+          EOF
+      - name: Not ready
+        # fail the job to be able restart it
+        if: ${{ contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure') }}
+        run: exit 1
       - name: Check out repository code
+        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
       - name: Mark Commit Release Ready
+        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 mark_release_ready.py
@@ -363,36 +374,28 @@ jobs:
       test_name: Stateless tests (release)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseOrdinary:
+  FunctionalStatelessTestReleaseAnalyzerS3Replicated:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, DatabaseOrdinary)
+      test_name: Stateless tests (release, old analyzer, s3, DatabaseReplicated)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseDatabaseReplicated:
-    needs: [RunConfig, BuilderDebRelease]
+  FunctionalStatelessTestS3Debug:
+    needs: [RunConfig, BuilderDebDebug]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, DatabaseReplicated)
+      test_name: Stateless tests (debug, s3 storage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseAnalyzer:
-    needs: [RunConfig, BuilderDebRelease]
+  FunctionalStatelessTestS3Tsan:
+    needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, analyzer)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestReleaseS3:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (release, s3 storage)
+      test_name: Stateless tests (tsan, s3 storage)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestAarch64:
@@ -503,6 +506,55 @@ jobs:
       test_name: Stateful tests (debug)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
+  # Parallel replicas
+  FunctionalStatefulTestDebugParallelReplicas:
+    needs: [RunConfig, BuilderDebDebug]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (debug, ParallelReplicas)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatefulTestUBsanParallelReplicas:
+    needs: [RunConfig, BuilderDebUBsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (ubsan, ParallelReplicas)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatefulTestMsanParallelReplicas:
+    needs: [RunConfig, BuilderDebMsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (msan, ParallelReplicas)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatefulTestTsanParallelReplicas:
+    needs: [RunConfig, BuilderDebTsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (tsan, ParallelReplicas)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatefulTestAsanParallelReplicas:
+    needs: [RunConfig, BuilderDebAsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (asan, ParallelReplicas)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  FunctionalStatefulTestReleaseParallelReplicas:
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (release, ParallelReplicas)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
 ########################### ClickBench #######################################################
 ##############################################################################################
@@ -585,7 +637,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Integration tests (asan, analyzer)
+      test_name: Integration tests (asan, old analyzer)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:
@@ -710,6 +762,28 @@ jobs:
       runner_type: func-tester-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
+############################ SQLLOGIC TEST ###################################################
+##############################################################################################
+  SQLLogicTestRelease:
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Sqllogic test (release)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+##############################################################################################
+##################################### SQL TEST ###############################################
+##############################################################################################
+  SQLTest:
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: SQLTest
+      runner_type: fuzzer-unit-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+##############################################################################################
 ###################################### SQLANCER FUZZERS ######################################
 ##############################################################################################
   SQLancerTestRelease:
@@ -734,15 +808,14 @@ jobs:
       - MarkReleaseReady
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseOrdinary
-      - FunctionalStatelessTestReleaseDatabaseReplicated
-      - FunctionalStatelessTestReleaseAnalyzer
-      - FunctionalStatelessTestReleaseS3
+      - FunctionalStatelessTestReleaseAnalyzerS3Replicated
       - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan
       - FunctionalStatelessTestTsan
       - FunctionalStatelessTestMsan
       - FunctionalStatelessTestUBsan
+      - FunctionalStatelessTestS3Debug
+      - FunctionalStatelessTestS3Tsan
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
       - FunctionalStatefulTestAarch64
@@ -750,6 +823,12 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
+      - FunctionalStatefulTestDebugParallelReplicas
+      - FunctionalStatefulTestUBsanParallelReplicas
+      - FunctionalStatefulTestMsanParallelReplicas
+      - FunctionalStatefulTestTsanParallelReplicas
+      - FunctionalStatefulTestAsanParallelReplicas
+      - FunctionalStatefulTestReleaseParallelReplicas
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan
@@ -775,6 +854,8 @@ jobs:
       - UnitTestsReleaseClang
       - SQLancerTestRelease
       - SQLancerTestDebug
+      - SQLLogicTestRelease
+      - SQLTest
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code

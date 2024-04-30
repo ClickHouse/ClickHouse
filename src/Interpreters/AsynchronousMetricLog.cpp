@@ -1,4 +1,3 @@
-#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -6,21 +5,50 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Common/AsynchronousMetrics.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
 {
 
-NamesAndTypesList AsynchronousMetricLogElement::getNamesAndTypes()
+ColumnsDescription AsynchronousMetricLogElement::getColumnsDescription()
 {
-    return
+    ParserCodec codec_parser;
+    return ColumnsDescription
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"metric", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"value", std::make_shared<DataTypeFloat64>(),}
+        {
+            "hostname",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Hostname of the server executing the query."
+        },
+        {
+            "event_date",
+            std::make_shared<DataTypeDate>(),
+            parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Event date."
+        },
+        {
+            "event_time",
+            std::make_shared<DataTypeDateTime>(),
+            parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Event time."
+        },
+        {
+            "metric",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Metric name."
+        },
+        {
+            "value",
+            std::make_shared<DataTypeFloat64>(),
+            parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Metric value."
+        }
     };
 }
 

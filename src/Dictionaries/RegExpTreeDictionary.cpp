@@ -27,6 +27,7 @@
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/RegExpTreeDictionary.h>
 #include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 const std::string kRegExp = "regexp";
@@ -139,7 +141,7 @@ struct RegExpTreeDictionary::RegexTreeNode
     std::unordered_map<String, AttributeValue> attributes;
 };
 
-std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, Poco::Logger * logger)
+std::vector<StringPiece> createStringPieces(const String & value, int num_captures, const String & regex, LoggerPtr logger)
 {
     std::vector<StringPiece> result;
     String literal;
@@ -401,7 +403,7 @@ RegExpTreeDictionary::RegExpTreeDictionary(
       use_vectorscan(use_vectorscan_),
       flag_case_insensitive(flag_case_insensitive_),
       flag_dotall(flag_dotall_),
-      logger(&Poco::Logger::get("RegExpTreeDictionary"))
+      logger(getLogger("RegExpTreeDictionary"))
 {
     if (auto * ch_source = typeid_cast<ClickHouseDictionarySource *>(source_ptr.get()))
     {
@@ -438,7 +440,7 @@ public:
     constexpr bool collecting() const { return collect_values_limit != std::nullopt; }
 
     // Add a name-value pair to the collection if there's space
-    void add(const String & attr_name, Field field)
+    void add(const String & attr_name, Field field, std::unordered_set<String> * const defaults = nullptr)
     {
         if (collect_values_limit)
         {
@@ -453,15 +455,26 @@ public:
                     n_full_attributes++;
             }
         }
-        else if (!this->contains(attr_name))
+        else if (!this->contains(attr_name) && (!defaults || !defaults->contains(attr_name)))
         {
             (*this)[attr_name] = std::move(field);
             n_full_attributes++;
         }
     }
 
+    // Just occupy a space
+    void addDefault(const String & attr_name, std::unordered_set<String> * const defaults)
+    {
+        assert (!collect_values_limit);
+        if (!this->contains(attr_name) && !defaults->contains(attr_name))
+        {
+            defaults->insert(attr_name);
+            n_full_attributes++;
+        }
+    }
+
     // Checks if no more values can be added for a given attribute
-    inline bool full(const String & attr_name) const
+    inline bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
     {
         if (collect_values_limit)
         {
@@ -472,7 +485,7 @@ public:
         }
         else
         {
-            return this->contains(attr_name);
+            return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
         }
     }
 
@@ -550,6 +563,51 @@ bool RegExpTreeDictionary::setAttributes(
     return attributes_to_set.attributesFull() == attributes.size();
 }
 
+bool RegExpTreeDictionary::setAttributesShortCircuit(
+    UInt64 id,
+    AttributeCollector & attributes_to_set,
+    const String & data,
+    std::unordered_set<UInt64> & visited_nodes,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    std::unordered_set<String> * defaults) const
+{
+    if (visited_nodes.contains(id))
+        return attributes_to_set.attributesFull() == attributes.size();
+    visited_nodes.emplace(id);
+    const auto & node_attributes = regex_nodes.at(id)->attributes;
+    for (const auto & [name_, value] : node_attributes)
+    {
+        if (!attributes.contains(name_) || attributes_to_set.full(name_, defaults))
+            continue;
+
+        if (value.containsBackRefs())
+        {
+            auto [updated_str, use_default] = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
+            if (use_default)
+            {
+                // Back-ref processing failed.
+                // - If not collecting values, set the default value immediately while we're still on this node.
+                //   Otherwise, a value from a different node could take its place before we set it to the default value post-walk.
+                // - If collecting values, don't add anything. If we find no other matches for this attribute,
+                //   then we'll set its value to the default Array value later.
+                if (!attributes_to_set.collecting())
+                    attributes_to_set.addDefault(name_, defaults);
+            }
+            else
+                attributes_to_set.add(name_, parseStringToField(updated_str, attributes.at(name_).type), defaults);
+        }
+        else
+            attributes_to_set.add(name_, value.field, defaults);
+    }
+
+    auto parent_id = regex_nodes.at(id)->parent_id;
+    if (parent_id > 0)
+        setAttributesShortCircuit(parent_id, attributes_to_set, data, visited_nodes, attributes, defaults);
+
+    /// if all attributes are full, we can stop walking the tree
+    return attributes_to_set.attributesFull() == attributes.size();
+}
+
 /// a temp struct to store all the matched result.
 struct MatchContext
 {
@@ -619,9 +677,12 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     const ColumnString::Chars & keys_data,
     const ColumnString::Offsets & keys_offsets,
     const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    const std::unordered_map<String, ColumnPtr> & defaults,
+    DefaultMapOrFilter default_or_filter,
     std::optional<size_t> collect_values_limit) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
+
 
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
@@ -646,6 +707,18 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
         auto col_ptr = (collect_values_limit ? std::make_shared<DataTypeArray>(attr.type) : attr.type)->createColumn();
         col_ptr->reserve(keys_offsets.size());
         columns[name_] = std::move(col_ptr);
+    }
+
+    std::optional<RefDefaultMap> default_map;
+    std::optional<RefFilter> default_mask;
+    if (is_short_circuit)
+    {
+        default_mask = std::get<RefFilter>(default_or_filter).get();
+        default_mask.value().get().resize(keys_offsets.size());
+    }
+    else
+    {
+        default_map = std::get<RefDefaultMap>(default_or_filter).get();
     }
 
     UInt64 offset = 0;
@@ -714,30 +787,65 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
 
         String str = String(reinterpret_cast<const char *>(keys_data.data()) + offset, length);
 
-        for (auto item : match_result.matched_idx_sorted_list)
+        if (is_short_circuit)
         {
-            UInt64 id = item.second;
-            if (!is_valid(id))
-                continue;
-            if (visited_nodes.contains(id))
-                continue;
-            if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes, defaults, key_idx))
-                break;
-        }
+            std::unordered_set<String> defaults;
 
-        for (const auto & [name_, attr] : attributes)
+            for (auto item : match_result.matched_idx_sorted_list)
+            {
+                UInt64 id = item.second;
+                if (!is_valid(id))
+                    continue;
+                if (visited_nodes.contains(id))
+                    continue;
+                if (setAttributesShortCircuit(id, attributes_to_set, str, visited_nodes, attributes, &defaults))
+                    break;
+            }
+
+            for (const auto & [name_, attr] : attributes)
+            {
+                if (attributes_to_set.contains(name_))
+                    continue;
+
+                default_mask.value().get()[key_idx] = 1;
+            }
+
+            /// insert to columns
+            for (const auto & [name_, value] : attributes_to_set)
+            {
+                columns[name_]->insert(value);
+                default_mask.value().get()[key_idx] = 0;
+            }
+        }
+        else
         {
-            if (attributes_to_set.contains(name_))
-                continue;
+            for (auto item : match_result.matched_idx_sorted_list)
+            {
+                UInt64 id = item.second;
+                if (!is_valid(id))
+                    continue;
+                if (visited_nodes.contains(id))
+                    continue;
+                if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes,
+                        default_map.value().get(), key_idx))
+                    break;
+            }
 
-            DefaultValueProvider default_value(
-                collect_values_limit ? DataTypeArray(attr.type).getDefault() : attr.null_value, defaults.at(name_));
-            columns[name_]->insert(default_value.getDefaultValue(key_idx));
+            for (const auto & [name_, attr] : attributes)
+            {
+                if (attributes_to_set.contains(name_))
+                    continue;
+
+                DefaultValueProvider default_value(
+                    collect_values_limit ? DataTypeArray(attr.type).getDefault() : attr.null_value,
+                        default_map.value().get().at(name_));
+                columns[name_]->insert(default_value.getDefaultValue(key_idx));
+            }
+
+            /// insert to columns
+            for (const auto & [name_, value] : attributes_to_set)
+                columns[name_]->insert(value);
         }
-
-        /// insert to columns
-        for (const auto & [name_, value] : attributes_to_set)
-            columns[name_]->insert(value);
 
         offset = key_offset;
     }
@@ -800,9 +908,12 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     const DataTypes & result_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const Columns & default_values_columns,
+    DefaultsOrFilter defaults_or_filter,
     std::optional<size_t> collect_values_limit) const
 {
+    bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+
     /// valid check
     if (key_columns.size() != 1)
     {
@@ -827,16 +938,23 @@ Columns RegExpTreeDictionary::getColumnsImpl(
         }
         const auto & attribute = structure.getAttribute(attribute_names[i], attribute_type);
         attributes.emplace(attribute.name, attribute);
-        defaults[attribute.name] = default_values_columns[i];
+        if (!is_short_circuit)
+        {
+            const Columns & default_values_columns = std::get<RefDefaults>(defaults_or_filter).get();
+            defaults[attribute.name] = default_values_columns[i];
+        }
     }
 
     /// calculate matches
     const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
+    if (key_column == nullptr)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a ColumnString column");
+
     const auto & columns_map = match(
         key_column->getChars(),
         key_column->getOffsets(),
         attributes,
-        defaults,
+        is_short_circuit ? std::get<RefFilter>(defaults_or_filter).get()/*default_mask*/ : DefaultMapOrFilter{defaults},
         collect_values_limit);
 
     Columns result;

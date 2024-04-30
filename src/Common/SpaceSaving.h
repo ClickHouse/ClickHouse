@@ -206,6 +206,9 @@ public:
      */
     void merge(const Self & rhs)
     {
+        if (!rhs.size())
+            return;
+
         UInt64 m1 = 0;
         UInt64 m2 = 0;
 

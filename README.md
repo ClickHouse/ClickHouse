@@ -28,23 +28,25 @@ curl https://clickhouse.com/ | sh
 * [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlighting, powered by github.dev.
-* [Static Analysis (SonarCloud)](https://sonarcloud.io/project/issues?resolved=false&id=ClickHouse_ClickHouse) proposes C++ quality improvements.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
+
+## Monthly Release & Community Call
+
+Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release. If you are interested in sharing what you've built on ClickHouse, let us know.
+
+* [v24.3 Community Call](https://clickhouse.com/company/events/v24-3-community-release-call) - Mar 26
+* [v24.4 Community Call](https://clickhouse.com/company/events/v24-4-community-release-call) - Apr 30
 
 ## Upcoming Events
 
-* [**ClickHouse Meetup in Berlin**](https://www.meetup.com/clickhouse-berlin-user-group/events/296488501/) - Nov 30
-* [**ClickHouse Meetup in NYC**](https://www.meetup.com/clickhouse-new-york-user-group/events/296488779/) - Dec 11
-* [**ClickHouse Meetup in Sydney**](https://www.meetup.com/clickhouse-sydney-user-group/events/297638812/) - Dec 12
-* [**ClickHouse Meetup in Boston**](https://www.meetup.com/clickhouse-boston-user-group/events/296488840/) - Dec 12
+Keep an eye out for upcoming meetups and events around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
-Also, keep an eye out for upcoming meetups around the world. Somewhere else you want us to be? Please feel free to reach out to tyler <at> clickhouse <dot> com.
+* [ClickHouse Meetup in Dubai](https://www.meetup.com/clickhouse-dubai-meetup-group/events/299629189/) - May 28
+
 
 ## Recent Recordings
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v23.10 Release Webinar**](https://www.youtube.com/watch?v=PGQS6uPb970) All the features of 23.10, one convenient video! Watch it now!
-* **All release webinar recordings**: [YouTube playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU)
-
+* **Recording available**: [**v24.2 Release Call**](https://www.youtube.com/watch?v=iN2y-TK8f3A) All the features of 24.2, one convenient video! Watch it now!
   
  ## Interested in joining ClickHouse and making it your full-time job? 
   

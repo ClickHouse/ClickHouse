@@ -40,7 +40,7 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
                    " RANGE(MIN second_column MAX third_column)";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     EXPECT_EQ(create->getTable(), "dict1");
     EXPECT_EQ(create->getDatabase(), "test");
@@ -136,7 +136,7 @@ TEST(ParserDictionaryDDL, AttributesWithMultipleProperties)
                    " SOURCE(CLICKHOUSE(HOST 'localhost'))";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     EXPECT_EQ(create->getTable(), "dict2");
     EXPECT_EQ(create->getDatabase(), "");
@@ -183,7 +183,7 @@ TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
                    " LIFETIME(300)";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
 
     /// test attributes
@@ -238,7 +238,7 @@ TEST(ParserDictionaryDDL, NestedSource)
                    " RANGE(MIN second_column MAX third_column)";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     EXPECT_EQ(create->getTable(), "dict4");
     EXPECT_EQ(create->getDatabase(), "");
@@ -286,7 +286,7 @@ TEST(ParserDictionaryDDL, Formatting)
                    " RANGE(MIN second_column MAX third_column)";
 
     ParserCreateDictionaryQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     auto str = serializeAST(*create);
     EXPECT_EQ(str, "CREATE DICTIONARY test.dict5 (`key_column1` UInt64 DEFAULT 1 HIERARCHICAL INJECTIVE, `key_column2` String DEFAULT '', `second_column` UInt8 EXPRESSION intDiv(50, rand() % 1000), `third_column` UInt8) PRIMARY KEY key_column1, key_column2 SOURCE(MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA (HOST '127.0.0.1' PRIORITY 1) PASSWORD '')) LIFETIME(MIN 1 MAX 10) LAYOUT(CACHE(SIZE_IN_CELLS 50)) RANGE(MIN second_column MAX third_column)");
@@ -297,23 +297,27 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     String input1 = "DROP DICTIONARY test.dict1";
 
     ParserDropQuery parser;
-    ASTPtr ast1 = parseQuery(parser, input1.data(), input1.data() + input1.size(), "", 0, 0);
+    ASTPtr ast1 = parseQuery(parser, input1.data(), input1.data() + input1.size(), "", 0, 0, 0);
     ASTDropQuery * drop1 = ast1->as<ASTDropQuery>();
 
     EXPECT_TRUE(drop1->is_dictionary);
-    EXPECT_EQ(drop1->getDatabase(), "test");
-    EXPECT_EQ(drop1->getTable(), "dict1");
+    auto & database_and_tables1 = drop1->database_and_tables->as<ASTExpressionList &>();
+    auto identifier1 = dynamic_pointer_cast<ASTTableIdentifier>(database_and_tables1.children[0]);
+    EXPECT_EQ(identifier1->getDatabaseName(), "test");
+    EXPECT_EQ(identifier1->shortName(), "dict1");
     auto str1 = serializeAST(*drop1);
     EXPECT_EQ(input1, str1);
 
     String input2 = "DROP DICTIONARY IF EXISTS dict2";
 
-    ASTPtr ast2 = parseQuery(parser, input2.data(), input2.data() + input2.size(), "", 0, 0);
+    ASTPtr ast2 = parseQuery(parser, input2.data(), input2.data() + input2.size(), "", 0, 0, 0);
     ASTDropQuery * drop2 = ast2->as<ASTDropQuery>();
 
     EXPECT_TRUE(drop2->is_dictionary);
-    EXPECT_EQ(drop2->getDatabase(), "");
-    EXPECT_EQ(drop2->getTable(), "dict2");
+    auto & database_and_tables2 = drop2->database_and_tables->as<ASTExpressionList &>();
+    auto identifier2 = dynamic_pointer_cast<ASTTableIdentifier>(database_and_tables2.children[0]);
+    EXPECT_EQ(identifier2->getDatabaseName(), "");
+    EXPECT_EQ(identifier2->shortName(), "dict2");
     auto str2 = serializeAST(*drop2);
     EXPECT_EQ(input2, str2);
 }
@@ -323,7 +327,7 @@ TEST(ParserDictionaryDDL, ParsePropertiesQueries)
     String input1 = "SHOW CREATE DICTIONARY test.dict1";
 
     ParserTablePropertiesQuery parser;
-    ASTPtr ast1 = parseQuery(parser, input1.data(), input1.data() + input1.size(), "", 0, 0);
+    ASTPtr ast1 = parseQuery(parser, input1.data(), input1.data() + input1.size(), "", 0, 0, 0);
     ASTShowCreateDictionaryQuery * show1 = ast1->as<ASTShowCreateDictionaryQuery>();
 
     EXPECT_EQ(show1->getTable(), "dict1");
@@ -332,7 +336,7 @@ TEST(ParserDictionaryDDL, ParsePropertiesQueries)
 
     String input2 = "EXISTS DICTIONARY dict2";
 
-    ASTPtr ast2 = parseQuery(parser, input2.data(), input2.data() + input2.size(), "", 0, 0);
+    ASTPtr ast2 = parseQuery(parser, input2.data(), input2.data() + input2.size(), "", 0, 0, 0);
     ASTExistsDictionaryQuery * show2 = ast2->as<ASTExistsDictionaryQuery>();
 
     EXPECT_EQ(show2->getTable(), "dict2");

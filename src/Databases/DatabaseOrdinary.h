@@ -51,11 +51,13 @@ public:
 
     void waitTableStarted(const String & name) const override;
 
-    void waitDatabaseStarted(bool no_throw) const override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    Strings getAllTableNames(ContextPtr context) const override;
 
     void alterTable(
         ContextPtr context,
@@ -76,10 +78,15 @@ protected:
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);
-    LoadTaskPtr startup_database_task;
+    LoadTaskPtr startup_database_task TSA_GUARDED_BY(mutex);
     std::atomic<size_t> total_tables_to_startup{0};
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;
+
+private:
+    void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
+    void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
+    String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);
 };
 
 }

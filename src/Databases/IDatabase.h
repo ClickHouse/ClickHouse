@@ -77,17 +77,12 @@ private:
     Tables tables;
     Tables::iterator it;
 
-    // Tasks to wait before returning a table
-    using Tasks = std::unordered_map<String, LoadTaskPtr>;
-    Tasks tasks;
-
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other) noexcept
     : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
-        std::swap(tasks, other.tasks);
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
@@ -110,17 +105,7 @@ public:
 
     const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const override
-    {
-        if (auto task = tasks.find(it->first); task != tasks.end())
-            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task->second);
-        return it->second;
-    }
-
-    void setLoadTasks(const Tasks & tasks_)
-    {
-        tasks = tasks_;
-    }
+    const StoragePtr & table() const override { return it->second; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
@@ -219,8 +204,11 @@ public:
     virtual void waitTableStarted(const String & /*name*/) const {}
 
     /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
-    /// NOTE: `no_throw` wait should be used during shutdown to (1) prevent race with startup and (2) avoid exceptions if startup failed
-    virtual void waitDatabaseStarted(bool /*no_throw*/) const {}
+    virtual void waitDatabaseStarted() const {}
+
+    /// Cancels all load and startup tasks and waits for currently running tasks to finish.
+    /// Should be used during shutdown to (1) prevent race with startup, (2) stop any not yet started task and (3) avoid exceptions if startup failed
+    virtual void stopLoading() {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -241,7 +229,18 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const = 0; /// NOLINT
+    /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
+    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
+
+    /// Returns list of table names.
+    virtual Strings getAllTableNames(ContextPtr context) const
+    {
+        // NOTE: This default implementation wait for all tables to be loaded and started up. It should be reimplemented for databases that support async loading.
+        Strings result;
+        for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
+            result.emplace_back(table_it->name());
+        return result;
+    }
 
     /// Is the database empty.
     virtual bool empty() const = 0;
@@ -404,7 +403,7 @@ public:
 
     virtual void stopReplication()
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", getEngineName());
     }
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }

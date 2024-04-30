@@ -213,6 +213,7 @@ struct MapToSubcolumnAdapter : public MapAdapterBase<MapToSubcolumnAdapter<Name,
 class FunctionMapKeyLike : public IFunction
 {
 public:
+    FunctionMapKeyLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
     String getName() const override { return "mapKeyLike"; }
     size_t getNumberOfArguments() const override { return 3; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }

@@ -3,14 +3,14 @@ slug: /en/operations/system-tables/asynchronous_metric_log
 ---
 # asynchronous_metric_log
 
-Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. Enabled by default.
+Contains the historical values for `system.asynchronous_metrics`, which are saved once per time interval (one second by default). Enabled by default.
 
 Columns:
 
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
-- `name` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
 - `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
 
 **Example**

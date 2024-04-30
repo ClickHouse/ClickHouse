@@ -45,8 +45,7 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
             format,
             columns,
             ConstraintsDescription{},
-            compression_method,
-            structure != "auto");
+            compression_method);
     }
     return storage;
 }

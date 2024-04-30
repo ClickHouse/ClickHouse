@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
@@ -9,6 +10,8 @@
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/PageCache.h>
+#include <Common/HostResolvePool.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -19,7 +22,6 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
@@ -35,7 +37,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
-#include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -43,7 +44,6 @@
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
-#include <Databases/IDatabase.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
@@ -54,10 +54,13 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageAzureBlob.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
 #include <base/coverage.h>
 #include <csignal>
@@ -70,6 +73,10 @@
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
+#endif
+
+#if USE_JEMALLOC
+#include <Common/Jemalloc.h>
 #endif
 
 #include "config.h"
@@ -96,7 +103,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
@@ -108,6 +114,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
     extern const StorageActionBlockType Cleanup;
+    extern const StorageActionBlockType ViewRefresh;
 }
 
 
@@ -165,6 +172,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
     else if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
+    else if (action_type == ActionLocks::ViewRefresh)
+        return AccessType::SYSTEM_VIEWS;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -213,7 +222,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 
 void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType action_type, bool start,
                                                        const String & database_name, const DatabasePtr & database,
-                                                       const ContextPtr & local_context, Poco::Logger * log)
+                                                       const ContextPtr & local_context, LoggerPtr log)
 {
     auto manager = local_context->getActionLocksManager();
     auto access = local_context->getAccess();
@@ -243,7 +252,7 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
+        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(getLogger("InterpreterSystemQuery"))
 {
 }
 
@@ -326,8 +335,15 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
+            HostResolversPool::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context->reloadClusterConfig();
+            break;
+        }
+        case Type::DROP_CONNECTIONS_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
+            HTTPConnectionPools::instance().dropCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -354,44 +370,49 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
             getContext()->clearQueryCache();
             break;
-#if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
+#if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->clear();
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for JIT compilation");
 #endif
-#if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
+#if USE_AWS_S3
             getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
             S3::ClientCacheRegistry::instance().clearCacheForAll();
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3");
 #endif
 
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+            const auto user_id = FileCache::getCommonUser().user_id;
 
             if (query.filesystem_cache_name.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeAllReleasable();
+                    cache_data->cache->removeAllReleasable(user_id);
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 if (query.key_to_drop.empty())
                 {
-                    cache->removeAllReleasable();
+                    cache->removeAllReleasable(user_id);
                 }
                 else
                 {
                     auto key = FileCacheKey::fromKeyString(query.key_to_drop);
                     if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value());
+                        cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
                     else
-                        cache->removeKey(key);
+                        cache->removeKey(key, user_id);
                 }
             }
             break;
@@ -416,7 +437,9 @@ BlockIO InterpreterSystemQuery::execute()
                 for (const auto & file_segment : file_segments)
                 {
                     size_t i = 0;
-                    const auto path = cache->getPathInLocalCache(file_segment.key, file_segment.offset, file_segment.kind);
+                    const auto path = cache->getFileSegmentPath(
+                        file_segment.key, file_segment.offset, file_segment.kind,
+                        FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
                     res_columns[i++]->insert(file_segment.downloaded_size);
@@ -447,6 +470,13 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DISK_METADATA_CACHE:
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        }
+        case Type::DROP_PAGE_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
+
+            getContext()->dropPageCache();
+            break;
         }
         case Type::DROP_SCHEMA_CACHE:
         {
@@ -551,6 +581,14 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            auto * asynchronous_metrics = system_context->getAsynchronousMetrics();
+            if (asynchronous_metrics)
+                asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
+            break;
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -604,6 +642,23 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_CLEANUP:
             startStopAction(ActionLocks::Cleanup, true);
+            break;
+        case Type::START_VIEW:
+        case Type::START_VIEWS:
+            startStopAction(ActionLocks::ViewRefresh, true);
+            break;
+        case Type::STOP_VIEW:
+        case Type::STOP_VIEWS:
+            startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::REFRESH_VIEW:
+            getRefreshTask()->run();
+            break;
+        case Type::CANCEL_VIEW:
+            getRefreshTask()->cancel();
+            break;
+        case Type::TEST_VIEW:
+            getRefreshTask()->setFakeTime(query.fake_time_for_view);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -665,7 +720,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            auto * queue = getContext()->getAsynchronousInsertQueue();
+            auto * queue = getContext()->tryGetAsynchronousInsertQueue();
             if (!queue)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
@@ -676,10 +731,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
+            CannotAllocateThreadFaultInjector::setFaultProbability(0);
             break;
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
+            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
             break;
         case Type::UNFREEZE:
         {
@@ -700,12 +757,53 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::WAIT_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            LOG_TRACE(log, "waiting for failpoint {}", query.fail_point_name);
+            FailPointInjection::pauseFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "finished failpoint {}", query.fail_point_name);
+            break;
+        }
         case Type::RESET_COVERAGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
             break;
         }
+
+#if USE_JEMALLOC
+        case Type::JEMALLOC_PURGE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            purgeJemallocArenas();
+            break;
+        }
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(true);
+            break;
+        }
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(false);
+            break;
+        }
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            flushJemallocProfile("/tmp/jemalloc_clickhouse");
+            break;
+        }
+#else
+        case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc");
+#endif
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -766,7 +864,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -776,7 +874,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         system_context->getGlobalContext(),
         columns,
         constraints,
-        false);
+        LoadingStrictnessLevel::ATTACH);
 
     database->attachTable(system_context, replica.table_name, table, data_path);
 
@@ -1018,9 +1116,11 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode))
+
+        std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, replicas))
         {
-            LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
+            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
                     "See the 'receive_timeout' setting", table_id.getNameForLogs());
         }
@@ -1076,12 +1176,16 @@ void InterpreterSystemQuery::syncTransactionLog()
 }
 
 
-void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
+    SettingsChanges settings_changes;
+    if (query.query_settings)
+        settings_changes = query.query_settings->as<ASTSetQuery>()->changes;
+
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
-        storage_distributed->flushClusterNodesAllData(getContext());
+        storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
@@ -1090,6 +1194,17 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
+}
+
+RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
+{
+    auto ctx = getContext();
+    ctx->checkAccess(AccessType::SYSTEM_VIEWS);
+    auto task = ctx->getRefreshSet().getTask(table_id);
+    if (!task)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
+    return task;
 }
 
 
@@ -1109,22 +1224,20 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_DNS_CACHE:
+        case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
-#if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
-#endif
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
+        case Type::DROP_PAGE_CACHE:
         case Type::DROP_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
-#if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
-#endif
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
@@ -1158,6 +1271,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_USERS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
+            break;
+        }
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
             break;
         }
         case Type::STOP_MERGES:
@@ -1241,6 +1359,20 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_VIEWS:
+        case Type::STOP_VIEW:
+        case Type::STOP_VIEWS:
+        case Type::CANCEL_VIEW:
+        case Type::TEST_VIEW:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_VIEWS);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_VIEWS, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::DROP_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
         {
@@ -1321,15 +1453,33 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_LISTEN);
             break;
         }
+        case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
         case Type::END: break;
     }
     return required_access;
+}
+
+void registerInterpreterSystemQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSystemQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterSystemQuery", create_fn);
 }
 
 }

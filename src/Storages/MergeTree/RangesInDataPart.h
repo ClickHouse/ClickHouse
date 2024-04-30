@@ -19,8 +19,8 @@ using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 /// they look natural here because we can fully serialize and then deserialize original DataPart class.
 struct RangesInDataPartDescription
 {
-    MergeTreePartInfo info;
-    MarkRanges ranges;
+    MergeTreePartInfo info{};
+    MarkRanges ranges{};
     size_t rows = 0;
 
     void serialize(WriteBuffer & out) const;
@@ -67,7 +67,7 @@ struct RangesInDataPart
 
 struct RangesInDataParts: public std::vector<RangesInDataPart>
 {
-    using std::vector<RangesInDataPart>::vector;
+    using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 
     RangesInDataPartsDescription getDescriptions() const;
 

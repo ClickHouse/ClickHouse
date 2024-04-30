@@ -1,7 +1,8 @@
-#include <Common/Arena.h>
-#include <Core/Field.h>
-#include <Columns/IColumnDummy.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/IColumnDummy.h>
+#include <Core/Field.h>
+#include <Common/Arena.h>
+#include <Common/iota.h>
 
 
 namespace DB
@@ -34,7 +35,7 @@ bool IColumnDummy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
 }
 
-StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const
 {
     /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
     char * res = arena.allocContinue(1, begin);
@@ -87,8 +88,7 @@ void IColumnDummy::getPermutation(IColumn::PermutationSortDirection /*direction*
                 size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
     res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
+    iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
 ColumnPtr IColumnDummy::replicate(const Offsets & offsets) const

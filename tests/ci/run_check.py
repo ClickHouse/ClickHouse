@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-import atexit
-import sys
 import logging
+import sys
 from typing import Tuple
 
 from github import Github
 
+from cherry_pick import Labels
 from commit_status_helper import (
     CI_STATUS_NAME,
     create_ci_report,
@@ -14,17 +14,16 @@ from commit_status_helper import (
     post_commit_status,
     post_labels,
     remove_labels,
-    update_mergeable_check,
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
-from pr_info import FORCE_TESTS_LABEL, PRInfo
 from lambda_shared_package.lambda_shared.pr import (
     CATEGORY_TO_LABEL,
     TRUSTED_CONTRIBUTORS,
     check_pr_description,
 )
-from report import FAILURE
+from pr_info import PRInfo
+from report import FAILURE, PENDING, SUCCESS
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -35,6 +34,8 @@ CAN_BE_TESTED_LABEL = "can be tested"
 FEATURE_LABEL = "pr-feature"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 PR_CHECK = "PR Check"
+# pr-bugfix autoport can lead to issues in releases, let's do ci fixes only
+AUTO_BACKPORT_LABELS = ["pr-ci"]
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
@@ -63,9 +64,6 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
-    if FORCE_TESTS_LABEL in pr_info.labels:
-        print(f"Label '{FORCE_TESTS_LABEL}' set, forcing remaining checks")
-        return True, f"Labeled '{FORCE_TESTS_LABEL}'"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
@@ -99,7 +97,6 @@ def main():
     description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, commit, pr_info, PR_CHECK)
 
     description_error, category = check_pr_description(pr_info.body, GITHUB_REPOSITORY)
     pr_labels_to_add = []
@@ -122,6 +119,15 @@ def main():
         pr_labels_to_add.append(SUBMODULE_CHANGED_LABEL)
     elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
         pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
+
+    if any(label in AUTO_BACKPORT_LABELS for label in pr_labels_to_add):
+        backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
+        pr_labels_to_add += [
+            label for label in backport_labels if label not in pr_info.labels
+        ]
+        print(
+            f"::notice :: Add backport labels [{backport_labels}] for a given PR category"
+        )
 
     print(f"Change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
     if pr_labels_to_add:
@@ -146,7 +152,7 @@ def main():
         )
         post_commit_status(
             commit,
-            "failure",
+            FAILURE,
             url,
             format_description(description_error),
             PR_CHECK,
@@ -170,19 +176,39 @@ def main():
         # allow the workflow to continue
 
     if not can_run:
+        post_commit_status(
+            commit,
+            FAILURE,
+            "",
+            description,
+            PR_CHECK,
+            pr_info,
+        )
         print("::notice ::Cannot run")
         sys.exit(1)
 
-    ci_report_url = create_ci_report(pr_info, [])
-    print("::notice ::Can run")
     post_commit_status(
         commit,
-        "pending",
-        ci_report_url,
-        description,
-        CI_STATUS_NAME,
+        SUCCESS,
+        "",
+        "ok",
+        PR_CHECK,
         pr_info,
     )
+
+    ci_report_url = create_ci_report(pr_info, [])
+    print("::notice ::Can run")
+
+    if not pr_info.is_merge_queue:
+        # we need clean CI status for MQ to merge (no pending statuses)
+        post_commit_status(
+            commit,
+            PENDING,
+            ci_report_url,
+            description,
+            CI_STATUS_NAME,
+            pr_info,
+        )
 
 
 if __name__ == "__main__":

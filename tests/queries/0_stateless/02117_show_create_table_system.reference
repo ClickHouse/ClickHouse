@@ -195,6 +195,8 @@ CREATE TABLE system.disks
     `unreserved_space` UInt64,
     `keep_free_space` UInt64,
     `type` String,
+    `object_storage_type` String,
+    `metadata_type` String,
     `is_encrypted` UInt8,
     `is_read_only` UInt8,
     `is_write_once` UInt8,
@@ -686,6 +688,9 @@ CREATE TABLE system.projection_parts
     `rows_where_ttl_info.expression` Array(String),
     `rows_where_ttl_info.min` Array(DateTime),
     `rows_where_ttl_info.max` Array(DateTime),
+    `is_broken` UInt8,
+    `exception_code` Int32,
+    `exception` String,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name
@@ -762,7 +767,8 @@ CREATE TABLE system.quota_limits
     `max_read_rows` Nullable(UInt64),
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -792,7 +798,9 @@ CREATE TABLE system.quota_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `failed_sequential_authentications` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -836,7 +844,9 @@ CREATE TABLE system.quotas_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64),
+    `failed_sequential_authentications` Nullable(UInt64),
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -871,8 +881,8 @@ CREATE TABLE system.replicas
     `log_pointer` UInt64,
     `last_queue_update` DateTime,
     `absolute_delay` UInt64,
-    `total_replicas` UInt8,
-    `active_replicas` UInt8,
+    `total_replicas` UInt32,
+    `active_replicas` UInt32,
     `lost_part_count` UInt64,
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
@@ -1075,6 +1085,7 @@ CREATE TABLE system.tables
     `data_paths` Array(String),
     `metadata_path` String,
     `metadata_modification_time` DateTime,
+    `metadata_version` Int32,
     `dependencies_database` Array(String),
     `dependencies_table` Array(String),
     `create_table_query` String,

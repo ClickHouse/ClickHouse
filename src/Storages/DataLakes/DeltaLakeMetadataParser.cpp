@@ -282,11 +282,10 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
             format_settings.date_time_overflow_behavior,
             /* case_insensitive_column_matching */false);
 
-        Chunk res;
         std::shared_ptr<arrow::Table> table;
         THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
-        column_reader.arrowTableToCHChunk(res, table, reader->parquet_reader()->metadata()->num_rows());
+        Chunk res = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows());
         const auto & res_columns = res.getColumns();
 
         if (res_columns.size() != 2)
@@ -314,7 +313,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
         return version;
     }
 
-    Poco::Logger * log = &Poco::Logger::get("DeltaLakeMetadataParser");
+    LoggerPtr log = getLogger("DeltaLakeMetadataParser");
 };
 
 

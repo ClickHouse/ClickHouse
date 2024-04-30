@@ -1,17 +1,19 @@
 #include <Core/SettingsFields.h>
-
 #include <Core/Field.h>
+#include <Core/AccurateComparison.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
 #include <boost/algorithm/string/predicate.hpp>
+#include <cctz/time_zone.h>
 
 #include <cmath>
+
 
 namespace DB
 {
@@ -20,6 +22,8 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -48,9 +52,51 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
+        {
             return stringToNumber<T>(f.get<const String &>());
+        }
+        else if (f.getType() == Field::Types::UInt64)
+        {
+            T result;
+            if (!accurate::convertNumeric(f.get<UInt64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            return result;
+        }
+        else if (f.getType() == Field::Types::Int64)
+        {
+            T result;
+            if (!accurate::convertNumeric(f.get<Int64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            return result;
+        }
+        else if (f.getType() == Field::Types::Bool)
+        {
+            return T(f.get<bool>());
+        }
+        else if (f.getType() == Field::Types::Float64)
+        {
+            Float64 x = f.get<Float64>();
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                return T(x);
+            }
+            else
+            {
+                if (!isFinite(x))
+                {
+                    /// Conversion of infinite values to integer is undefined.
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
+                }
+                else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                {
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+                }
+                else
+                    return T(x);
+            }
+        }
         else
-            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
     }
 
     Map stringToMap(const String & str)
@@ -174,7 +220,7 @@ namespace
         if (f.getType() == Field::Types::String)
             return stringToMaxThreads(f.get<const String &>());
         else
-            return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
+            return fieldToNumber<UInt64>(f);
     }
 }
 
@@ -225,6 +271,10 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
+        if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
+
         return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
     }
 
@@ -496,6 +546,13 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
+{
+    cctz::time_zone validated_tz;
+    if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
+}
+
 String SettingFieldCustom::toString() const
 {
     return value.dump();
@@ -516,6 +573,42 @@ void SettingFieldCustom::readBinary(ReadBuffer & in)
     String str;
     readStringBinary(str, in);
     parseFromString(str);
+}
+
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x) : SettingFieldUInt64(x)
+{
+    checkValueNonZero();
+}
+
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(const DB::Field & f) : SettingFieldUInt64(f)
+{
+    checkValueNonZero();
+}
+
+SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(UInt64 x)
+{
+    SettingFieldUInt64::operator=(x);
+    checkValueNonZero();
+    return *this;
+}
+
+SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(const DB::Field & f)
+{
+    SettingFieldUInt64::operator=(f);
+    checkValueNonZero();
+    return *this;
+}
+
+void SettingFieldNonZeroUInt64::parseFromString(const String & str)
+{
+    SettingFieldUInt64::parseFromString(str);
+    checkValueNonZero();
+}
+
+void SettingFieldNonZeroUInt64::checkValueNonZero() const
+{
+    if (value == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
 }
 
 }

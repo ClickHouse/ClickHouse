@@ -1,12 +1,9 @@
 #pragma once
 
 #include <string>
-#include <map>
 #include <unordered_map>
 #include <vector>
 #include <memory>
-#include <utility>
-#include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/GinIndexStore.h>
@@ -170,7 +167,9 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
+
+    virtual bool isVectorSearch() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const

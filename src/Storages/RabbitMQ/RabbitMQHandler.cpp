@@ -8,7 +8,7 @@ namespace DB
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
  */
-RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
+RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_) :
     AMQP::LibUvHandler(loop_),
     loop(loop_),
     log(log_),

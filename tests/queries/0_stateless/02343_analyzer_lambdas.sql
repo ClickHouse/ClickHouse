@@ -65,5 +65,31 @@ SELECT 'Lambda carrying';
 WITH (functor, x) -> functor(x) AS lambda, x -> x + 1 AS functor_1, x -> toString(x) AS functor_2 SELECT lambda(functor_1, 1), lambda(functor_2, 1);
 WITH (functor, x) -> functor(x) AS lambda, x -> x + 1 AS functor_1, x -> toString(x) AS functor_2 SELECT lambda(functor_1, id), lambda(functor_2, id) FROM test_table;
 
+
+SELECT 'Lambda legacy syntax';
+
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]);
+
+WITH 222 AS lambda
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]);
+
+SELECT arrayMap(lambda((x,), x + 1), [1, 2, 3]);
+
+SELECT arraySort(lambda((x, y), y), ['world', 'hello'], [2, 1]);
+
+WITH 222 AS lambda
+SELECT arrayMap(lambda((x, ), x + 1), [1, 2, 3]);
+
+WITH x -> x + 1 AS lambda
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]), lambda(1);
+
+-- lambda(tuple(x), x + 1) parsed as lambda definion but not as call of lambda defined in WITH
+WITH (x, y) -> y AS lambda
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]), lambda(tuple(x), x + 1), 1 AS x; -- { serverError BAD_ARGUMENTS }
+
+WITH (x, y) -> y AS lambda2
+SELECT arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]), lambda2(tuple(x), x + 1), 1 AS x;
+
+
 DROP TABLE test_table_tuple;
 DROP TABLE test_table;

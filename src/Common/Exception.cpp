@@ -1,26 +1,27 @@
-#include "Exception.h"
-
-#include <algorithm>
-#include <cstdlib>
-#include <cstring>
-#include <filesystem>
-#include <cxxabi.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/demangle.h>
-#include <Poco/String.h>
+#include <Common/AtomicLogger.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/config_version.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
-#include <Common/config_version.h>
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <cxxabi.h>
+
+#include <Poco/String.h>
 
 namespace fs = std::filesystem;
 
@@ -46,10 +47,11 @@ void abortOnFailedAssertion(const String & description)
 bool terminate_on_any_exception = false;
 static int terminate_status_code = 128 + SIGABRT;
 thread_local bool update_error_statistics = true;
+std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+void handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -60,6 +62,9 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
     }
 #endif
 
+    if (Exception::callback)
+        Exception::callback(msg, code, remote, trace);
+
     if (!update_error_statistics) [[unlikely]]
         return;
 
@@ -69,14 +74,14 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 Exception::MessageMasked::MessageMasked(const std::string & msg_)
     : msg(msg_)
 {
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
 Exception::MessageMasked::MessageMasked(std::string && msg_)
     : msg(std::move(msg_))
 {
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
@@ -235,8 +240,9 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// Poco::Logger::get can allocate memory too
-    tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
+    /// getLogger can allocate memory too
+    auto logger = getLogger(log_name);
+    tryLogCurrentExceptionImpl(logger.get(), start_of_message);
 }
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
@@ -249,6 +255,16 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message);
+}
+
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message)
+{
+    tryLogCurrentException(logger.get(), start_of_message);
+}
+
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message)
+{
+    tryLogCurrentException(logger.load(), start_of_message);
 }
 
 static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
@@ -511,7 +527,7 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
     }
 }
 
-void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message)
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message)
 {
     try
     {
@@ -521,6 +537,11 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
     {
         tryLogCurrentException(logger, start_of_message);
     }
+}
+
+void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const std::string & start_of_message)
+{
+    tryLogException(e, logger.load(), start_of_message);
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
@@ -615,49 +636,5 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
     status.deserializeText(data);
     return status;
 }
-
-ParsingException::ParsingException() = default;
-ParsingException::ParsingException(const std::string & msg, int code)
-    : Exception(msg, code)
-{
-}
-
-/// We use additional field formatted_message_ to make this method const.
-std::string ParsingException::displayText() const
-{
-    try
-    {
-        formatted_message = message();
-        bool need_newline = false;
-        if (!file_name.empty())
-        {
-            formatted_message += fmt::format(": (in file/uri {})", file_name);
-            need_newline = true;
-        }
-
-        if (line_number != -1)
-        {
-            formatted_message += fmt::format(": (at row {})", line_number);
-            need_newline = true;
-        }
-
-        if (need_newline)
-            formatted_message += "\n";
-    }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
-
-    if (!formatted_message.empty())
-    {
-        std::string result = name();
-        result.append(": ");
-        result.append(formatted_message);
-        return result;
-    }
-    else
-    {
-        return Exception::displayText();
-    }
-}
-
 
 }

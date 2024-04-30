@@ -12,20 +12,19 @@
 
 namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
 
+namespace DB
+{
+
 class RegionsHierarchies;
 class RegionsNames;
 class GeoDictionariesLoader;
-
-
-namespace DB
-{
 
 /// Metrica's Dictionaries which can be used in functions.
 
 class EmbeddedDictionaries : WithContext
 {
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
 
     MultiVersion<RegionsHierarchies> regions_hierarchies;
     MultiVersion<RegionsNames> regions_names;

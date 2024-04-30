@@ -4,21 +4,19 @@
 
 #include "StdIStreamFromMemory.h"
 #include "WriteBufferFromS3.h"
-#include "WriteBufferFromS3TaskTracker.h"
 
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
 #include <Interpreters/Cache/FileCache.h>
 
-#include <IO/ResourceGuard.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/BlobStorageLogWriter.h>
-
-#include <aws/s3/model/StorageClass.h>
 
 #include <utility>
 
@@ -74,6 +72,19 @@ struct WriteBufferFromS3::PartData
     }
 };
 
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings)
+{
+    BufferAllocationPolicy::Settings allocation_settings;
+    allocation_settings.strict_size = settings.strict_upload_part_size;
+    allocation_settings.min_size = settings.min_upload_part_size;
+    allocation_settings.max_size = settings.max_upload_part_size;
+    allocation_settings.multiply_factor = settings.upload_part_size_multiply_factor;
+    allocation_settings.multiply_parts_count_threshold = settings.upload_part_size_multiply_parts_count_threshold;
+    allocation_settings.max_single_size = settings.max_single_part_upload_size;
+
+    return BufferAllocationPolicy::create(allocation_settings);
+}
+
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
@@ -83,7 +94,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const S3Settings::RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
     std::optional<std::map<String, String>> object_metadata_,
-    ThreadPoolCallbackRunner<void> schedule_,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , bucket(bucket_)
@@ -93,9 +104,9 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
+    , buffer_allocation_policy(createBufferAllocationPolicy(upload_settings))
     , task_tracker(
-          std::make_unique<WriteBufferFromS3::TaskTracker>(
+          std::make_unique<TaskTracker>(
               std::move(schedule_),
               upload_settings.max_inflight_parts_for_one_file,
               limitedLog))
@@ -178,6 +189,11 @@ void WriteBufferFromS3::preFinalize()
 
 void WriteBufferFromS3::finalizeImpl()
 {
+    OpenTelemetry::SpanHolder span("WriteBufferFromS3::finalizeImpl");
+    span.addAttribute("clickhouse.s3_bucket", bucket);
+    span.addAttribute("clickhouse.s3_key", key);
+    span.addAttribute("clickhouse.total_size", total_size);
+
     LOG_TRACE(limitedLog, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
 
     if (!is_prefinalized)
@@ -187,6 +203,8 @@ void WriteBufferFromS3::finalizeImpl()
     chassert(hidden_size == 0);
 
     task_tracker->waitAll();
+
+    span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
 
     if (!multipart_upload_id.empty())
     {
@@ -315,14 +333,6 @@ void WriteBufferFromS3::detachBuffer()
     detached_part_data.push_back({std::move(buf), data_size});
 }
 
-void WriteBufferFromS3::allocateFirstBuffer()
-{
-    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
-    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
-    memory = Memory(size);
-    WriteBuffer::set(memory.data(), memory.size());
-}
-
 void WriteBufferFromS3::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
@@ -332,6 +342,14 @@ void WriteBufferFromS3::allocateBuffer()
         return allocateFirstBuffer();
 
     memory = Memory(buffer_allocation_policy->getBufferSize());
+    WriteBuffer::set(memory.data(), memory.size());
+}
+
+void WriteBufferFromS3::allocateFirstBuffer()
+{
+    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
+    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
+    memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 
@@ -448,6 +466,14 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     req.SetBody(data.createAwsBuffer());
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
+
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
+    if (client_ptr->isS3ExpressBucket())
+    {
+        auto checksum = S3::RequestChecksum::calculateChecksum(req);
+        S3::RequestChecksum::setRequestChecksum(req, checksum);
+        multipart_checksums.push_back(std::move(checksum));
+    }
 
     return req;
 }
@@ -568,7 +594,10 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
+        part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
+        if (!multipart_checksums.empty())
+            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
+        multipart_upload.AddParts(part);
     }
 
     req.SetMultipartUpload(multipart_upload);

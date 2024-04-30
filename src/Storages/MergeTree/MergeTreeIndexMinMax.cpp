@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -156,26 +157,17 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
 {
-    if (context->getSettingsRef().allow_experimental_analyzer)
-    {
-        NameSet array_join_name_set;
-        if (query_info.syntax_analyzer_result)
-            array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
-
-        return KeyCondition{query_info.filter_actions_dag, context, index.column_names, index.expression, array_join_name_set};
-    }
-
-    return KeyCondition{query_info, context, index.column_names, index.expression};
+    return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
 }
 
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
+    const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(buildCondition(index, query_info, context))
+    , condition(buildCondition(index, filter_actions_dag, context))
 {
 }
 
@@ -206,9 +198,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const Me
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const SelectQueryInfo & query, ContextPtr context) const
+    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_actions_dag, context);
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
@@ -226,7 +218,20 @@ MergeTreeIndexPtr minmaxIndexCreator(
     return std::make_shared<MergeTreeIndexMinMax>(index);
 }
 
-void minmaxIndexValidator(const IndexDescription & /* index */, bool /* attach */)
+void minmaxIndexValidator(const IndexDescription & index, bool attach)
 {
+    if (attach)
+        return;
+
+    for (const auto & column : index.sample_block)
+    {
+        if (!column.type->isComparable())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Data type of argument for minmax index must be comparable, got {} type for column {} instead",
+                column.type->getName(), column.name);
+        }
+    }
 }
+
 }
