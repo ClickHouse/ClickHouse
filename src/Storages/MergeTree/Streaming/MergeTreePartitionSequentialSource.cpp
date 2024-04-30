@@ -7,9 +7,9 @@
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/Streaming/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
 
 namespace DB

@@ -2,8 +2,8 @@
 
 #include <Common/typeid_cast.h>
 
-#include <Storages/MergeTree/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/QueueModeColumns.h>
+#include <Storages/MergeTree/Streaming/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/Streaming/ChunkSplitter.h>
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 

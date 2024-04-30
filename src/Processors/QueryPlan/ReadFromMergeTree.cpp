@@ -27,7 +27,6 @@
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 #include <Storages/MergeTree/MergeTreeIndexUSearch.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
@@ -38,6 +37,7 @@
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
+#include <Storages/MergeTree/Streaming/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/Streaming/ChunkSplitter.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <base/sort.h>
