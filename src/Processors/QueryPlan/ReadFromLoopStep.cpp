@@ -13,6 +13,7 @@
 
 namespace DB
 {
+class PullingPipelineExecutor;
 
 class LoopSource : public ISource
 {
@@ -43,30 +44,42 @@ public:
 
     Chunk generate() override
     {
-        QueryPlan plan;
-        inner_storage->read(
-            plan,
-            column_names,
-            storage_snapshot,
-            query_info,
-            context,
-            processed_stage,
-            max_block_size,
-            num_streams);
-        auto builder = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(context),
-            BuildQueryPipelineSettings::fromContext(context));
-        QueryPipeline query_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-        PullingPipelineExecutor executor(query_pipeline);
-
-        Chunk chunk;
-        while (executor.pull(chunk))
+        while (true)
         {
-            if (chunk)
-                return chunk;
+            if (!loop)
+            {
+                QueryPlan plan;
+                inner_storage->read(
+                    plan,
+                    column_names,
+                    storage_snapshot,
+                    query_info,
+                    context,
+                    processed_stage,
+                    max_block_size,
+                    num_streams);
+                auto builder = plan.buildQueryPipeline(
+                    QueryPlanOptimizationSettings::fromContext(context),
+                    BuildQueryPipelineSettings::fromContext(context));
+                QueryPlanResourceHolder resources;
+                auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
+                query_pipeline = QueryPipeline(std::move(pipe));
+                executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
+                loop = true;
+            }
+            Chunk chunk;
+            if (executor->pull(chunk))
+            {
+                if (chunk)
+                    return chunk;
+            }
+            else
+            {
+                loop = false;
+                executor.reset();
+                query_pipeline.reset();
+            }
         }
-
-        return {};
     }
 
 private:
@@ -79,6 +92,9 @@ private:
     StoragePtr inner_storage;
     size_t max_block_size;
     size_t num_streams;
+    bool loop = false;
+    QueryPipeline query_pipeline;
+    std::unique_ptr<PullingPipelineExecutor> executor;
 };
 
 ReadFromLoopStep::ReadFromLoopStep(
