@@ -97,6 +97,7 @@ new_disk_config = """
 def set_config(node, config):
     node.replace_config("/etc/clickhouse-server/config.d/config.xml", config)
     node.query("SYSTEM RELOAD CONFIG")
+    # to give ClickHouse time to refresh disks
     time.sleep(1)
 
 
