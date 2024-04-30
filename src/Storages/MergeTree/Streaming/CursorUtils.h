@@ -17,9 +17,10 @@ struct PartitionCursor
     Int64 block_number = -1;
     Int64 block_offset = -1;
 
-    bool operator<(const PartitionCursor & other) const;
-    bool operator<=(const PartitionCursor & other) const;
-    bool operator==(const PartitionCursor & other) const = default;
+    auto operator<=>(const PartitionCursor & other) const
+    {
+        return std::tie(block_number, block_offset) <=> std::tie(other.block_number, other.block_offset);
+    }
 };
 
 using MergeTreeCursor = std::map<String, PartitionCursor>;

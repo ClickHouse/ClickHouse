@@ -10,16 +10,6 @@
 namespace DB
 {
 
-bool PartitionCursor::operator<(const PartitionCursor & other) const
-{
-    return std::tie(block_number, block_offset) < std::tie(other.block_number, other.block_offset);
-}
-
-bool PartitionCursor::operator<=(const PartitionCursor & other) const
-{
-    return std::tie(block_number, block_offset) <= std::tie(other.block_number, other.block_offset);
-}
-
 MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
 {
     MergeTreeCursor cursor;
