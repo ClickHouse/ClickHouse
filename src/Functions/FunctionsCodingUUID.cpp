@@ -336,6 +336,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
@@ -413,6 +414,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
