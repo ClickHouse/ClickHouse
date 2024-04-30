@@ -159,15 +159,6 @@ void ColumnConst::compareColumn(
     std::fill(compare_results.begin(), compare_results.end(), res);
 }
 
-void ColumnConst::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
-{
-    Columns nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnConst &>(*source_column).getDataColumnPtr());
-    data->takeDynamicStructureFromSourceColumns(nested_source_columns);
-}
-
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value)
 {
     auto data = column->cloneEmpty();

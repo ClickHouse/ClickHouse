@@ -112,18 +112,15 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "First argument for function {} must be Variant or array of Variants. Actual {}", getName(), input_arg.type->getName());
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *input_type_as_variant, arguments.size());
+        auto variant_discr = getVariantGlobalDiscriminator(arguments[1].column, *input_type_as_variant, arguments.size());
 
-        if (!variant_global_discr.has_value())
+        if (!variant_discr)
             return arguments[2].column;
 
-        auto variant_local_discr = input_col_as_variant->localDiscriminatorByGlobal(*variant_global_discr);
-        const auto & variant_type = input_type_as_variant->getVariant(*variant_global_discr);
-        const auto & variant_column = input_col_as_variant->getVariantPtrByGlobalDiscriminator(*variant_global_discr);
-        auto subcolumn_creator = SerializationVariantElement::VariantSubcolumnCreator(input_col_as_variant->getLocalDiscriminatorsPtr(), variant_type->getName(), *variant_global_discr, variant_local_discr);
-        auto res = subcolumn_creator.create(variant_column);
-        return wrapInArraysAndConstIfNeeded(std::move(res), array_offsets, input_arg_is_const, input_rows_count);
+        auto variant_column = input_type_as_variant->getSubcolumn(input_type_as_variant->getVariant(*variant_discr)->getName(), input_col_as_variant->getPtr());
+        return wrapInArraysAndConstIfNeeded(std::move(variant_column), array_offsets, input_arg_is_const, input_rows_count);
     }
+
 private:
     std::optional<size_t> getVariantGlobalDiscriminator(const ColumnPtr & index_column, const DataTypeVariant & variant_type, size_t argument_size) const
     {
@@ -133,20 +130,16 @@ private:
                             "Second argument to {} with Variant argument must be a constant String",
                             getName());
 
-        String variant_element_name = name_col->getValue<String>();
-        auto variant_element_type = DataTypeFactory::instance().tryGet(variant_element_name);
-        if (variant_element_type)
+        auto variant_element_name = name_col->getValue<String>();
+        if (auto variant_element_type = DataTypeFactory::instance().tryGet(variant_element_name))
         {
-            const auto & variants = variant_type.getVariants();
-            for (size_t i = 0; i != variants.size(); ++i)
-            {
-                if (variants[i]->getName() == variant_element_type->getName())
-                    return i;
-            }
+            if (auto discr = variant_type.tryGetVariantDiscriminator(variant_element_type->getName()))
+                return discr;
         }
 
         if (argument_size == 2)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} doesn't contain variant with type {}", variant_type.getName(), variant_element_name);
+
         return std::nullopt;
     }
 

@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>

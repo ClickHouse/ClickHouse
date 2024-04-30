@@ -2,8 +2,8 @@ MergeTree compact + horizontal merge
 test
 16667	Tuple(a Dynamic(max_types=3)):Date
 33333	Tuple(a Dynamic(max_types=3)):Array(UInt8)
-50000	Tuple(a Dynamic(max_types=3)):UInt64
 50000	Tuple(a Dynamic(max_types=3)):String
+50000	Tuple(a Dynamic(max_types=3)):UInt64
 100000	UInt64:None
 33333	Tuple(a Dynamic(max_types=3)):Array(UInt8)
 50000	Tuple(a Dynamic(max_types=3)):UInt64
@@ -25,8 +25,8 @@ MergeTree wide + horizontal merge
 test
 16667	Tuple(a Dynamic(max_types=3)):Date
 33333	Tuple(a Dynamic(max_types=3)):Array(UInt8)
-50000	Tuple(a Dynamic(max_types=3)):UInt64
 50000	Tuple(a Dynamic(max_types=3)):String
+50000	Tuple(a Dynamic(max_types=3)):UInt64
 100000	UInt64:None
 33333	Tuple(a Dynamic(max_types=3)):Array(UInt8)
 50000	Tuple(a Dynamic(max_types=3)):UInt64
@@ -40,8 +40,8 @@ test
 100000	UInt64:None
 133333	Tuple(a Dynamic(max_types=3)):None
 50000	Tuple(a Dynamic(max_types=3)):UInt64
-100000	UInt64:None
 100000	Tuple(a Dynamic(max_types=3)):Tuple(UInt64)
+100000	UInt64:None
 116667	Tuple(a Dynamic(max_types=3)):String
 133333	Tuple(a Dynamic(max_types=3)):None
 MergeTree compact + vertical merge
@@ -59,8 +59,8 @@ test
 33333	Tuple(a Dynamic(max_types=3)):Array(UInt8)
 50000	Tuple(a Dynamic(max_types=3)):UInt64
 66667	Tuple(a Dynamic(max_types=3)):String
-100000	UInt64:None
 100000	Tuple(a Dynamic(max_types=3)):Tuple(UInt64)
+100000	UInt64:None
 133333	Tuple(a Dynamic(max_types=3)):None
 50000	Tuple(a Dynamic(max_types=3)):UInt64
 100000	Tuple(a Dynamic(max_types=3)):Tuple(UInt64)
@@ -86,7 +86,7 @@ test
 100000	UInt64:None
 133333	Tuple(a Dynamic(max_types=3)):None
 50000	Tuple(a Dynamic(max_types=3)):UInt64
-100000	UInt64:None
 100000	Tuple(a Dynamic(max_types=3)):Tuple(UInt64)
+100000	UInt64:None
 116667	Tuple(a Dynamic(max_types=3)):String
 133333	Tuple(a Dynamic(max_types=3)):None

@@ -8,6 +8,8 @@
 namespace DB
 {
 
+/// Dynamic type allows to store values of any type inside it and to read
+/// subcolumns with any type without knowing all of them in advance.
 class DataTypeDynamic final : public IDataType
 {
 public:
@@ -28,6 +30,7 @@ public:
 
     Field getDefault() const override;
 
+    /// 2 Dynamic types with different max_dynamic_types parameters are considered as different.
     bool equals(const IDataType & rhs) const override
     {
         if (const auto * rhs_dynamic_type = typeid_cast<const DataTypeDynamic *>(&rhs))

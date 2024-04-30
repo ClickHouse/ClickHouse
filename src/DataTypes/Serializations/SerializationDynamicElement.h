@@ -10,7 +10,7 @@ namespace DB
 class SerializationDynamicElement final : public SerializationWrapper
 {
 private:
-    /// To be able to deserialize Dyna,ic element as a subcolumn
+    /// To be able to deserialize Dynamic element as a subcolumn
     /// we need its type name and global discriminator.
     String dynamic_element_name;
 

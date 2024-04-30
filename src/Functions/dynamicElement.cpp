@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
@@ -65,7 +66,7 @@ public:
                             getName(),
                             arguments[0].type->getName());
 
-        auto return_type = makeNullableOrLowCardinalityNullableSafe(getRequestedElementType(arguments[1].column));
+        auto return_type = makeNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
 
         for (; count_arrays; --count_arrays)
             return_type = std::make_shared<DataTypeArray>(return_type);
@@ -97,29 +98,18 @@ public:
         }
 
         const ColumnDynamic * input_col_as_dynamic = checkAndGetColumn<ColumnDynamic>(input_col);
-        if (!input_col_as_dynamic)
+        const DataTypeDynamic * input_type_as_dynamic = checkAndGetDataType<DataTypeDynamic>(input_type);
+        if (!input_col_as_dynamic || !input_type_as_dynamic)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "First argument for function {} must be Dynamic or array of Dynamics. Actual {}", getName(), input_arg.type->getName());
 
-        auto element_type = getRequestedElementType(arguments[1].column);
-        const auto & variant_info = input_col_as_dynamic->getVariantInfo();
-        auto it = variant_info.variant_name_to_discriminator.find(element_type->getName());
-        if (it == variant_info.variant_name_to_discriminator.end())
-        {
-            auto result_type = makeNullableOrLowCardinalityNullableSafe(element_type);
-            auto result_column = result_type->createColumn();
-            result_column->insertManyDefaults(input_rows_count);
-            return wrapInArraysAndConstIfNeeded(std::move(result_column), array_offsets, input_arg_is_const, input_rows_count);
-        }
-
-        const auto & variant_column = input_col_as_dynamic->getVariantColumn();
-        auto subcolumn_creator = SerializationVariantElement::VariantSubcolumnCreator(variant_column.getLocalDiscriminatorsPtr(), element_type->getName(), it->second, variant_column.localDiscriminatorByGlobal(it->second));
-        auto result_column = subcolumn_creator.create(variant_column.getVariantPtrByGlobalDiscriminator(it->second));
-        return wrapInArraysAndConstIfNeeded(std::move(result_column), array_offsets, input_arg_is_const, input_rows_count);
+        auto type = getRequestedType(arguments[1].column);
+        auto subcolumn = input_type_as_dynamic->getSubcolumn(type->getName(), input_col_as_dynamic->getPtr());
+        return wrapInArraysAndConstIfNeeded(std::move(subcolumn), array_offsets, input_arg_is_const, input_rows_count);
     }
 
 private:
-    DataTypePtr getRequestedElementType(const ColumnPtr & type_name_column) const
+    DataTypePtr getRequestedType(const ColumnPtr & type_name_column) const
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(type_name_column.get());
         if (!name_col)

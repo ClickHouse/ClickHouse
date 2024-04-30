@@ -801,7 +801,7 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns values_source_columns;
     values_source_columns.reserve(source_columns.size());

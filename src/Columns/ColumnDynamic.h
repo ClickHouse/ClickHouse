@@ -22,15 +22,18 @@ namespace DB
 class ColumnDynamic final : public COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>
 {
 public:
+    ///
     struct Statistics
     {
         enum class Source
         {
-            READ,
-            MERGE,
+            READ,  /// Statistics were loaded into column during reading from MergeTree.
+            MERGE, /// Statistics were calculated during merge of several MergeTree parts.
         };
 
+        /// Source of the statistics.
         Source source;
+        /// Statistics data: (variant name) -> (total variant size in data part).
         std::unordered_map<String, size_t> data;
     };
 
@@ -42,9 +45,9 @@ private:
         DataTypePtr variant_type;
         /// Name of the whole variant to not call getName() every time.
         String variant_name;
-        /// Store names of variants to not call getName() every time on variants.
+        /// Names of variants to not call getName() every time on variants.
         Names variant_names;
-        /// Store mapping (variant name) -> (global discriminator).
+        /// Mapping (variant name) -> (global discriminator).
         /// It's used during variant extension.
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
     };
@@ -335,7 +338,7 @@ private:
     /// Combine current variant with the other variant and return global discriminators mapping
     /// from other variant to the combined one. It's used for inserting from
     /// different variants.
-    /// Returns nullptr if maximum number of Variants is reached and the new Variant cannot be created.
+    /// Returns nullptr if maximum number of variants is reached and the new variant cannot be created.
     std::vector<UInt8> * combineVariants(const VariantInfo & other_variant_info);
 
     void updateVariantInfoAndExpandVariantColumn(const DataTypePtr & new_variant_type);
@@ -343,7 +346,7 @@ private:
     WrappedPtr variant_column;
     /// Store the type of current variant with some additional information.
     VariantInfo variant_info;
-    /// Maximum number of different types that can be stored in Dynamic.
+    /// The maximum number of different types that can be stored in this Dynamic column.
     /// If exceeded, all new variants will be converted to String.
     size_t max_dynamic_types;
 
@@ -351,7 +354,11 @@ private:
     /// Used in takeDynamicStructureFromSourceColumns and set during deserialization.
     Statistics statistics;
 
+    /// Cache (Variant name) -> (global discriminators mapping from this variant to current variant in Dynamic column).
+    /// Used to avoid mappings recalculation in combineVariants for the same Variant types.
     std::unordered_map<String, std::vector<UInt8>> variant_mappings_cache;
+    /// Cache of Variant types that couldn't be combined with current variant in Dynamic column.
+    /// Used to avoid checking if combination is possible for the same Variant types.
     std::unordered_set<String> variants_with_failed_combination;
 };
 

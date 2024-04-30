@@ -835,7 +835,7 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
     return res;
 }
 
-void ColumnNullable::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());

@@ -7,12 +7,14 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
+
 namespace DB
 {
 
 namespace
 {
 
+/// Parser of Dynamic type arguments: Dynamic(max_types=N)
 class DynamicArgumentsParser : public IParserBase
 {
 private:
@@ -47,7 +49,8 @@ private:
 /// - Nested table elements;
 /// - Enum element in form of 'a' = 1;
 /// - literal;
-/// - another data type (or identifier)
+/// - Dynamic type arguments;
+/// - another data type (or identifier);
 class ParserDataTypeArgument : public IParserBase
 {
 public:

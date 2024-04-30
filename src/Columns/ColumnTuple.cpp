@@ -582,7 +582,7 @@ bool ColumnTuple::hasDynamicStructure() const
     return false;
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     std::vector<Columns> nested_source_columns;
     nested_source_columns.resize(columns.size());

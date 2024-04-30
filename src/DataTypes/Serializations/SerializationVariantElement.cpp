@@ -45,8 +45,8 @@ void SerializationVariantElement::enumerateStreams(
                        .withColumn(data.column ? removeNullableOrLowCardinalityNullable(data.column) : nullptr)
                        .withSerializationInfo(data.serialization_info)
                        .withDeserializeState(deserialize_state ? deserialize_state->variant_element_state : nullptr);
-    settings.path.back().data = data;
-    nested_serialization->enumerateStreams(settings, callback, data);
+    settings.path.back().data = nested_data;
+    nested_serialization->enumerateStreams(settings, callback, nested_data);
     removeVariantFromPath(settings.path);
 }
 

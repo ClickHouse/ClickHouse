@@ -97,6 +97,9 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    if (!state)
+        return;
+
     auto * dynamic_element_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(state);
 
     if (dynamic_element_state->variant_serialization)

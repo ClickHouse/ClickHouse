@@ -60,6 +60,9 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
     if (source_to_fully_copy) /// Was set on a previous iteration
     {
         Chunk res;
+        /// For columns with Dynamic structure we cannot just take column source_to_fully_copy because resulting column may have
+        /// different Dynamic structure (and have some merge statistics after calling takeDynamicStructureFromSourceColumns).
+        /// We should insert into data resulting column using insertRangeFrom.
         if (result_column->hasDynamicStructure())
         {
             auto col = result_column->cloneEmpty();

@@ -308,8 +308,6 @@ public:
     bool isCollationSupported() const override { return data->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
-
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 };
 
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);

@@ -1539,7 +1539,7 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-void ColumnVariant::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     std::vector<Columns> variants_source_columns;
     variants_source_columns.resize(variants.size());

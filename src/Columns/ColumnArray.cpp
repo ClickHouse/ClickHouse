@@ -1289,7 +1289,7 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());

@@ -27,7 +27,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
-#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -167,8 +166,6 @@ Field convertDecimalType(const Field & from, const To & type)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
-    checkStackSize();
-
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;

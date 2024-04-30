@@ -151,7 +151,8 @@ public:
 
         /// For types with dynamic subcolumns deserialize state contains information
         /// about current dynamic structure. And this information can be useful
-        /// when we call enumerateStreams to enumerate dynamic streams.
+        /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
+        /// to enumerate dynamic streams.
         DeserializeBinaryBulkStatePtr deserialize_state;
     };
 

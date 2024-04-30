@@ -99,6 +99,9 @@ public:
             {
                 columns[i] = columns[i]->cloneResized(num_rows);
             }
+            /// For columns with Dynamic structure we cannot just take column from input chunk because resulting column may have
+            /// different Dynamic structure (and have some merge statistics after calling takeDynamicStructureFromSourceColumns).
+            /// We should insert into data resulting column using insertRangeFrom.
             else if (columns[i]->hasDynamicStructure())
             {
                 columns[i] = columns[i]->cloneEmpty();

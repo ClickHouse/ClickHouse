@@ -65,14 +65,14 @@ bool ColumnDynamic::addNewVariant(const DB::DataTypePtr & new_variant)
     if (variant_info.variant_names.size() >= max_dynamic_types)
     {
         /// ColumnDynamic can have max_dynamic_types number of variants only when it has String as a variant.
-        /// Otherwise we won't be able to add cast new variants to Strings.
+        /// Otherwise we won't be able to cast new variants to Strings.
         if (!variant_info.variant_name_to_discriminator.contains("String"))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Maximum number of variants reached, but no String variant exists");
 
         return false;
     }
 
-    /// If we have max_dynamic_types - 1 number of variants and don't have String variant, we can add only String variant.
+    /// If we have (max_dynamic_types - 1) number of variants and don't have String variant, we can add only String variant.
     if (variant_info.variant_names.size() == max_dynamic_types - 1 && new_variant->getName() != "String" && !variant_info.variant_name_to_discriminator.contains("String"))
         return false;
 
@@ -218,7 +218,7 @@ void ColumnDynamic::insert(const DB::Field & x)
         return;
 
     /// If we cannot insert field into current variant column, extend it with new variant for this field from its type.
-    if (likely(addNewVariant(applyVisitor(FieldToDataType(), x))))
+    if (addNewVariant(applyVisitor(FieldToDataType(), x)))
     {
         /// Now we should be able to insert this field into extended variant column.
         variant_column->insert(x);
@@ -566,7 +566,6 @@ const char * ColumnDynamic::deserializeAndInsertFromArena(const char * pos)
     }
 
     /// We reached maximum number of variants and couldn't add new variant.
-    /// This case should be really rare in real use cases.
     /// We should always be able to add String variant and cast inserted value to String.
     addStringVariant();
     /// Create temporary column of this variant type and deserialize value into it.
@@ -645,7 +644,7 @@ ColumnPtr ColumnDynamic::compress() const
         });
 }
 
-void ColumnDynamic::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");

@@ -18,9 +18,9 @@ function test()
     $CH_CLIENT -q "insert into test select number, number from numbers(100000)"
     $CH_CLIENT -q "insert into test select number, 'str_' || toString(number) from numbers(50000, 100000)"
 
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "drop table test"
 
     echo "SummingMergeTree"
@@ -29,10 +29,10 @@ function test()
     $CH_CLIENT -q "insert into test select number, 1, number from numbers(100000)"
     $CH_CLIENT -q "insert into test select number, 1, 'str_' || toString(number) from numbers(50000, 100000)"
 
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "select count(), sum from test group by sum"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "select count(), sum from test group by sum"
     $CH_CLIENT -q "drop table test"
 
@@ -42,10 +42,10 @@ function test()
     $CH_CLIENT -q "insert into test select number, sumState(1::UInt64), number from numbers(100000) group by number"
     $CH_CLIENT -q "insert into test select number, sumState(1::UInt64), 'str_' || toString(number) from numbers(50000, 100000) group by number"
 
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "select count(), sum from (select sumMerge(sum) as sum from test group by id, _part) group by sum"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final"
-    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "select count(), sum from (select sumMerge(sum) as sum from test group by id, _part) group by sum"
     $CH_CLIENT -q "drop table test"
 }

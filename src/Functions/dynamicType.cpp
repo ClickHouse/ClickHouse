@@ -21,7 +21,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 namespace
 {
 
-/// Return enum with type name for each row in Dynamic column.
+/// Return String with type name for each row in Dynamic column.
 class FunctionDynamicType : public IFunction
 {
 public:
@@ -89,13 +89,21 @@ REGISTER_FUNCTION(DynamicType)
 Returns the variant type name for each row of `Dynamic` column. If row contains NULL, it returns 'None' for it.
 )",
         .syntax = {"dynamicType(variant)"},
-        .arguments = {{"variant", "Variant column"}},
+        .arguments = {{"dynamic", "Dynamic column"}},
         .examples = {{{
             "Example",
             R"(
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT d, dynamicType(d) FROM test;
 )",
             R"(
-
+┌─d─────────────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ          │ None           │
+│ 42            │ Int64          │
+│ Hello, World! │ String         │
+│ [1,2,3]       │ Array(Int64)   │
+└───────────────┴────────────────┘
 )"}}},
         .categories{"Variant"},
     });

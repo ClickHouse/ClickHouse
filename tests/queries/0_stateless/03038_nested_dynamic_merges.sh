@@ -18,16 +18,16 @@ function test()
     $CH_CLIENT -q "insert into test select number, tuple(if(number % 2 == 0, number, 'str_' || toString(number)))::Tuple(a Dynamic(max_types=3)) from numbers(100000)"
     $CH_CLIENT -q "insert into test select number, tuple(if(number % 3 == 0, toDate(number), range(number % 10)))::Tuple(a Dynamic(max_types=3)) from numbers(50000)"
 
-    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count(), type"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final;"
-    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count(), type"
 
     $CH_CLIENT -q "insert into test select number, tuple(if(number % 3 == 0, toDateTime(number), NULL))::Tuple(a Dynamic(max_types=3)) from numbers(50000)"
     $CH_CLIENT -q "insert into test select number, tuple(if(number % 2 == 0, tuple(number), NULL))::Tuple(a Dynamic(max_types=3)) from numbers(200000)"
 
-    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count(), type"
     $CH_CLIENT -nm -q "system start merges test; optimize table test final;"
-    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count()"
+    $CH_CLIENT -q "select count(), dynamicType(d) || ':' || dynamicType(d.\`Tuple(a Dynamic(max_types=3))\`.a) as type from test group by type order by count(), type"
 }
 
 $CH_CLIENT -q "drop table if exists test;"

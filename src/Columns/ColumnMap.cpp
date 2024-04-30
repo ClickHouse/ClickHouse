@@ -312,7 +312,7 @@ ColumnPtr ColumnMap::compress() const
     });
 }
 
-void ColumnMap::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
