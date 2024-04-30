@@ -464,13 +464,10 @@ public:
 
             for (size_t i = 0; i < size; ++i)
             {
-                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
-                if ((hiBytes & 0xf000) == 0x7000)
-                {
-                    uint64_t ms = hiBytes >> 16;
-                    vec_res[i] = DecimalUtils::decimalFromComponents<DateTime64>(
-                        ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
-                }
+                const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
+                const uint64_t ms = ((hiBytes & 0xf000) == 0x7000) ? (hiBytes >> 16) : 0;
+
+                vec_res[i] = DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
             }
 
             return col_res;
