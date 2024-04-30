@@ -47,7 +47,7 @@ public:
 
                 WriteBufferFromOwnString out;
                 result_type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
-                node = std::make_shared<ConstantNode>(std::make_shared<ConstantValue>(out.str(), result_type));
+                node = std::make_shared<ConstantNode>(out.str(), std::move(result_type));
             }
         }
     }
