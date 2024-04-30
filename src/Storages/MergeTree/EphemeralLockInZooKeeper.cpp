@@ -94,7 +94,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
 }
 
 template<typename T>
-std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lock, const T & deduplication_path)
+std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper & lock, const T & deduplication_path)
 {
     static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
 
@@ -284,9 +284,9 @@ template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path);
 
 template std::optional<String> checkLockAndDeduplicate<String>(
-    const EphemeralLockInZooKeeper& lock, const String & deduplication_path);
+    const EphemeralLockInZooKeeper & lock, const String & deduplication_path);
 
 template std::optional<String> checkLockAndDeduplicate<std::vector<String>>(
-    const EphemeralLockInZooKeeper& lock, const std::vector<String> & deduplication_path);
+    const EphemeralLockInZooKeeper & lock, const std::vector<String> & deduplication_path);
 
 }

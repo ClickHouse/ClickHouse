@@ -15,10 +15,10 @@ namespace DB
 /// Common structure for primary, partition and other storage keys
 struct KeyDescription
 {
-    struct AdditionalSettings
+    struct AdditionalColumns
     {
         /// Columns that will be added before and after key definition.
-        /// Don't stored in definition_ast, but added to expression_list_ast and all its derivatives.
+        /// Are not stored in definition_ast, but added to expression_list_ast and all its derivatives.
         std::vector<String> ext_columns_front;
         std::vector<String> ext_columns_back;
     };
@@ -26,9 +26,8 @@ struct KeyDescription
     class Builder
     {
     public:
-        explicit Builder(std::optional<AdditionalSettings> settings_ = {});
+        explicit Builder(std::optional<AdditionalColumns> additional_columns_ = {});
 
-        /// settings extenders
         Builder & withExtFrontColumns(std::vector<String> ext_columns_front_);
         Builder & withExtBackColumns(std::vector<String> ext_columns_back_);
 
@@ -44,7 +43,7 @@ struct KeyDescription
         KeyDescription buildFromString(const String & str_, const ColumnsDescription & columns_, ContextPtr context_);
 
     private:
-        std::optional<AdditionalSettings> settings;
+        std::optional<AdditionalColumns> additional_columns;
     };
 
     /// User defined AST in CREATE/ALTER query. This field may be empty, but key
@@ -68,9 +67,9 @@ struct KeyDescription
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
 
-    /// Additional key columns settings added by storage type.
+    /// Additional key columns added by storage type.
     /// Never changes after initialization with non empty value.
-    std::optional<AdditionalSettings> additional_settings;
+    std::optional<AdditionalColumns> additional_columns;
 
     /// Recalculate all expressions and fields for key with new columns without
     /// changes in constant fields. Just wrapper for static methods.

@@ -160,7 +160,7 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
-    /// Block numbers of parts that currently being inserted into storage
+    /// Block numbers of parts that are currently being inserted into storage
     /// NOTE: in queue mode block numbers must be allocated before commit, because we must materialize block number column with
     /// actual block number to have correct indexes. That is why we store currently committing block numbers here - to check
     /// if there are some committing blocks in merge task and do not break the invariants.

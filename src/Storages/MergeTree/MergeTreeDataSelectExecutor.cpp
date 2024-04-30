@@ -1032,8 +1032,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes key_types;
     for (size_t i : key_indices)
     {
-        if (i < index.size())
-            index_columns->emplace_back(index[i], primary_key.data_types[i], primary_key.column_names[i]);
+        if (i < index->size())
+            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
         else
             index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
 
