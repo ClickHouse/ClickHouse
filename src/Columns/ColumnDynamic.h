@@ -52,7 +52,7 @@ private:
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
     };
 
-    ColumnDynamic(size_t max_dynamic_types_);
+    explicit ColumnDynamic(size_t max_dynamic_types_);
     ColumnDynamic(MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, const Statistics & statistics_ = {});
 
 public:
