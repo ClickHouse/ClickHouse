@@ -167,4 +167,27 @@ std::map<String, std::map<Int64, RangesInDataPart>> buildRightPartsIndex(RangesI
     return index;
 }
 
+std::map<String, MergeTreeCursorPromoter> constructPromoters(
+    std::map<String, std::set<Int64>> committing_block_numbers,
+    std::map<String, PartBlockNumberRanges> partition_ranges)
+{
+    std::map<String, MergeTreeCursorPromoter> promoters;
+
+    for (auto && [partition_id, ranges] : partition_ranges)
+    {
+        if (auto it = committing_block_numbers.find(partition_id); it != committing_block_numbers.end())
+            promoters.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(partition_id),
+                std::forward_as_tuple(std::move(it->second), std::move(ranges)));
+        else
+            promoters.emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(partition_id),
+                std::forward_as_tuple(std::set<Int64>{}, std::move(ranges)));
+    }
+
+    return promoters;
+}
+
 }

@@ -43,6 +43,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Streaming/StreamingUtils.h>
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -841,23 +842,7 @@ std::map<String, MergeTreeCursorPromoter> StorageMergeTree::buildPromoters()
     for (const auto & part : data_parts)
         partition_ranges[part->info.partition_id].addPart(part->info.min_block, part->info.max_block);
 
-    std::map<String, MergeTreeCursorPromoter> promoters;
-
-    for (auto && [partition_id, ranges] : partition_ranges)
-    {
-        if (auto it = committing_block_numbers_snapshot.find(partition_id); it != committing_block_numbers_snapshot.end())
-            promoters.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(partition_id),
-                std::forward_as_tuple(std::move(it->second), std::move(ranges)));
-        else
-            promoters.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(partition_id),
-                std::forward_as_tuple(std::set<Int64>{}, std::move(ranges)));
-    }
-
-    return promoters;
+    return constructPromoters(std::move(committing_block_numbers_snapshot), std::move(partition_ranges));
 }
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const

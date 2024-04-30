@@ -1946,24 +1946,7 @@ std::map<String, MergeTreeCursorPromoter> ReplicatedMergeTreeQueue::buildPromote
     for (const auto & info : infos)
         partition_ranges[info.partition_id].addPart(info.min_block, info.max_block);
 
-    /// combine to partition promoters
-    std::map<String, MergeTreeCursorPromoter> promoters;
-
-    for (auto && [partition_id, ranges] : partition_ranges)
-    {
-        if (auto it = committing_block_numbers.find(partition_id); it != committing_block_numbers.end())
-            promoters.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(partition_id),
-                std::forward_as_tuple(std::move(it->second), std::move(ranges)));
-        else
-            promoters.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(partition_id),
-                std::forward_as_tuple(std::set<Int64>{}, std::move(ranges)));
-    }
-
-    return promoters;
+    return constructPromoters(std::move(committing_block_numbers), std::move(partition_ranges));
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
