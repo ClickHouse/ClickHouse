@@ -151,7 +151,7 @@ class TestCIOptions(unittest.TestCase):
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params
+            jobs_to_do, jobs_to_skip, job_params, False
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -182,7 +182,7 @@ class TestCIOptions(unittest.TestCase):
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params
+            jobs_to_do, jobs_to_skip, job_params, False
         )
         self.assertCountEqual(
             jobs_to_do,
