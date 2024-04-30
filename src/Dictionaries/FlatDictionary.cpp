@@ -15,7 +15,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
@@ -413,7 +413,7 @@ void FlatDictionary::blockToAttributes(const Block & block)
     const auto keys_column = block.safeGetByPosition(0).column;
 
     DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
-    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
+    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena()); /// NOLINT(readability-static-accessed-through-instance)
     size_t keys_size = keys_extractor.getKeysSize();
 
     static constexpr size_t key_offset = 1;

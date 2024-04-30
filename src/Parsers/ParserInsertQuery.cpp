@@ -26,22 +26,20 @@ namespace ErrorCodes
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Create parsers
-    ParserKeyword s_insert_into("INSERT INTO");
-    ParserKeyword s_from_infile("FROM INFILE");
-    ParserKeyword s_compression("COMPRESSION");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_function("FUNCTION");
+    ParserKeyword s_insert_into(Keyword::INSERT_INTO);
+    ParserKeyword s_from_infile(Keyword::FROM_INFILE);
+    ParserKeyword s_compression(Keyword::COMPRESSION);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_function(Keyword::FUNCTION);
     ParserToken s_dot(TokenType::Dot);
-    ParserKeyword s_values("VALUES");
-    ParserKeyword s_format("FORMAT");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_select("SELECT");
-    ParserKeyword s_watch("WATCH");
-    ParserKeyword s_partition_by("PARTITION BY");
-    ParserKeyword s_with("WITH");
+    ParserKeyword s_values(Keyword::VALUES);
+    ParserKeyword s_format(Keyword::FORMAT);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_partition_by(Keyword::PARTITION_BY);
+    ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserToken s_semicolon(TokenType::Semicolon);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
@@ -56,7 +54,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
-    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
     ASTPtr partition_by_expr;
@@ -143,14 +140,15 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String format_str;
     Pos before_values = pos;
 
-    /// VALUES or FORMAT or SELECT or WITH or WATCH.
+    /// VALUES or FORMAT or SELECT or WITH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
     if (!infile && s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data,
         /// and if values followed by semicolon, the data should be null.
-        if (!s_semicolon.checkWithoutMoving(pos, expected))
+        if (pos->type != TokenType::Semicolon)
             data = pos->begin;
+
         format_str = "Values";
     }
     else if (s_format.ignore(pos, expected))
@@ -174,14 +172,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
-    }
-    else if (!infile && s_watch.ignore(pos, expected))
-    {
-        /// If WATCH is defined, return to position before WATCH and parse
-        /// rest of query as WATCH query.
-        pos = before_values;
-        ParserWatchQuery watch_p;
-        watch_p.parse(pos, watch, expected);
     }
     else if (!infile)
     {
@@ -286,7 +276,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
-    query->watch = watch;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = end;
@@ -295,8 +284,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
-    if (watch)
-        query->children.push_back(watch);
     if (settings_ast)
         query->children.push_back(settings_ast);
 

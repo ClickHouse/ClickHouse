@@ -50,8 +50,8 @@ def main():
 
     builds_for_check = CI_CONFIG.get_builds_for_report(
         build_check_name,
-        release=pr_info.is_release(),
-        backport=pr_info.head_ref.startswith("backport"),
+        release=pr_info.is_release,
+        backport=pr_info.head_ref.startswith("backport/"),
     )
     required_builds = len(builds_for_check)
     missing_builds = 0
@@ -139,7 +139,8 @@ def main():
         additional_files=[report_path],
     ).dump()
 
-    if summary_status == ERROR:
+    # We should fail the report job to rerun it in the following attempts
+    if summary_status != SUCCESS:
         sys.exit(1)
 
 

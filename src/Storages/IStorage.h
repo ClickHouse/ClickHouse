@@ -11,6 +11,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/ActionLock.h>
@@ -98,9 +99,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 public:
     IStorage() = delete;
     /// Storage metadata can be set separately in setInMemoryMetadata method
-    explicit IStorage(StorageID storage_id_)
-        : storage_id(std::move(storage_id_))
-        , metadata(std::make_unique<StorageInMemoryMetadata>()) {}
+    explicit IStorage(StorageID storage_id_);
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
@@ -215,6 +214,10 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    void setVirtuals(VirtualColumnsDescription virtuals_)
+    {
+        virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
+    }
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
     /// majority of cases virtual columns are static constant part of Storage
@@ -226,7 +229,9 @@ public:
     /// virtual column will be overridden and inaccessible.
     ///
     /// By default return empty list of columns.
-    virtual NamesAndTypesList getVirtuals() const;
+    VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
+    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
+    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
     Names getAllRegisteredNames() const override;
 
@@ -260,17 +265,21 @@ public:
 
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
-    virtual bool supportsTrivialCountOptimization() const { return false; }
+    virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
+    {
+        return false;
+    }
 
 private:
-
     StorageID storage_id;
 
     mutable std::mutex id_mutex;
 
-    /// Multiversion storage metadata. Allows to read/write storage metadata
-    /// without locks.
+    /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
+
+    /// Description of virtual columns. Optional, may be set in constructor.
+    MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

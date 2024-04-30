@@ -7,7 +7,7 @@ import uuid
 import time
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 cluster = ClickHouseCluster(__file__)
 
@@ -23,9 +23,20 @@ def make_instance(name, cfg, *args, **kwargs):
     )
 
 
+# DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 added in 23.3, ensure that CLICKHOUSE_CI_MIN_TESTED_VERSION fits
+assert CLICKHOUSE_CI_MIN_TESTED_VERSION < "23.3"
+
 # _n1/_n2 contains cluster with different <secret> -- should fail
 n1 = make_instance("n1", "configs/remote_servers_n1.xml")
 n2 = make_instance("n2", "configs/remote_servers_n2.xml")
+backward = make_instance(
+    "backward",
+    "configs/remote_servers_backward.xml",
+    image="clickhouse/clickhouse-server",
+    # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    with_installed_binary=True,
+)
 
 users = pytest.mark.parametrize(
     "user,password",
@@ -398,4 +409,26 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     )
     assert int(get_query_setting_on_shard(n1, id_, "max_memory_usage_for_user")) == int(
         1e9
+    )
+
+
+@users
+def test_user_secure_cluster_with_backward(user, password):
+    id_ = "with-backward-query-dist_secure-" + user
+    n1.query(
+        f"SELECT *, '{id_}' FROM dist_secure_backward", user=user, password=password
+    )
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
+
+
+@users
+def test_user_secure_cluster_from_backward(user, password):
+    id_ = "from-backward-query-dist_secure-" + user
+    backward.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
+
+    assert n1.contains_in_log(
+        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster."
     )

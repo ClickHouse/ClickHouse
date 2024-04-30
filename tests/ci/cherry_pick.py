@@ -37,17 +37,8 @@ from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from lambda_shared_package.lambda_shared.pr import Labels
 from ssh import SSHKey
-
-
-class Labels:
-    MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
-    BACKPORT = "pr-backport"
-    BACKPORTS_CREATED = "pr-backports-created"
-    BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
-    CHERRYPICK = "pr-cherrypick"
-    DO_NOT_TEST = "do not test"
 
 
 class ReleaseBranch:
@@ -99,7 +90,7 @@ close it.
         name: str,
         pr: PullRequest,
         repo: Repository,
-        backport_created_label: str = Labels.BACKPORTS_CREATED,
+        backport_created_label: str = Labels.PR_BACKPORTS_CREATED,
     ):
         self.name = name
         self.pr = pr
@@ -247,12 +238,12 @@ close it.
                 pr_number=self.pr.number,
                 pr_url=self.pr.html_url,
                 backport_created_label=self.backport_created_label,
-                label_cherrypick=Labels.CHERRYPICK,
+                label_cherrypick=Labels.PR_CHERRYPICK,
             ),
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
-        self.cherrypick_pr.add_to_labels(Labels.CHERRYPICK)
+        self.cherrypick_pr.add_to_labels(Labels.PR_CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
         self._assign_new_pr(self.cherrypick_pr)
         # update cherrypick PR to get the state for PR.mergable
@@ -288,7 +279,7 @@ close it.
             base=self.name,
             head=self.backport_branch,
         )
-        self.backport_pr.add_to_labels(Labels.BACKPORT)
+        self.backport_pr.add_to_labels(Labels.PR_BACKPORT)
         self._assign_new_pr(self.backport_pr)
 
     def ping_cherry_pick_assignees(self, dry_run: bool) -> None:
@@ -456,11 +447,13 @@ class Backport:
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
 
-        query_args = dict(
-            query=f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
-            label=",".join(self.labels_to_backport + [self.must_create_backport_label]),
-            merged=[since_date, tomorrow],
-        )
+        query_args = {
+            "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
+            "label": ",".join(
+                self.labels_to_backport + [self.must_create_backport_label]
+            ),
+            "merged": [since_date, tomorrow],
+        }
         logging.info("Query to find the backport PRs:\n %s", query_args)
         self.prs_for_backport = self.gh.get_pulls_from_search(**query_args)
         logging.info(
@@ -516,7 +509,7 @@ class Backport:
         )
         bp_cp_prs = self.gh.get_pulls_from_search(
             query=f"type:pr repo:{self._repo_name} {query_suffix}",
-            label=f"{Labels.BACKPORT},{Labels.CHERRYPICK}",
+            label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
         )
         for br in branches:
             br.pop_prs(bp_cp_prs)
@@ -586,8 +579,8 @@ def parse_args():
     )
     parser.add_argument(
         "--backport-created-label",
-        default=Labels.BACKPORTS_CREATED,
-        choices=(Labels.BACKPORTS_CREATED, Labels.BACKPORTS_CREATED_CLOUD),
+        default=Labels.PR_BACKPORTS_CREATED,
+        choices=(Labels.PR_BACKPORTS_CREATED, Labels.PR_BACKPORTS_CREATED_CLOUD),
         help="label to mark PRs as backported",
     )
     parser.add_argument(

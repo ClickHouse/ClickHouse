@@ -3,7 +3,9 @@ from helpers.cluster import ClickHouseCluster
 import logging
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/overrides.xml"])
+node = cluster.add_instance(
+    "node", main_configs=["configs/overrides.xml", "configs/clusters.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -23,20 +25,20 @@ def test_distibuted_settings(start_cluster):
     node.query(
         """
         CREATE TABLE data_1 (key Int) ENGINE Memory();
-        CREATE TABLE dist_1 as data_1 ENGINE Distributed(default, default, data_1) SETTINGS flush_on_detach = true;
+        CREATE TABLE dist_1 as data_1 ENGINE Distributed(localhost_cluster, default, data_1) SETTINGS flush_on_detach = true;
         SYSTEM STOP DISTRIBUTED SENDS dist_1;
         INSERT INTO dist_1 SETTINGS prefer_localhost_replica=0 VALUES (1);
         DETACH TABLE dist_1;
     """
     )
-    assert "flush_on_detach = 1" in node.query("SHOW CREATE dist_1")
+    assert "flush_on_detach = true" in node.query("SHOW CREATE dist_1")
     # flush_on_detach=true, so data_1 should have 1 row
     assert int(node.query("SELECT count() FROM data_1")) == 1
 
     node.query(
         """
         CREATE TABLE data_2 (key Int) ENGINE Memory();
-        CREATE TABLE dist_2 as data_2 ENGINE Distributed(default, default, data_2);
+        CREATE TABLE dist_2 as data_2 ENGINE Distributed(localhost_cluster, default, data_2);
         SYSTEM STOP DISTRIBUTED SENDS dist_2;
         INSERT INTO dist_2 SETTINGS prefer_localhost_replica=0 VALUES (2);
         DETACH TABLE dist_2;

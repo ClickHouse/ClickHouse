@@ -29,34 +29,45 @@ if [ -e "$PACKAGE.zip" ] && [ -z "$FORCE" ]; then
   [ -n "$REBUILD" ] || exit 0
 fi
 
+docker_cmd=(
+  docker run -i --net=host --rm --user="${UID}" -e HOME=/tmp --entrypoint=/bin/bash
+  --volume="${WORKDIR}/..:/ci" --workdir="/ci/${DIR_NAME}" "${DOCKER_IMAGE}"
+)
 rm -rf "$PACKAGE" "$PACKAGE".zip
 mkdir "$PACKAGE"
 cp app.py "$PACKAGE"
 if [ -f requirements.txt ]; then
   VENV=lambda-venv
   rm -rf "$VENV"
-  docker run --net=host --rm --user="${UID}" -e HOME=/tmp --entrypoint=/bin/bash \
-    --volume="${WORKDIR}/..:/ci" --workdir="/ci/${DIR_NAME}" "${DOCKER_IMAGE}" \
-    -exc "
-      '$PY_EXEC' -m venv '$VENV' &&
-      source '$VENV/bin/activate' &&
-      pip install -r requirements.txt &&
-      # To have consistent pyc files
-      find '$VENV/lib' -name '*.pyc' -delete
-      find '$VENV/lib' ! -type d -exec touch -t 201212121212 {} +
-      python -m compileall
-    "
-  cp -rT "$VENV/lib/$PY_EXEC/site-packages/" "$PACKAGE"
-  rm -r "$PACKAGE"/{pip,pip-*,setuptools,setuptools-*}
-  # zip stores metadata about timestamps
-  find "$PACKAGE" ! -type d -exec touch -t 201212121212 {} +
+  "${docker_cmd[@]}" -ex <<EOF
+    '$PY_EXEC' -m venv '$VENV' &&
+    source '$VENV/bin/activate' &&
+    pip install -r requirements.txt &&
+    # To have consistent pyc files
+    find '$VENV/lib' -name '*.pyc' -delete
+    cp -rT '$VENV/lib/$PY_EXEC/site-packages/' '$PACKAGE'
+    rm -r '$PACKAGE'/{pip,pip-*,setuptools,setuptools-*}
+    chmod 0777 -R '$PACKAGE'
+EOF
 fi
-(
-  export LC_ALL=c
-  cd "$PACKAGE"
-  # zip uses random files order by default, so we sort the files alphabetically
-  find . ! -type d -print0 | sort -z | tr '\0' '\n' | zip -XD -0 ../"$PACKAGE".zip --names-stdin
-)
+# Create zip archive via python zipfile to have it cross-platform
+"${docker_cmd[@]}" -ex <<EOF
+cd '$PACKAGE'
+find ! -type d -exec touch -t 201212121212 {} +
+
+python <<'EOP'
+import zipfile
+import os
+files_path = []
+for root, _, files in os.walk('.'):
+    files_path.extend(os.path.join(root, file) for file in files)
+# persistent file order
+files_path.sort()
+with zipfile.ZipFile('../$PACKAGE.zip', 'w') as zf:
+    for file in files_path:
+        zf.write(file)
+EOP
+EOF
 
 ECHO=()
 if [ -n "$DRY_RUN" ]; then

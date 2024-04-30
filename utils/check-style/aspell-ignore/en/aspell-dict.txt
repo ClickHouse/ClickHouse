@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2724
+personal_ws-1.1 en 2758
 AArch
 ACLs
 ALTERs
@@ -29,6 +29,13 @@ Alexey
 AnyEvent
 AppleClang
 Approximative
+arrayDotProduct
+arrayEnumerateDenseRanked
+arrayEnumerateUniqRanked
+arrayFirstOrNull
+arrayLastOrNull
+arrayPartialShuffle
+arrayShuffle
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize
@@ -161,7 +168,10 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
+CloudNotSupportedBadge
+CloudStorage
 CodeBlock
 CodeLLDB
 Codecs
@@ -173,6 +183,8 @@ CompiledExpressionCacheCount
 ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
+Composable
+composable
 Config
 ConnectionDetails
 Const
@@ -261,6 +273,7 @@ ExecutablePool
 ExtType
 ExternalDistributed
 FFFD
+FFFFFFFF
 FIPS
 FOSDEM
 FQDN
@@ -448,6 +461,9 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Konstantin
+kostik
+kostikConsistentHash
 Korzeniewski
 Kubernetes
 LDAP
@@ -459,6 +475,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 Levenshtein
+Liao
 LibFuzzer
 LightHouse
 LineAsString
@@ -547,6 +564,17 @@ MinMax
 MindsDB
 Mongodb
 MsgPack
+multiSearchAllPositionsCaseInsensitive
+multiSearchAllPositionsCaseInsensitiveUTF
+multiSearchAnyCaseInsensitive
+multiSearchAnyCaseInsensitiveUTF
+multiSearchAnyUTF
+multiSearchFirstIndexCaseInsensitive
+multiSearchFirstIndexCaseInsensitiveUTF
+multiSearchFirstIndexUTF
+multiSearchFirstPositionCaseInsensitive
+multiSearchFirstPositionCaseInsensitiveUTF
+multiSearchFirstPositionUTF
 MultiPolygon
 Multiline
 Multiqueries
@@ -648,6 +676,7 @@ OTLP
 OUTFILE
 ObjectId
 Observability
+Oblakov
 Octonica
 Ok
 OnTime
@@ -668,6 +697,7 @@ PCRE
 PRCP
 PREWHERE
 PROCESSLIST
+PROXYv
 PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
@@ -685,7 +715,6 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
-PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -843,7 +872,6 @@ SendScalars
 ShareAlike
 SharedMergeTree
 Shortkeys
-Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -855,6 +883,7 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
+SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
@@ -918,6 +947,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
+tanh
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -956,6 +986,7 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+Tsai
 Tukey
 TwoColumnList
 UBSan
@@ -983,6 +1014,7 @@ UncompressedCacheBytes
 UncompressedCacheCells
 UnidirectionalEdgeIsValid
 UniqThetaSketch
+unshuffled
 Updatable
 Uppercased
 Uptime
@@ -1026,6 +1058,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZCurve
 ZSTDQAT
 Zabbix
 Zipkin
@@ -1328,6 +1361,7 @@ configs
 congruential
 conjuction
 conjuctive
+connectionId
 const
 contrib
 convertCharset
@@ -1338,6 +1372,8 @@ countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
+countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
@@ -1544,6 +1580,7 @@ firstSignificantSubdomainCustom
 fixedstring
 flamegraph
 flatbuffers
+flattenTuple
 flink
 fluentd
 fmtlib
@@ -1580,6 +1617,7 @@ gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
+generateSeries
 generateULID
 generateUUIDv
 geoDistance
@@ -1594,6 +1632,7 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1672,6 +1711,7 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1702,7 +1742,6 @@ hudi
 hyperscan
 hypot
 hyvor
-iTerm
 iTerm
 icosahedron
 icudata
@@ -1809,6 +1848,7 @@ laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leftUTF
 leftPad
 leftPadUTF
 lemmatization
@@ -1846,6 +1886,7 @@ linearized
 lineasstring
 linefeeds
 lineorder
+linestring
 linux
 llvm
 loadDefaultCAFile
@@ -1926,8 +1967,11 @@ mmap
 mmapped
 modularization
 moduloOrZero
+moduli
 mongodb
 monthName
+mortonDecode
+mortonEncode
 moscow
 msgpack
 msgpk
@@ -1976,6 +2020,9 @@ nestjs
 netloc
 ngram
 ngramDistance
+ngramDistanceCaseInsensitive
+ngramDistanceCaseInsensitiveUTF
+ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -1985,6 +2032,9 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
+ngramSearchCaseInsensitive
+ngramSearchCaseInsensitiveUTF
+ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF
@@ -2204,7 +2254,9 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
+readWKTPoint
 readWKTPolygon
+readWKTRing
 readahead
 readline
 readme
@@ -2269,9 +2321,11 @@ retentions
 rethrow
 retransmit
 retriable
+rewritable
 reverseUTF
 rightPad
 rightPadUTF
+rightUTF
 risc
 riscv
 ro
@@ -2299,10 +2353,13 @@ runningDifference
 runningDifferenceStartingWithFirstValue
 runtime
 russian
+rustc
+rustup
 rw
 sasl
 satisfiable
 scala
+sccache
 schemas
 seekable
 seektable
@@ -2327,6 +2384,14 @@ shortcircuit
 shortkeys
 shoutout
 simdjson
+simpleJSON
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2378,6 +2443,10 @@ stddevPop
 stddevSamp
 stddevpop
 stddevsamp
+stddevpopstable
+stddevPopStable
+stddevsampstable
+stddevSampStable
 stderr
 stdin
 stdout
@@ -2459,6 +2528,9 @@ sumWithOverflow
 sumcount
 sumkahan
 summap
+summapwithoverflow
+sumMapWithOverflow
+sumMapFilteredWithOverflow
 summingmergetree
 sumwithoverflow
 superaggregates
@@ -2529,6 +2601,7 @@ toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
+toMillisecond
 toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -2620,6 +2693,12 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
+tupleModulo
+tupleModuloByNumber
 turbostat
 txt
 typename
@@ -2680,7 +2759,9 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
 variantElement
 variantType
@@ -2689,6 +2770,7 @@ varpop
 varsamp
 vectorized
 vectorscan
+vendoring
 verificationDepth
 verificationMode
 versionedcollapsingmergetree
@@ -2732,6 +2814,7 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
+wyHash
 xcode
 xeus
 xkcd

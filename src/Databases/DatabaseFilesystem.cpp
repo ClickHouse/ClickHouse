@@ -146,20 +146,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    String format;
-    if (throw_on_error)
-    {
-        format = FormatFactory::instance().getFormatFromFileName(table_path);
-    }
-    else
-    {
-        auto format_maybe = FormatFactory::instance().tryGetFormatFromFileName(table_path);
-        if (!format_maybe)
-            return {};
-        format = *format_maybe;
-    }
-
-    auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path), std::make_shared<ASTLiteral>(format));
+    auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
 
     auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
     if (!table_function)
@@ -200,7 +187,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
@@ -242,7 +229,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFilesystem::getTablesForBacku
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }

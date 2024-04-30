@@ -233,9 +233,9 @@ private:
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
         : IStorage(table_id_)
 {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(getColumnsDescription());
-        setInMemoryMetadata(storage_metadata);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(getColumnsDescription());
+    setInMemoryMetadata(storage_metadata);
 }
 
 void StorageSystemZooKeeper::read(
@@ -248,7 +248,7 @@ void StorageSystemZooKeeper::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     auto read_step = std::make_unique<ReadFromSystemZooKeeper>(
         column_names,
         query_info,
@@ -621,6 +621,20 @@ Chunk SystemZooKeeperSource::generate()
         zkutil::ZooKeeper::MultiTryGetResponse get_responses;
         ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
             [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
+
+        /// Add children count to query total rows. We can not get total rows in advance,
+        /// because it is too heavy to get row count for non exact paths.
+        /// Please be aware that there might be minor setbacks in the query progress,
+        /// but overall it should reflect the advancement of the query.
+        size_t children_count = 0;
+        for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
+        {
+            auto & res = get_responses[i];
+            if (res.error == Coordination::Error::ZNONODE)
+                continue; /// Node was deleted meanwhile.
+            children_count += res.stat.numChildren;
+        }
+        addTotalRowsApprox(children_count);
 
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {

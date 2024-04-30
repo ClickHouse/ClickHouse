@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <queue>
@@ -34,6 +35,12 @@ std::string toString(const Values & value)
     return fmt::format("({})", fmt::join(value, ", "));
 }
 
+/** We rely that FieldVisitorAccurateLess will have strict weak ordering for any Field values including
+  * NaN, Null and containers (Array, Tuple, Map) that contain NaN or Null. But right now it does not properly
+  * support NaN and Nulls inside containers, because it uses Field operator< or accurate::lessOp for comparison
+  * that compares Nulls and NaNs differently than FieldVisitorAccurateLess.
+  * TODO: Update Field operator< to compare NaNs and Nulls the same way as FieldVisitorAccurateLess.
+  */
 bool isSafePrimaryDataKeyType(const IDataType & data_type)
 {
     auto type_id = data_type.getTypeId();
@@ -101,9 +108,9 @@ bool isSafePrimaryKey(const KeyDescription & primary_key)
 
 int compareValues(const Values & lhs, const Values & rhs)
 {
-    chassert(lhs.size() == rhs.size());
+    size_t size = std::min(lhs.size(), rhs.size());
 
-    for (size_t i = 0; i < lhs.size(); ++i)
+    for (size_t i = 0; i < size; ++i)
     {
         if (applyVisitor(FieldVisitorAccurateLess(), lhs[i], rhs[i]))
             return -1;
@@ -119,15 +126,22 @@ int compareValues(const Values & lhs, const Values & rhs)
 class IndexAccess
 {
 public:
-    explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_) { }
+    explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_)
+    {
+        /// Some suffix of index columns might not be loaded (see `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`)
+        /// and we need to use the same set of index columns across all parts.
+        for (const auto & part : parts)
+            loaded_columns = std::min(loaded_columns, part.data_part->getIndex()->size());
+    }
 
     Values getValue(size_t part_idx, size_t mark) const
     {
         const auto & index = parts[part_idx].data_part->getIndex();
-        Values values(index.size());
-        for (size_t i = 0; i < values.size(); ++i)
+        chassert(index->size() >= loaded_columns);
+        Values values(loaded_columns);
+        for (size_t i = 0; i < loaded_columns; ++i)
         {
-            index[i]->get(mark, values[i]);
+            index->at(i)->get(mark, values[i]);
             if (values[i].isNull())
                 values[i] = POSITIVE_INFINITY;
         }
@@ -192,6 +206,7 @@ public:
     }
 private:
     const RangesInDataParts & parts;
+    size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 
 class RangesInDataPartsBuilder
@@ -315,12 +330,12 @@ struct PartRangeIndex
 
     bool operator==(const PartRangeIndex & other) const
     {
-        return part_index == other.part_index && range.begin == other.range.begin && range.end == other.range.end;
+        return std::tie(part_index, range.begin, range.end) == std::tie(other.part_index, other.range.begin, other.range.end);
     }
 
     bool operator<(const PartRangeIndex & other) const
     {
-        return part_index < other.part_index && range.begin < other.range.begin && range.end < other.range.end;
+        return std::tie(part_index, range.begin, range.end) < std::tie(other.part_index, other.range.begin, other.range.end);
     }
 
     size_t part_index;
@@ -785,7 +800,7 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
             const auto & type = primary_key.data_types.at(i);
 
             // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
-            auto pk_ast = primary_key.expression_list_ast->children.at(i);
+            auto pk_ast = primary_key.expression_list_ast->children.at(i)->clone();
 
             // If PK is nullable, prepend a null mask column for > comparison.
             // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
