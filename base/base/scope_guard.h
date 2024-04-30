@@ -47,10 +47,7 @@ public:
     requires std::is_convertible_v<G, F>
     constexpr BasicScopeGuard(G && function_) : function{std::move(function_)} {} // NOLINT(google-explicit-constructor, bugprone-forwarding-reference-overload, bugprone-move-forwarding-reference, cppcoreguidelines-missing-std-forward)
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wperformance-noexcept-destructor"
     ~BasicScopeGuard() noexcept(Noexcept) { invoke(); } // NOLINT
-#pragma clang diagnostic pop
 
     static constexpr bool is_nullable = std::is_constructible_v<bool, F>;
 
