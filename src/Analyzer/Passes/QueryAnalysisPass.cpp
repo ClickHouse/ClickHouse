@@ -6107,7 +6107,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
             if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
-                !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)
             {
