@@ -5309,8 +5309,9 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
-    const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
+        && settings.max_parallel_replicas > 1
+        && settings.allow_experimental_streaming == false;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
@@ -5325,8 +5326,11 @@ bool Context::canUseParallelReplicasOnFollower() const
 
 bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
 {
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
+        && settings.max_parallel_replicas > 1
+        && settings.allow_experimental_streaming == false
+        && cluster.getShardCount() == 1
+        && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

@@ -1,4 +1,5 @@
 
+#include <optional>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -182,20 +183,28 @@ private:
             return;
 
         auto distributed_product_mode = getSettings().distributed_product_mode;
+        const auto & modifiers = table_node_typed.getTableExpressionModifiers();
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
-            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
-                distributed_storage->getRemoteTableName()};
+            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(), distributed_storage->getRemoteTableName()};
             auto resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
+
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
             auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
+
+            if (modifiers)
+                replacement_table_expression->setTableExpressionModifiers(modifiers.value());
+
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings().prefer_global_in_and_join) &&
             !in_function_or_join_stack.empty())
         {
+            if (modifiers && modifiers->hasStream())
+                throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED, "Global IN/JOIN subqueries in Streaming mode are denied.");
+
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
@@ -455,6 +464,125 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 {
     RewriteJoinToGlobalJoinVisitor visitor(context);
     visitor.visit(query_tree_to_modify);
+}
+
+class ShardCursorChangesVisitor : public InDepthQueryTreeVisitor<ShardCursorChangesVisitor>
+{
+    ShardCursorChanges changes;
+    DistributedProductMode mode;
+
+public:
+    using Base = InDepthQueryTreeVisitor<ShardCursorChangesVisitor>;
+    using Base::Base;
+
+    explicit ShardCursorChangesVisitor(DistributedProductMode mode_)
+        : mode(mode_)
+    {
+    }
+
+    ShardCursorChanges extractShardCursorChanges()
+    {
+        return std::move(changes);
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * table_node = node->as<TableNode>())
+            processTableNode(*table_node);
+        else if (auto * table_function_node = node->as<TableFunctionNode>())
+            processTableFunction(*table_function_node);
+    }
+
+private:
+    void processTableNode(TableNode & node)
+    {
+        const auto storage_id = node.getStorageID();
+
+        const auto & modifiers = node.getTableExpressionModifiers();
+        if (modifiers && modifiers->hasStream())
+            changes.keeper_restore_map[storage_id.getFullTableName()] = modifiers->getStreamSettings()->keeper_key;
+
+        const auto * distributed_storage = typeid_cast<const StorageDistributed *>(node.getStorage().get());
+        if (!distributed_storage)
+            return;
+
+        bool distributed_valid_for_rewrite = distributed_storage->getShardCount() >= 2;
+        if (!distributed_valid_for_rewrite)
+            return;
+
+        if (mode == DistributedProductMode::LOCAL)
+        {
+            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(), distributed_storage->getRemoteTableName()};
+            changes.storage_restore_map[remote_storage_id.getFullTableName()] = storage_id.getFullTableName();
+        }
+
+        /// other modes either do not change the storage or are not supported in streaming queries.
+    }
+
+    void processTableFunction(TableFunctionNode & node)
+    {
+        const auto storage_id = node.getStorageID();
+
+        const auto & modifiers = node.getTableExpressionModifiers();
+        if (modifiers && modifiers->hasStream())
+            changes.keeper_restore_map[storage_id.getFullTableName()] = modifiers->getStreamSettings()->keeper_key;
+    }
+};
+
+ShardCursorChanges extractShardCursorChanges(QueryTreeNodePtr query_tree, DistributedProductMode mode)
+{
+    ShardCursorChangesVisitor visitor(mode);
+    visitor.visit(query_tree);
+    return visitor.extractShardCursorChanges();
+}
+
+class NarrowShardCursorsVisitor : public InDepthQueryTreeVisitor<NarrowShardCursorsVisitor>
+{
+    String shard_key;
+    bool changed = false;
+
+public:
+    using Base = InDepthQueryTreeVisitor<NarrowShardCursorsVisitor>;
+    using Base::Base;
+
+    explicit NarrowShardCursorsVisitor(size_t shard_num_) : shard_key(fmt::format("{}", shard_num_))
+    {
+    }
+
+    bool isChanged() const
+    {
+        return changed;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * table_node = node->as<TableNode>())
+            rewriteModifiers(table_node->getTableExpressionModifiers());
+        else if (auto * table_function_node = node->as<TableFunctionNode>())
+            rewriteModifiers(table_function_node->getTableExpressionModifiers());
+    }
+
+private:
+    void rewriteModifiers(std::optional<TableExpressionModifiers> & modifiers)
+    {
+        if (!modifiers || !modifiers->hasStream())
+            return;
+
+        auto stream_settings = modifiers->getStreamSettings();
+        stream_settings->keeper_key.reset();
+        stream_settings->tree = stream_settings->tree->next(shard_key);
+
+        modifiers->setStreamSettings(std::move(stream_settings));
+
+        changed = true;
+    }
+};
+
+bool narrowShardCursors(QueryTreeNodePtr query_tree_to_modify, size_t shard_num)
+{
+    NarrowShardCursorsVisitor visitor(shard_num);
+    visitor.visit(query_tree_to_modify);
+    return visitor.isChanged();
 }
 
 }

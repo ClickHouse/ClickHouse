@@ -12,6 +12,7 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/WrapShardCursorTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -58,6 +59,17 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
     pipe.addSimpleTransform([&](const Block & cur_header, Pipe::StreamType) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(cur_header, convert_actions);
+    });
+}
+
+static void addRestoreCursorTransform(Pipe & pipe, size_t shard_num, const ShardCursorChanges & changes)
+{
+    if (changes.keeper_restore_map.empty())
+        return;
+
+    pipe.addSimpleTransform([&](const Block & cur_header)
+    {
+        return std::make_shared<WrapShardCursorTransform>(cur_header, shard_num, changes);
     });
 }
 
@@ -223,6 +235,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
     addConvertingActions(pipes.back(), output_stream->header, shard.has_missing_objects);
+    addRestoreCursorTransform(pipes.back(), shard.shard_info.shard_num, shard.changes);
 }
 
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard)
@@ -304,6 +317,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
             addConvertingActions(pipes.back(), output_stream->header, shard.has_missing_objects);
+            addRestoreCursorTransform(pipes.back(), shard.shard_info.shard_num, shard.changes);
         }
     }
     else
@@ -333,6 +347,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
         addConvertingActions(pipes.back(), output_stream->header, shard.has_missing_objects);
+        addRestoreCursorTransform(pipes.back(), shard.shard_info.shard_num, shard.changes);
     }
 }
 

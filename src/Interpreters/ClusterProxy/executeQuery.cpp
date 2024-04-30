@@ -16,13 +16,14 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <Processors/ResizeProcessor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Distributed/DistributedSettings.h>
-
+#include <Storages/buildQueryTreeForShard.h>
 
 namespace DB
 {
@@ -237,6 +238,7 @@ void executeQuery(
     new_context->increaseDistributedDepth();
 
     const size_t shards = cluster->getShardCount();
+    bool is_infinite = false;
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
@@ -260,6 +262,9 @@ void executeQuery(
                 };
                 optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), new_context);
             }
+
+            /// query is infinite if has at least one streaming source.
+            is_infinite |= narrowShardCursors(query_for_shard, shard_info.shard_num);
 
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
@@ -367,6 +372,10 @@ void executeQuery(
 
     auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
+
+    /// we must force query plan to streaming mode if there is at least one streaming source.
+    if (is_infinite && !query_plan.getCurrentDataStream().is_infinite)
+        makeStreamInfinite(query_plan);
 }
 
 

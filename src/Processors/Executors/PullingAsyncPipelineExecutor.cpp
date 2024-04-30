@@ -3,6 +3,7 @@
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/CursorInfo.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/setThreadName.h>
@@ -154,6 +155,12 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
             block.info.bucket_num = agg_info->bucket_num;
             block.info.is_overflows = agg_info->is_overflows;
         }
+    }
+
+    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::info_slot))
+    {
+        if (const auto * cursor_info = typeid_cast<const CursorInfo *>(chunk_info.get()))
+            block.info.cursors = std::move(cursor_info->cursors);
     }
 
     return true;

@@ -8,6 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 namespace DB
 {
@@ -66,6 +67,7 @@ public:
         bool lazy = false;
         time_t local_delay = 0;
         AdditionalShardFilterGenerator shard_filter_generator{};
+        ShardCursorChanges changes;
     };
 
     using Shards = std::vector<Shard>;
@@ -74,7 +76,8 @@ public:
         const Block & header_,
         const ColumnsDescriptionByShardNum & objects_by_shard_,
         const StorageSnapshotPtr & storage_snapshot_,
-        QueryProcessingStage::Enum processed_stage_);
+        QueryProcessingStage::Enum processed_stage_,
+        ShardCursorChanges changes_ = {});
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -104,6 +107,7 @@ public:
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
+    ShardCursorChanges changes;
 
 private:
     void createForShardImpl(

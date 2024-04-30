@@ -56,9 +56,14 @@ public:
     }
 
     /// Returns using stream settings
-    std::optional<StreamSettings> getStreamSettings() const
+    const std::optional<StreamSettings> & getStreamSettings() const
     {
         return stream_settings;
+    }
+
+    void setStreamSettings(std::optional<StreamSettings> value)
+    {
+        stream_settings = value;
     }
 
     /// Returns true if sample size ratio is specified, false otherwise

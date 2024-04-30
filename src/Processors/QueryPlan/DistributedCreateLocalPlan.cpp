@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/WrapShardCursorStep.h>
 
 namespace DB
 {
@@ -38,6 +39,15 @@ void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missi
     plan.addStep(std::move(converting));
 }
 
+void addRestoreCursorStep(QueryPlan & plan, size_t shard_num, ShardCursorChanges changes)
+{
+    if (changes.keeper_restore_map.empty())
+        return;
+
+    auto step = std::make_unique<WrapShardCursorStep>(plan.getCurrentDataStream(), shard_num, std::move(changes));
+    plan.addStep(std::move(step));
+}
+
 }
 
 std::unique_ptr<QueryPlan> createLocalPlan(
@@ -47,7 +57,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
     size_t shard_count,
-    bool has_missing_objects)
+    bool has_missing_objects,
+    ShardCursorChanges changes)
 {
     checkStackSize();
 
@@ -82,6 +93,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     }
 
     addConvertingActions(*query_plan, header, has_missing_objects);
+    addRestoreCursorStep(*query_plan, shard_num, std::move(changes));
+
     return query_plan;
 }
 

@@ -36,6 +36,22 @@ MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
     return cursor;
 }
 
+std::shared_ptr<CursorInfo> buildMergeTreeCursorInfo(
+    const String & storage_full_name,
+    const String & partition_id,
+    const std::optional<String> & keeper_key,
+    Int64 block_number,
+    Int64 block_offset)
+{
+    CursorTreeNodePtr tree = std::make_shared<CursorTreeNode>();
+    auto & partition_subtree = tree->next(partition_id);
+    partition_subtree->setValue("block_number", block_number);
+    partition_subtree->setValue("block_offset", block_offset);
+
+    CursorDataMap data = {{storage_full_name, CursorData{.tree = std::move(tree), .keeper_key = keeper_key}}};
+    return std::make_shared<CursorInfo>(std::move(data));
+}
+
 std::map<String, Int64> buildInitialBlockNumberOffsets(
     const MergeTreeCursor & cursor,
     const MergeTreeData::DataPartsVector & snapshot_data_parts,
@@ -117,14 +133,19 @@ std::optional<FilterDAGInfo> convertCursorToFilter(const MergeTreeCursor & curso
     }
 
     if (partition_filters.empty())
-      return std::nullopt;
+        return std::nullopt;
 
     String filter = boost::algorithm::join(partition_filters, " OR ");
 
     ParserExpression parser;
     auto cursor_filter_ast = parseQuery(
-        parser, filter.data(), filter.data() + filter.size(), "cursor filter",
-        settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        parser,
+        filter.data(),
+        filter.data() + filter.size(),
+        "cursor filter",
+        settings.max_query_size,
+        settings.max_parser_depth,
+        settings.max_parser_backtracks);
 
     chassert(cursor_filter_ast);
     return buildFilterInfo(cursor_filter_ast, info.table_expression, planner_context);

@@ -1,4 +1,5 @@
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/CursorInfo.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
@@ -178,6 +179,9 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         info->is_overflows = block.info.is_overflows;
         chunk.setChunkInfo(std::move(info));
     }
+
+    if (!block.info.cursors.empty())
+        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors)), CursorInfo::info_slot);
 
     return chunk;
 }

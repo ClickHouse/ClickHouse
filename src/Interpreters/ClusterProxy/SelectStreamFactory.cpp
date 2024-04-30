@@ -103,11 +103,13 @@ SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
     const ColumnsDescriptionByShardNum & objects_by_shard_,
     const StorageSnapshotPtr & storage_snapshot_,
-    QueryProcessingStage::Enum processed_stage_)
+    QueryProcessingStage::Enum processed_stage_,
+    ShardCursorChanges changes_)
     : header(header_),
     objects_by_shard(objects_by_shard_),
     storage_snapshot(storage_snapshot_),
-    processed_stage(processed_stage_)
+    processed_stage(processed_stage_),
+    changes(std::move(changes_))
 {
 }
 
@@ -158,7 +160,7 @@ void SelectStreamFactory::createForShardImpl(
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, changes));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
@@ -179,6 +181,7 @@ void SelectStreamFactory::createForShardImpl(
             .lazy = lazy,
             .local_delay = local_delay,
             .shard_filter_generator = std::move(shard_filter_generator),
+            .changes = changes,
         });
     };
 

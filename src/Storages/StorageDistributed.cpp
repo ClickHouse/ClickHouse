@@ -770,7 +770,8 @@ public:
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
-    const ASTPtr & remote_table_function)
+    const ASTPtr & remote_table_function,
+    ShardCursorChanges & changes)
 {
     auto & planner_context = query_info.planner_context;
     const auto & query_context = planner_context->getQueryContext();
@@ -822,6 +823,10 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
     replase_alias_columns_visitor.visit(query_tree_to_modify);
 
+    changes = extractShardCursorChanges(query_tree_to_modify, query_info.planner_context->getQueryContext()->getSettings().distributed_product_mode);
+    if (!remote_table_function)
+        changes.storage_restore_map[remote_storage_id.getFullTableName()] = query_info.table_expression->as<TableNode>()->getStorageID().getFullTableName();
+
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
 
@@ -840,6 +845,7 @@ void StorageDistributed::read(
     Block header;
 
     SelectQueryInfo modified_query_info = query_info;
+    ShardCursorChanges changes;
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
@@ -850,7 +856,8 @@ void StorageDistributed::read(
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             storage_snapshot,
             remote_storage_id,
-            remote_table_function_ptr);
+            remote_table_function_ptr,
+            changes);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
@@ -893,7 +900,8 @@ void StorageDistributed::read(
             header,
             snapshot_data.objects_by_shard,
             storage_snapshot,
-            processed_stage);
+            processed_stage,
+            std::move(changes));
 
     const auto & settings = local_context->getSettingsRef();
 
