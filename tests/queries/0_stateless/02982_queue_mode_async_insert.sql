@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS queue_mode_test;
 
-CREATE TABLE queue_mode_test(a UInt64) ENGINE=MergeTree ORDER BY a SETTINGS queue_mode=1;
+CREATE TABLE queue_mode_test(a UInt64) ENGINE=MergeTree ORDER BY a SETTINGS queue_mode=1, allow_experimental_block_number_column=1;
 
 SET async_insert = 1;
 SET wait_for_async_insert = 0;
@@ -14,5 +14,6 @@ INSERT INTO queue_mode_test VALUES (3);
 INSERT INTO queue_mode_test VALUES (4);
 
 SYSTEM FLUSH ASYNC INSERT QUEUE;
+OPTIMIZE TABLE queue_mode_test;
 
-SELECT * FROM queue_mode_test;
+SELECT a, _queue_block_number == _block_number FROM queue_mode_test ORDER BY a;
