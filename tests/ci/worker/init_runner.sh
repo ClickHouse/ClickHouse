@@ -312,6 +312,8 @@ while true; do
         no_terminating_metadata || terminate_on_event
         check_spot_instance_is_old && terminate_and_exit
         check_proceed_spot_termination force
+        # There were some failures to start the Job because of trash in _work
+        rm -rf _work
 
         echo "Going to configure runner"
         sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" \
