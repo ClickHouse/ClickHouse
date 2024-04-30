@@ -40,7 +40,11 @@ void writeNumpyStrings(const ColumnPtr & column, size_t length, WriteBuffer & bu
 {
     const auto * string_column = assert_cast<const ColumnType *>(column.get());
     for (size_t i = 0; i < string_column->size(); ++i)
-        buf.write(string_column->getDataAt(i).data, length);
+    {
+        auto data = string_column->getDataAt(i);
+        buf.write(data.data, data.size);
+        writeChar(0, length - data.size, buf);
+    }
 }
 
 }

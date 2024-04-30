@@ -52,9 +52,9 @@ array	String
 [[0.1],[0.2]]
 [[0.1],[0.2]]
 [[0.1],[0.2]]
-[['abb','bbc'],['ccc','dddd']]
-[['abb','bbc'],['ccc','dddd']]
-[['abb','bbc'],['ccc','dddd']]
+[['a','bb'],['ccc','dddd']]
+[['a','bb'],['ccc','dddd']]
+[['a','bb'],['ccc','dddd']]
 array	Array(Array(Array(Int8)))					
 array	Array(Array(Float64))					
 array	Array(Array(String))					
