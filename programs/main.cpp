@@ -492,10 +492,9 @@ int main(int argc_, char ** argv_)
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
     ///     clickhouse "select ..." # spawn local
-    ///     clickhouse query.sql # spawn local
     ///
     if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
-        || std::string_view(argv[1]).contains(' ') || std::string_view(argv[1]).contains('.')))
+        || std::string_view(argv[1]).contains(' ')))
     {
         main_func = mainEntryClickHouseLocal;
     }

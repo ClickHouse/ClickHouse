@@ -2917,7 +2917,6 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         {
             /// Two special cases for better usability:
             /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
-            /// - otherwise if it contains a dot it might be a queries file: clickhouse file.sql
             /// These are relevant for interactive usage - user-friendly, but questionable in general.
             /// In case of ambiguity or for scripts, prefer using proper options.
 
@@ -2927,8 +2926,6 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
             const char * option;
             if (token.contains(' '))
                 option = "query";
-            else if (token.contains('.'))
-                option = "queries-file";
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
 
