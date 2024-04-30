@@ -55,7 +55,7 @@ public:
 
     // Checks if user valid_until is higher than current time.
     // Throws exception if valid_until is less than current time.
-    void isUserStillValid();
+    void checkIfUserIsStillValid();
 
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);

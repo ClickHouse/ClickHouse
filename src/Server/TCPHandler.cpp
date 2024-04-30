@@ -416,7 +416,7 @@ void TCPHandler::runImpl()
             }
 
             if (!is_interserver_mode)
-                session->isUserStillValid();
+                session->checkIfUserIsStillValid();
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {

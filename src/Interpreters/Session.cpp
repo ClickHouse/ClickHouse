@@ -366,7 +366,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->current_address = address;
 }
 
-void Session::isUserStillValid()
+void Session::checkIfUserIsStillValid()
 {
     if (user && user->valid_until)
     {
