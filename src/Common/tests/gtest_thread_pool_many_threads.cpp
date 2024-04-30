@@ -108,8 +108,6 @@ TEST_P(ThreadPoolTest, Warm)
     }
 
     warm_pool.wait();
-
-    // global_pool.finalize();
 }
 
 
