@@ -210,7 +210,7 @@ void LocalServer::tryInitPath()
     else
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
-        // (or in the current dir if the temporary doesn't exist)
+        // (or in the current dir if a temporary doesn't exist)
         LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
