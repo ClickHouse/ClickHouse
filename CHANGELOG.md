@@ -28,7 +28,6 @@
 * Add `SYSTEM UNLOAD PRIMARY KEY` to free up memory usage for a table's primary key. [#62738](https://github.com/ClickHouse/ClickHouse/pull/62738) ([Pablo Marcos](https://github.com/pamarcos)).
 * Added `value1`, `value2`, ..., `value10` columns to `system.text_log`. These columns contain values that were used to format the message. [#59619](https://github.com/ClickHouse/ClickHouse/pull/59619) ([Alexey Katsman](https://github.com/alexkats)).
 * Added persistent virtual column `_block_offset` which stores original number of row in block that was assigned at insert. Persistence of column `_block_offset` can be enabled by the MergeTree setting `enable_block_offset_column`. Added virtual column`_part_data_version` which contains either min block number or mutation version of part. Persistent virtual column `_block_number` is not considered experimental anymore. [#60676](https://github.com/ClickHouse/ClickHouse/pull/60676) ([Anton Popov](https://github.com/CurtizJ)).
-* Add `TRUNCATE ALL TABLES`. [#61862](https://github.com/ClickHouse/ClickHouse/pull/61862) ([豪肥肥](https://github.com/HowePa)).
 * Add a setting `input_format_json_throw_on_bad_escape_sequence`, disabling it allows saving bad escape sequences in JSON input formats. [#61889](https://github.com/ClickHouse/ClickHouse/pull/61889) ([Kruglov Pavel](https://github.com/Avogar)).
 
 #### Performance Improvement
