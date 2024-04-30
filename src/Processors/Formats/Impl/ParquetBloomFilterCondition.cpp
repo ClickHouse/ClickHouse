@@ -397,7 +397,6 @@ bool ParquetBloomFilterCondition::traverseFunction(
                  function_name == "notEquals" ||
                  function_name == "has" ||
                  function_name == "hasAny" ||
-                 function_name == "hasAll" ||
                  function_name == "hasAll")
         {
             Field const_value;
