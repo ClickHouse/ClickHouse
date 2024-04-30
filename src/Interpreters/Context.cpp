@@ -5307,7 +5307,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_ref.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_ref.allow_experimental_parallel_reading_from_replicas > 0)
+    if (settings_ref.use_parallel_replicas > 0)
         return READ_TASKS;
 
     return SAMPLE_KEY;

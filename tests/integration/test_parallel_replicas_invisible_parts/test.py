@@ -81,7 +81,7 @@ def _get_result_with_parallel_replicas(
     return nodes[0].query(
         query,
         settings={
-            "allow_experimental_parallel_reading_from_replicas": 2,
+            "use_parallel_replicas": 2,
             "max_parallel_replicas": len(nodes),
             "cluster_for_parallel_replicas": f"{cluster_name}",
             "parallel_replicas_mark_segment_size": parallel_replicas_mark_segment_size,

@@ -289,11 +289,11 @@ bool applyTrivialCountIfPossible(
 
     if (settings.max_parallel_replicas > 1)
     {
-        if (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas == 0)
+        if (!settings.parallel_replicas_custom_key.value.empty() || settings.use_parallel_replicas == 0)
             return false;
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
-        query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        query_context->setSetting("use_parallel_replicas", Field(0));
         query_context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
@@ -776,7 +776,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (number_of_replicas_to_use <= 1)
                     {
                         planner_context->getMutableQueryContext()->setSetting(
-                            "allow_experimental_parallel_reading_from_replicas", Field(0));
+                            "use_parallel_replicas", Field(0));
                         planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
                         LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                     }

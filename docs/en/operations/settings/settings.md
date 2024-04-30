@@ -1590,7 +1590,7 @@ Possible values:
 
 Default value: `default`.
 
-## allow_experimental_parallel_reading_from_replicas
+## use_parallel_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
 

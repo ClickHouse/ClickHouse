@@ -14,7 +14,7 @@ as select * from numbers(1);
 #
 #   Logical error: 'Coordinator for parallel reading from replicas is not initialized'.
 opts=(
-    --allow_experimental_parallel_reading_from_replicas 1
+    --use_parallel_replicas 1
     --parallel_replicas_for_non_replicated_merge_tree 1
     --max_parallel_replicas 3
     --cluster_for_parallel_replicas parallel_replicas

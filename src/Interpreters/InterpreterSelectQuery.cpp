@@ -484,12 +484,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool is_query_with_final = isQueryWithFinal(query_info);
     if (is_query_with_final && context->canUseTaskBasedParallelReplicas())
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        if (settings.use_parallel_replicas == 1)
         {
             LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("use_parallel_replicas", Field(0));
         }
-        else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+        else if (settings.use_parallel_replicas >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
         }
@@ -497,14 +497,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Check support for parallel replicas for non-replicated storage (plain MergeTree)
     bool is_plain_merge_tree = storage && storage->isMergeTree() && !storage->supportsReplication();
-    if (is_plain_merge_tree && settings.allow_experimental_parallel_reading_from_replicas > 0 && !settings.parallel_replicas_for_non_replicated_merge_tree)
+    if (is_plain_merge_tree && settings.use_parallel_replicas > 0 && !settings.parallel_replicas_for_non_replicated_merge_tree)
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1)
+        if (settings.use_parallel_replicas == 1)
         {
             LOG_DEBUG(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("use_parallel_replicas", Field(0));
         }
-        else if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
+        else if (settings.use_parallel_replicas >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`");
         }
@@ -780,10 +780,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     };
 
 
-    /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed allow_experimental_parallel_reading_from_replicas
+    /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed use_parallel_replicas
     /// inside the query context (because it doesn't have write access to the main context)
     UInt64 parallel_replicas_before_analysis
-        = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas : 0;
+        = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef().use_parallel_replicas : 0;
 
     /// Conditionally support AST-based PREWHERE optimization.
     analyze(shouldMoveToPrewhere() && (!settings.query_plan_optimize_prewhere || !settings.query_plan_enable_optimizations));
@@ -795,10 +795,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (context->hasQueryContext())
     {
         /// As this query can't be executed with parallel replicas, we must reanalyze it
-        if (context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas
+        if (context->getQueryContext()->getSettingsRef().use_parallel_replicas
             != parallel_replicas_before_analysis)
         {
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("use_parallel_replicas", Field(0));
             context->setSetting("max_parallel_replicas", UInt64{1});
             need_analyze_again = true;
         }
@@ -890,7 +890,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     if (getTrivialCount(0).has_value())
     {
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("use_parallel_replicas", Field(0));
         context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
         return true;
@@ -945,7 +945,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
 
     if (number_of_replicas_to_use <= 1)
     {
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("use_parallel_replicas", Field(0));
         context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
         return true;

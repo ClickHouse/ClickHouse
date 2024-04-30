@@ -148,7 +148,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
             }
         }
         if (disable_parallel_replicas)
-            new_settings.allow_experimental_parallel_reading_from_replicas = 0;
+            new_settings.use_parallel_replicas = 0;
     }
 
     if (settings.max_execution_time_leaf.value > 0)
@@ -224,9 +224,9 @@ void executeQuery(
     auto cluster = query_info.getCluster();
     auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log,
         &distributed_settings);
-    if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
-        && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
-           != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
+    if (context->getSettingsRef().use_parallel_replicas
+        && context->getSettingsRef().use_parallel_replicas.value
+           != new_context->getSettingsRef().use_parallel_replicas.value)
     {
         LOG_TRACE(
             log,
@@ -398,14 +398,14 @@ void executeQueryWithParallelReplicas(
         {
             LOG_WARNING(
                 getLogger("executeQueryWithParallelReplicas"),
-                "Setting 'use_hedged_requests' explicitly with enabled 'allow_experimental_parallel_reading_from_replicas' has no effect. "
+                "Setting 'use_hedged_requests' explicitly with enabled 'use_parallel_replicas' has no effect. "
                 "Hedged connections are not used for parallel reading from replicas");
         }
         else
         {
             LOG_INFO(
                 getLogger("executeQueryWithParallelReplicas"),
-                "Disabling 'use_hedged_requests' in favor of 'allow_experimental_parallel_reading_from_replicas'. Hedged connections are "
+                "Disabling 'use_hedged_requests' in favor of 'use_parallel_replicas'. Hedged connections are "
                 "not used for parallel reading from replicas");
         }
 
