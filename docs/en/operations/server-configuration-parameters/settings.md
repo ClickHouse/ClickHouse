@@ -1189,7 +1189,7 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 
 ## include_from {#include_from}
 
-The path to the file with substitutions.
+The path to the file with substitutions. Supported file formats are XML and YAML.
 
 For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
