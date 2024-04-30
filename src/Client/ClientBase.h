@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string_view>
-#include "Common/NamePrompter.h"
+#include <Common/NamePrompter.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
@@ -9,6 +9,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
+#include <Core/Streaming/CursorMerger.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
@@ -198,6 +199,8 @@ protected:
     /// since other members can use them.
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+
+    CursorMerger cursors; /// Tracked table cursors.
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;

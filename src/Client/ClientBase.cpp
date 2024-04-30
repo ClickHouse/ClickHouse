@@ -446,6 +446,8 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
+    cursors.add(block.info.cursors);
+
     if (!block)
         return;
 
@@ -1297,6 +1299,17 @@ void ClientBase::onEndOfStream()
 
     if (is_interactive && !written_first_block)
         std::cout << "Ok." << std::endl;
+
+    if (is_interactive && cursors.hasSome())
+    {
+        std::cout << std::endl << "Cursors:" << std::endl;
+
+        auto finalized_cursors = cursors.finalize();
+        for (const auto & [storage, cursor] : finalized_cursors)
+            std::cout << storage << ": " << cursorTreeToString(cursor.tree) << std::endl;
+
+        std::cout << std::endl;
+    }
 }
 
 

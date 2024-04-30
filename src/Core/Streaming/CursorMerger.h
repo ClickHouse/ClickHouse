@@ -10,6 +10,9 @@ class CursorMerger
 public:
     void add(const CursorDataMap & data_map);
 
+    bool isEmpty() const;
+    bool hasSome() const;
+
     CursorDataMap finalize();
 
 private:

@@ -21,6 +21,16 @@ void CursorMerger::add(const CursorDataMap & data_map)
     }
 }
 
+bool CursorMerger::isEmpty() const
+{
+    return merged_data_map.empty();
+}
+
+bool CursorMerger::hasSome() const
+{
+    return !isEmpty();
+}
+
 CursorDataMap CursorMerger::finalize()
 {
     return std::exchange(merged_data_map, {});
