@@ -46,12 +46,12 @@ INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
   *
   * The following steps are performed:
   *
-  * - copying the binary to binary directory (/usr/bin).
+  * - copying the binary to binary directory (/usr/bin/)
   * - creation of symlinks for tools.
   * - creation of clickhouse user and group.
-  * - creation of config directory (/etc/clickhouse-server).
+  * - creation of config directory (/etc/clickhouse-server/).
   * - creation of default configuration files.
-  * - creation of a directory for logs (/var/log/clickhouse-server).
+  * - creation of a directory for logs (/var/log/clickhouse-server/).
   * - creation of a data directory if not exists.
   * - setting a password for default user.
   * - choose an option to listen connections.
@@ -226,7 +226,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "where to install binaries")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "where to install binaries")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "where to install configs")
             ("log-path", po::value<std::string>()->default_value("var/log/clickhouse-server"), "where to create log directory")
             ("data-path", po::value<std::string>()->default_value("var/lib/clickhouse"), "directory for data")
@@ -724,6 +729,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
+        /// Don't allow relative paths because install script may cd to / when installing
+        /// And having path=./ may break the system
+        if (log_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log path is relative: {}", log_path.string());
+        if (data_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data path is relative: {}", data_path.string());
+        if (pid_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pid path is relative: {}", pid_path.string());
+
         /// Create directories for data and log.
 
         if (fs::exists(log_path))
@@ -1216,7 +1230,12 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
@@ -1332,7 +1351,12 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")

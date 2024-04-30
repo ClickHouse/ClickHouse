@@ -180,12 +180,14 @@ Filter column: notEquals(__table1.number, 1_UInt8)
 > one condition of filter is pushed down before INNER JOIN
 Join
 Join
-Filter column: notEquals(number, 1)
+Filter column: and(notEquals(number, 1), notEquals(number, 2))
 Join
+Filter column: and(notEquals(b, 2), notEquals(b, 1))
 > (analyzer) one condition of filter is pushed down before INNER JOIN
 Join
 Join
-Filter column: notEquals(__table1.number, 1_UInt8)
+Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))
+Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))
 3	3
 > filter is pushed down before UNION
 Union

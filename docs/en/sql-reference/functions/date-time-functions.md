@@ -1836,6 +1836,9 @@ Alias: `dateTrunc`.
 - `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
     Possible values:
 
+    - `nanosecond` - Compatible only with DateTime64
+    - `microsecond` - Compatible only with DateTime64
+    - `milisecond` - Compatible only with DateTime64
     - `second`
     - `minute`
     - `hour`
@@ -1902,11 +1905,17 @@ If the addition results in a value outside the bounds of the data type, the resu
 date_add(unit, value, date)
 ```
 
+Alternative syntax:
+
+``` sql
+date_add(date, INTERVAL value unit)
+```
+
 Aliases: `dateAdd`, `DATE_ADD`.
 
 **Arguments**
 
-- `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+- `unit` — The type of interval to add. Note: This is not a [String](../../sql-reference/data-types/string.md) and must therefore not be quoted.
     Possible values:
 
     - `second`
@@ -1941,6 +1950,20 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
+```sql
+SELECT date_add(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+```text
+┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                    2021-01-01 │
+└───────────────────────────────────────────────┘
+```
+
+
+
 **See Also**
 
 - [addDate](#addDate)
@@ -1957,11 +1980,18 @@ If the subtraction results in a value outside the bounds of the data type, the r
 date_sub(unit, value, date)
 ```
 
+Alternative syntax:
+
+``` sql
+date_sub(date, INTERVAL value unit)
+```
+
+
 Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
-- `unit` — The type of interval to subtract. Note: The unit should be unquoted.
+- `unit` — The type of interval to subtract. Note: This is not a [String](../../sql-reference/data-types/string.md) and must therefore not be quoted.
 
     Possible values:
 
@@ -1996,6 +2026,19 @@ Result:
 │                                     2015-01-01 │
 └────────────────────────────────────────────────┘
 ```
+
+``` sql
+SELECT date_sub(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+``` text
+┌─minus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                     2015-01-01 │
+└────────────────────────────────────────────────┘
+```
+
 
 **See Also**
 
