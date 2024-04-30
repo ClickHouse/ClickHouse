@@ -203,7 +203,7 @@ SELECT generateUUIDv7ThreadMonotonic(1), generateUUIDv7ThreadMonotonic(2);
 
 Generates a [UUID](../data-types/uuid.md) of [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04).
 
-The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits) and random values (76 bits, including a 2-bit variant field "2").
+The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits) and a random field (76 bits, including a 2-bit variant field "2").
 
 This function is the fastest `generateUUIDv7*` function but it gives no monotonicity guarantees within a timestamp.
 
