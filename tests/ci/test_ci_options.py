@@ -143,7 +143,8 @@ class TestCIOptions(unittest.TestCase):
             _TEST_BODY_2, update_from_api=False
         )
         self.assertCountEqual(
-            ci_options.include_keywords, ["integration", "foo_bar", "stateless", "azure"]
+            ci_options.include_keywords,
+            ["integration", "foo_bar", "stateless", "azure"],
         )
         self.assertCountEqual(
             ci_options.exclude_keywords,
