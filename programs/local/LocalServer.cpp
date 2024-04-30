@@ -481,7 +481,6 @@ try
     registerFormats();
 
     processConfig();
-    adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
@@ -689,6 +688,7 @@ void LocalServer::processConfig()
     /// NOTE: it is important to apply any overrides before
     /// setDefaultProfiles() calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
+    adjustSettings();
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 
@@ -774,10 +774,12 @@ void LocalServer::processConfig()
 }
 
 
-void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
+void LocalServer::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
+    if (verbose)
+        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";

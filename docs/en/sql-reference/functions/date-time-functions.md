@@ -1907,6 +1907,12 @@ If the addition results in a value outside the bounds of the data type, the resu
 date_add(unit, value, date)
 ```
 
+Alternative syntax:
+
+``` sql
+date_add(date, INTERVAL value unit)
+```
+
 Aliases: `dateAdd`, `DATE_ADD`.
 
 **Arguments**
@@ -1946,6 +1952,20 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
+```sql
+SELECT date_add(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+```text
+┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                    2021-01-01 │
+└───────────────────────────────────────────────┘
+```
+
+
+
 **See Also**
 
 - [addDate](#addDate)
@@ -1961,6 +1981,13 @@ If the subtraction results in a value outside the bounds of the data type, the r
 ``` sql
 date_sub(unit, value, date)
 ```
+
+Alternative syntax:
+
+``` sql
+date_sub(date, INTERVAL value unit)
+```
+
 
 Aliases: `dateSub`, `DATE_SUB`.
 
@@ -2001,6 +2028,19 @@ Result:
 │                                     2015-01-01 │
 └────────────────────────────────────────────────┘
 ```
+
+``` sql
+SELECT date_sub(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+``` text
+┌─minus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                     2015-01-01 │
+└────────────────────────────────────────────────┘
+```
+
 
 **See Also**
 
