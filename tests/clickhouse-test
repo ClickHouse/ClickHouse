@@ -1646,8 +1646,8 @@ class TestCase:
 
             client_options = self.add_random_settings(client_options)
 
-            if not is_valid_utf_8(self.case_file) or not is_valid_utf_8(
-                self.reference_file
+            if not is_valid_utf_8(self.case_file) or (
+                self.reference_file and not is_valid_utf_8(self.reference_file)
             ):
                 proc, stdout, stderr, debug_log, total_time = self.run_single_test(
                     server_logs_level, client_options
@@ -2574,7 +2574,7 @@ def reportLogStats(args):
             count() AS count,
             substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
             substr(any(message), 1, 256) as runtime_message,
-            any((extract(source_file, '\/[a-zA-Z0-9_]+\.[a-z]+'), source_line)) as line
+            any((extract(source_file, '/[a-zA-Z0-9_]+\\.[a-z]+'), source_line)) as line
         FROM system.text_log
         WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
         GROUP BY pattern

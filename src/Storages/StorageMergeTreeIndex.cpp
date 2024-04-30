@@ -82,9 +82,9 @@ protected:
 
                 /// Some of the columns from suffix of primary index may be not loaded
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
-                if (index_position < index.size())
+                if (index_position < index->size())
                 {
-                    result_columns[pos] = index[index_position];
+                    result_columns[pos] = index->at(index_position);
                 }
                 else
                 {

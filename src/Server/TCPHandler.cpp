@@ -793,6 +793,8 @@ bool TCPHandler::readDataNext()
 
             /// We accept and process data.
             read_ok = receivePacket();
+            /// Reset the timeout on Ping packet (NOTE: there is no Ping for INSERT queries yet).
+            watch.restart();
             break;
         }
 
@@ -1233,6 +1235,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    Stopwatch stopwatch;
     Block block;
     ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -1244,6 +1247,11 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
+
+        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
+        if (elapsed_milliseconds > 100)
+            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+                block.rows(), block.bytes(), elapsed_milliseconds);
     }
 }
 

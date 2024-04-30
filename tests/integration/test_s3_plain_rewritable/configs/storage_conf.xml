@@ -1,0 +1,21 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_plain_rewritable>
+                <type>s3_plain_rewritable</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </disk_s3_plain_rewritable>
+        </disks>
+        <policies>
+            <s3_plain_rewritable>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain_rewritable</disk>
+                    </main>
+                </volumes>
+            </s3_plain_rewritable>
+        </policies>
+    </storage_configuration>
+</clickhouse>

@@ -1090,6 +1090,8 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
+    void unloadPrimaryKeys();
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -1707,5 +1709,9 @@ struct CurrentlySubmergingEmergingTagger
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
 }
+
+/// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
+/// Return true if the counter had been updated
+bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove);
 
 }
