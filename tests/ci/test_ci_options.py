@@ -4,7 +4,6 @@
 
 import unittest
 from ci import CiOptions
-from ci_config import JobNames
 
 _TEST_BODY_1 = """
 #### Run only:
@@ -44,6 +43,85 @@ _TEST_BODY_3 = """
 - [x] <!---ci_include_analyzer--> Must include all tests for analyzer
 """
 
+_TEST_JOB_LIST = [
+    "Style check",
+    "Fast test",
+    "package_release",
+    "package_asan",
+    "Docker server image",
+    "Docker keeper image",
+    "Install packages (amd64)",
+    "Install packages (arm64)",
+    "Stateless tests (debug)",
+    "Stateless tests (release)",
+    "Stateless tests (coverage)",
+    "Stateless tests (aarch64)",
+    "Stateless tests (asan)",
+    "Stateless tests (tsan)",
+    "Stateless tests (msan)",
+    "Stateless tests (ubsan)",
+    "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
+    "Stateless tests (debug, s3 storage)",
+    "Stateless tests (tsan, s3 storage)",
+    "Stateless tests flaky check (asan)",
+    "Stateful tests (debug)",
+    "Stateful tests (release)",
+    "Stateful tests (coverage)",
+    "Stateful tests (aarch64)",
+    "Stateful tests (asan)",
+    "Stateful tests (tsan)",
+    "Stateful tests (msan)",
+    "Stateful tests (ubsan)",
+    "Stateful tests (release, ParallelReplicas)",
+    "Stateful tests (debug, ParallelReplicas)",
+    "Stateful tests (asan, ParallelReplicas)",
+    "Stateful tests (msan, ParallelReplicas)",
+    "Stateful tests (ubsan, ParallelReplicas)",
+    "Stateful tests (tsan, ParallelReplicas)",
+    "Stress test (asan)",
+    "Stress test (tsan)",
+    "Stress test (ubsan)",
+    "Stress test (msan)",
+    "Stress test (debug)",
+    "Integration tests (release)",
+    "Integration tests (asan)",
+    "Integration tests (asan, old analyzer)",
+    "Integration tests (tsan)",
+    "Integration tests (aarch64)",
+    "Integration tests flaky check (asan)",
+    "Upgrade check (debug)",
+    "Upgrade check (asan)",
+    "Upgrade check (tsan)",
+    "Upgrade check (msan)",
+    "Unit tests (release)",
+    "Unit tests (asan)",
+    "Unit tests (msan)",
+    "Unit tests (tsan)",
+    "Unit tests (ubsan)",
+    "AST fuzzer (debug)",
+    "AST fuzzer (asan)",
+    "AST fuzzer (msan)",
+    "AST fuzzer (tsan)",
+    "AST fuzzer (ubsan)",
+    "ClickHouse Keeper Jepsen",
+    "ClickHouse Server Jepsen",
+    "Performance Comparison",
+    "Performance Comparison Aarch64",
+    "Sqllogic test (release)",
+    "SQLancer (release)",
+    "SQLancer (debug)",
+    "SQLTest",
+    "Compatibility check (amd64)",
+    "Compatibility check (aarch64)",
+    "ClickBench (amd64)",
+    "ClickBench (aarch64)",
+    "libFuzzer tests",
+    "ClickHouse build check",
+    "ClickHouse special build check",
+    "Docs check",
+    "Bugfix validation",
+]
+
 
 class TestCIOptions(unittest.TestCase):
     def test_pr_body_parsing(self):
@@ -69,7 +147,7 @@ class TestCIOptions(unittest.TestCase):
             ci_options.exclude_keywords,
             ["tsan", "aarch64", "analyzer", "s3_storage", "coverage"],
         )
-        jobs_to_do = list(JobNames)
+        jobs_to_do = list(_TEST_JOB_LIST)
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
@@ -81,9 +159,6 @@ class TestCIOptions(unittest.TestCase):
                 "Style check",
                 "package_release",
                 "package_asan",
-                "package_ubsan",
-                "package_debug",
-                "package_msan",
                 "Stateless tests (asan)",
                 "Stateless tests flaky check (asan)",
                 "Stateless tests (msan)",
@@ -103,7 +178,7 @@ class TestCIOptions(unittest.TestCase):
         )
         self.assertCountEqual(ci_options.include_keywords, ["analyzer"])
         self.assertIsNone(ci_options.exclude_keywords)
-        jobs_to_do = list(JobNames)
+        jobs_to_do = list(_TEST_JOB_LIST)
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(

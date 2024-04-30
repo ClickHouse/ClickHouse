@@ -128,6 +128,11 @@ const FileCache::UserInfo & FileCache::getInternalUser()
     return user;
 }
 
+bool FileCache::isInitialized() const
+{
+    return is_initialized.load(std::memory_order_seq_cst);
+}
+
 const String & FileCache::getBasePath() const
 {
     return metadata.getBaseDirectory();

@@ -90,11 +90,8 @@ struct PushingAsyncPipelineExecutor::Data
 
     void rethrowExceptionIfHas()
     {
-        if (has_exception)
-        {
-            has_exception = false;
+        if (has_exception.exchange(false))
             std::rethrow_exception(exception);
-        }
     }
 };
 
