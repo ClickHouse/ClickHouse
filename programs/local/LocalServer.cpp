@@ -677,6 +677,7 @@ void LocalServer::processConfig()
     /// NOTE: it is important to apply any overrides before
     /// setDefaultProfiles() calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
+    adjustSettings();
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 

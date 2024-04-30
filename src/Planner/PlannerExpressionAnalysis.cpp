@@ -85,6 +85,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef().group_by_use_nulls &&
         (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
+    bool is_secondary_query = planner_context->getQueryContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
     if (query_node.hasGroupBy())
     {
         if (query_node.isGroupByWithGroupingSets())
@@ -100,7 +102,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                     auto is_constant_key = grouping_set_key_node->as<ConstantNode>() != nullptr;
                     group_by_with_constant_keys |= is_constant_key;
 
-                    if (is_constant_key && !aggregates_descriptions.empty())
+                    if (!is_secondary_query && is_constant_key && !aggregates_descriptions.empty())
                         continue;
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
@@ -152,7 +154,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                 auto is_constant_key = group_by_key_node->as<ConstantNode>() != nullptr;
                 group_by_with_constant_keys |= is_constant_key;
 
-                if (is_constant_key && !aggregates_descriptions.empty())
+                if (!is_secondary_query && is_constant_key && !aggregates_descriptions.empty())
                     continue;
 
                 auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, group_by_key_node);

@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class MetadataFromDiskTransactionState
+enum class MetadataStorageTransactionState
 {
     PREPARING,
     FAILED,
@@ -12,6 +12,5 @@ enum class MetadataFromDiskTransactionState
     PARTIALLY_ROLLED_BACK,
 };
 
-std::string toString(MetadataFromDiskTransactionState state);
-
+std::string toString(MetadataStorageTransactionState state);
 }
