@@ -1315,9 +1315,9 @@ TEST(FSSTTest, CompressDecompress)
     char in_str[2281337];
     size_t iter = 0;
     for (auto u: strs) {
+        in_str[iter++] = static_cast<char>(u.size());
         std::memcpy(in_str + iter, u.data(), u.size());
         iter += u.size();
-        in_str[iter++] = '\0';
     }
 
     char out_str[2281337];
@@ -1329,11 +1329,11 @@ TEST(FSSTTest, CompressDecompress)
     memset(in_str, '\0', string_length);
 
     fsst_codec->decompress(out_str, compressed_size, in_str);
-
+    
     size_t out_iter = 0;
     for (auto str: strs) {
-        EXPECT_EQ(std::memcmp(in_str + out_iter, str.data(), str.size()), 0);
-        out_iter += str.size() + 1;
+        EXPECT_EQ(std::memcmp(in_str + (++out_iter), str.data(), str.size()), 0);
+        out_iter += str.size();
     }
 }
 

@@ -1,8 +1,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <double-conversion/utils.h>
-#include "base/defines.h"
+#include <IO/VarInt.h>
 #include "base/types.h"
 
 #include <fsst.h>
@@ -10,6 +9,8 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+
+#include <iostream>
 
 namespace DB
 {
@@ -38,13 +39,16 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override {
-        const size_t rows_count{countRowsInData(reinterpret_cast<const unsigned char*>(source), source_size)};
-        size_t len_in[rows_count];
-        const unsigned char* str_in[rows_count];
-        splitDataByRows(reinterpret_cast<const unsigned char*>(source), source_size, str_in, len_in);
+        std::cerr << "Fsst compress " << source_size << " " << strlen(dest) << std::endl;
 
-        fsst_encoder_t *encoder = fsst_create(rows_count, len_in,
-                    const_cast<SplittedMutableRows>(str_in), 1);
+        std::vector<size_t> len_in;
+        std::vector<const unsigned char*> str_in;
+
+        splitDataByRows(reinterpret_cast<const unsigned char*>(source), str_in, len_in, source_size);
+        size_t rows_count{len_in.size()};
+
+        fsst_encoder_t *encoder = fsst_create(rows_count, len_in.data(),
+                    const_cast<SplittedMutableRows>(str_in.data()), 0);
 
         size_t fsst_header_size = fsst_export(encoder, reinterpret_cast<unsigned char*>(dest));
 
@@ -55,8 +59,8 @@ protected:
 
         if (fsst_compress(encoder,
                         rows_count,
-                        len_in,
-                        const_cast<SplittedMutableRows>(str_in),
+                        len_in.data(),
+                        const_cast<SplittedMutableRows>(str_in.data()),
                         OUT_SIZE, /* дичь какая-то */
                         reinterpret_cast<unsigned char *>(dest + header_size),
                         len_out,
@@ -80,6 +84,8 @@ protected:
     }
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override {
+        std::cerr << "Fsst decompress" << std::endl;
+
         UNUSED(uncompressed_size, source_size);
         fsst_decoder_t decoder;
         size_t fsst_header_size = fsst_import(&decoder,
@@ -93,15 +99,15 @@ protected:
         memcpy(lens, source + fsst_header_size + sizeof(rows_count), sizeof(lens));
         memcpy(strs, source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(strs));
 
-        size_t shift{0};
         for (size_t i = 0; i < rows_count; ++i) {
+            dest = writeVarUInt(lens[i], dest);
             auto decompressed_size = fsst_decompress(&decoder,
                 lens[i],
                 strs[i],
                 OUT_SIZE, /* дичь какая-то */
-                reinterpret_cast<unsigned char *>(dest + shift)
+                reinterpret_cast<unsigned char *>(dest)
             );
-            shift += decompressed_size + 1;
+            dest += decompressed_size;
         }
     }
 
@@ -113,28 +119,23 @@ protected:
     bool isGenericCompression() const override { return true; }
 
 private:
-    size_t countRowsInData(const unsigned char* data, UInt32 size) const {
-        size_t rows_count{0};
-        for (UInt32 i = 0; i < size; ++i) {
-            if (data[i] == '\0') {
-                ++rows_count;
-            }
-        }
-        return rows_count;
-    }
+    void splitDataByRows(
+        const unsigned char* data,
+        std::vector<const unsigned char*>& rows,
+        std::vector<size_t>& lens,
+        UInt32 source_size
+    ) const {
+        const unsigned char* end{data + source_size};
 
-    void splitDataByRows(const unsigned char* data, UInt32 size, SplittedConstRows rows, SplittedMutableLens lens) const {
-        UInt32 ptr = 0;
-        rows[ptr] = data;
-
-        for (UInt32 i = 0; i < size - 1; ++i) {
-            if (data[i] == '\0') {
-                ++ptr;
-                rows[ptr] = data + i + 1;
-                lens[ptr - 1] = rows[ptr] - rows[ptr - 1] - 1;
-            }
+        while (data != end) {
+            UInt64 cur_len;
+            data = reinterpret_cast<const unsigned char*>(
+                readVarUInt(cur_len, reinterpret_cast<const char*>(data), source_size)
+            );
+            lens.push_back(cur_len);
+            rows.push_back(data);
+            data += cur_len;
         }
-        lens[ptr] = (data + size) - rows[ptr - 1] - 1;
     }
 };
 
