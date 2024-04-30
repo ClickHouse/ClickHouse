@@ -7,7 +7,7 @@
 
 # 2024 Changelog
 
-### ### <a id="244"></a> ClickHouse release 24.4 LTS, 2024-04-30
+### <a id="244"></a> ClickHouse release 24.4 LTS, 2024-04-30
 
 #### Upgrade Notes
 * `clickhouse-odbc-bridge` and `clickhouse-library-bridge` are now separate packages. This closes [#61677](https://github.com/ClickHouse/ClickHouse/issues/61677). [#62114](https://github.com/ClickHouse/ClickHouse/pull/62114) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -40,7 +40,6 @@
 * More frequently invoked functions in PODArray are now force-inlined. [#61144](https://github.com/ClickHouse/ClickHouse/pull/61144) ([李扬](https://github.com/taiyang-li)).
 * Speed up parsing of JSON by skipping the rest of the object when all required columns are read. [#62210](https://github.com/ClickHouse/ClickHouse/pull/62210) ([lgbo](https://github.com/lgbo-ustc)).
 * Improve trivial insert select from files in file/s3/hdfs/url/... table functions. Add separate max_parsing_threads setting to control the number of threads used in parallel parsing. [#62404](https://github.com/ClickHouse/ClickHouse/pull/62404) ([Kruglov Pavel](https://github.com/Avogar)).
-* Support parallel write buffer for Azure Blob Storage managed by setting `azure_allow_parallel_part_upload`. [#62534](https://github.com/ClickHouse/ClickHouse/pull/62534) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Functions `to_utc_timestamp` and `from_utc_timestamp` are now about 2x faster. [#62583](https://github.com/ClickHouse/ClickHouse/pull/62583) ([KevinyhZou](https://github.com/KevinyhZou)).
 * Functions `parseDateTimeOrNull`, `parseDateTimeOrZero`, `parseDateTimeInJodaSyntaxOrNull` and `parseDateTimeInJodaSyntaxOrZero` now run significantly faster (10x - 1000x) when the input contains mostly non-parseable values. [#62634](https://github.com/ClickHouse/ClickHouse/pull/62634) ([LiuNeng](https://github.com/liuneng1994)).
 * SELECTs against `system.query_cache` are now noticeably faster when the query cache contains lots of entries (e.g. more than 100.000). [#62671](https://github.com/ClickHouse/ClickHouse/pull/62671) ([Robert Schulze](https://github.com/rschu1ze)).
@@ -51,17 +50,18 @@
 * Return stream of chunks from `system.remote_data_paths` instead of accumulating the whole result in one big chunk. This allows to consume less memory, show intermediate progress and cancel the query. [#62613](https://github.com/ClickHouse/ClickHouse/pull/62613) ([Alexander Gololobov](https://github.com/davenger)).
 
 #### Experimental Feature
+* Support parallel write buffer for Azure Blob Storage managed by setting `azure_allow_parallel_part_upload`. [#62534](https://github.com/ClickHouse/ClickHouse/pull/62534) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Userspace page cache works with static web storage (`disk(type = web)`) now. Use client setting `use_page_cache_for_disks_without_file_cache=1` to enable. [#61911](https://github.com/ClickHouse/ClickHouse/pull/61911) ([Michael Kolupaev](https://github.com/al13n321)).
 * Don't treat Bool and number variants as suspicious in the `Variant` type. [#61999](https://github.com/ClickHouse/ClickHouse/pull/61999) ([Kruglov Pavel](https://github.com/Avogar)).
 * Implement better conversion from String to `Variant` using parsing. [#62005](https://github.com/ClickHouse/ClickHouse/pull/62005) ([Kruglov Pavel](https://github.com/Avogar)).
 * Support `Variant` in JSONExtract functions. [#62014](https://github.com/ClickHouse/ClickHouse/pull/62014) ([Kruglov Pavel](https://github.com/Avogar)).
-* Mark type Variant as comparable so it can be used in primary key. [#62693](https://github.com/ClickHouse/ClickHouse/pull/62693) ([Kruglov Pavel](https://github.com/Avogar)).
+* Mark type `Variant` as comparable so it can be used in primary key. [#62693](https://github.com/ClickHouse/ClickHouse/pull/62693) ([Kruglov Pavel](https://github.com/Avogar)).
 
 #### Improvement
 * For convenience purpose, `SELECT * FROM numbers() `will work in the same way as `SELECT * FROM system.numbers` - without a limit. [#61969](https://github.com/ClickHouse/ClickHouse/pull/61969) ([YenchangChan](https://github.com/YenchangChan)).
 * Introduce separate consumer/producer tags for the Kafka configuration. This avoids warnings from librdkafka (a bad C library with a lot of bugs) that consumer properties were specified for producer instances and vice versa (e.g. `Configuration property session.timeout.ms is a consumer property and will be ignored by this producer instance`). Closes: [#58983](https://github.com/ClickHouse/ClickHouse/issues/58983). [#58956](https://github.com/ClickHouse/ClickHouse/pull/58956) ([Aleksandr Musorin](https://github.com/AVMusorin)).
 * Functions `date_diff` and `age` now calculate their result at nanosecond instead of microsecond precision. They now also offer `nanosecond` (or `nanoseconds` or `ns`) as a possible value for the `unit` parameter. [#61409](https://github.com/ClickHouse/ClickHouse/pull/61409) ([Austin Kothig](https://github.com/kothiga)).
-* Added nano- micro- milliseconds unit for `date_trunc`. [#62335](https://github.com/ClickHouse/ClickHouse/pull/62335) ([Misz606](https://github.com/Misz606)).
+* Added nano-, micro-, milliseconds unit for `date_trunc`. [#62335](https://github.com/ClickHouse/ClickHouse/pull/62335) ([Misz606](https://github.com/Misz606)).
 * Reload certificate chain during certificate reload. [#61671](https://github.com/ClickHouse/ClickHouse/pull/61671) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
 * Try to prevent an error [#60432](https://github.com/ClickHouse/ClickHouse/issues/60432) by not allowing a table to be attached if there is an active replica for that replica path. [#61876](https://github.com/ClickHouse/ClickHouse/pull/61876) ([Arthur Passos](https://github.com/arthurpassos)).
 * Implement support for `input` for `clickhouse-local`. [#61923](https://github.com/ClickHouse/ClickHouse/pull/61923) ([Azat Khuzhin](https://github.com/azat)).
@@ -71,7 +71,7 @@
 * Use `system.keywords` to fill in the suggestions and also use them in the all places internally. [#62000](https://github.com/ClickHouse/ClickHouse/pull/62000) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * `OPTIMIZE FINAL` for `ReplicatedMergeTree` now will wait for currently active merges to finish and then reattempt to schedule a final merge. This will put it more in line with ordinary `MergeTree` behaviour. [#62067](https://github.com/ClickHouse/ClickHouse/pull/62067) ([Nikita Taranov](https://github.com/nickitat)).
 * While read data from a hive text file, it would use the first line of hive text file to resize of number of input fields, and sometimes the fields number of first line is not matched with the hive table defined , such as the hive table is defined to have 3 columns, like `test_tbl(a Int32, b Int32, c Int32)`, but the first line of text file only has 2 fields, and in this suitation, the input fields will be resized to 2, and if the next line of the text file has 3 fields, then the third field can not be read but set a default value 0, which is not right. [#62086](https://github.com/ClickHouse/ClickHouse/pull/62086) ([KevinyhZou](https://github.com/KevinyhZou)).
-* CREATE AS copies the table's comment. [#62117](https://github.com/ClickHouse/ClickHouse/pull/62117) ([Pablo Marcos](https://github.com/pamarcos)).
+* `CREATE AS` copies the table's comment. [#62117](https://github.com/ClickHouse/ClickHouse/pull/62117) ([Pablo Marcos](https://github.com/pamarcos)).
 * Add query progress to table zookeeper. [#62152](https://github.com/ClickHouse/ClickHouse/pull/62152) ([JackyWoo](https://github.com/JackyWoo)).
 * Add ability to turn on trace collector (Real and CPU) server-wide. [#62189](https://github.com/ClickHouse/ClickHouse/pull/62189) ([alesapin](https://github.com/alesapin)).
 * Added setting `lightweight_deletes_sync` (default value: 2 - wait all replicas synchronously). It is similar to setting `mutations_sync` but affects only behaviour of lightweight deletes. [#62195](https://github.com/ClickHouse/ClickHouse/pull/62195) ([Anton Popov](https://github.com/CurtizJ)).
