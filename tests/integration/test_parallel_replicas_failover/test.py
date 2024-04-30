@@ -84,16 +84,9 @@ def test_skip_replicas_without_table(start_cluster):
     node1.query("SYSTEM FLUSH LOGS")
     assert (
         node1.query(
-            f"SELECT ProfileEvents['DistributedConnectionMissingTable'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id)  SETTINGS allow_experimental_parallel_reading_from_replicas=0"
+            f"SELECT ProfileEvents['DistributedConnectionMissingTable'], ProfileEvents['ParallelReplicasUnavailableCount'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id)  SETTINGS allow_experimental_parallel_reading_from_replicas=0"
         )
-        == "1\n"
-    )
-
-    assert (
-        node1.query(
-            f"SELECT ProfileEvents['ParallelReplicasUnavailableCount'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '{log_comment}' AND type = 'QueryFinish' AND initial_query_id = query_id)  SETTINGS allow_experimental_parallel_reading_from_replicas=0"
-        )
-        == "1\n"
+        == "1\t1\n"
     )
 
 
