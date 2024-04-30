@@ -1048,20 +1048,16 @@ public:
 
     template <typename Date>
     requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
-    auto toStartOfWeekInterval(Date d, UInt64 weeks, UInt8 week_mode) const
+    auto toStartOfWeekInterval(Date d, UInt64 weeks) const
     {
         if (weeks == 1)
-            return toFirstDayNumOfWeek(d, week_mode);
-
-        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
-        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday, or
-        // 3 days to start on Sunday.
-        auto offset = monday_first_mode ? 4 : 3;
+            return toFirstDayNumOfWeek(d);
         UInt64 days = weeks * 7;
+        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(offset + (d - offset) / days * days);
+            return DayNum(4 + (d - 4) / days * days);
         else
-            return ExtendedDayNum(static_cast<Int32>(offset + (d - offset) / days * days));
+            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
     }
 
     template <typename Date>
