@@ -369,7 +369,7 @@ void MergeTreeReaderWide::readData(
     else
     {
         serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-        if (!column->empty() && !partially_read_columns.contains(name_and_type.name))
+        if (offset > 0 && !column->empty() && !partially_read_columns.contains(name_and_type.name))
             column = column->cut(offset, column->size() - offset);
     }
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
