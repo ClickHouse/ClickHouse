@@ -74,7 +74,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -324,11 +324,11 @@ bool applyTrivialCountIfPossible(
 
     if (settings[Setting::max_parallel_replicas] > 1)
     {
-        if (!settings[Setting::parallel_replicas_custom_key].value.empty() || settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0)
+        if (!settings[Setting::parallel_replicas_custom_key].value.empty() || settings[Setting::enable_parallel_replicas] == 0)
             return false;
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
-        query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        query_context->setSetting("use_parallel_replicas", Field(0));
         query_context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 

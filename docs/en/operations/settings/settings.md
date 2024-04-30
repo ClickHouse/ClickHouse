@@ -1623,7 +1623,7 @@ When used in conjuction with [parallel_replicas_custom_key_range_lower](#paralle
 
 Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
 
-## allow_experimental_parallel_reading_from_replicas
+## use_parallel_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
 

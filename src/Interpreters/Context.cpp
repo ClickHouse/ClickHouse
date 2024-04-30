@@ -180,7 +180,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsUInt64 backup_threads;
@@ -5705,7 +5705,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_ref[Setting::parallel_replicas_custom_key].value.empty())
         return CUSTOM_KEY;
 
-    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
+    if (settings_ref[Setting::use_parallel_replicas] > 0)
         return READ_TASKS;
 
     return SAMPLE_KEY;
