@@ -1487,7 +1487,9 @@ class TestCase:
                     body = read_file_as_binary_string(file_path)
                     clickhouse_execute(
                         args,
-                        f"INSERT INTO system.coverage_log SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        "INSERT INTO system.coverage_log "
+                        "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
+                        f"SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
                         body=body,
                         retry_error_codes=True,
                     )
