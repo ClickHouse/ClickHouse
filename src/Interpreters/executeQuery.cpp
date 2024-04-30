@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Core/ServerSettings.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -90,6 +91,8 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
 }
 
 namespace DB
@@ -169,6 +172,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int SERVER_OVERLOADED;
 }
 
 namespace FailPoints
@@ -361,6 +365,41 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
+}
+
+static void checkCPULoad(const ContextPtr context)
+{
+    /// It's possible that we'll have inconsistent values between wait_time abd busy_time. But since we are using a 10 seconds window,
+    /// it should not affect the situation a lot. In the worst case scenario we can have a situation when wait_time increased
+    /// significantly during the last second, but busy_time didn't reflect it. But since there was such a spike, it's very likely
+    /// that the load on CPU is higher and we would reject the query anyways. On the other hand, if the high load decreased
+    /// and wait_time becomes lower, the query won't be rejected even if the busy_time wasn't updated yet.
+    auto wait_time = ProfileEvents::global_counters.getLastValue(ProfileEvents::OSCPUWaitMicroseconds);
+    auto busy_time = ProfileEvents::global_counters.getLastValue(ProfileEvents::OSCPUVirtualTimeMicroseconds);
+    UInt64 min_busy_time = context->getServerSettings().os_cpu_busy_time_threshold;
+
+    if (busy_time >= min_busy_time)
+    {
+        double min_ratio = context->getServerSettings().min_os_cpu_wait_time_ratio_to_throw;
+        double max_ratio = context->getServerSettings().max_os_cpu_wait_time_ratio_to_throw;
+        double current_ratio = (wait_time != 0 && busy_time == 0)
+            ? max_ratio
+            : std::min(std::max(min_ratio, static_cast<double>(wait_time) / static_cast<double>(busy_time)), max_ratio);
+        double probability_to_throw = (max_ratio == min_ratio) ? 0.0 : (current_ratio - min_ratio) / (max_ratio - min_ratio);
+
+        if (std::bernoulli_distribution server_overloaded(probability_to_throw); server_overloaded(thread_local_rng))
+            throw Exception(ErrorCodes::SERVER_OVERLOADED,
+                "CPU is overloaded, CPU is waiting for execution way more than executing, "
+                "latest wait time (OSCPUWaitMicroseconds metric) {}, latest busy time (OSCPUVirtualTimeMicroseconds metric) {}. "
+                "Min ratio for error {}, max ratio for error {}, current ratio {}, probability used to decide whether to discard the query {}. "
+                "Consider reducing the number of queries or increase backoff between retries",
+                wait_time,
+                busy_time,
+                min_ratio,
+                max_ratio,
+                current_ratio,
+                probability_to_throw);
+    }
 }
 
 
@@ -1471,6 +1510,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
+    checkCPULoad(context);
+
     std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
@@ -1512,6 +1553,8 @@ void executeQuery(
     }
 
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
+
+    checkCPULoad(context);
 
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {

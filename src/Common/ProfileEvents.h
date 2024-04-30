@@ -59,6 +59,9 @@ namespace ProfileEvents
         /// Used to propagate increments
         Counters * parent = nullptr;
         bool trace_profile_events = false;
+        Counter * last_values = nullptr;
+        std::vector<Counter> * window = nullptr;
+        size_t all_windows_tail = 0;
 
     public:
 
@@ -68,8 +71,8 @@ namespace ProfileEvents
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
         /// Global level static initializer
-        explicit Counters(Counter * allocated_counters) noexcept
-            : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
+        explicit Counters(Counter * allocated_counters, Counter * allocated_last_values, std::vector<Counter> * allocated_window) noexcept
+            : counters(allocated_counters), parent(nullptr), last_values(allocated_last_values), window(allocated_window), level(VariableContext::Global) {}
 
         Counter & operator[] (Event event)
         {
@@ -79,6 +82,35 @@ namespace ProfileEvents
         const Counter & operator[] (Event event) const
         {
             return counters[event];
+        }
+
+        void updateWindow(Event event, Count diff) const
+        {
+            auto & event_window = window[event];
+            if (event_window.empty())
+            {
+                last_values[event].store(diff, std::memory_order_relaxed);
+                return;
+            }
+
+            auto window_tail = all_windows_tail % event_window.size();
+            Count old_diff = event_window[window_tail].load(std::memory_order_relaxed);
+            event_window[window_tail].store(diff, std::memory_order_relaxed);
+
+            if (old_diff > diff)
+                last_values[event].fetch_sub(old_diff - diff, std::memory_order_relaxed);
+            else
+                last_values[event].fetch_add(diff - old_diff, std::memory_order_relaxed);
+        }
+
+        void allWindowsUpdated()
+        {
+            ++all_windows_tail;
+        }
+
+        Count getLastValue(Event event) const
+        {
+            return last_values[event].load(std::memory_order_relaxed);
         }
 
         void increment(Event event, Count amount = 1);

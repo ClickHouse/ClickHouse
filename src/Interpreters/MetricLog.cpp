@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MetricLog.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/ProfileEvents.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ThreadPool.h>
 
@@ -71,9 +72,12 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
     {
         const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
         auto & old_value = prev_profile_events[i];
-        elem.profile_events[i] = new_value - old_value;
+        auto diff = new_value - old_value;
+        elem.profile_events[i] = diff;
+        ProfileEvents::global_counters.updateWindow(i, diff);
         old_value = new_value;
     }
+    ProfileEvents::global_counters.allWindowsUpdated();
 
     elem.current_metrics.resize(CurrentMetrics::end());
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)

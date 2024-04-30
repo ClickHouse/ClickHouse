@@ -4575,6 +4575,7 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
+        write_embedded_config("0_common_max_cpu_load.xml", self.config_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         # If specific version was used there can be no
