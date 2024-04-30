@@ -62,7 +62,7 @@ bool StreamSubscriptionManager::isEmpty() const
 
 bool StreamSubscriptionManager::hasSome() const
 {
-    return getSubscriptionsCount() != 0;
+    return !isEmpty();
 }
 
 void StreamSubscriptionManager::clean()
