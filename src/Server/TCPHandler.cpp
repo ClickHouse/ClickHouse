@@ -348,7 +348,7 @@ void TCPHandler::runImpl()
          */
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
-        bool close_connection = false;
+        bool user_expired = false;
         bool query_duration_already_logged = false;
         auto log_query_duration = [this, &query_duration_already_logged]()
         {
@@ -643,9 +643,9 @@ void TCPHandler::runImpl()
                 network_error = true;
 
             if (e.code() == ErrorCodes::USER_EXPIRED)
-                close_connection = true;
+                user_expired = true;
 
-            if (network_error || close_connection)
+            if (network_error || user_expired)
                 LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
@@ -755,7 +755,7 @@ void TCPHandler::runImpl()
             session.reset();
         }
 
-        if (network_error || close_connection)
+        if (network_error || user_expired)
             break;
     }
 }
