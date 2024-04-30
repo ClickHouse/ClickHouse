@@ -1656,6 +1656,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
+    std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
 
     ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
 
@@ -1666,6 +1667,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             continue;
 
         auto & disk_parts = parts_to_load_by_disk[i];
+        auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
 
         runner([&, disk_ptr]()
         {
@@ -1677,7 +1679,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                     continue;
 
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
-                    disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
+                {
+                    if (expected_parts && !expected_parts->contains(it->name()))
+                        unexpected_disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
+                    else
+                        disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
+                }
             }
         }, Priority{0});
     }
@@ -1688,6 +1695,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
+    PartLoadingTree::PartLoadingInfos unexpected_parts_to_load;
+    for (auto & disk_parts : unexpected_parts_to_load_by_disk)
+        std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(unexpected_parts_to_load));
 
     auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
 
@@ -1816,6 +1826,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     calculateColumnAndSecondaryIndexSizesImpl();
 
     PartLoadingTreeNodes unloaded_parts;
+
+    for (const auto & [info, name, disk] : unexpected_parts_to_load)
+        unloaded_parts.push_back(std::make_shared<PartLoadingTree::Node>(info, name, disk));
+
     loading_tree.traverse(/*recursive=*/ true, [&](const auto & node)
     {
         if (!node->is_loaded)
