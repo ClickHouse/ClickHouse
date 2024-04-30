@@ -300,11 +300,20 @@ list_children () {
     echo "$children"
 }
 
+# https://github.com/actions/runner/issues/3266
+# We're unable to know if the runner is failed to start.
+# There's possibility that it fails because the runner's version is outdated,
+# so after the first failure we'll try to launch it with enabled autoupdate.
+#
+# We'll fail and terminate after 10 consequent failures.
+ATTEMPT=0
+
 while true; do
     runner_pid=$(pgrep Runner.Listener)
     echo "Got runner pid '$runner_pid'"
 
     if [ -z "$runner_pid" ]; then
+        echo Attempt $((++ATTEMPT)) to start the runner
         cd $RUNNER_HOME || terminate_and_exit
         detect_delayed_termination
         # If runner is not active, check that it needs to terminate itself
@@ -316,9 +325,21 @@ while true; do
         rm -rf _work
 
         echo "Going to configure runner"
-        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" \
-          --ephemeral --disableupdate --unattended \
-          --runnergroup Default --labels "$LABELS" --work _work --name "$INSTANCE_ID"
+        token_args=(--token "$(get_runner_token)")
+        config_args=(
+            "${token_args[@]}" --url "$RUNNER_URL"
+            --ephemeral --unattended --replace --runnergroup Default
+            --labels "$LABELS" --work _work --name "$INSTANCE_ID"
+        )
+        if (( ATTEMPT > 1 )); then
+            echo 'The runner failed to start at least once. Removing it and then configuring with autoudate enabled.'
+            sudo -u ubuntu ./config.sh remove "${token_args[@]}"
+            sudo -u ubuntu ./config.sh "${config_args[@]}"
+        else
+            echo "Configure runner with disable autoupdate"
+            config_args+=("--disableupdate")
+            sudo -u ubuntu ./config.sh "${config_args[@]}"
+        fi
 
         echo "Another one check to avoid race between runner and infrastructure"
         no_terminating_metadata || terminate_on_event
@@ -331,7 +352,11 @@ while true; do
           ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/tmp/actions-hooks/post-run.sh \
           ./run.sh &
         sleep 10
+    elif (( ATTEMPT > 10 )); then
+        echo "The runner has failed to start after $ATTEMPT attempt. Give up and terminate it"
+        terminate_and_exit
     else
+        ATTEMPT=0
         echo "Runner is working with pid $runner_pid, checking the metadata in background"
         check_proceed_spot_termination
 
