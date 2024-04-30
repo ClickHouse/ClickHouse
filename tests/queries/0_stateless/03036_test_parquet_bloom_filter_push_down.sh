@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # File generated with below script
 #from pyspark.sql import SparkSession
+#from pyspark.sql.functions import udf
 #from pyspark.sql.types import StructType, StructField, FloatType, DoubleType, StringType, IntegerType, ArrayType
 #import random
 #
@@ -42,6 +43,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #data = generate_data(3000)
 #
 #df = spark.createDataFrame(data, schema)
+#
+## Define a new UDF to generate array with bigger range
+#@udf(ArrayType(IntegerType()))
+#def expand_array():
+#    return [random.randint(1, 99999) for _ in range(5)]
+#
+## Apply the UDF to the 'array' column
+#df = df.withColumn("array", expand_array())
 #
 #df.coalesce(1).write.mode('overwrite')\
 #    .option("parquet.bloom.filter.enabled", "true")\
