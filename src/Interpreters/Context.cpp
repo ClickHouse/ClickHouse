@@ -378,7 +378,6 @@ struct ContextSharedPart : boost::noncopyable
     OrdinaryBackgroundExecutorPtr moves_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr fetch_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr common_executor TSA_GUARDED_BY(background_executors_mutex);
-    OrdinaryBackgroundExecutorPtr streaming_executor TSA_GUARDED_BY(background_executors_mutex);
 
     RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
@@ -614,7 +613,6 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
         SHUTDOWN(log, "common executor", common_executor, wait());
-        SHUTDOWN(log, "streaming executor", streaming_executor, wait());
 
         TransactionLog::shutdownIfAny();
 
@@ -5082,7 +5080,6 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     size_t background_move_pool_size = server_settings.background_move_pool_size;
     size_t background_fetches_pool_size = server_settings.background_fetches_pool_size;
     size_t background_common_pool_size = server_settings.background_common_pool_size;
-    size_t background_streaming_pool_size = server_settings.background_streaming_pool_size;
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
@@ -5127,16 +5124,6 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 
-    shared->streaming_executor = std::make_shared<OrdinaryBackgroundExecutor>
-    (
-        "Streaming",
-        background_streaming_pool_size,
-        background_streaming_pool_size,
-        CurrentMetrics::BackgroundStreamingPoolTask,
-        CurrentMetrics::BackgroundStreamingPoolSize
-    );
-    LOG_INFO(shared->log, "Initialized background executor for streaming with num_threads={}, num_tasks={}", background_streaming_pool_size, background_streaming_pool_size);
-
     shared->are_background_executors_initialized = true;
 }
 
@@ -5168,12 +5155,6 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->common_executor;
-}
-
-OrdinaryBackgroundExecutorPtr Context::getStreamingExecutor() const
-{
-    SharedLockGuard lock(shared->background_executors_mutex);
-    return shared->streaming_executor;
 }
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const

@@ -83,13 +83,6 @@ bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, b
     return schedule_res;
 }
 
-bool BackgroundJobsAssignee::scheduleStreamingTask(ExecutableTaskPtr streaming_task)
-{
-    bool res = getContext()->getStreamingExecutor()->trySchedule(streaming_task);
-    res ? trigger() : postpone();
-    return res;
-}
-
 String BackgroundJobsAssignee::toString(Type type)
 {
     switch (type)
@@ -126,7 +119,6 @@ void BackgroundJobsAssignee::finish()
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getStreamingExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }
 
