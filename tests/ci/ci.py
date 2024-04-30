@@ -889,7 +889,7 @@ class CiOptions:
                             jobs_to_do_requested.append(job)
             assert (
                 jobs_to_do_requested
-            ), "Include tags are set but now job configured - Invalid tags, probably [{self.include_keywords}]"
+            ), f"Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
