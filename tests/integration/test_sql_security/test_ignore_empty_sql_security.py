@@ -22,9 +22,7 @@ def started_cluster():
 
 
 def test_load_mv_with_security_none(started_cluster: ClickHouseCluster):
-    node.query(
-        "CREATE TABLE test_table (s String) ENGINE = MergeTree ORDER BY s"
-    )
+    node.query("CREATE TABLE test_table (s String) ENGINE = MergeTree ORDER BY s")
     node.query(
         "CREATE MATERIALIZED VIEW test_mv_1 (s String) ENGINE = MergeTree ORDER BY s AS SELECT * FROM test_table"
     )
@@ -45,4 +43,3 @@ def test_load_mv_with_security_none(started_cluster: ClickHouseCluster):
     node.restart_clickhouse()
 
     assert node.query("SELECT count() FROM test_mv_1", user="test_user") == "2\n"
-
