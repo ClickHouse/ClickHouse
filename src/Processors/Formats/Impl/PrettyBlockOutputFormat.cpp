@@ -78,11 +78,11 @@ void PrettyBlockOutputFormat::calculateWidths(
                 {
                     if (serialized_value[k] == '\n')
                     {
-                        row_width = std::max(row_width, k - row_start);
+                        row_width = std::max(row_width, UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data() + row_start), k - row_start, prefix));
                         row_start = k + 1;
                     }
                 }
-                widths[i][j] = std::max(row_width, serialized_value.size() - row_start);
+                widths[i][j] = std::max(row_width, UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data() + row_start), serialized_value.size() - row_start, prefix));
             }
             max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i],
                 std::min<UInt64>(format_settings.pretty.max_column_pad_width,
@@ -447,7 +447,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     {
         has_break_line = true;
         serialized_value = serialized_value.substr(0, break_line_pos);
-        value_width = serialized_value.size() - 1;
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data() + 1), serialized_value.size());
     }
 
     if (cut_to_width && value_width > cut_to_width)
@@ -492,7 +492,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (has_break_line)
+    if (has_break_line && value_width != format_settings.pretty.max_value_width)
         writeString("…", out);
 }
 
@@ -523,7 +523,7 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
             writeCString(" ", out);
 
         String value = transferred_row[j];
-        cur_width = value.size();
+        cur_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(value.data()), value.size());
         bool has_break_line = false;
 
         if (size_t break_line_pos = value.find_first_of('\n'); break_line_pos != String::npos)
@@ -531,7 +531,7 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
             has_transferred_row = true;
             new_transferred_row[j] = value.substr(break_line_pos + 1);
             value = value.substr(0, break_line_pos);
-            cur_width = value.size();
+            cur_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(value.data()), value.size());
             has_break_line = true;
         }
 
