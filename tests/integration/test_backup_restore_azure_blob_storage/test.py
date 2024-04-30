@@ -302,7 +302,6 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
 
 def test_backup_restore_on_merge_tree(cluster):
     node = cluster.instances["node"]
-    port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
         f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'",
@@ -321,3 +320,6 @@ def test_backup_restore_on_merge_tree(cluster):
     assert (
         azure_query(node, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
     )
+    azure_query(node, f"DROP TABLE test_simple_merge_tree")
+    azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")
+
