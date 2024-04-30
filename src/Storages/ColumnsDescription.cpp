@@ -656,7 +656,7 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
             return *jt;
     }
 
-    /// Check for dynmaic subcolumns.
+    /// Check for dynamic subcolumns.
     auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
     it = columns.get<1>().find(ordinary_column_name);
     if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
