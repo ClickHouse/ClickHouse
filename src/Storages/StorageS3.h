@@ -20,6 +20,7 @@
 #include <Storages/StorageConfiguration.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/DataLakes/PartitionColumns.h>
 #include <Poco/URI.h>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -141,7 +142,8 @@ public:
         const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
-        bool need_only_count_);
+        bool need_only_count_,
+        const DataLakePartitionColumns & partition_columns_ = {});
 
     ~StorageS3Source() override;
 
@@ -170,6 +172,7 @@ private:
     std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
+    DataLakePartitionColumns partition_columns;
 
     struct ReaderHolder
     {
@@ -305,8 +308,8 @@ public:
     StorageS3(
         const Configuration & configuration_,
         const ContextPtr & context_,
-        const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const StorageID & table_id_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
@@ -362,6 +365,8 @@ protected:
     void useConfiguration(const Configuration & new_configuration);
 
     const Configuration & getConfiguration();
+
+    mutable DataLakePartitionColumns partition_columns;
 
 private:
     friend class StorageS3Cluster;

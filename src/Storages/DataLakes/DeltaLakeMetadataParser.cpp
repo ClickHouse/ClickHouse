@@ -17,6 +17,22 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <parquet/arrow/reader.h>
 #include <ranges>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 namespace fs = std::filesystem;
 
@@ -26,6 +42,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -65,9 +82,17 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
      * An action changes one aspect of the table's state, for example, adding or removing a file.
      * Note: it is not a valid json, but a list of json's, so we read it in a while cycle.
      */
-    std::set<String> processMetadataFiles(const Configuration & configuration, ContextPtr context)
+    struct DeltaLakeMetadata
+    {
+        NamesAndTypesList schema;
+        Strings data_files;
+        DataLakePartitionColumns partition_columns;
+    };
+    DeltaLakeMetadata processMetadataFiles(const Configuration & configuration, ContextPtr context)
     {
         std::set<String> result_files;
+        NamesAndTypesList current_schema;
+        DataLakePartitionColumns current_partition_columns;
         const auto checkpoint_version = getCheckpointIfExists(result_files, configuration, context);
 
         if (checkpoint_version)
@@ -81,7 +106,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
                 if (!MetadataReadHelper::exists(file_path, configuration))
                     break;
 
-                processMetadataFile(file_path, result_files, configuration, context);
+                processMetadataFile(file_path, result_files, current_schema, current_partition_columns, configuration, context);
             }
 
             LOG_TRACE(
@@ -94,10 +119,10 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
                 configuration, deltalake_metadata_directory, metadata_file_suffix);
 
             for (const String & key : keys)
-                processMetadataFile(key, result_files, configuration, context);
+                processMetadataFile(key, result_files, current_schema, current_partition_columns, configuration, context);
         }
 
-        return result_files;
+        return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
     }
 
     /**
@@ -132,6 +157,8 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
     void processMetadataFile(
         const String & key,
         std::set<String> & result,
+        NamesAndTypesList & file_schema,
+        DataLakePartitionColumns & file_partition_columns,
         const Configuration & configuration,
         ContextPtr context)
     {
@@ -153,18 +180,215 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
             if (json_str.empty())
                 continue;
 
-            const JSON json(json_str);
-            if (json.has("add"))
+            Poco::JSON::Parser parser;
+            Poco::Dynamic::Var json = parser.parse(json_str);
+            Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
+
+            if (object->has("add"))
             {
-                const auto path = json["add"]["path"].getString();
+                auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
+                auto path = add_object->getValue<String>("path");
                 result.insert(fs::path(configuration.getPath()) / path);
+
+                auto filename = fs::path(path).filename().string();
+                auto it = file_partition_columns.find(filename);
+                if (it == file_partition_columns.end())
+                {
+                    auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
+                    if (partition_values->size())
+                    {
+                        auto & current_partition_columns = file_partition_columns[filename];
+                        for (const auto & name : partition_values->getNames())
+                        {
+                            const auto value = partition_values->getValue<String>(name);
+                            auto name_and_type = file_schema.tryGetByName(name);
+                            if (!name_and_type)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such column in schema: {}", name);
+
+                            auto field = getFieldValue(value, name_and_type->type);
+                            current_partition_columns.emplace_back(*name_and_type, field);
+
+                            LOG_TEST(log, "Partition {} value is {} (for {})", name, value, filename);
+                        }
+                    }
+                }
             }
-            else if (json.has("remove"))
+            else if (object->has("remove"))
             {
-                const auto path = json["remove"]["path"].getString();
+                auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
                 result.erase(fs::path(configuration.getPath()) / path);
             }
+            if (file_schema.empty())
+            {
+                // std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                // object->stringify(oss);
+                // LOG_TEST(log, "Metadata: {}", oss.str());
+
+                if (object->has("metaData"))
+                {
+                    const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
+                    const auto schema_object = metadata_object->getValue<String>("schemaString");
+
+                    Poco::JSON::Parser p;
+                    Poco::Dynamic::Var fields_json = parser.parse(schema_object);
+                    Poco::JSON::Object::Ptr fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
+
+                    const auto fields = fields_object->get("fields").extract<Poco::JSON::Array::Ptr>();
+                    for (size_t i = 0; i < fields->size(); ++i)
+                    {
+                        const auto field = fields->getObject(static_cast<UInt32>(i));
+                        auto name = field->getValue<String>("name");
+                        auto type = field->getValue<String>("type");
+                        auto is_nullable = field->getValue<bool>("nullable");
+
+                        file_schema.push_back({name, getFieldType(field, "type", is_nullable)});
+                    }
+                }
+            }
+            /// TODO: Check if schema in each file is the same?
         }
+    }
+
+    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)
+    {
+        if (field->isObject(type_key))
+            return getComplexTypeFromObject(field->getObject(type_key));
+
+        auto type = field->get(type_key);
+        if (type.isString())
+        {
+            const String & type_name = type.extract<String>();
+            auto data_type = getSimpleTypeByName(type_name);
+            return is_nullable ? makeNullable(data_type) : data_type;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
+    }
+
+    Field getFieldValue(const String & value, DataTypePtr data_type)
+    {
+        DataTypePtr check_type;
+        if (data_type->isNullable())
+            check_type = static_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
+        else
+            check_type = data_type;
+
+        WhichDataType which(check_type->getTypeId());
+        if (which.isStringOrFixedString())
+            return value;
+        else if (which.isInt8())
+            return parse<Int8>(value);
+        else if (which.isInt16())
+            return parse<Int16>(value);
+        else if (which.isInt32())
+            return parse<Int32>(value);
+        else if (which.isInt64())
+            return parse<Int64>(value);
+        else if (which.isFloat32())
+            return parse<Float32>(value);
+        else if (which.isFloat64())
+            return parse<Float64>(value);
+        else if (which.isDate())
+            return UInt16{LocalDate{std::string(value)}.getDayNum()};
+        else if (which.isDate32())
+            return Int32{LocalDate{std::string(value)}.getExtenedDayNum()};
+        else if (which.isDateTime64())
+        {
+            ReadBufferFromString in(value);
+            DateTime64 time = 0;
+            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+            return time;
+        }
+        // else if (which.isDecimal32())
+        //     return parse<Decimal32>(value);
+        // else if (which.isDecimal64())
+        //     return parse<Decimal64>(value);
+        // else if (which.isDecimal128())
+        //     return parse<Decimal128>(value);
+        // else if (which.isDecimal256())
+        //     return parse<Decimal256>(value);
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
+    }
+
+    DataTypePtr getSimpleTypeByName(const String & type_name)
+    {
+        /// https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types
+
+        if (type_name == "string" || type_name == "binary")
+            return std::make_shared<DataTypeString>();
+        if (type_name == "long")
+            return std::make_shared<DataTypeInt64>();
+        if (type_name == "integer")
+            return std::make_shared<DataTypeInt32>();
+        if (type_name == "short")
+            return std::make_shared<DataTypeInt16>();
+        if (type_name == "byte")
+            return std::make_shared<DataTypeInt8>();
+        if (type_name == "float")
+            return std::make_shared<DataTypeFloat32>();
+        if (type_name == "double")
+            return std::make_shared<DataTypeFloat64>();
+        if (type_name == "boolean")
+            return DataTypeFactory::instance().get("Bool");
+        if (type_name == "date")
+            return std::make_shared<DataTypeDate32>();
+        if (type_name == "timestamp")
+            return std::make_shared<DataTypeDateTime64>(6);
+        if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
+        {
+            ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
+            size_t precision;
+            size_t scale;
+            readIntText(precision, buf);
+            skipWhitespaceIfAny(buf);
+            assertChar(',', buf);
+            skipWhitespaceIfAny(buf);
+            tryReadIntText(scale, buf);
+            return createDecimal<DataTypeDecimal>(precision, scale);
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
+    }
+
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
+    {
+        String type_name = type->getValue<String>("type");
+
+        if (type_name == "struct")
+        {
+            DataTypes element_types;
+            Names element_names;
+            auto fields = type->get("fields").extract<Poco::JSON::Array::Ptr>();
+            element_types.reserve(fields->size());
+            element_names.reserve(fields->size());
+            for (size_t i = 0; i != fields->size(); ++i)
+            {
+                auto field = fields->getObject(static_cast<Int32>(i));
+                element_names.push_back(field->getValue<String>("name"));
+                auto required = field->getValue<bool>("required");
+                element_types.push_back(getFieldType(field, "type", required));
+            }
+
+            return std::make_shared<DataTypeTuple>(element_types, element_names);
+        }
+
+        if (type_name == "array")
+        {
+            bool is_nullable = type->getValue<bool>("containsNull");
+            auto element_type = getFieldType(type, "elementType", is_nullable);
+            return std::make_shared<DataTypeArray>(element_type);
+        }
+
+        if (type_name == "map")
+        {
+            bool is_nullable = type->getValue<bool>("containsNull");
+            auto key_type = getFieldType(type, "keyType", /* is_nullable */false);
+            auto value_type = getFieldType(type, "valueType", is_nullable);
+            return std::make_shared<DataTypeMap>(key_type, value_type);
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
     }
 
     /**
@@ -272,8 +496,8 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
                 arrow::default_memory_pool(),
                 &reader));
 
-        std::shared_ptr<arrow::Schema> schema;
-        THROW_ARROW_NOT_OK(reader->GetSchema(&schema));
+        std::shared_ptr<arrow::Schema> file_schema;
+        THROW_ARROW_NOT_OK(reader->GetSchema(&file_schema));
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
@@ -318,20 +542,19 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
 
 
 template <typename Configuration, typename MetadataReadHelper>
-DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::DeltaLakeMetadataParser() : impl(std::make_unique<Impl>())
-{
-}
-
-template <typename Configuration, typename MetadataReadHelper>
-Strings DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr context)
+DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::DeltaLakeMetadataParser(const Configuration & configuration, ContextPtr context)
+    : impl(std::make_unique<Impl>())
 {
     auto result = impl->processMetadataFiles(configuration, context);
-    return Strings(result.begin(), result.end());
+    data_files = result.data_files;
+    schema = result.schema;
+    partition_columns = result.partition_columns;
+
+    LOG_TRACE(impl->log, "Found {} data files, {} partition files, schema: {}",
+             data_files.size(), partition_columns.size(), schema.toString());
 }
 
-template DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::DeltaLakeMetadataParser();
-template Strings DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles(
-    const StorageS3::Configuration & configuration, ContextPtr);
+template DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::DeltaLakeMetadataParser(const StorageS3::Configuration & configuration, ContextPtr context);
 }
 
 #endif

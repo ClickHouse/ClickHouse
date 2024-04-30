@@ -61,7 +61,7 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
             String key;
             UInt64 timestamp = 0;
         };
-        std::unordered_map<Partition, std::unordered_map<FileID, FileInfo>> data_files;
+        std::unordered_map<Partition, std::unordered_map<FileID, FileInfo>> files;
 
         for (const auto & key : keys)
         {
@@ -76,7 +76,7 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
             const auto & file_id = file_parts[0];
             const auto timestamp = parse<UInt64>(file_parts[2]);
 
-            auto & file_info = data_files[partition][file_id];
+            auto & file_info = files[partition][file_id];
             if (file_info.timestamp == 0 || file_info.timestamp < timestamp)
             {
                 file_info.key = std::move(key);
@@ -85,7 +85,7 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
         }
 
         Strings result;
-        for (auto & [partition, partition_data] : data_files)
+        for (auto & [partition, partition_data] : files)
         {
             LOG_TRACE(log, "Adding {} data files from partition {}", partition, partition_data.size());
             for (auto & [file_id, file_data] : partition_data)
@@ -97,19 +97,12 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
 
 
 template <typename Configuration, typename MetadataReadHelper>
-HudiMetadataParser<Configuration, MetadataReadHelper>::HudiMetadataParser() : impl(std::make_unique<Impl>())
+HudiMetadataParser<Configuration, MetadataReadHelper>::HudiMetadataParser(const Configuration & configuration, ContextPtr) : impl(std::make_unique<Impl>())
 {
+    data_files = impl->processMetadataFiles(configuration);
 }
 
-template <typename Configuration, typename MetadataReadHelper>
-Strings HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr)
-{
-    return impl->processMetadataFiles(configuration);
-}
-
-template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser();
-template Strings HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles(
-    const StorageS3::Configuration & configuration, ContextPtr);
+template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser(const StorageS3::Configuration & configuration, ContextPtr);
 
 }
 

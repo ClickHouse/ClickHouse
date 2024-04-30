@@ -31,8 +31,8 @@ public:
     static StoragePtr create(const Configuration & base_configuration,
         ContextPtr context_,
         LoadingStrictnessLevel mode,
-        const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const StorageID & table_id_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_);
@@ -41,8 +41,8 @@ public:
         std::unique_ptr<IcebergMetadata> metadata_,
         const Configuration & configuration_,
         ContextPtr context_,
-        const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const StorageID & table_id_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_);

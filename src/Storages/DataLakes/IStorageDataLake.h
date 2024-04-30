@@ -9,6 +9,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
+#include "PartitionColumns.h"
 #include <filesystem>
 
 
@@ -23,15 +24,51 @@ public:
     using Configuration = typename Storage::Configuration;
 
     template <class ...Args>
-    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
-        : Storage(getConfigurationForDataRead(configuration_, context_, {}, mode), context_, std::forward<Args>(args)...)
-        , base_configuration(configuration_)
-        , log(getLogger(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+    static StoragePtr create(
+        const Configuration & configuration_,
+        ContextPtr context_,
+        LoadingStrictnessLevel mode,
+        const ColumnsDescription & columns_,
+        Args && ...args)
+    {
+        std::unique_ptr<MetadataParser> metadata;
+        Configuration read_configuration;
+        Configuration base_configuration{configuration_};
+        try
+        {
+            base_configuration.update(context_);
+            metadata = std::make_unique<MetadataParser>(base_configuration, context_);
+            read_configuration = getConfigurationForDataRead(*metadata, base_configuration, context_);
+        }
+        catch (...)
+        {
+            if (mode <= LoadingStrictnessLevel::CREATE)
+                throw;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(
+            configuration_,
+            read_configuration,
+            context_,
+            columns_.empty() && metadata ? ColumnsDescription(metadata->getTableSchema()) : columns_,
+            std::forward<Args>(args)...);
+    }
 
     template <class ...Args>
-    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
+    explicit IStorageDataLake(
+        const Configuration & base_configuration_,
+        const Configuration & read_configuration_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        Args && ...args)
+        : Storage(read_configuration_,
+                  context_,
+                  columns_,
+                  std::forward<Args>(args)...)
+        , base_configuration(base_configuration_)
+        , log(getLogger(getName())) // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
     {
-        return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, mode, std::forward<Args>(args)...);
     }
 
     String getName() const override { return name; }
@@ -41,8 +78,18 @@ public:
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & local_context)
     {
-        auto configuration = getConfigurationForDataRead(base_configuration, local_context);
-        return Storage::getTableStructureFromData(configuration, format_settings, local_context);
+        base_configuration.update(local_context);
+        auto metadata = std::make_unique<MetadataParser>(base_configuration, local_context);
+        auto schema = metadata->getTableSchema();
+        if (!schema.empty())
+        {
+            return ColumnsDescription(schema);
+        }
+        else
+        {
+            auto read_configuration = getConfigurationForDataRead(*metadata, base_configuration, local_context);
+            return Storage::getTableStructureFromData(read_configuration, format_settings, local_context);
+        }
     }
 
     static Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context)
@@ -65,51 +112,31 @@ public:
 
 private:
     static Configuration getConfigurationForDataRead(
-        const Configuration & base_configuration, const ContextPtr & local_context, const Strings & keys = {},
-        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE)
+        MetadataParser & metadata_,
+        const Configuration & base_configuration,
+        const ContextPtr & local_context)
     {
         auto configuration{base_configuration};
         configuration.update(local_context);
         configuration.static_configuration = true;
-
-        try
-        {
-            if (keys.empty())
-                configuration.keys = getDataFiles(configuration, local_context);
-            else
-                configuration.keys = keys;
-
-            LOG_TRACE(
-                getLogger("DataLake"),
-                "New configuration path: {}, keys: {}",
-                configuration.getPath(), fmt::join(configuration.keys, ", "));
-
-            configuration.connect(local_context);
-            return configuration;
-        }
-        catch (...)
-        {
-            if (mode <= LoadingStrictnessLevel::CREATE)
-                throw;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            return configuration;
-        }
-    }
-
-    static Strings getDataFiles(const Configuration & configuration, const ContextPtr & local_context)
-    {
-        return MetadataParser().getFiles(configuration, local_context);
+        configuration.keys = metadata_.getFiles();
+        configuration.connect(local_context);
+        return configuration;
     }
 
     void updateConfigurationImpl(const ContextPtr & local_context)
     {
         const bool updated = base_configuration.update(local_context);
-        auto new_keys = getDataFiles(base_configuration, local_context);
+
+        auto metadata = MetadataParser(base_configuration, local_context);
+        auto new_keys = metadata.getFiles();
+        Storage::partition_columns = metadata.getPartitionColumns();
 
         if (!updated && new_keys == Storage::getConfiguration().keys)
             return;
 
-        Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));
+        auto read_configuration = getConfigurationForDataRead(metadata, base_configuration, local_context);
+        Storage::useConfiguration(read_configuration);
     }
 
     Configuration base_configuration;
@@ -127,8 +154,9 @@ static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
     if (configuration.format == "auto")
         configuration.format = "Parquet";
 
-    return DataLake::create(configuration, args.getContext(), args.mode, args.table_id, args.columns, args.constraints,
-        args.comment, getFormatSettings(args.getContext()));
+    return DataLake::create(configuration, args.getContext(), args.mode,
+                            args.columns, args.table_id, args.constraints,
+                            args.comment, getFormatSettings(args.getContext()));
 }
 
 }

@@ -148,20 +148,23 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         Block sample_block,
+        const StorageS3::Configuration & query_configuration_,
         StorageS3 & storage_,
         ReadFromFormatInfo read_from_format_info_,
         bool need_only_count_,
         size_t max_block_size_,
-        size_t num_streams_)
+        size_t num_streams_,
+        const DataLakePartitionColumns & partition_columns_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
         , storage(storage_)
         , read_from_format_info(std::move(read_from_format_info_))
         , need_only_count(need_only_count_)
+        , query_configuration(query_configuration_)
+        , partition_columns(partition_columns_)
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
-        query_configuration = storage.updateConfigurationAndGetCopy(context);
         virtual_columns = storage.getVirtualsList();
     }
 
@@ -172,6 +175,7 @@ private:
     bool need_only_count;
     StorageS3::Configuration query_configuration;
     NamesAndTypesList virtual_columns;
+    DataLakePartitionColumns partition_columns;
 
     size_t max_block_size;
     size_t num_streams;
@@ -577,7 +581,8 @@ StorageS3Source::StorageS3Source(
     const String & url_host_and_port_,
     std::shared_ptr<IIterator> file_iterator_,
     const size_t max_parsing_threads_,
-    bool need_only_count_)
+    bool need_only_count_,
+    const DataLakePartitionColumns & partition_columns_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -593,6 +598,7 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(info.format_header)
     , format_settings(format_settings_)
+    , partition_columns(partition_columns_)
     , requested_virtual_columns(info.requested_virtual_columns)
     , file_iterator(file_iterator_)
     , max_parsing_threads(max_parsing_threads_)
@@ -798,8 +804,37 @@ Chunk StorageS3Source::generate()
             size_t chunk_size = 0;
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = reader.getInputFormat()->getApproxBytesReadForChunk();
+
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath(), reader.getFileSize());
+
+            if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
+            {
+                auto filename = fs::path(reader.getPath()).filename().string();
+                auto partition_values = partition_columns.find(filename);
+
+                for (const auto & [name_and_type, value] : partition_values->second)
+                {
+                    if (!sample_block.has(name_and_type.name))
+                        continue;
+
+                    auto column_pos = sample_block.getPositionByName(name_and_type.name);
+
+                    const auto & type = name_and_type.type;
+                    auto partition_column = type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                    /// This column is filled with default value now, remove it.
+                    chunk.erase(column_pos);
+                    /// Add correct values.
+                    if (chunk.hasColumns())
+                    {
+                        chunk.addColumn(column_pos, std::move(partition_column));
+                    }
+                    else
+                    {
+                        chunk.addColumn(std::move(partition_column));
+                    }
+                }
+            }
             return chunk;
         }
 
@@ -1072,8 +1107,8 @@ private:
 StorageS3::StorageS3(
     const Configuration & configuration_,
     const ContextPtr & context_,
-    const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const StorageID & table_id_,
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
@@ -1190,17 +1225,20 @@ void StorageS3::read(
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
+    auto query_configuration = updateConfigurationAndGetCopy(local_context);
     auto reading = std::make_unique<ReadFromStorageS3Step>(
         column_names,
         query_info,
         storage_snapshot,
         local_context,
         read_from_format_info.source_header,
+        query_configuration,
         *this,
         std::move(read_from_format_info),
         need_only_count,
         max_block_size,
-        num_streams);
+        num_streams,
+        partition_columns);
 
     query_plan.addStep(std::move(reading));
 }
@@ -1262,7 +1300,8 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             query_configuration.url.uri.getHost() + std::to_string(query_configuration.url.uri.getPort()),
             iterator_wrapper,
             max_parsing_threads,
-            need_only_count);
+            need_only_count,
+            partition_columns);
 
         source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
@@ -1973,8 +2012,8 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         return std::make_shared<StorageS3>(
             std::move(configuration),
             args.getContext(),
-            args.table_id,
             args.columns,
+            args.table_id,
             args.constraints,
             args.comment,
             format_settings,

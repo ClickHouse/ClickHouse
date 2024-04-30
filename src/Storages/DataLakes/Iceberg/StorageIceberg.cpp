@@ -9,8 +9,8 @@ StoragePtr StorageIceberg::create(
     const DB::StorageIceberg::Configuration & base_configuration,
     DB::ContextPtr context_,
     LoadingStrictnessLevel mode,
-    const DB::StorageID & table_id_,
     const DB::ColumnsDescription & columns_,
+    const DB::StorageID & table_id_,
     const DB::ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_)
@@ -36,8 +36,8 @@ StoragePtr StorageIceberg::create(
         std::move(metadata),
         configuration,
         context_,
-        table_id_,
         columns_.empty() ? ColumnsDescription(schema_from_metadata) : columns_,
+        table_id_,
         constraints_,
         comment,
         format_settings_);
@@ -47,12 +47,12 @@ StorageIceberg::StorageIceberg(
     std::unique_ptr<IcebergMetadata> metadata_,
     const Configuration & configuration_,
     ContextPtr context_,
-    const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const StorageID & table_id_,
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_)
-    : StorageS3(configuration_, context_, table_id_, columns_, constraints_, comment, format_settings_)
+    : StorageS3(configuration_, context_, columns_, table_id_, constraints_, comment, format_settings_)
     , current_metadata(std::move(metadata_))
     , base_configuration(configuration_)
 {

@@ -26,20 +26,27 @@ protected:
         const ASTPtr & /*ast_function*/,
         ContextPtr context,
         const std::string & table_name,
-        ColumnsDescription /*cached_columns*/,
+        ColumnsDescription cached_columns,
         bool /*is_insert_query*/) const override
     {
         ColumnsDescription columns;
         if (TableFunction::configuration.structure != "auto")
             columns = parseColumnsListFromString(TableFunction::configuration.structure, context);
+        else if (!structure_hint.empty())
+            columns = structure_hint;
+        else if (!cached_columns.empty())
+            columns = cached_columns;
 
         StoragePtr storage = Storage::create(
-            TableFunction::configuration, context, LoadingStrictnessLevel::CREATE, StorageID(TableFunction::getDatabaseName(), table_name),
-            columns, ConstraintsDescription{}, String{}, std::nullopt);
+            TableFunction::configuration, context, LoadingStrictnessLevel::CREATE,
+            columns, StorageID(TableFunction::getDatabaseName(), table_name),
+            ConstraintsDescription{}, String{}, std::nullopt);
 
         storage->startup();
         return storage;
     }
+
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
     const char * getStorageTypeName() const override { return Storage::name; }
 
@@ -60,6 +67,8 @@ protected:
         TableFunction::configuration.format = "Parquet";
         TableFunction::parseArguments(ast_function, context);
     }
+
+    ColumnsDescription structure_hint;
 };
 }
 

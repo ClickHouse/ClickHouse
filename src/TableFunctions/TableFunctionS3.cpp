@@ -420,8 +420,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     StoragePtr storage = std::make_shared<StorageS3>(
         configuration,
         context,
-        StorageID(getDatabaseName(), table_name),
         columns,
+        StorageID(getDatabaseName(), table_name),
         ConstraintsDescription{},
         String{},
         /// No format_settings for table function S3

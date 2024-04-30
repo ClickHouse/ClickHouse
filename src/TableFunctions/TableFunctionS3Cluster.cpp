@@ -37,8 +37,8 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         storage = std::make_shared<StorageS3>(
             configuration,
             context,
-            StorageID(getDatabaseName(), table_name),
             columns,
+            StorageID(getDatabaseName(), table_name),
             ConstraintsDescription{},
             /* comment */String{},
             /* format_settings */std::nullopt, /// No format_settings for S3Cluster
