@@ -25,10 +25,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int ARGUMENT_OUT_OF_BOUND;
-}
 
 namespace
 {
@@ -171,7 +167,8 @@ public:
         const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
         const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
         Int64 deg = 1;
-        for (size_t i = 0; i < scale; ++i) {
+        for (size_t i = 0; i < scale; ++i)
+        {
             deg *= 10;
         }
 
@@ -266,7 +263,7 @@ public:
 
         if (fl == 1)
             return min_date;
-        
+
         if (fl == 2)
             return max_date;
 
@@ -280,7 +277,7 @@ public:
             else
                 result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds) * deg + fraction;
         }
-            
+
 
         if (result > max_date)
             return max_date;
