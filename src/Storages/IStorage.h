@@ -738,16 +738,22 @@ public:
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const;
-    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const;
+    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
+    {
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+    }
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
-    StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const;
-    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const;
+    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
+    }
 
     /// Creates a storage snapshot but without holding a data specific to storage.
-    StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const;
-    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const;
+    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
+    }
 
     /// Re initialize disks in case the underlying storage policy changed
     virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }

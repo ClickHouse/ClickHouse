@@ -18,28 +18,31 @@ namespace ErrorCodes
 
 StorageSnapshot::StorageSnapshot(
     const IStorage & storage_,
-    StorageMetadataPtr metadata_,
-    StorageSnapshotSettings additional_settings_,
-    StreamSubscriptionPtr stream_subscription_)
+    StorageMetadataPtr metadata_)
     : storage(storage_)
     , metadata(std::move(metadata_))
     , virtual_columns(storage_.getVirtualsPtr())
-    , additional_settings(std::move(additional_settings_))
-    , stream_subscription(std::move(stream_subscription_))
 {
 }
 
 StorageSnapshot::StorageSnapshot(
     const IStorage & storage_,
     StorageMetadataPtr metadata_,
-    VirtualsDescriptionPtr virtual_columns_,
-    StorageSnapshotSettings additional_settings_,
-    StreamSubscriptionPtr stream_subscription_)
+    VirtualsDescriptionPtr virtual_columns_)
     : storage(storage_)
     , metadata(std::move(metadata_))
     , virtual_columns(std::move(virtual_columns_))
-    , additional_settings(std::move(additional_settings_))
-    , stream_subscription(std::move(stream_subscription_))
+{
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    ColumnsDescription object_columns_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , virtual_columns(storage_.getVirtualsPtr())
+    , object_columns(std::move(object_columns_))
 {
 }
 
@@ -47,31 +50,12 @@ StorageSnapshot::StorageSnapshot(
     const IStorage & storage_,
     StorageMetadataPtr metadata_,
     ColumnsDescription object_columns_,
-    StorageSnapshotSettings additional_settings_,
-    StreamSubscriptionPtr stream_subscription_)
+    DataPtr data_)
     : storage(storage_)
     , metadata(std::move(metadata_))
     , virtual_columns(storage_.getVirtualsPtr())
     , object_columns(std::move(object_columns_))
-    , additional_settings(std::move(additional_settings_))
-    , stream_subscription(std::move(stream_subscription_))
-{
-}
-
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_,
-    ColumnsDescription object_columns_,
-    DataPtr data_,
-    StorageSnapshotSettings additional_settings_,
-    StreamSubscriptionPtr stream_subscription_)
-    : storage(storage_)
-    , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
-    , object_columns(std::move(object_columns_))
-    , additional_settings(std::move(additional_settings_))
     , data(std::move(data_))
-    , stream_subscription(std::move(stream_subscription_))
 {
 }
 

@@ -102,13 +102,9 @@ public:
         ColumnsDescriptionByShardNum objects_by_shard;
     };
 
-    using IStorage::getStorageSnapshot;
-    StorageSnapshotPtr getStorageSnapshot(
-        const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const override;
-
-    using IStorage::getStorageSnapshotForQuery;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
     StorageSnapshotPtr getStorageSnapshotForQuery(
-        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const override;
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;

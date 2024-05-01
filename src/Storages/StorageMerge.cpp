@@ -333,7 +333,7 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
     return desc;
 }
 
-StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr, const StorageSnapshotSettings &) const
+StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
 {
     static const auto common_virtuals = createVirtuals();
 

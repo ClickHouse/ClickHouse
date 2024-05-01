@@ -454,14 +454,10 @@ public:
         std::vector<AlterConversionsPtr> alter_conversions;
     };
 
-    using IStorage::getStorageSnapshot;
-    StorageSnapshotPtr getStorageSnapshot(
-        const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// The same as above but does not hold vector of data parts.
-    using IStorage::getStorageSnapshotWithoutData;
-    StorageSnapshotPtr getStorageSnapshotWithoutData(
-        const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, const StorageSnapshotSettings & additional_settings) const override;
+    StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);

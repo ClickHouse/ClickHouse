@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/Streaming/IStreamSubscription.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
@@ -12,11 +11,6 @@ class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
-struct StorageSnapshotSettings
-{
-    bool need_to_create_subscription = false;
-};
-
 /// Snapshot of storage that fixes set columns that can be read in query.
 /// There are 3 sources of columns: regular columns from metadata,
 /// dynamic columns from object Types, virtual columns.
@@ -26,7 +20,6 @@ struct StorageSnapshot
     const StorageMetadataPtr metadata;
     const VirtualsDescriptionPtr virtual_columns;
     const ColumnsDescription object_columns;
-    const StorageSnapshotSettings additional_settings;
 
     /// Additional data, on which set of columns may depend.
     /// E.g. data parts in MergeTree, list of blocks in Memory, etc.
@@ -41,37 +34,25 @@ struct StorageSnapshot
     /// Projection that is used in query.
     mutable const ProjectionDescription * projection = nullptr;
 
-    /// Subscription for a streaming query
-    /// if the storage supports atomic subscription with snapshot acquisition
-    StreamSubscriptionPtr stream_subscription = nullptr;
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_);
 
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
-        StorageSnapshotSettings additional_settings_ = {},
-        StreamSubscriptionPtr stream_subscription_ = nullptr);
+        VirtualsDescriptionPtr virtual_columns_);
 
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
-        VirtualsDescriptionPtr virtual_columns_,
-        StorageSnapshotSettings additional_settings_ = {},
-        StreamSubscriptionPtr stream_subscription_ = nullptr);
-
-    StorageSnapshot(
-        const IStorage & storage_,
-        StorageMetadataPtr metadata_,
-        ColumnsDescription object_columns_,
-        StorageSnapshotSettings additional_settings_ = {},
-        StreamSubscriptionPtr stream_subscription_ = nullptr);
+        ColumnsDescription object_columns_);
 
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
         ColumnsDescription object_columns_,
-        DataPtr data_,
-        StorageSnapshotSettings additional_settings_ = {},
-        StreamSubscriptionPtr stream_subscription_ = nullptr);
+        DataPtr data_);
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
 
