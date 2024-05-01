@@ -9,6 +9,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-pco = "0.2.1"
+pco = "0.2.3"
 libc = "0.2.153"
 
