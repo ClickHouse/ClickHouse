@@ -55,7 +55,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     else if (s_all.ignore(pos, expected) && s_tables.ignore(pos, expected) && kind == ASTDropQuery::Kind::Truncate)
     {
         has_all_tables = true;
-        if (s_from.ignore(pos, expected))
+        if (!s_from.ignore(pos, expected))
             return false;
 
         if (s_if_exists.ignore(pos, expected))
