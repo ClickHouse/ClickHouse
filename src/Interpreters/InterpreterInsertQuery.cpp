@@ -16,6 +16,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -38,7 +39,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
-#include "Interpreters/Context_fwd.h"
 
 
 namespace ProfileEvents
@@ -682,6 +682,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline()
     chain.addSource(std::move(counting));
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
+
     pipeline.setNumThreads(std::min<size_t>(pipeline.getNumThreads(), settings.max_threads));
     pipeline.setConcurrencyControl(settings.use_concurrency_control);
 
@@ -735,7 +736,11 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (settings.parallel_distributed_insert_select)
         {
-            res.pipeline = *table->distributedWrite(query, getContext());
+            auto distributed = table->distributedWrite(query, getContext());
+            if (distributed)
+                res.pipeline = std::move(*distributed);
+            else
+                res.pipeline = buildInsertSelectPipeline();
         }
         else
         {
