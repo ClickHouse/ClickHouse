@@ -90,7 +90,7 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable
     /// for directory name
-    auto base_directory_name = sipHash128String(getContext()->getCurrentQueryId());
+    auto base_directory_name = TMP_INSERT_PREFIX + sipHash128String(getContext()->getCurrentQueryId());
     insert_directory_queue = fs::path(storage.getDataPaths()[0]) / (base_directory_name + "-" + getRandomASCIIString(8));
     fs::create_directory(insert_directory_queue);
 }
@@ -176,6 +176,7 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
             {
                 for (size_t idx = 0; idx < columns.size(); ++idx)
                     serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, {});
+                /// String in ColumnString must be null-terminated
                 writeChar('\0', writer_key);
                 writeChar('\0', writer_value);
                 serialized_key_offsets.emplace_back(writer_key.count());

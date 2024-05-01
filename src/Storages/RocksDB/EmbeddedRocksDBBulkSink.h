@@ -61,7 +61,8 @@ private:
     size_t min_block_size_rows = 0;
 
     /// For writing SST files
-    std::atomic_size_t file_counter = 0;
+    size_t file_counter = 0;
+    static constexpr auto TMP_INSERT_PREFIX = "tmp_insert_";
     String insert_directory_queue;
 };
 
