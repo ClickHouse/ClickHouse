@@ -2580,13 +2580,27 @@ SELECT
 └─────────────────────┴──────────────────────────┴─────────────────────────────────┘
 ```
 
-## subtractYears, subtractQuarters, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractMilliseconds, subtractMicroseconds, subtractNanoseconds
+## subtractYears
 
-These functions subtract units of the interval specified by the function name from a date, a date with time or a string-encoded date / date with time. A date or date with time is returned.
+Subtracts a specified number of years from a date, a date with time or a string-encoded date / date with time.
 
-Example:
+**Syntax**
 
-``` sql
+```sql
+subtractYears(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of years from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of years to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` years. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
 WITH
     toDate('2024-01-01') AS date,
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -2597,10 +2611,454 @@ SELECT
     subtractYears(date_time_string, 1) AS subtract_years_with_date_time_string
 ```
 
-``` text
+```response
 ┌─subtract_years_with_date─┬─subtract_years_with_date_time─┬─subtract_years_with_date_time_string─┐
 │               2023-01-01 │           2023-01-01 00:00:00 │              2023-01-01 00:00:00.000 │
 └──────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
+```
+
+## subtractQuarters
+
+Subtracts a specified number of quarters from a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+subtractQuarters(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of quarters from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of quarters to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` quarters. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractQuarters(date, 1) AS subtract_quarters_with_date,
+    subtractQuarters(date_time, 1) AS subtract_quarters_with_date_time,
+    subtractQuarters(date_time_string, 1) AS subtract_quarters_with_date_time_string
+```
+
+```response
+┌─subtract_quarters_with_date─┬─subtract_quarters_with_date_time─┬─subtract_quarters_with_date_time_string─┐
+│                  2023-10-01 │              2023-10-01 00:00:00 │                 2023-10-01 00:00:00.000 │
+└─────────────────────────────┴──────────────────────────────────┴─────────────────────────────────────────┘
+```
+
+## subtractMonths
+
+Subtracts a specified number of months from a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+subtractMonths(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of months from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of months to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` months. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractMonths(date, 1) AS subtract_months_with_date,
+    subtractMonths(date_time, 1) AS subtract_months_with_date_time,
+    subtractMonths(date_time_string, 1) AS subtract_months_with_date_time_string
+```
+
+```response
+┌─subtract_months_with_date─┬─subtract_months_with_date_time─┬─subtract_months_with_date_time_string─┐
+│                2023-12-01 │            2023-12-01 00:00:00 │               2023-12-01 00:00:00.000 │
+└───────────────────────────┴────────────────────────────────┴───────────────────────────────────────┘
+```
+
+## subtractWeeks
+
+Subtracts a specified number of weeks from a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+subtractWeeks(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of weeks from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of weeks to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` weeks. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractWeeks(date, 1) AS subtract_weeks_with_date,
+    subtractWeeks(date_time, 1) AS subtract_weeks_with_date_time,
+    subtractWeeks(date_time_string, 1) AS subtract_weeks_with_date_time_string
+```
+
+```response
+ ┌─subtract_weeks_with_date─┬─subtract_weeks_with_date_time─┬─subtract_weeks_with_date_time_string─┐
+ │               2023-12-25 │           2023-12-25 00:00:00 │              2023-12-25 00:00:00.000 │
+ └──────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
+```
+
+## subtractDays
+
+Subtracts a specified number of days from a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+subtractDays(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of days from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of days to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` days. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractDays(date, 31) AS subtract_days_with_date,
+    subtractDays(date_time, 31) AS subtract_days_with_date_time,
+    subtractDays(date_time_string, 31) AS subtract_days_with_date_time_string
+```
+
+```response
+┌─subtract_days_with_date─┬─subtract_days_with_date_time─┬─subtract_days_with_date_time_string─┐
+│              2023-12-01 │          2023-12-01 00:00:00 │             2023-12-01 00:00:00.000 │
+└─────────────────────────┴──────────────────────────────┴─────────────────────────────────────┘
+```
+
+## subtractHours
+
+Subtracts a specified number of hours from a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+subtractHours(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of hours from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of hours to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` hours. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractHours(date, 12) AS subtract_hours_with_date,
+    subtractHours(date_time, 12) AS subtract_hours_with_date_time,
+    subtractHours(date_time_string, 12) AS subtract_hours_with_date_time_string
+```
+
+```response
+┌─subtract_hours_with_date─┬─subtract_hours_with_date_time─┬─subtract_hours_with_date_time_string─┐
+│      2023-12-31 12:00:00 │           2023-12-31 12:00:00 │              2023-12-31 12:00:00.000 │
+└──────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
+```
+
+## subtractMinutes
+
+Subtracts a specified number of minutes from a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+subtractMinutes(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of minutes from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of minutes to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` minutes. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractMinutes(date, 30) AS subtract_minutes_with_date,
+    subtractMinutes(date_time, 30) AS subtract_minutes_with_date_time,
+    subtractMinutes(date_time_string, 30) AS subtract_minutes_with_date_time_string
+```
+
+```response
+┌─subtract_minutes_with_date─┬─subtract_minutes_with_date_time─┬─subtract_minutes_with_date_time_string─┐
+│        2023-12-31 23:30:00 │             2023-12-31 23:30:00 │                2023-12-31 23:30:00.000 │
+└────────────────────────────┴─────────────────────────────────┴────────────────────────────────────────┘
+```
+
+## subtractSeconds
+
+Subtracts a specified number of seconds from a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+subtractSeconds(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to subtract specified number of seconds from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of seconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` minus `x` seconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractSeconds(date, 60) AS subtract_seconds_with_date,
+    subtractSeconds(date_time, 60) AS subtract_seconds_with_date_time,
+    subtractSeconds(date_time_string, 60) AS subtract_seconds_with_date_time_string
+```
+
+```response
+┌─subtract_seconds_with_date─┬─subtract_seconds_with_date_time─┬─subtract_seconds_with_date_time_string─┐
+│        2023-12-31 23:59:00 │             2023-12-31 23:59:00 │                2023-12-31 23:59:00.000 │
+└────────────────────────────┴─────────────────────────────────┴────────────────────────────────────────┘
+```
+
+## subtractMilliseconds
+
+Subtracts a specified number of milliseconds from a date with time or a string-encoded date with time.
+
+**Syntax**
+
+```sql
+subtractMilliseconds(date_time, x)
+```
+
+**Parameters**
+
+- `date_time`: Date with time to subtract specified number of milliseconds from. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of milliseconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date_time` minus `x` milliseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractMilliseconds(date_time, 1000) AS subtract_milliseconds_with_date_time,
+    subtractMilliseconds(date_time_string, 1000) AS subtract_milliseconds_with_date_time_string
+```
+
+```response
+┌─subtract_milliseconds_with_date_time─┬─subtract_milliseconds_with_date_time_string─┐
+│              2023-12-31 23:59:59.000 │                     2023-12-31 23:59:59.000 │
+└──────────────────────────────────────┴─────────────────────────────────────────────┘
+```
+
+## subtractMicroseconds
+
+Subtracts a specified number of microseconds from a date with time or a string-encoded date with time.
+
+**Syntax**
+
+```sql
+subtractMicroseconds(date_time, x)
+```
+
+**Parameters**
+
+- `date_time`: Date with time to subtract specified number of microseconds from. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of microseconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date_time` minus `x` microseconds. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractMicroseconds(date_time, 1000000) AS subtract_microseconds_with_date_time,
+    subtractMicroseconds(date_time_string, 1000000) AS subtract_microseconds_with_date_time_string
+```
+
+```response
+┌─subtract_microseconds_with_date_time─┬─subtract_microseconds_with_date_time_string─┐
+│           2023-12-31 23:59:59.000000 │                  2023-12-31 23:59:59.000000 │
+└──────────────────────────────────────┴─────────────────────────────────────────────┘
+```
+
+## subtractNanoseconds
+
+Subtracts a specified number of nanoseconds from a date with time or a string-encoded date with time.
+
+**Syntax**
+
+```sql
+subtractNanoseconds(date_time, x)
+```
+
+**Parameters**
+
+- `date_time`: Date with time to subtract specified number of nanoseconds from. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of nanoseconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date_time` minus `x` nanoseconds. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    subtractNanoseconds(date_time, 1000) AS subtract_nanoseconds_with_date_time,
+    subtractNanoseconds(date_time_string, 1000) AS subtract_nanoseconds_with_date_time_string
+```
+
+```response
+┌─subtract_nanoseconds_with_date_time─┬─subtract_nanoseconds_with_date_time_string─┐
+│       2023-12-31 23:59:59.999999000 │              2023-12-31 23:59:59.999999000 │
+└─────────────────────────────────────┴────────────────────────────────────────────┘
+```
+
+## subtractInterval
+
+Adds a negated interval to another interval or tuple of intervals.
+
+**Syntax**
+
+```sql
+subtractInterval(interval_1, interval_2)
+```
+
+**Parameters**
+
+- `interval_1`: First interval or interval of tuples. [interval](../data-types/special-data-types/interval.md), [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
+- `interval_2`: Second interval to be negated. [interval](../data-types/special-data-types/interval.md).
+
+**Returned value**
+- Returns a tuple of intervals. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
+
+:::note
+If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
+SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH);
+SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
+```
+
+Result:
+
+```response
+┌─subtractInterval(toIntervalDay(1), toIntervalMonth(1))─┐
+│ (1,-1)                                                 │
+└────────────────────────────────────────────────────────┘
+┌─subtractInterval((toIntervalDay(1), toIntervalYear(1)), toIntervalMonth(1))─┐
+│ (1,1,-1)                                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─subtractInterval(toIntervalDay(2), toIntervalDay(1))─┐
+│ (1)                                                  │
+└──────────────────────────────────────────────────────┘
+```
+
+## subtractTupleOfIntervals
+
+Consecutively subtracts a tuple of intervals from a Date or a DateTime.
+
+**Syntax**
+
+```sql
+subtractTupleOfIntervals(interval_1, interval_2)
+```
+
+**Parameters**
+
+- `date`: First interval or interval of tuples. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- `intervals`: Tuple of intervals to subtract from `date`. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
+
+**Returned value**
+- Returns `date` with subtracted `intervals`. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+Query:
+
+```sql
+WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
+```
+
+Result:
+
+```response
+┌─subtractTupleOfIntervals(date, (toIntervalDay(1), toIntervalYear(1)))─┐
+│                                                            2016-12-31 │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ## timeSlots(StartTime, Duration,\[, Size\])
