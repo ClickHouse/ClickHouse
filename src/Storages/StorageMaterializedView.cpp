@@ -97,7 +97,15 @@ StorageMaterializedView::StorageMaterializedView(
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
 
-    if (query.sql_security)
+    ASTPtr sql_security = query.sql_security;
+    if (!sql_security && query.supportSQLSecurity() && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+    {
+        /// This is hack which allows to load materialized views during startup with default SQL security NONE for backward compatability.
+        sql_security = std::make_shared<ASTSQLSecurity>();
+        InterpreterCreateQuery::processSQLSecurityOption(getContext(), sql_security->as<ASTSQLSecurity &>(), true, query.is_materialized_view);
+    }
+
+    if (sql_security)
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)

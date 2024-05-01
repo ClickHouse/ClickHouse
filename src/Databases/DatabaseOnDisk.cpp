@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <iterator>
 #include <span>
-#include <Core/ServerSettings.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <IO/ReadBufferFromFile.h>
@@ -68,11 +67,6 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
 
-    if (!ast_create_query.sql_security && ast_create_query.supportSQLSecurity() && !context->getServerSettings().ignore_empty_sql_security_in_create_view_query)
-    {
-        ast_create_query.sql_security = std::make_shared<ASTSQLSecurity>();
-        InterpreterCreateQuery::processSQLSecurityOption(context, ast_create_query.sql_security->as<ASTSQLSecurity &>(), true, ast_create_query.is_materialized_view);
-    }
     if (ast_create_query.select && ast_create_query.isView())
         ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
 
