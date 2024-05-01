@@ -36,7 +36,7 @@ protected:
 
     String getName() const override { return "local"; }
 
-    void printHelpMessage(const OptionsDescription & options_description) override;
+    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
 
     void addOptions(OptionsDescription & options_description) override;
 
