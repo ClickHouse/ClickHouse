@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include "base/types.h"
 #include "ggml.h"
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -19,6 +20,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <fstream>
+#include <string>
 #include <Common/re2.h>
 
 namespace DB
@@ -511,20 +513,24 @@ public:
         gpt_vocab vocab;
         gptj_model model;
 
-        params.model = "/home/m0r0zk01/ggml-model.bin";
+        params.model = "/home/ArtNext/ggml-model.bin";
 
         if (!gptj_model_load(params.model, model, vocab)) {
             throw Exception(ErrorCodes::SYNTAX_ERROR, "No");
         }
 
         const auto& vals = *arguments[0].column.get();
-
+        auto col_res = ColumnString::create();
+        col_res->reserve(input_rows_count);
+        UInt64 totalsize = 0;
+        std::vector<String> result_raw(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i) {
             Field field;
             field = vals[i]; // get(i, field);
             std::string val;
             if (!field.tryGet(val)) {
                 std::cout << "Ploho!" << std::endl;
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Nasrali");
             }
             else {
                 std::cout << "Ne Ploho! " << val << std::endl;
@@ -533,7 +539,27 @@ public:
                 for (auto &x : embd_inp)
                     std::cout << x << ' ';
                 std::cout << std::endl;
+                std::string result;
+                for (auto &x : embd_inp) {
+                    result += std::to_string(x) + " ";
+                }
+                if (!result.empty()) {
+                    result.pop_back();
+                }
+                result = "Tokenized '" + val + "' is '" + result + "'";
+                result_raw[i] = std::move(result);
+                totalsize += result_raw[i].size() + 1;
             }
+        }
+        col_res->getChars().resize(totalsize);
+        col_res->getOffsets().resize(input_rows_count);
+        auto* data_ptr = col_res->getChars().data();
+        UInt64 offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i) {
+            memcpy(data_ptr + offset, result_raw[i].data(), result_raw[i].size());
+            data_ptr[offset + result_raw[i].size()] = '\0';
+            offset += result_raw[i].size() + 1;
+            col_res->getOffsets()[i] = offset;
         }
 
         // params.n_predict = std::min(params.n_predict, model.hparams.n_ctx - static_cast<int>(embd_inp.size()));
@@ -544,9 +570,7 @@ public:
 
 
         std::cout << "Success!!!" << std::endl;
-
-        ColumnPtr res = arguments[0].column;
-        return res;
+        return col_res;
     }
 };
 
