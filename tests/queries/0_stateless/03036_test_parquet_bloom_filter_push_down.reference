@@ -224,3 +224,39 @@
     "bytes_read": 88028
   }
 }
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "array": [
+        69778,
+        58440,
+        2913,
+        64975,
+        92300
+      ]
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 43984
+  }
+}
