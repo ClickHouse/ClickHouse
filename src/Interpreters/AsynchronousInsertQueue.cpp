@@ -780,7 +780,12 @@ try
     try
     {
         interpreter = std::make_unique<InterpreterInsertQuery>(
-            key.query, insert_context, key.settings.insert_allow_materialized_columns, true, false, false);
+            key.query,
+            insert_context,
+            key.settings.insert_allow_materialized_columns,
+            false,
+            false,
+            true);
 
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
