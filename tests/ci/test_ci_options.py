@@ -209,7 +209,7 @@ class TestCIOptions(unittest.TestCase):
             ],
         )
 
-    def test_options_applied_2(self):
+    def test_options_applied_3(self):
         self.maxDiff = None
         ci_options = CiOptions.create_from_pr_message(
             _TEST_BODY_4, update_from_api=False
