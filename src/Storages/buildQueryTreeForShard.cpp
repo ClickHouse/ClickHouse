@@ -496,24 +496,27 @@ public:
 private:
     void processTableNode(TableNode & node)
     {
-        const auto storage_id = node.getStorageID();
-
+        const auto & storage_id = node.getStorageID();
         const auto & modifiers = node.getTableExpressionModifiers();
-        if (modifiers && modifiers->hasStream())
-            changes.keeper_restore_map[storage_id.getFullTableName()] = modifiers->getStreamSettings()->keeper_key;
 
         const auto * distributed_storage = typeid_cast<const StorageDistributed *>(node.getStorage().get());
         if (!distributed_storage)
+        {
+            addRestoreInfo(storage_id, storage_id, modifiers);
             return;
+        }
 
         bool distributed_valid_for_rewrite = distributed_storage->getShardCount() >= 2;
         if (!distributed_valid_for_rewrite)
+        {
+            addRestoreInfo(storage_id, storage_id, modifiers);
             return;
+        }
 
         if (mode == DistributedProductMode::LOCAL)
         {
             StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(), distributed_storage->getRemoteTableName()};
-            changes.storage_restore_map[remote_storage_id.getFullTableName()] = storage_id.getFullTableName();
+            addRestoreInfo(remote_storage_id, storage_id, modifiers);
         }
 
         /// other modes either do not change the storage or are not supported in streaming queries.
@@ -521,11 +524,18 @@ private:
 
     void processTableFunction(TableFunctionNode & node)
     {
-        const auto storage_id = node.getStorageID();
-
+        const auto & storage_id = node.getStorageID();
         const auto & modifiers = node.getTableExpressionModifiers();
-        if (modifiers && modifiers->hasStream())
-            changes.keeper_restore_map[storage_id.getFullTableName()] = modifiers->getStreamSettings()->keeper_key;
+        addRestoreInfo(storage_id, storage_id, modifiers);
+    }
+
+    void addRestoreInfo(const StorageID & real_id, const StorageID & wrapped_id, const std::optional<TableExpressionModifiers> & modifiers)
+    {
+        if (!modifiers || !modifiers->hasStream())
+            return;
+
+        changes.storage_restore_map[real_id.getFullTableName()] = wrapped_id.getFullTableName();
+        changes.keeper_restore_map[real_id.getFullTableName()] = modifiers->getStreamSettings()->keeper_key;
     }
 };
 

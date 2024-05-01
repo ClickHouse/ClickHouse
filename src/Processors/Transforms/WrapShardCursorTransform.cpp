@@ -3,7 +3,6 @@
 #include <Core/Streaming/CursorTree.h>
 
 #include <Processors/Transforms/WrapShardCursorTransform.h>
-#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -27,34 +26,35 @@ void WrapShardCursorTransform::transform(Chunk & chunk)
 
     CursorDataMap updated;
 
-    for (auto & [storage, cursor] : cursor_info->cursors)
+    for (auto & [real_storage_id, cursor] : cursor_info->cursors)
     {
-        LOG_DEBUG(&Poco::Logger::get("WrapShardCursorTransform"), "before wrap | storage: {}, cursor: {}", storage, cursorTreeToString(cursor.tree));
-
-        const String & actual_storage = getActualStorage(storage);
+        const String & actual_storage = getActualStorage(real_storage_id);
         auto & data = (updated[actual_storage] = std::move(cursor));
 
-        if (auto it = changes.keeper_restore_map.find(actual_storage); it != changes.keeper_restore_map.end())
-            data.keeper_key = it->second;
+        data.keeper_key = getKeeperKey(real_storage_id);
 
         auto wrapped_tree = std::make_shared<CursorTreeNode>();
         wrapped_tree->setSubtree(shard_key, std::move(data.tree));
         data.tree = std::move(wrapped_tree);
-
-        LOG_DEBUG(&Poco::Logger::get("WrapShardCursorTransform"), "after wrap | storage: {}, cursor: {}", actual_storage, cursorTreeToString(data.tree));
     }
 
     cursor_info->cursors = std::move(updated);
 }
 
-const String & WrapShardCursorTransform::getActualStorage(const String & from_info) const
+const String & WrapShardCursorTransform::getActualStorage(const String & real_storage_id) const
 {
-    auto it = changes.storage_restore_map.find(from_info);
+    if (auto it = changes.storage_restore_map.find(real_storage_id); it != changes.storage_restore_map.end())
+        return it->second;
 
-    if (it == changes.storage_restore_map.end())
-        return from_info;
+    return  real_storage_id;
+}
 
-    return it->second;
+std::optional<String> WrapShardCursorTransform::getKeeperKey(const String & real_storage_id) const
+{
+    if (auto it = changes.keeper_restore_map.find(real_storage_id); it != changes.keeper_restore_map.end())
+        return it->second;
+
+    return std::nullopt;
 }
 
 }

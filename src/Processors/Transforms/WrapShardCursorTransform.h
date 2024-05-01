@@ -18,7 +18,8 @@ public:
 protected:
     void transform(Chunk & chunk) override;
 
-    const String & getActualStorage(const String & from_info) const;
+    const String & getActualStorage(const String & real_storage_id) const;
+    std::optional<String> getKeeperKey(const String & real_storage_id) const;
 
 private:
     String shard_key;
