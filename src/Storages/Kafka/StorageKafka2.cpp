@@ -788,9 +788,16 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         }
 
         if (!consumer.hasMorePolledMessages()
-            && (total_rows >= kafka_settings->kafka_max_block_size || !check_time_limit()
+            && (total_rows >= getMaxBlockSize() || !check_time_limit()
                 || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS || consumer.needsOffsetUpdate()))
         {
+            LOG_TRACE(
+                log,
+                "Stopped collecting message for current batch. There are {} failed polled attempts, {} total rows and consumer needs "
+                "offset update is {}",
+                failed_poll_attempts,
+                total_rows,
+                consumer.needsOffsetUpdate());
             break;
         }
     }
