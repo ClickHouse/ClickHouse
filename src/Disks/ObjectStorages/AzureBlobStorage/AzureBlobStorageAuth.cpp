@@ -188,7 +188,8 @@ Azure::Storage::Blobs::BlobClientOptions getAzureBlobClientOptions(const Poco::U
     retry_options.MaxRetryDelay = std::chrono::milliseconds(config.getUInt(config_prefix + ".retry_max_backoff_ms", 1000));
 
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
-    CurlOptions curl_options{.NoSignal = true};
+    CurlOptions curl_options;
+    curl_options.NoSignal = true;
 
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
