@@ -592,10 +592,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline()
     {
         pipeline.resize(1);
 
-        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr {
+        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+        {
             return std::make_shared<AddUserDeduplicationTokenTransform>(settings.insert_deduplication_token.value, in_header);
         });
-        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr {
+        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+        {
             return std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(in_header);
         });
     }

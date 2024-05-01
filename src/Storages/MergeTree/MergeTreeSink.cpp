@@ -13,6 +13,11 @@ namespace ProfileEvents
     extern const Event DuplicatedInsertedBlocks;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -108,7 +113,7 @@ void MergeTreeSink::consume(Chunk & chunk)
             chunk.getChunkInfos().add(dedub_token_info_for_children);
 
             LOG_DEBUG(storage.log,
-                "dedup token from hash is caclulated");
+                "dedup token from hash is calculated");
         }
     }
 

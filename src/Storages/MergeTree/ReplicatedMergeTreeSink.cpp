@@ -319,7 +319,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             dedub_token_info_for_children = std::make_shared<DedupTokenInfo>();
             chunk.getChunkInfos().add(dedub_token_info_for_children);
             LOG_DEBUG(storage.log,
-                "dedup token from hash is caclulated");
+                "dedup token from hash is calculated");
         }
     }
 
