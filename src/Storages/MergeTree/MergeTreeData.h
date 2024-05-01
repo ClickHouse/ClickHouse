@@ -1580,7 +1580,7 @@ protected:
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts);
 
-    virtual std::map<String, MergeTreeCursorPromoter> buildPromoters() = 0;
+    virtual CursorPromotersMap buildPromoters() = 0;
 
 private:
     /// Checking that candidate part doesn't break invariants: correct partition

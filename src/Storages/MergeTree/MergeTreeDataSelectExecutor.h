@@ -40,7 +40,7 @@ public:
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false,
         MergeTreeCursor cursor = {},
-        std::map<String, MergeTreeCursorPromoter> promoters = {}) const;
+        CursorPromotersMap promoters = {}) const;
 
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
@@ -56,7 +56,7 @@ public:
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
         bool enable_parallel_reading = false,
         MergeTreeCursor cursor = {},
-        std::map<String, MergeTreeCursorPromoter> promoters = {}) const;
+        CursorPromotersMap promoters = {}) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.

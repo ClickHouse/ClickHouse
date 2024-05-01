@@ -133,7 +133,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     bool enable_parallel_reading,
     MergeTreeCursor cursor,
-    std::map<String, MergeTreeCursorPromoter> promoters) const
+    CursorPromotersMap promoters) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
@@ -916,7 +916,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr,
     bool enable_parallel_reading,
     MergeTreeCursor cursor,
-    std::map<String, MergeTreeCursorPromoter> promoters) const
+    CursorPromotersMap promoters) const
 {
     if (!query_info.isStream())
     {

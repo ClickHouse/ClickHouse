@@ -127,7 +127,7 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
-    std::map<String, MergeTreeCursorPromoter> buildPromoters() override;
+    CursorPromotersMap buildPromoters() override;
 
 private:
 

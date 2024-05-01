@@ -203,17 +203,23 @@ void IStorage::streamingRead(
     size_t max_block_size,
     size_t num_streams)
 {
-    /// prepare read from storage plan
-    QueryPlanPtr storage_query_plan = std::make_unique<QueryPlan>();
-    read(*storage_query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    const StreamReadingStage reading_stage = query_info.table_expression_modifiers->getStreamSettings()->stage;
+    QueryPlanPtr storage_query_plan;
 
-    if (!storage_query_plan->isInitialized())
+    /// prepare read from storage plan, if need all data
+    if (reading_stage == StreamReadingStage::AllData)
     {
-        auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
-        Pipe pipe(std::make_shared<NullSource>(source_header));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource");
-        storage_query_plan->addStep(std::move(read_from_pipe));
+        storage_query_plan = std::make_unique<QueryPlan>();
+        read(*storage_query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+
+        if (!storage_query_plan->isInitialized())
+        {
+            auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+            Pipe pipe(std::make_shared<NullSource>(source_header));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            storage_query_plan->addStep(std::move(read_from_pipe));
+        }
     }
 
     /// make generic subscription
@@ -228,17 +234,25 @@ void IStorage::streamingRead(
         std::move(subscription));
     subscription_query_plan->addStep(std::move(subscription_source));
 
-    /// unite plans with streaming adapter
-    auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
-        storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
+    if (reading_stage == StreamReadingStage::AllData)
+    {
+        /// unite plans with streaming adapter
+        auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
+            storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
 
-    std::vector<QueryPlanPtr> plans;
-    plans.reserve(2);
+        std::vector<QueryPlanPtr> plans;
+        plans.reserve(2);
 
-    plans.push_back(std::move(storage_query_plan));
-    plans.push_back(std::move(subscription_query_plan));
+        plans.push_back(std::move(storage_query_plan));
+        plans.push_back(std::move(subscription_query_plan));
 
-    query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
+        query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
+    }
+    else
+    {
+        query_plan = std::move(*subscription_query_plan);
+        makeStreamInfinite(query_plan);
+    }
 }
 
 Chain IStorage::toSubscribersWrite(const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)

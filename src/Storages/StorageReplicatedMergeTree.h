@@ -375,7 +375,7 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
-    std::map<String, MergeTreeCursorPromoter> buildPromoters() override;
+    CursorPromotersMap buildPromoters() override;
 
 private:
     std::atomic_bool are_restoring_replica {false};

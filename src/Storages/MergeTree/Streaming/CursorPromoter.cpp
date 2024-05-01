@@ -36,6 +36,14 @@ std::optional<PartBlockNumberRanges::BlockNumberRange> PartBlockNumberRanges::ge
     return it->second;
 }
 
+Int64 PartBlockNumberRanges::getMaxBlockNumber() const
+{
+    if (right_index.empty())
+        return -1;
+
+    return right_index.rbegin()->second.right;
+}
+
 String PartBlockNumberRanges::dumpStructure() const
 {
     std::vector<String> left_index_dump, right_index_dump;
@@ -73,6 +81,16 @@ bool MergeTreeCursorPromoter::canPromote(Int64 block_number, Int64 left) const
         return false;
 
     return true;
+}
+
+Int64 MergeTreeCursorPromoter::getMaxBlockNumber() const
+{
+    Int64 max_block_number = virtual_parts.getMaxBlockNumber();
+
+    if (!committing_parts.empty())
+        max_block_number = std::max(max_block_number, *committing_parts.rbegin());
+
+    return max_block_number;
 }
 
 String MergeTreeCursorPromoter::dumpStructure() const

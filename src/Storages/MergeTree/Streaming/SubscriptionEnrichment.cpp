@@ -81,7 +81,7 @@ public:
         StreamSubscriptionPtr subscription_holder_,
         const MergeTreeData & storage_,
         const std::map<String, std::map<Int64, T>> & data_parts_,
-        const std::map<String, MergeTreeCursorPromoter> & promoters_)
+        const CursorPromotersMap & promoters_)
         : subscription(subscription_holder_->as<RangesInDataPartStreamSubscription>())
         , storage(storage_)
         , data_parts(data_parts_)
@@ -120,7 +120,7 @@ private:
     RangesInDataPartStreamSubscription * subscription;
     const MergeTreeData & storage;
     const std::map<String, std::map<Int64, T>> & data_parts;
-    const std::map<String, MergeTreeCursorPromoter> & promoters;
+    const CursorPromotersMap & promoters;
 
     Poco::Logger * log = &Poco::Logger::get("SubscriptionEnricher");
 };
@@ -131,7 +131,7 @@ bool enrichSubscription(
     StreamSubscriptionPtr subscription_holder,
     const MergeTreeData & storage,
     const std::map<String, std::map<Int64, MergeTreeData::DataPartPtr>> & data_parts,
-    const std::map<String, MergeTreeCursorPromoter> & promoters)
+    const CursorPromotersMap & promoters)
 {
     SubscriptionEnricher enricher(std::move(subscription_holder), storage, data_parts, promoters);
     return enricher.enrichSubscription();
@@ -141,7 +141,7 @@ bool enrichSubscription(
     StreamSubscriptionPtr subscription_holder,
     const MergeTreeData & storage,
     const std::map<String, std::map<Int64, RangesInDataPart>> & data_parts,
-    const std::map<String, MergeTreeCursorPromoter> & promoters)
+    const CursorPromotersMap & promoters)
 {
     SubscriptionEnricher enricher(std::move(subscription_holder), storage, data_parts, promoters);
     return enricher.enrichSubscription();
@@ -167,11 +167,11 @@ std::map<String, std::map<Int64, RangesInDataPart>> buildRightPartsIndex(RangesI
     return index;
 }
 
-std::map<String, MergeTreeCursorPromoter> constructPromoters(
+CursorPromotersMap constructPromoters(
     std::map<String, std::set<Int64>> committing_block_numbers,
     std::map<String, PartBlockNumberRanges> partition_ranges)
 {
-    std::map<String, MergeTreeCursorPromoter> promoters;
+    CursorPromotersMap promoters;
 
     for (auto && [partition_id, ranges] : partition_ranges)
     {

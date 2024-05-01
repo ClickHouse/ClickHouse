@@ -292,9 +292,11 @@ void StorageMergeTree::streamingRead(
         size_t max_block_size,
         size_t num_streams)
 {
-    Names columns_to_read = extendColumnsWithStreamingAux(column_names);
-    auto cursor = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->tree);
+    const auto & stream_settings = query_info.table_expression_modifiers->getStreamSettings();
+
+    auto columns_to_read = extendColumnsWithStreamingAux(column_names);
     auto promoters = buildPromoters();
+    auto cursor = buildMergeTreeCursor(stream_settings->stage, stream_settings->tree, promoters);
 
     QueryPlanPtr storage_query_plan = reader.read(
         columns_to_read, storage_snapshot, query_info, local_context, max_block_size, num_streams,
@@ -828,7 +830,7 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
     return result;
 }
 
-std::map<String, MergeTreeCursorPromoter> StorageMergeTree::buildPromoters()
+CursorPromotersMap StorageMergeTree::buildPromoters()
 {
     std::map<String, std::set<Int64>> committing_block_numbers_snapshot;
     {

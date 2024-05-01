@@ -1900,7 +1900,7 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
     return ReplicatedMergeTreeMergePredicate(*this, zookeeper, std::move(partition_ids_hint));
 }
 
-std::map<String, MergeTreeCursorPromoter> ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr & zookeeper)
+CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr & zookeeper)
 {
     Strings partition_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
     LOG_DEBUG(log, "partition_ids: {}", fmt::join(partition_ids, ", "));

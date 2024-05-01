@@ -3,11 +3,13 @@
 #include <memory>
 
 #include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/ReadingStage.h>
 
 #include <Processors/CursorInfo.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/Streaming/CursorPromoter.h>
 
 namespace DB
 {
@@ -25,7 +27,8 @@ struct PartitionCursor
 
 using MergeTreeCursor = std::map<String, PartitionCursor>;
 
-MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree);
+MergeTreeCursor buildMergeTreeCursor(
+    StreamReadingStage reading_stage, const CursorTreeNodePtr & cursor_tree, const CursorPromotersMap & promoters);
 
 std::shared_ptr<CursorInfo> buildMergeTreeCursorInfo(
     const String & storage_full_name,

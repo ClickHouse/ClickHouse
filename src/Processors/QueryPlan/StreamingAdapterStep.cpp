@@ -61,7 +61,7 @@ void StreamingAdapterStep::updateOutputStream()
 {
     output_stream = DataStream{
         .header = output_header,
-        .has_single_port = true,
+        .has_single_port = input_streams.size() == 1 ? input_streams.front().has_single_port : true,
         .is_infinite = true,
     };
 }

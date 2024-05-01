@@ -408,7 +408,7 @@ public:
 
     /// Returns cursor promoters for each partition.
     /// Used in streaming subscription enrichment.
-    std::map<String, MergeTreeCursorPromoter> buildPromoters(zkutil::ZooKeeperPtr & zookeeper);
+    CursorPromotersMap buildPromoters(zkutil::ZooKeeperPtr & zookeeper);
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;

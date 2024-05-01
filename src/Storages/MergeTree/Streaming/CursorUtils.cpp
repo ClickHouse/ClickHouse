@@ -10,6 +10,9 @@
 namespace DB
 {
 
+namespace
+{
+
 MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
 {
     MergeTreeCursor cursor;
@@ -24,6 +27,31 @@ MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
     }
 
     return cursor;
+}
+
+MergeTreeCursor buildMergeTreeTailCursor(const CursorPromotersMap & promoters)
+{
+    MergeTreeCursor cursor;
+
+    for (const auto & [partition_id, promoter] : promoters)
+    {
+        PartitionCursor & partition_cursor = cursor[partition_id];
+        partition_cursor.block_number = promoter.getMaxBlockNumber();
+        partition_cursor.block_offset = std::numeric_limits<Int64>::max();
+    }
+
+    return cursor;
+}
+
+}
+
+MergeTreeCursor buildMergeTreeCursor(
+    StreamReadingStage reading_stage, const CursorTreeNodePtr & cursor_tree, const CursorPromotersMap & promoters)
+{
+    if (reading_stage == StreamReadingStage::AllData)
+        return buildMergeTreeCursor(cursor_tree);
+    else
+        return buildMergeTreeTailCursor(promoters);
 }
 
 std::shared_ptr<CursorInfo> buildMergeTreeCursorInfo(

@@ -1,4 +1,3 @@
-#include <optional>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <boost/algorithm/string.hpp>
@@ -2657,7 +2656,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
-
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
 
@@ -5590,7 +5588,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             auto replacement_table_expression = std::make_shared<TableNode>(storage, scope.context);
                             if (std::optional<TableExpressionModifiers> table_expression_modifiers = query_table_node->getTableExpressionModifiers())
                                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-                            in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression));                        }
+                            in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression));
+                        }
                     }
                 }
             }
