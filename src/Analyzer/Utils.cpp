@@ -196,6 +196,54 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
+namespace
+{
+
+class CheckCursorKeeperKeyVisitor : public ConstInDepthQueryTreeVisitor<CheckCursorKeeperKeyVisitor>
+{
+    bool keeper_key_found = false;
+
+public:
+    using Base = ConstInDepthQueryTreeVisitor<CheckCursorKeeperKeyVisitor>;
+    using Base::Base;
+
+    bool hasCursorKeeper() const
+    {
+        return keeper_key_found;
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (const auto * table_node = node->as<const TableNode>())
+            checkModifiers(table_node->getTableExpressionModifiers());
+        else if (const auto * table_function_node = node->as<const TableFunctionNode>())
+            checkModifiers(table_function_node->getTableExpressionModifiers());
+    }
+
+    bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]]) const
+    {
+        return !keeper_key_found;
+    }
+
+private:
+    void checkModifiers(const std::optional<TableExpressionModifiers> & modifiers)
+    {
+        if (!modifiers || !modifiers->hasStream())
+            return;
+
+        keeper_key_found |= modifiers->getStreamSettings()->keeper_key.has_value();
+    }
+};
+
+}
+
+bool areKeeperCursorsUsed(const QueryTreeNodePtr & node)
+{
+    CheckCursorKeeperKeyVisitor visitor;
+    visitor.visit(node);
+    return visitor.hasCursorKeeper();
+}
+
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,

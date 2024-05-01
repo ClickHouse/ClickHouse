@@ -36,43 +36,28 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
 {
     /// End of input stream.
     if (!input_block)
-    {
-        Block to_return;
-        std::swap(to_return, accumulated_block);
-        return to_return;
-    }
+        return finalizeBlock();
 
     /// Just read block is already enough.
     if (isEnoughSize(input_block))
     {
         /// If no accumulated data, return just read block.
+        /// Cursors already stored in input_block.
         if (!accumulated_block)
-        {
             return std::move(input_block);
-        }
 
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
-        Block to_return = std::move(input_block);
-        std::swap(to_return, accumulated_block);
-        return to_return;
+        return finalizeBlock(std::move(input_block));
     }
 
     /// Accumulated block is already enough.
     if (isEnoughSize(accumulated_block))
-    {
-        /// Return accumulated data and place new block to accumulated data.
-        Block to_return = std::move(input_block);
-        std::swap(to_return, accumulated_block);
-        return to_return;
-    }
+        return finalizeBlock(std::move(input_block));
 
     append<ReferenceType>(std::move(input_block));
+
     if (isEnoughSize(accumulated_block))
-    {
-        Block to_return;
-        std::swap(to_return, accumulated_block);
-        return to_return;
-    }
+        return finalizeBlock();
 
     /// Squashed block is not ready.
     return {};
@@ -82,6 +67,9 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
 template <typename ReferenceType>
 void SquashingTransform::append(ReferenceType input_block)
 {
+    if (!input_block.info.cursors.empty())
+        cursor_merger.add(std::move(input_block.info.cursors));
+
     if (!accumulated_block)
     {
         accumulated_block = std::move(input_block);
@@ -108,10 +96,26 @@ void SquashingTransform::append(ReferenceType input_block)
         /// Seems ok to discard accumulated data because we're throwing an exception, which the caller will
         /// hopefully interpret to mean "this block and all *previous* blocks are potentially lost".
         accumulated_block.clear();
+        cursor_merger.finalize();
         throw;
     }
 }
 
+Block SquashingTransform::finalizeBlock(Block new_data)
+{
+    auto new_cursors = std::move(new_data.info.cursors);
+
+    Block to_return = std::move(new_data);
+    std::swap(to_return, accumulated_block);
+
+    if (cursor_merger.hasSome())
+        to_return.info.cursors = cursor_merger.finalize();
+
+    if (!new_cursors.empty())
+        cursor_merger.add(new_cursors);
+
+    return to_return;
+}
 
 bool SquashingTransform::isEnoughSize(const Block & block)
 {

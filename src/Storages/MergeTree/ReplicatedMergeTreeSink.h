@@ -5,6 +5,8 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
+#include <Core/Streaming/CursorData.h>
+
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -99,7 +101,8 @@ private:
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
         size_t replicas_num,
-        std::optional<EphemeralLockInZooKeeper> * lock_holder = nullptr);
+        std::optional<EphemeralLockInZooKeeper> * lock_holder = nullptr,
+        std::optional<CursorDataMap> * cursors = nullptr);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.

@@ -29,6 +29,7 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
@@ -442,6 +443,7 @@ BlockIO InterpreterInsertQuery::execute()
         if (query.select)
         {
             bool is_trivial_insert_select = false;
+            bool is_infinite_select_query = false;
 
             if (settings.optimize_trivial_insert_select)
             {
@@ -483,9 +485,13 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
+                /// disable keeper cursors update in select plan if it will be updated in storage sink.
+                select_query_options.enable_keeper_cursors_update = !table->supportsReplication();
+
                 if (settings.allow_experimental_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, new_context, select_query_options);
+                    is_infinite_select_query = interpreter_select_analyzer.getQueryPlan().getCurrentDataStream().is_infinite;
                     pipeline = interpreter_select_analyzer.buildQueryPipeline();
                 }
                 else
@@ -499,9 +505,13 @@ BlockIO InterpreterInsertQuery::execute()
                 /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
+                /// disable keeper cursors update in select plan if it will be updated in storage sink.
+                select_query_options.enable_keeper_cursors_update = !table->supportsReplication();
+
                 if (settings.allow_experimental_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, getContext(), select_query_options);
+                    is_infinite_select_query = interpreter_select_analyzer.getQueryPlan().getCurrentDataStream().is_infinite;
                     pipeline = interpreter_select_analyzer.buildQueryPipeline();
                 }
                 else
@@ -530,6 +540,14 @@ BlockIO InterpreterInsertQuery::execute()
                     LOG_DEBUG(
                         getLogger("InsertQuery"),
                         "Insert-select query using insert_deduplication_token, setting streams to 1 to avoid deduplication issues");
+                    pre_streams_size = 1;
+                }
+
+                if (is_infinite_select_query)
+                {
+                    LOG_DEBUG(
+                        getLogger("InsertQuery"),
+                        "Insert-select query is running in streaming mode, setting streams to 1 to avoid cursor commit issues");
                     pre_streams_size = 1;
                 }
 

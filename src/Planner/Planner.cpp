@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
+#include <Processors/QueryPlan/UpdateKeeperCursorsStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -1112,6 +1113,24 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     }
 }
 
+void addUpdateKeeperCursorsIfNeeded(
+    QueryPlan & query_plan,
+    const QueryTreeNodePtr & query_node,
+    const SelectQueryOptions & select_query_options,
+    PlannerContextPtr & planner_context)
+{
+    if (!query_plan.getCurrentDataStream().is_infinite || !select_query_options.enable_keeper_cursors_update)
+        return;
+
+    if (!areKeeperCursorsUsed(query_node))
+        return;
+
+    auto step = std::make_unique<UpdateKeeperCursorsStep>(
+        query_plan.getCurrentDataStream(), planner_context->getQueryContext()->getZooKeeper());
+
+    query_plan.addStep(std::move(step));
+}
+
 /// Support for `additional_result_filter` setting
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     const QueryNode & query_node,
@@ -1777,6 +1796,8 @@ void Planner::buildPlanForQueryNode()
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+
+    addUpdateKeeperCursorsIfNeeded(query_plan, query_tree, select_query_options, planner_context);
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
 }

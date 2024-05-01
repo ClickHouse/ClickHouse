@@ -1,3 +1,4 @@
+#include <Processors/CursorInfo.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 
 namespace DB
@@ -8,19 +9,39 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-SquashingChunksTransform::SquashingChunksTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : ExceptionKeepingTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes)
+namespace
+{
+
+Block buildBlock(const Block & header, Chunk & chunk)
+{
+    auto block = header.cloneWithColumns(chunk.detachColumns());
+
+    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::info_slot))
+        if (const auto * cursor_info = typeid_cast<const CursorInfo *>(chunk_info.get()))
+            block.info.cursors = std::move(cursor_info->cursors);
+
+    return block;
+}
+
+void completeChunk(Chunk & chunk, Block block)
+{
+    chunk.setColumns(block.getColumns(), block.rows());
+
+    if (!block.info.cursors.empty())
+        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors)), CursorInfo::info_slot);
+}
+
+}
+
+SquashingChunksTransform::SquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : ExceptionKeepingTransform(header, header, false), squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void SquashingChunksTransform::onConsume(Chunk chunk)
 {
-    if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
-    {
-        cur_chunk.setColumns(block.getColumns(), block.rows());
-    }
+    if (auto block = squashing.add(buildBlock(getInputPort().getHeader(), chunk)))
+        completeChunk(cur_chunk, std::move(block));
 }
 
 SquashingChunksTransform::GenerateResult SquashingChunksTransform::onGenerate()
@@ -64,8 +85,8 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
 {
     if (!finished)
     {
-        if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
-            chunk.setColumns(block.getColumns(), block.rows());
+        if (auto block = squashing.add(buildBlock(getInputPort().getHeader(), chunk)))
+            completeChunk(chunk, std::move(block));
     }
     else
     {
@@ -73,7 +94,7 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
 
         auto block = squashing.add({});
-        chunk.setColumns(block.getColumns(), block.rows());
+        completeChunk(chunk, std::move(block));
     }
 }
 

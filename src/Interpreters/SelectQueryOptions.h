@@ -50,6 +50,10 @@ struct SelectQueryOptions
     /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
     bool ignore_access_check = false;
 
+    /// Commit storage cursors to keeper at the end of query pipeline.
+    /// Used only for streaming queries.
+    bool enable_keeper_cursors_update = true;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.

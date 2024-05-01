@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
+#include <Core/Streaming/CursorZkUtils.h>
 #include <IO/Operators.h>
 #include <fmt/core.h>
 
@@ -60,6 +61,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
         UInt64 elapsed_ns;
         ProfileEvents::Counters part_counters;
         std::optional<EphemeralLockInZooKeeper> lock_holder;
+        std::optional<CursorDataMap> cursors;
 
         Partition() = default;
         Partition(LoggerPtr log_,
@@ -69,12 +71,14 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
                   BlockWithPartition && block_,
                   std::optional<BlockWithPartition> && unmerged_block_with_partition_,
                   ProfileEvents::Counters && part_counters_,
-                  std::optional<EphemeralLockInZooKeeper> && lock_holder_)
+                  std::optional<EphemeralLockInZooKeeper> && lock_holder_,
+                  std::optional<CursorDataMap> && cursors_)
             : BlockInfo(log_, std::move(block_id_), std::move(block_), std::move(unmerged_block_with_partition_)),
               temp_part(std::move(temp_part_)),
               elapsed_ns(elapsed_ns_),
               part_counters(std::move(part_counters_)),
-              lock_holder(std::move(lock_holder_))
+              lock_holder(std::move(lock_holder_)),
+              cursors(std::move(cursors_))
         {}
     };
 
@@ -98,7 +102,8 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     BlockWithPartition block1(std::move(block), Row(), std::move(offsets), std::move(tokens));
     ProfileEvents::Counters profile_counters;
     ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition part(
-        getLogger("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters), std::nullopt);
+        getLogger("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes),
+        std::move(block1), std::nullopt, std::move(profile_counters), std::nullopt, std::nullopt);
 
     part.filterSelfDuplicate();
 
@@ -266,6 +271,11 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    std::optional<CursorDataMap> cursors;
+
+    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::info_slot))
+        if (const auto * cursor_info = typeid_cast<const CursorInfo *>(chunk_info.get()))
+            cursors = std::move(cursor_info->cursors);
 
     const auto & settings = context->getSettingsRef();
 
@@ -438,7 +448,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             std::move(current_block),
             std::move(unmerged_block),
             std::move(part_counters), /// profile_events_scope must be reset here.
-            std::move(lock_holder)
+            std::move(lock_holder),
+            std::move(cursors)
         ));
     }
 
@@ -474,7 +485,7 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, &partition.lock_holder).second;
+            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, &partition.lock_holder, &partition.cursors).second;
 
             last_block_is_duplicate = last_block_is_duplicate || deduplicated;
 
@@ -519,7 +530,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         while (true)
         {
             partition.temp_part.finalize();
-            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, &partition.lock_holder).first;
+            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, &partition.lock_holder, &partition.cursors).first;
             if (conflict_block_ids.empty())
             {
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
@@ -682,7 +693,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     MergeTreeData::MutableDataPartPtr & part,
     const BlockIDsType & block_id,
     size_t replicas_num,
-    std::optional<EphemeralLockInZooKeeper> * lock_holder)
+    std::optional<EphemeralLockInZooKeeper> * lock_holder,
+    std::optional<CursorDataMap> * cursors)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -945,6 +957,13 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         size_t shared_lock_op_id_end = ops.size();
 
         storage.getCommitPartOps(ops, part, block_id_path);
+
+        if (cursors && cursors->has_value())
+        {
+            chassert(storage.getSettings()->queue_mode);
+            LOG_DEBUG(log, "configuring commit of cursors");
+            getUpdateCursorOps(zookeeper, ops, cursors->value());
+        }
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.

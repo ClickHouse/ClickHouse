@@ -40,6 +40,9 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node);
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
+/// Returns true, if some table expressions contains keeper cursor key.
+bool areKeeperCursorsUsed(const QueryTreeNodePtr & node);
+
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
   * result cast function is not resolved during build.

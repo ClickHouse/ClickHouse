@@ -9,6 +9,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/CursorZkUtils.h>
 
 #include <Interpreters/Context.h>
 
@@ -205,12 +206,13 @@ CursorTreeNodePtr buildCursorTree(const Poco::JSON::Object::Ptr & json)
 
 CursorTreeNodePtr buildCursorTree(const ContextPtr & context, const std::optional<String> & keeper_key, const std::optional<Map> & collapsed_tree)
 {
+    auto cursor = buildCursorTree(collapsed_tree.value_or(Map{}));
+
     if (!keeper_key.has_value())
-        return buildCursorTree(collapsed_tree.value_or(Map{}));
+        return cursor;
 
-    const auto & zk = context->getZooKeeper();
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper cursors unimplemented");
+    auto zk = context->getZooKeeper();
+    return extractOrInitCursor(zk, keeper_key.value(), cursor);
 }
 
 void mergeCursors(CursorTreeNodePtr into, CursorTreeNodePtr from)

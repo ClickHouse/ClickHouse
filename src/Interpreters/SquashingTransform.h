@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Streaming/CursorMerger.h>
 
 
 namespace DB
@@ -16,6 +17,8 @@ namespace DB
   *  because such storages as Memory, StripeLog, Log, TinyLog...
   *  store or compress data in blocks exactly as passed to it,
   *  and blocks of small size are not efficient.
+  *
+  * Also keeps track of cursors and fills it into block info after squash.
   *
   * Order of data is kept.
   */
@@ -36,12 +39,15 @@ private:
     size_t min_block_size_bytes;
 
     Block accumulated_block;
+    CursorMerger cursor_merger;
 
     template <typename ReferenceType>
     Block addImpl(ReferenceType block);
 
     template <typename ReferenceType>
     void append(ReferenceType block);
+
+    Block finalizeBlock(Block new_data = {});
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;
