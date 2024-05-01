@@ -133,9 +133,7 @@ fn _simple_decompress<T: NumberLike>(
   let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst as *mut T, (dst_len as usize) / std::mem::size_of::<T>()) };
   match pco::standalone::simple_decompress_into::<T>(src_slice, dst_slice) {
     Err(_) => PcoError::PcoDecompressionError,
-    Ok(_) => {
-      PcoError::PcoSuccess
-    }
+    Ok(_) => PcoError::PcoSuccess
   }
 }
 
