@@ -137,8 +137,6 @@ private:
     };
 
     // load the model's weights from a file
-    #pragma clang diagnostic ignored "-Wkeyword-macro"
-    #define return std::cout << __LINE__ << std::endl; return
     bool gptj_model_load(const std::string & fname, gptj_model & model, gpt_vocab & vocab) const {
         auto fin = std::ifstream(fname, std::ios::binary);
         if (!fin) {
@@ -396,23 +394,35 @@ private:
         return true;
     }
 
-    void gpt_split_words(std::string str, std::vector<std::string>& words) const {
-        const std::string pattern = R"('s|'t|'re|'ve|'m|'ll|'d| ?[[:alpha:]]+| ?[[:digit:]]+| ?[^\s[:alpha:][:digit:]]+|\s+(?!\S)|\s+)";
-        const RE2 re(pattern);
-
-        std::string match;
-
-        re2::StringPiece input(str);
-
-        while (RE2::FindAndConsume(&input, pattern, &match)) {
-            words.push_back(match);
-        }
+    void gpt_split_words(std::string_view str, std::vector<std::string> & words) const
+    {
+        // Originally "   a" would be split into "  " and " a" words
+        // Now it's "   " and "a" for simplicity because RE2 has no negative lookaheads like (?!\S)
+        static const RE2 pattern{R"(('s|'t|'re|'ve|'m|'ll|'d| ?[[:alpha:]]+| ?[[:digit:]]+| ?[^\s[:alpha:][:digit:]]+|\s+))"};
+        std::string_view match;
+        while (RE2::FindAndConsume(&str, pattern, &match))
+            words.emplace_back(match);
     }
 
-    std::string regex_replace(const std::string& input, const re2::RE2& pattern, const std::string& replace_with) const {
-        std::string output = input;
-        while (RE2::Replace(&output, pattern, replace_with)) { }
-        return output;
+    std::string get_tokens_match_group(const std::vector<std::string> & tokens) const
+    {
+        assert(!tokens.empty());
+        static const std::string to_escape{R"([\^$.|?*+(){})"};
+        std::string res = "(";
+        for (const std::string & token : tokens)
+        {
+            res.reserve(res.size() + token.size() + 1);
+            for (char c : token)
+            {
+                if (to_escape.contains(c))
+                    res += '\\';
+                res += c;
+            }
+            res += '|';
+        }
+        res.pop_back();  // remove last '|'
+        res += ")";
+        return res;
     }
 
     std::vector<gpt_vocab::id> gpt_tokenize(const gpt_vocab & vocab, const std::string & text) const {
@@ -420,46 +430,22 @@ private:
 
         // first split the text into words
         {
-            std::string str = text;
-
-            // Generate the subpattern from the special_tokens vector if it's not empty
-            if (!vocab.special_tokens.empty()) {
-                const RE2 escape(R"([\[\\\^\$\.\|\?\*\+\(\)\{\}])");
-                std::string special_tokens_subpattern;
-                for (const auto & token : vocab.special_tokens) {
-                    if (!special_tokens_subpattern.empty()) {
-                        special_tokens_subpattern += "|";
-                    }
-                    special_tokens_subpattern += regex_replace(token, escape, R"(\$&)");
+            std::string_view text_view{text};
+            if (!vocab.special_tokens.empty())
+            {
+                // I am not sure that this branch is possible
+                const RE2 re{get_tokens_match_group(vocab.special_tokens)};
+                std::string_view input{text_view};
+                std::string_view match;
+                while (RE2::FindAndConsume(&input, re, &match))
+                {
+                    std::string_view prefix = text_view.substr(0, text_view.size() - input.size() - match.size());
+                    gpt_split_words(prefix, words);
+                    words.emplace_back(match);
+                    text_view = input;
                 }
-
-                // std::regex re(special_tokens_subpattern);
-                // std::smatch m;
-                // // Split the text by special tokens.
-                // while (std::regex_search(str, m, re)) {
-                //     // Split the substrings in-between special tokens into words.
-                //     gpt_split_words(m.prefix(), words);
-                //     // Add matched special tokens as words.
-                //     for (auto x : m) {
-                //         words.push_back(x);
-                //     }
-                //     str = m.suffix();
-                // }
-                const RE2 re(special_tokens_subpattern);
-                re2::StringPiece input(str);  // Wrap the std::string in a StringPiece
-                std::string match;
-                while (RE2::FindAndConsume(&input, re, &match)) {
-                    // Split the substrings in-between special tokens into words
-                    gpt_split_words(std::string(input.substr(0, input.size() - match.size() - str.size())), words);
-                    // Add matched special tokens as words
-                    words.push_back(match);
-                    // Adjust input to remove the processed part including the current match
-                    str = std::string(input);  // Update str to remaining input for any necessary reason outside the loop
-                }
-                // Remaining text without special tokens will be handled below.
             }
-
-            gpt_split_words(str, words);
+            gpt_split_words(text_view, words);
         }
 
         // find the longest token that forms each word in words:
@@ -525,7 +511,7 @@ public:
         gpt_vocab vocab;
         gptj_model model;
 
-        params.model = "/home/ArtNext/ggml-model.bin";
+        params.model = "/home/m0r0zk01/ggml-model.bin";
 
         if (!gptj_model_load(params.model, model, vocab)) {
             throw Exception(ErrorCodes::SYNTAX_ERROR, "No");
@@ -542,10 +528,14 @@ public:
             }
             else {
                 std::cout << "Ne Ploho! " << val << std::endl;
+                std::vector<gpt_vocab::id> embd_inp = gpt_tokenize(vocab, val);
+                std::cout << "Tokenized '" << val << "': ";
+                for (auto &x : embd_inp)
+                    std::cout << x << ' ';
+                std::cout << std::endl;
             }
         }
 
-        // std::vector<gpt_vocab::id> embd_inp = gpt_tokenize(vocab, );
         // params.n_predict = std::min(params.n_predict, model.hparams.n_ctx - static_cast<int>(embd_inp.size()));
         // std::vector<gpt_vocab::id> embd;
 

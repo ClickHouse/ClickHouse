@@ -58,7 +58,7 @@ list (APPEND PRIVATE_LIBS
         divide_impl
         ch_contrib::xxHash
 )
-list (APPEND PUBLIC_LIBS _ggml)
+list (APPEND PRIVATE_LIBS _ggml)
 if (TARGET ch_rust::blake3)
     list (APPEND PUBLIC_LIBS
         ch_rust::blake3
