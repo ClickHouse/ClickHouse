@@ -46,7 +46,7 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, ContextMutablePtr & conte
     if (query->as<ASTSelectWithUnionQuery>() || query->as<ASTSelectQuery>())
     {
         ASTPtr normalized_query = query;
-        if (!select_options.is_subquery && context->getSettingsRef().enable_materialized_cte)
+        if (!select_options.is_subquery)
         {
             GlobalMaterializeCTEVisitor::Data data(context, future_tables);
             GlobalMaterializeCTEVisitor(data).visit(normalized_query);

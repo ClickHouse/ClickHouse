@@ -90,7 +90,7 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                     if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(child.get()))
                         exprs[ast_with_alias->alias] = child;
                     /// We don't need to propagate materialized CTEs because they will be materialized and globally visible anyway.
-                    if (const auto * cte = dynamic_cast<const ASTWithElement *>(child.get()); cte && (!cte->has_materialized_keyword || !getContext()->getSettingsRef().enable_materialized_cte))
+                    if (const auto * cte = dynamic_cast<const ASTWithElement *>(child.get()); cte && !cte->has_materialized_keyword)
                         exprs[cte->name] = child;
                 }
                 for (auto * it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)

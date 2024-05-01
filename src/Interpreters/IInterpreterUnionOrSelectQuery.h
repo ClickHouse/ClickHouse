@@ -34,7 +34,7 @@ public:
                 "_shard_count",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
-        if (!options.is_subquery && context->getSettingsRef().enable_materialized_cte)
+        if (!options.is_subquery)
         {
             /// Collect all CTE with MATERIALIZED keyword add to query context as temporary tables
             /// We need to do it here before analyzing the query
