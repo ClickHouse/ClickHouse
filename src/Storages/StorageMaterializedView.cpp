@@ -100,7 +100,8 @@ StorageMaterializedView::StorageMaterializedView(
     ASTPtr sql_security = query.sql_security;
     if (!sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
     {
-        /// This is hack which allows to load materialized views during startup with default SQL security NONE for backward compatibility.
+        /// This allows materialized views to be loaded during startup with default SQL security for backward compatibility.
+        /// If ClickHouse loads an old materialized view created without SQL security, it will use the default `SQL SECURITY NONE`
         sql_security = std::make_shared<ASTSQLSecurity>();
         InterpreterCreateQuery::processSQLSecurityOption(getContext(), sql_security->as<ASTSQLSecurity &>(), true, true);
     }
