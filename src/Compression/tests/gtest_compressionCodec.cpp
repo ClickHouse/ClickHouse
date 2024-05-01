@@ -1307,10 +1307,10 @@ TEST(LZ4Test, DecompressMalformedInput)
 TEST(FSSTTest, CompressDecompress)
 {
     std::vector<std::string> strs;
-    strs.push_back("Hello, World!");
-    strs.push_back("sooqa");
-    strs.push_back("aboba");
-    strs.push_back("amogus");
+    strs.push_back("a");
+    strs.push_back("aa");
+    strs.push_back("aaa");
+    strs.push_back("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
     char in_str[2281337];
     size_t iter = 0;

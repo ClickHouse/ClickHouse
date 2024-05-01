@@ -75,9 +75,15 @@ protected:
         memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out), str_out, sizeof(str_out));
 
         /* Count data total compressed size without header */
+        std::cerr << "Compress" << std::endl; 
         UInt32 compressed_size{0};
         for (size_t i = 0; i < rows_count; ++i) {
             compressed_size += len_out[i];
+            std::cerr << len_out[i] << std::endl;
+            for (size_t j = 0; j < len_out[i]; ++j) {
+                std::cerr << (size_t)str_out[j];
+            }
+            std::cerr << std::endl;
         }
 
         return static_cast<UInt32>(header_size) + compressed_size;
@@ -99,16 +105,31 @@ protected:
         memcpy(lens, source + fsst_header_size + sizeof(rows_count), sizeof(lens));
         memcpy(strs, source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(strs));
 
+        auto* kek = dest;
+
+        // std::cerr << static_cast<void*>(kek) << std::endl;
         for (size_t i = 0; i < rows_count; ++i) {
+            std::cerr << "Debug " << lens[i] << " " << std::endl;
+            std::cerr << static_cast<void*>(dest) << std::endl;
+            for (size_t j = 0; j < lens[i]; ++j) {
+                std::cerr << (size_t)strs[j];
+            }
+            std::cerr << std::endl;
             dest = writeVarUInt(lens[i], dest);
+            std::cerr << "Cringe " << size_t(*(dest - 1)) << std::endl;
+            // std::cerr << static_cast<void*>(dest) << std::endl;
             auto decompressed_size = fsst_decompress(&decoder,
                 lens[i],
                 strs[i],
                 OUT_SIZE, /* дичь какая-то */
                 reinterpret_cast<unsigned char *>(dest)
             );
+            // std::cerr << static_cast<void*>(dest) << std::endl;
+            std::cerr << "decompressed " << decompressed_size << std::endl;
             dest += decompressed_size;
         }
+
+        std::cerr << "Data " << kek << std::endl;
     }
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { 
