@@ -131,15 +131,16 @@ void MergeTreeSink::consume(Chunk & chunk)
         current_block.block.clear();
         current_block.partition.clear();
 
-        if (dedub_token_info_for_children)
-        {
-            dedub_token_info_for_children->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
-        }
-
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
         if (!temp_part.part)
             continue;
+
+        if (dedub_token_info_for_children)
+        {
+            chassert(temp_part.part);
+            dedub_token_info_for_children->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
+        }
 
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
