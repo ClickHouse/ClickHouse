@@ -28,6 +28,8 @@ namespace ProfileEvents
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
+    extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
+    extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
 }
 
 namespace DB
@@ -990,6 +992,8 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         return;
     }
 
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
+
     FileCacheReserveStat stat;
     EvictionCandidates eviction_candidates;
 
@@ -1009,14 +1013,12 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             const auto current_size = main_priority->getSize(lock);
             chassert(current_size >= stat.total_stat.releasable_size);
             chassert(!size_limit
-                        || current_size <= desired_size
-                        || current_size - stat.total_stat.releasable_size <= desired_size);
+                     || current_size - stat.total_stat.releasable_size <= desired_size);
 
             const auto current_elements_count = main_priority->getElementsCount(lock);
             chassert(current_elements_count >= stat.total_stat.releasable_count);
             chassert(!elements_limit
-                        || current_elements_count <= desired_elements_num
-                        || current_elements_count - stat.total_stat.releasable_count <= desired_elements_num);
+                     || current_elements_count - stat.total_stat.releasable_count <= desired_elements_num);
         }
 #endif
 
@@ -1057,12 +1059,17 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         chassert(false);
     }
 
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());
+
     LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms", watch.elapsedMilliseconds());
 
+    [[maybe_unused]] bool scheduled = false;
     if (limits_satisfied)
-        keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
+        scheduled = keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
     else
-        keep_up_free_space_ratio_task->schedule();
+        scheduled = keep_up_free_space_ratio_task->schedule();
+    chassert(scheduled);
 }
 
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
