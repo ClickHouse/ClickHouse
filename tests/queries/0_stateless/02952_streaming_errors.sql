@@ -4,7 +4,7 @@ set allow_experimental_analyzer = 1;
 SELECT 'start';
 
 DROP TABLE IF EXISTS t_streaming_test;
-CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS queue_mode=1;
 
 -- just to be sure
 SELECT 1 STREAM; -- { clientError 62 }
