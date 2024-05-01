@@ -115,4 +115,10 @@ ${CLICKHOUSE_CLIENT} --query="select array from file('${DATA_FILE_USER_PATH}', P
 # bf is on, skip row groups. Array hasAny
 ${CLICKHOUSE_CLIENT} --query="select array from file('${DATA_FILE_USER_PATH}', Parquet) where hasAny(array, [69778,58440,2913,64975,92300]) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
+# bf is off, read everything. use function and not constant
+${CLICKHOUSE_CLIENT} --query="select array from file('${DATA_FILE_USER_PATH}', Parquet) where has(array, toInt32('69778')) order by f32 asc Format Json SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
+# bf is on, skip row groups. use function and not constant
+${CLICKHOUSE_CLIENT} --query="select array from file('${DATA_FILE_USER_PATH}', Parquet) where has(array, toInt32('69778')) order by f32 asc Format Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
