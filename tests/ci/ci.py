@@ -849,6 +849,7 @@ class CiOptions:
         jobs_to_do: List[str],
         jobs_to_skip: List[str],
         jobs_params: Dict[str, Dict[str, Any]],
+        run_only_if_included: bool,
     ) -> Tuple[List[str], List[str], Dict[str, Dict[str, Any]]]:
         """
         Applies specified options on CI Run Config
@@ -888,7 +889,7 @@ class CiOptions:
                             jobs_to_do_requested.append(job)
             assert (
                 jobs_to_do_requested
-            ), "Include tags are set but now job configured - Invalid tags, probably [{self.include_keywords}]"
+            ), f"Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
@@ -930,6 +931,10 @@ class CiOptions:
                     "WARNING: 'do not test' is used alongside with other CI modifying tags - 'do not test' prevails"
                 )
             jobs_to_do_requested = list(label_config.run_jobs)
+
+        if run_only_if_included and not jobs_to_do_requested:
+            jobs_to_skip += jobs_to_do
+            jobs_to_do = []
 
         if jobs_to_do_requested:
             jobs_to_do_requested = list(set(jobs_to_do_requested))
@@ -1369,7 +1374,11 @@ def _configure_jobs(
             continue
         if job_config.pr_only and pr_info.is_release_branch:
             continue
-        if job_config.release_only and not pr_info.is_release_branch:
+        if (
+            job_config.release_only
+            and not job_config.run_by_ci_option
+            and not pr_info.is_release_branch
+        ):
             continue
 
         # fill job randomization buckets (for jobs with configured @random_bucket property))
@@ -1421,6 +1430,7 @@ def _configure_jobs(
             jobs_params[job] = {
                 "batches": batches_to_do,
                 "num_batches": num_batches,
+                "run_if_ci_option_include_set": job_config.run_by_ci_option,
             }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
@@ -1445,7 +1455,7 @@ def _configure_jobs(
                 ]
 
     jobs_to_do, jobs_to_skip, jobs_params = ci_options.apply(
-        jobs_to_do, jobs_to_skip, jobs_params
+        jobs_to_do, jobs_to_skip, jobs_params, job_config.run_by_ci_option
     )
 
     return {

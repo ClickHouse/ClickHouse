@@ -56,6 +56,7 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_asan--> All with ASAN
 - [ ] <!---ci_include_tsan--> All with TSAN
 - [ ] <!---ci_include_analyzer--> All with Analyzer
+- [ ] <!---ci_include_azure --> All with Azure
 - [ ] <!---ci_include_KEYWORD--> Add your option here
 
 #### Exclude tests:
