@@ -1,4 +1,5 @@
 SET join_algorithm = 'full_sorting_merge';
+SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS events0;
 
