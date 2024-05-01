@@ -12,7 +12,6 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-#include "Processors/Chunk.h"
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -24,6 +23,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IInflatingTransform.h>
 #include <Processors/ISimpleTransform.h>
