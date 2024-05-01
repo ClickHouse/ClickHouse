@@ -29,6 +29,7 @@ _TEST_BODY_1 = """
 _TEST_BODY_2 = """
 - [x] <!---ci_include_integration--> MUST include integration tests
 - [x] <!---ci_include_stateless--> MUST include stateless tests
+- [x] <!---ci_include_azure--> MUST include azure
 - [x] <!---ci_include_foo_Bar--> no action must be applied
 - [ ] <!---ci_include_bar--> no action must be applied
 - [x] <!---ci_exclude_tsan--> MUST exclude tsan
@@ -64,6 +65,7 @@ _TEST_JOB_LIST = [
     "Stateless tests (debug, s3 storage)",
     "Stateless tests (tsan, s3 storage)",
     "Stateless tests flaky check (asan)",
+    "Stateless tests (azure, asan)",
     "Stateful tests (debug)",
     "Stateful tests (release)",
     "Stateful tests (coverage)",
@@ -141,7 +143,8 @@ class TestCIOptions(unittest.TestCase):
             _TEST_BODY_2, update_from_api=False
         )
         self.assertCountEqual(
-            ci_options.include_keywords, ["integration", "foo_bar", "stateless"]
+            ci_options.include_keywords,
+            ["integration", "foo_bar", "stateless", "azure"],
         )
         self.assertCountEqual(
             ci_options.exclude_keywords,
@@ -151,7 +154,7 @@ class TestCIOptions(unittest.TestCase):
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params
+            jobs_to_do, jobs_to_skip, job_params, False
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -160,6 +163,7 @@ class TestCIOptions(unittest.TestCase):
                 "package_release",
                 "package_asan",
                 "Stateless tests (asan)",
+                "Stateless tests (azure, asan)",
                 "Stateless tests flaky check (asan)",
                 "Stateless tests (msan)",
                 "Stateless tests (ubsan)",
@@ -182,7 +186,7 @@ class TestCIOptions(unittest.TestCase):
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params
+            jobs_to_do, jobs_to_skip, job_params, False
         )
         self.assertCountEqual(
             jobs_to_do,

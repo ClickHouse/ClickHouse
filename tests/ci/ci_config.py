@@ -244,6 +244,8 @@ class JobConfig:
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
+    # job will run if it's enabled in CI option
+    run_by_ci_option: bool = False
     # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
     random_bucket: str = ""
 
@@ -1205,7 +1207,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True),  # type: ignore
+            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
@@ -1230,7 +1232,7 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
