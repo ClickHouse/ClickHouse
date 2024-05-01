@@ -1227,7 +1227,7 @@ MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes, std::optional<std:
 {
     std::sort(nodes.begin(), nodes.end(), [](const auto & lhs, const auto & rhs)
     {
-        /// If a part is dropped by drop-range, it's possbile to be covered by a smaller level part.
+        /// If a part is dropped by drop-range, it's possible to be covered by a smaller level part.
         /// In case, we use max_block - min_block, which is more accurate.
         return std::make_pair(lhs.info.max_block-lhs.info.min_block, lhs.info.mutation) > std::make_pair(rhs.info.max_block-rhs.info.min_block, rhs.info.mutation);
     });
