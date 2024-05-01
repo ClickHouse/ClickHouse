@@ -225,7 +225,7 @@ class TestCIOptions(unittest.TestCase):
                 job_params[job] = {
                     "batches": list(range(3)),
                     "num_batches": 3,
-                    "run_if_ci_option_include_set": True if "azure" in job else False,
+                    "run_if_ci_option_include_set": "azure" in job,
                 }
             else:
                 job_params[job] = {"run_if_ci_option_include_set": False}
