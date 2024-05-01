@@ -372,3 +372,6 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
+[submodule "contrib/pulsar-client-cpp"]
+	path = contrib/pulsar-client-cpp
+	url = https://github.com/apache/pulsar-client-cpp.git
