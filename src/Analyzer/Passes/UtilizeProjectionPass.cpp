@@ -71,7 +71,7 @@ public:
         if (node->getNodeType() == QueryTreeNodeType::QUERY)
         {
             auto query_node = node->as<QueryNode>();
-            if (!query_node->hasWhere() && !query_node->getJoinTree())
+            if (!query_node->hasWhere() || !query_node->getJoinTree())
                 return;
 
             const auto metadata = getStorageSnapshot(query_node->getJoinTree())->metadata;
