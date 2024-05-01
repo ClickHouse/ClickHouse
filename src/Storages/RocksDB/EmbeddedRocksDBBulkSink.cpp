@@ -113,11 +113,7 @@ std::vector<Chunk> EmbeddedRocksDBBulkSink::squash(Chunk chunk)
     /// End of input stream
     if (chunk.getNumRows() == 0)
     {
-        if (chunks.empty())
-            return {};
-        std::vector<Chunk> to_return;
-        std::swap(to_return, chunks);
-        return to_return;
+        return std::move(chunks);
     }
 
     /// Just read block is already enough.
