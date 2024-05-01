@@ -87,7 +87,6 @@ public:
             auto new_node = pkOptimization(projections, node, primary_keys);
             query_node->getWhere() = std::move(new_node);
             const auto ast = query_node->toAST();
-            std::cout << "Suzy debug" << serializeAST(*ast) << std::endl;
         }
 
     }
