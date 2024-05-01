@@ -240,17 +240,14 @@ Block NativeReader::read()
                 if (null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
 
-                if (!skip_reading)
+                if (!skip_reading && column_lazy)
                 {
-                    if (column_lazy)
-                    {
-                        if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
-                            column.column = ColumnLazy::create(column_tuple->getColumns(), column_lazy->getColumnLazyHelper());
-                        else
-                            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
-                                            column.name,
-                                            column.column->getDataType());
-                    }
+                    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
+                        column.column = ColumnLazy::create(column_tuple->getColumns(), column_lazy->getColumnLazyHelper());
+                    else
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
+                                        column.name,
+                                        column.column->getDataType());
                 }
 
                 if (!header_column.type->equals(*column.type))
