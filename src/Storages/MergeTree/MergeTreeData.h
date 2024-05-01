@@ -1519,7 +1519,7 @@ protected:
         using PartLoadingInfos = std::vector<PartLoadingInfo>;
 
         /// Builds a tree from the list of part infos.
-        static PartLoadingTree build(PartLoadingInfos nodes);
+        static PartLoadingTree build(PartLoadingInfos nodes, std::optional<std::unordered_set<std::string>> expected_parts);
 
         /// Traverses a tree and call @func on each node.
         /// If recursive is false traverses only the top level.
@@ -1529,7 +1529,7 @@ protected:
     private:
         /// NOTE: Parts should be added in descending order of their levels
         /// because rearranging tree to the new root is not supported.
-        void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
+        void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk, std::optional<std::unordered_set<std::string>> expected_parts);
         std::unordered_map<String, NodePtr> root_by_partition;
     };
 

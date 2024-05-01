@@ -1142,7 +1142,14 @@ Int64 MergeTreeData::getMaxBlockNumber() const
     return max_block_num;
 }
 
-void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk)
+inline bool isSuspectedDroppedRage(std::optional<std::unordered_set<std::string>> expected_parts, const MergeTreePartInfo & info, const MergeTreePartInfo & prev_info)
+{
+    if (expected_parts == std::nullopt || expected_parts->contains(info.getPartNameV1()))
+        return false;
+    return info.min_block > prev_info.min_block && info.max_block < prev_info.max_block;
+}
+
+void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk, std::optional<std::unordered_set<std::string>> expected_parts)
 {
     auto & current_ptr = root_by_partition[info.partition_id];
     if (!current_ptr)
@@ -1164,6 +1171,13 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             else if (!prev_info.isDisjoint(info))
             {
+                if (isSuspectedDroppedRage(expected_parts, info, prev_info))
+                {
+                    LOG_INFO(getLogger("PartLoadingTree"), "Found part {} is covered by {} but it's level is higher. It's possible to be dropped before restart.",
+                                       info.getPartNameV1(), prev_info.getPartNameV1());
+                    current = prev->second.get();
+                    continue;
+                }
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, prev->second->name);
@@ -1209,16 +1223,18 @@ void MergeTreeData::PartLoadingTree::traverse(bool recursive, Func && func)
 }
 
 MergeTreeData::PartLoadingTree
-MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes)
+MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes, std::optional<std::unordered_set<std::string>> expected_parts)
 {
     std::sort(nodes.begin(), nodes.end(), [](const auto & lhs, const auto & rhs)
     {
-        return std::tie(lhs.info.level, lhs.info.mutation) > std::tie(rhs.info.level, rhs.info.mutation);
+        /// If a part is dropped by drop-range, it's possbile to be covered by a smaller level part.
+        /// In case, we use max_block - min_block, which is more accurate.
+        return std::make_pair(lhs.info.max_block-lhs.info.min_block, lhs.info.mutation) > std::make_pair(rhs.info.max_block-rhs.info.min_block, rhs.info.mutation);
     });
 
     PartLoadingTree tree;
     for (const auto & [info, name, disk] : nodes)
-        tree.add(info, name, disk);
+        tree.add(info, name, disk, expected_parts);
     return tree;
 }
 
@@ -1656,7 +1672,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
-    std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
 
     ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
 
@@ -1667,7 +1682,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             continue;
 
         auto & disk_parts = parts_to_load_by_disk[i];
-        auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
 
         runner([&, disk_ptr]()
         {
@@ -1679,12 +1693,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                     continue;
 
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
-                {
-                    if (expected_parts && !expected_parts->contains(it->name()))
-                        unexpected_disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
-                    else
-                        disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
-                }
+                    disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
             }
         }, Priority{0});
     }
@@ -1695,11 +1704,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
-    PartLoadingTree::PartLoadingInfos unexpected_parts_to_load;
-    for (auto & disk_parts : unexpected_parts_to_load_by_disk)
-        std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(unexpected_parts_to_load));
 
-    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
+    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), expected_parts);
 
     size_t num_parts = 0;
     PartLoadingTreeNodes active_parts;
@@ -1826,10 +1832,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     calculateColumnAndSecondaryIndexSizesImpl();
 
     PartLoadingTreeNodes unloaded_parts;
-
-    for (const auto & [info, name, disk] : unexpected_parts_to_load)
-        unloaded_parts.push_back(std::make_shared<PartLoadingTree::Node>(info, name, disk));
-
     loading_tree.traverse(/*recursive=*/ true, [&](const auto & node)
     {
         if (!node->is_loaded)
