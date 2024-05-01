@@ -56,14 +56,12 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     {
         has_all_tables = true;
         if (s_from.ignore(pos, expected))
-        {
-            if (s_if_exists.ignore(pos, expected))
-                if_exists = true;
+            return false;
 
-            if (!name_p.parse(pos, database, expected))
-                return false;
-        }
-        else
+        if (s_if_exists.ignore(pos, expected))
+            if_exists = true;
+
+        if (!name_p.parse(pos, database, expected))
             return false;
     }
     else
