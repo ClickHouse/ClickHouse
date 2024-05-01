@@ -466,6 +466,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             serialized_value += ellipsis;
 
         value_width = format_settings.pretty.max_value_width;
+        has_break_line = false;
     }
     else if (!has_break_line)
         serialized_value += ' ';
@@ -492,7 +493,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (has_break_line && value_width != format_settings.pretty.max_value_width)
+    if (has_break_line)
         writeString("…", out);
 }
 
@@ -535,6 +536,25 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
             has_break_line = true;
         }
 
+        if (cur_width > format_settings.pretty.max_value_width)
+        {
+            value.resize(UTF8::computeBytesBeforeWidth(
+                reinterpret_cast<const UInt8 *>(value.data()), value.size(), 0, 1 + format_settings.pretty.max_value_width));
+
+            const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
+            if (color)
+            {
+                value += "\033[31;1m";
+                value += ellipsis;
+                value += "\033[0m";
+            }
+            else
+                value += ellipsis;
+
+            cur_width = format_settings.pretty.max_value_width;
+            has_break_line = false;
+        }
+
         if (!value.empty())
             writeString("…", out);
         else
@@ -552,7 +572,7 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
 
         if (has_break_line)
             writeString("…", out);
-        else
+        else if (cur_width != format_settings.pretty.max_value_width)
             writeChar(' ', out);
     }
 
