@@ -388,6 +388,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
 
             if (dedub_token_info_for_children)
             {
+                chassert(temp_part.part);
                 dedub_token_info_for_children->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
             }
         }
