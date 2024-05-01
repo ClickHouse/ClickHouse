@@ -2,6 +2,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/CommonParsers.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
@@ -240,12 +241,12 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->columns_list, columns_list->clone());
     if (storage)
         res->set(res->storage, storage->clone());
-    if (inner_storage)
-        res->set(res->inner_storage, inner_storage->clone());
     if (select)
         res->set(res->select, select->clone());
     if (table_overrides)
         res->set(res->table_overrides, table_overrides->clone());
+    if (targets)
+        res->set(res->targets, targets->clone());
 
     if (dictionary)
     {
@@ -388,20 +389,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         refresh_strategy->formatImpl(settings, state, frame);
     }
 
-    if (to_table_id)
+    if (auto target_table_id = getTargetTableID())
     {
-        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
-        settings.ostr
-            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
-            << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
-            << backQuoteIfNeed(to_table_id.table_name);
+        settings.ostr <<  " " << (settings.hilite ? hilite_keyword : "") << toStringView(Keyword::TO)
+                      << (settings.hilite ? hilite_none : "") << " "
+                      << (!target_table_id.database_name.empty() ? backQuoteIfNeed(target_table_id.database_name) + "." : "")
+                      << backQuoteIfNeed(target_table_id.table_name);
     }
 
-    if (to_inner_uuid != UUIDHelpers::Nil)
+    if (auto target_inner_uuid = getTargetInnerUUID(); target_inner_uuid != UUIDHelpers::Nil)
     {
-        assert(is_materialized_view && !to_table_id);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO INNER UUID " << (settings.hilite ? hilite_none : "")
-                      << quoteString(toString(to_inner_uuid));
+        settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << toStringView(Keyword::TO_INNER_UUID)
+                      << (settings.hilite ? hilite_none : "") << " " << quoteString(toString(target_inner_uuid));
     }
 
     bool should_add_empty = is_create_empty;
@@ -461,14 +460,24 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = false;
 
-    if (inner_storage)
+    if (storage)
+        storage->formatImpl(settings, state, frame);
+
+    if (auto inner_storage = getTargetTableEngine(ViewTarget::Kind::Inner))
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " INNER" << (settings.hilite ? hilite_none : "");
+        settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << toStringView(Keyword::INNER) << (settings.hilite ? hilite_none : "");
         inner_storage->formatImpl(settings, state, frame);
     }
 
-    if (storage)
-        storage->formatImpl(settings, state, frame);
+    if (auto target_storage = getTargetTableEngine())
+        target_storage->formatImpl(settings, state, frame);
+
+    if (targets)
+    {
+        targets->formatTarget(ViewTarget::Kind::Data, settings, state, frame);
+        targets->formatTarget(ViewTarget::Kind::Tags, settings, state, frame);
+        targets->formatTarget(ViewTarget::Kind::Metrics, settings, state, frame);
+    }
 
     if (dictionary)
         dictionary->formatImpl(settings, state, frame);
@@ -528,48 +537,46 @@ bool ASTCreateQuery::isParameterizedView() const
 }
 
 
-ASTCreateQuery::UUIDs::UUIDs(const ASTCreateQuery & query)
-    : uuid(query.uuid)
-    , to_inner_uuid(query.to_inner_uuid)
+const ViewTarget * ASTCreateQuery::tryGetTarget(ViewTarget::Kind kind) const
 {
+    if (targets)
+        return targets->tryGetTarget(kind);
+    return nullptr;
 }
 
-String ASTCreateQuery::UUIDs::toString() const
+StorageID ASTCreateQuery::getTargetTableID(ViewTarget::Kind kind) const
 {
-    WriteBufferFromOwnString out;
-    out << "{" << uuid << "," << to_inner_uuid << "}";
-    return out.str();
+    if (targets)
+        return targets->getTableID(kind);
+    return StorageID::createEmpty();
 }
 
-ASTCreateQuery::UUIDs ASTCreateQuery::UUIDs::fromString(const String & str)
+bool ASTCreateQuery::hasTargetTableID(ViewTarget::Kind kind) const
 {
-    ReadBufferFromString in{str};
-    ASTCreateQuery::UUIDs res;
-    in >> "{" >> res.uuid >> "," >> res.to_inner_uuid >> "}";
-    return res;
+    if (targets)
+        return targets->hasTableID(kind);
+    return false;
 }
 
-ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID(bool always_generate_new_uuid)
+UUID ASTCreateQuery::getTargetInnerUUID(ViewTarget::Kind kind) const
 {
-    if (always_generate_new_uuid)
-        setUUID({});
-
-    if (uuid == UUIDHelpers::Nil)
-        uuid = UUIDHelpers::generateV4();
-
-    /// If destination table (to_table_id) is not specified for materialized view,
-    /// then MV will create inner table. We should generate UUID of inner table here.
-    bool need_uuid_for_inner_table = !attach && is_materialized_view && !to_table_id;
-    if (need_uuid_for_inner_table && (to_inner_uuid == UUIDHelpers::Nil))
-        to_inner_uuid = UUIDHelpers::generateV4();
-
-    return UUIDs{*this};
+    if (targets)
+        return targets->getInnerUUID(kind);
+    return UUIDHelpers::Nil;
 }
 
-void ASTCreateQuery::setUUID(const UUIDs & uuids)
+std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetTableEngine(ViewTarget::Kind kind) const
 {
-    uuid = uuids.uuid;
-    to_inner_uuid = uuids.to_inner_uuid;
+    if (targets)
+        return targets->getTableEngine(kind);
+    return nullptr;
+}
+
+void ASTCreateQuery::setTargetTableEngine(ViewTarget::Kind kind, std::shared_ptr<ASTStorage> target_storage_def)
+{
+    if (!targets)
+        set(targets, std::make_shared<ASTViewTargets>());
+    targets->setTableEngine(kind, target_storage_def);
 }
 
 }

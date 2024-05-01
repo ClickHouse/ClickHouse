@@ -3,6 +3,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/CreateQueryUUIDs.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/setThreadName.h>
@@ -105,7 +106,7 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         auto new_query = query.clone();
         adjustCreateQueryForBackup(new_query, global_context);
         ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
-        create.setUUID({});
+        create.resetUUIDs();
         create.if_not_exists = false;
         return new_query;
     };
