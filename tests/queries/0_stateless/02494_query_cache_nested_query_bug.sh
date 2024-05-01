@@ -19,7 +19,7 @@ SETTINGS="SETTINGS use_query_cache=1, max_threads=1, allow_experimental_analyzer
 
 # Verify that the first query does two aggregations and the second query zero aggregations. Since query cache is currently not integrated
 # with EXPLAIN PLAN, we need to check the logs.
-${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS" 2>&1 | grep "Aggregated. " | wc -l
-${CLICKHOUSE_CLIENT} --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS" 2>&1 | grep "Aggregated. " | wc -l
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS" 2>&1 | grep "Aggregated. " | wc -l
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS" 2>&1 | grep "Aggregated. " | wc -l
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
