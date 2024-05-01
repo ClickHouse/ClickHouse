@@ -6090,7 +6090,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 size_t num_rows = function_arguments.empty() ? 0 : argument_columns.front().column->size();
                 column = executable_function->execute(argument_columns, result_type, num_rows, true);
             }
-            else
+            else if (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin"))
             {
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
