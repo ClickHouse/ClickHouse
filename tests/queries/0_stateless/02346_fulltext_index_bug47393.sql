@@ -5,7 +5,7 @@ CREATE TABLE tab
 (
     id UInt64,
     str String,
-    INDEX idx str TYPE inverted(3) GRANULARITY 1
+    INDEX idx str TYPE full_text(3) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY tuple()

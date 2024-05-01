@@ -9,7 +9,7 @@ CREATE TABLE tab
 (
     id UInt64,
     doc String,
-    INDEX text_idx doc TYPE inverted
+    INDEX text_idx doc TYPE full_text
 )
 ENGINE = MergeTree
 ORDER BY id
