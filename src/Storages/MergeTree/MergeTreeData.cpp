@@ -1228,8 +1228,9 @@ MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes, std::optional<std:
     std::sort(nodes.begin(), nodes.end(), [](const auto & lhs, const auto & rhs)
     {
         /// If a part is dropped by drop-range, it's possible to be covered by a smaller level part.
-        /// In case, we use max_block - min_block, which is more accurate.
-        return std::make_pair(lhs.info.max_block-lhs.info.min_block, lhs.info.mutation) > std::make_pair(rhs.info.max_block-rhs.info.min_block, rhs.info.mutation);
+        /// So we compare max_block - min_block first, for equal block range, we compare the level in case of ttl.
+        return std::make_tuple(lhs.info.max_block-lhs.info.min_block, lhs.info.level, lhs.info.mutation) >
+            std::make_tuple(rhs.info.max_block-rhs.info.min_block, rhs.info.level, rhs.info.mutation);
     });
 
     PartLoadingTree tree;
