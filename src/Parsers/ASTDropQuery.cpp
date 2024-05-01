@@ -50,8 +50,12 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << "TEMPORARY ";
 
     if (has_all_tables)
+    {
         settings.ostr << "ALL TABLES ";
-    else if (!table && !database_and_tables && database)
+        settings.ostr << "FROM "; /// When using `TRUNCATE ALL TABLES` we need to use the `FROM DATABASE` keywords along with database name
+    }
+
+    if (!table && !database_and_tables && database)
         settings.ostr << "DATABASE ";
     else if (is_dictionary)
         settings.ostr << "DICTIONARY ";

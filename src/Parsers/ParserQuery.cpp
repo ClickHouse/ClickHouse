@@ -40,6 +40,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserUseQuery use_p;
     ParserSetQuery set_p;
+    ParserDropQuery drop_p;
     ParserSystemQuery system_p;
     ParserCreateUserQuery create_user_p;
     ParserCreateRoleQuery create_role_p;
@@ -66,6 +67,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || use_p.parse(pos, node, expected)
         || set_role_p.parse(pos, node, expected)
         || set_p.parse(pos, node, expected)
+        || drop_p.parse(pos, node, expected)
         || system_p.parse(pos, node, expected)
         || create_user_p.parse(pos, node, expected)
         || create_role_p.parse(pos, node, expected)
