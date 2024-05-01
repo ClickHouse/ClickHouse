@@ -83,7 +83,7 @@ When creating a table, the following settings are applied:
 
 #### join_any_take_last_row
 
-[join_any_take_last_row](/docs/en/operations/settings/settings.md/#settings-join_any_take_last_row)
+[join_any_take_last_row](/docs/en/operations/settings/settings.md/#join_any_take_last_row)
 #### join_use_nulls
 
 #### persistent

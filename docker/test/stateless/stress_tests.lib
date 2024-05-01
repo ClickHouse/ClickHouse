@@ -279,7 +279,7 @@ function check_logs_for_critical_errors()
 
 function collect_query_and_trace_logs()
 {
-    for table in query_log trace_log
+    for table in query_log trace_log metric_log
     do
         clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     done
