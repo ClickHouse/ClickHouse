@@ -1311,17 +1311,19 @@ TEST(FSSTTest, CompressDecompress)
     strs.push_back("aa");
     strs.push_back("aaa");
     strs.push_back("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    strs.push_back("Hello");
+    strs.push_back("World adsasd aboba");
 
     char in_str[2281337];
-    size_t iter = 0;
+    char* iter = in_str;
     for (auto u: strs) {
-        in_str[iter++] = static_cast<char>(u.size());
-        std::memcpy(in_str + iter, u.data(), u.size());
+        iter = writeVarUInt(u.size(), iter);
+        std::memcpy(iter, u.data(), u.size());
         iter += u.size();
     }
 
     char out_str[2281337];
-    auto string_length = iter;
+    auto string_length = iter - in_str;
 
     auto fsst_codec = CompressionCodecFactory::instance().get("FSST", {});
     auto compressed_size = fsst_codec->compress(in_str, static_cast<UInt32>(string_length), out_str);

@@ -54,8 +54,8 @@ protected:
 
         size_t len_out[rows_count];
         const unsigned char* str_out[rows_count];
-        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(len_out) + sizeof(str_out)};
-        /* codec_header |(dest*) fsst_header(encoder) rows_count len_out str_out data */
+        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(len_out) + sizeof(str_out) + sizeof(size_t) * len_in.size()};
+        /* codec_header |(dest*) fsst_header(encoder) rows_count len_out str_out len_in data */
 
         if (fsst_compress(encoder,
                         rows_count,
@@ -73,6 +73,7 @@ protected:
         memcpy(dest + fsst_header_size, &rows_count, sizeof(rows_count));
         memcpy(dest + fsst_header_size + sizeof(rows_count), len_out, sizeof(len_out));
         memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out), str_out, sizeof(str_out));
+        memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out) + sizeof(str_out), len_in.data(), len_in.size());
 
         /* Count data total compressed size without header */
         std::cerr << "Compress" << std::endl; 
@@ -102,34 +103,22 @@ protected:
 
         size_t lens[rows_count];
         unsigned char* strs[rows_count]; /* Mutable */
+        std::vector<size_t> len_in(rows_count);
         memcpy(lens, source + fsst_header_size + sizeof(rows_count), sizeof(lens));
         memcpy(strs, source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(strs));
+        memcpy(len_in.data(), source + fsst_header_size + sizeof(rows_count) + sizeof(lens) + sizeof(strs), sizeof(size_t) * len_in.size());
 
-        auto* kek = dest;
-
-        // std::cerr << static_cast<void*>(kek) << std::endl;
         for (size_t i = 0; i < rows_count; ++i) {
-            std::cerr << "Debug " << lens[i] << " " << std::endl;
-            std::cerr << static_cast<void*>(dest) << std::endl;
-            for (size_t j = 0; j < lens[i]; ++j) {
-                std::cerr << (size_t)strs[j];
-            }
-            std::cerr << std::endl;
-            dest = writeVarUInt(lens[i], dest);
-            std::cerr << "Cringe " << size_t(*(dest - 1)) << std::endl;
-            // std::cerr << static_cast<void*>(dest) << std::endl;
+            dest = writeVarUInt(len_in[i], dest);
             auto decompressed_size = fsst_decompress(&decoder,
                 lens[i],
                 strs[i],
                 OUT_SIZE, /* дичь какая-то */
                 reinterpret_cast<unsigned char *>(dest)
             );
-            // std::cerr << static_cast<void*>(dest) << std::endl;
             std::cerr << "decompressed " << decompressed_size << std::endl;
             dest += decompressed_size;
         }
-
-        std::cerr << "Data " << kek << std::endl;
     }
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { 
