@@ -23,7 +23,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Optimized for bulk importing into StorageEmbeddedRocksDB:
 /// 1. No mem-table: an SST file is built from chunk, then import to rocksdb
-/// 2. Overlap compute and IO: one thread prepare rocksdb data from chunk, and another thread to write the data to SST file
+/// 2. Squash chunks to reduce the number of SST files
 class EmbeddedRocksDBBulkSink : public SinkToStorage, public WithContext
 {
 public:
