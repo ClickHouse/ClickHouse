@@ -51,6 +51,7 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -224,7 +225,8 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-    if (!storage->supportsTrivialCountOptimization())
+    if (!storage->supportsTrivialCountOptimization(
+            table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
     auto storage_id = storage->getStorageID();
@@ -261,9 +263,6 @@ bool applyTrivialCountIfPossible(
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
         return false;
 
-    if (storage->hasLightweightDeletedMask())
-        return false;
-
     if (settings.allow_experimental_query_deduplication
         || settings.empty_result_for_aggregation_by_empty_set)
         return false;
@@ -295,7 +294,7 @@ bool applyTrivialCountIfPossible(
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        query_context->setSetting("max_parallel_replicas", UInt64{0});
+        query_context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
@@ -306,7 +305,7 @@ bool applyTrivialCountIfPossible(
     AggregateDataPtr place = state.data();
     agg_count.create(place);
     SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    agg_count.set(place, num_rows.value());
+    AggregateFunctionCount::set(place, num_rows.value());
 
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
@@ -585,6 +584,28 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     return 0;
 }
 
+std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
+    const std::unordered_map<std::string, ActionsDAGPtr> & alias_column_expressions, const DataStream & current_data_stream)
+{
+    ActionsDAGPtr merged_alias_columns_actions_dag = std::make_shared<ActionsDAG>(current_data_stream.header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag->getInputs();
+
+    for (const auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
+    {
+        const auto & current_outputs = alias_column_actions_dag->getOutputs();
+        action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
+        merged_alias_columns_actions_dag->mergeNodes(std::move(*alias_column_actions_dag));
+    }
+
+    for (const auto * output_node : action_dag_outputs)
+        merged_alias_columns_actions_dag->addOrReplaceInOutputs(*output_node);
+    merged_alias_columns_actions_dag->removeUnusedActions(false);
+
+    auto alias_column_step = std::make_unique<ExpressionStep>(current_data_stream, std::move(merged_alias_columns_actions_dag));
+    alias_column_step->setStepDescription("Compute alias columns");
+    return alias_column_step;
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -756,7 +777,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         planner_context->getMutableQueryContext()->setSetting(
                             "allow_experimental_parallel_reading_from_replicas", Field(0));
-                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{0});
+                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
                         LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                     }
                     else if (number_of_replicas_to_use < settings.max_parallel_replicas)
@@ -793,7 +814,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     bool optimize_move_to_prewhere
                         = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
-                    if (storage->supportsPrewhere() && optimize_move_to_prewhere)
+                    auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
                             prewhere_info = std::make_shared<PrewhereInfo>();
@@ -865,22 +887,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
                 {
-                    ActionsDAGPtr merged_alias_columns_actions_dag = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-                    ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag->getInputs();
-
-                    for (const auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
-                    {
-                        const auto & current_outputs = alias_column_actions_dag->getOutputs();
-                        action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
-                        merged_alias_columns_actions_dag->mergeNodes(std::move(*alias_column_actions_dag));
-                    }
-
-                    for (const auto * output_node : action_dag_outputs)
-                        merged_alias_columns_actions_dag->addOrReplaceInOutputs(*output_node);
-                    merged_alias_columns_actions_dag->removeUnusedActions(false);
-
-                    auto alias_column_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(merged_alias_columns_actions_dag));
-                    alias_column_step->setStepDescription("Compute alias columns");
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentDataStream());
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
@@ -952,14 +959,27 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
         else
         {
+            std::shared_ptr<GlobalPlannerContext> subquery_planner_context;
+            if (wrap_read_columns_in_subquery)
+                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+            else
+                subquery_planner_context = planner_context->getGlobalPlannerContext();
+
             auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
+            Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
             subquery_planner.buildQueryPlanIfNeeded();
             const auto & mapping = subquery_planner.getQueryNodeToPlanStepMapping();
             query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
             query_plan = std::move(subquery_planner).extractQueryPlan();
+        }
+
+        const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+        if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
+        {
+            auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentDataStream());
+            query_plan.addStep(std::move(alias_column_step));
         }
     }
     else
@@ -1068,18 +1088,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
-    // }
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
-    // }
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();

@@ -1,4 +1,3 @@
-#include <boost/algorithm/string/join.hpp>
 #include <cstdlib>
 #include <fcntl.h>
 #include <map>
@@ -7,7 +6,6 @@
 #include <memory>
 #include <optional>
 #include <Common/ThreadStatus.h>
-#include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
@@ -19,12 +17,13 @@
 
 #include <Access/AccessControl.h>
 
-#include <Common/config_version.h>
-#include <Common/Exception.h>
-#include <Common/formatReadable.h>
-#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/TerminalSize.h>
+#include <Common/config_version.h>
+#include <Common/formatReadable.h>
 
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
@@ -44,8 +43,6 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-
-#include <Interpreters/InterpreterSetQuery.h>
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -485,6 +482,7 @@ void Client::connect()
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
     load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
+    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -690,7 +688,11 @@ bool Client::processWithFuzzing(const String & full_query)
     try
     {
         const char * begin = full_query.data();
-        orig_ast = parseQuery(begin, begin + full_query.size(), true);
+        orig_ast = parseQuery(begin, begin + full_query.size(),
+            global_context->getSettingsRef(),
+            /*allow_multi_statements=*/ true,
+            /*is_interactive=*/ is_interactive,
+            /*ignore_error=*/ ignore_error);
     }
     catch (const Exception & e)
     {
@@ -916,11 +918,13 @@ bool Client::processWithFuzzing(const String & full_query)
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description)
+void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
+    if (verbose)
+        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -933,12 +937,12 @@ void Client::addOptions(OptionsDescription & options_description)
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
-        ("no-secure,s", "Don't use TLS connection")
+        ("no-secure", "Don't use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing ssh private key needed for authentication. If not set does password authentication.")
-        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for imported ssh key.")
+        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
+        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
@@ -953,6 +957,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
+        /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
     ;
@@ -1096,7 +1101,7 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
-        fake_drop = true;
+        config().setString("ignore_drop_queries_probability", "1");
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
@@ -1138,13 +1143,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 }
 
 
-static bool checkIfStdoutIsRegularFile()
-{
-    struct stat file_stat;
-    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
-}
-
-
 void Client::processConfig()
 {
     if (!queries.empty() && config().has("queries-file"))
@@ -1180,34 +1178,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    is_default_format = !config().has("vertical") && !config().has("format");
-    if (is_default_format && checkIfStdoutIsRegularFile())
-    {
-        is_default_format = false;
-        std::optional<String> format_from_file_name;
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
-        format = format_from_file_name ? *format_from_file_name : "TabSeparated";
-    }
-    else if (config().has("vertical"))
-        format = config().getString("format", "Vertical");
-    else
-        format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
-
-    format_max_block_size = config().getUInt64("format_max_block_size",
-        global_context->getSettingsRef().max_block_size);
-
-    insert_format = "Values";
-
-    /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef().max_insert_block_size.changed)
-    {
-        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
-    }
-    else
-    {
-        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
-            global_context->getSettingsRef().max_insert_block_size);
-    }
+    setDefaultFormatsFromConfiguration();
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();
