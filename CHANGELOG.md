@@ -33,7 +33,6 @@
 #### Performance Improvement
 * JOIN filter push down improvements using equivalent sets. [#61216](https://github.com/ClickHouse/ClickHouse/pull/61216) ([Maksim Kita](https://github.com/kitaisreal)).
 * Convert OUTER JOIN to INNER JOIN optimization if the filter after JOIN always filters default values. Optimization can be controlled with setting `query_plan_convert_outer_join_to_inner_join`, enabled by default. [#62907](https://github.com/ClickHouse/ClickHouse/pull/62907) ([Maksim Kita](https://github.com/kitaisreal)).
-* Enabled fast Parquet encoder by default (output_format_parquet_use_custom_encoder). [#62088](https://github.com/ClickHouse/ClickHouse/pull/62088) ([Michael Kolupaev](https://github.com/al13n321)).
 * Improvement for AWS S3. Client has to send header 'Keep-Alive: timeout=X' to the server. If a client receives a response from the server with that header, client has to use the value from the server. Also for a client it is better not to use a connection which is nearly expired in order to avoid connection close race. [#62249](https://github.com/ClickHouse/ClickHouse/pull/62249) ([Sema Checherinda](https://github.com/CheSema)).
 * Reduce overhead of the mutations for SELECTs (v2). [#60856](https://github.com/ClickHouse/ClickHouse/pull/60856) ([Azat Khuzhin](https://github.com/azat)).
 * More frequently invoked functions in PODArray are now force-inlined. [#61144](https://github.com/ClickHouse/ClickHouse/pull/61144) ([李扬](https://github.com/taiyang-li)).
