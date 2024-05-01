@@ -10,9 +10,7 @@ struct ActiveWorkers
 
     // virtual bool steal(Task & task, size_t acceptor_num) =0;
 
-    virtual ~ActiveWorkers()
-    {
-    }
+    virtual ~ActiveWorkers() { }
 };
 
 }

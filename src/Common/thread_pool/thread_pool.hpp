@@ -6,12 +6,12 @@
 #include "./handler.hpp"
 
 
-#include <mutex>
 #include <atomic>
+#include <iostream>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <vector>
-#include <iostream>
 
 #include <functional>
 #include <stack>
@@ -28,35 +28,19 @@ class Worker;
 template <typename T>
 struct atomwrapper
 {
-  std::atomic<T> _a;
+    std::atomic<T> _a;
 
-  atomwrapper()
-    :_a()
-  {}
+    atomwrapper() : _a() { }
 
-  atomwrapper(const std::atomic<T> &a)
-    :_a(a.load())
-  {}
+    atomwrapper(const std::atomic<T> & a) : _a(a.load()) { }
 
-  atomwrapper(const atomwrapper &other)
-    :_a(other._a.load())
-  {}
+    atomwrapper(const atomwrapper & other) : _a(other._a.load()) { }
 
-  atomwrapper &operator=(const atomwrapper &other)
-  {
-    _a.store(other._a.load());
-  }
+    atomwrapper & operator=(const atomwrapper & other) { _a.store(other._a.load()); }
 
-  T load()
-  {
-    return _a.load();
-  }
+    T load() { return _a.load(); }
 
-  void store(T val)
-  {
-    return _a.store(val);
-  }
-
+    void store(T val) { return _a.store(val); }
 };
 
 
@@ -74,7 +58,8 @@ using ThreadPool = ThreadPoolImpl<std::function<void()>>;
  * It implements cooperative scheduling strategy for tasks.
  */
 template <typename Task>
-class ThreadPoolImpl : public ActiveWorkers<Task> {
+class ThreadPoolImpl : public ActiveWorkers<Task>
+{
 public:
     using ActiveWorkers<Task>::m_active_tasks;
     using Job = std::function<void()>;
@@ -83,13 +68,12 @@ public:
      * @brief ThreadPool Construct and start new thread pool.
      * @param options Creation options.
      */
-    explicit ThreadPoolImpl(
-        const ThreadPoolOptions& options = ThreadPoolOptions());
+    explicit ThreadPoolImpl(const ThreadPoolOptions & options = ThreadPoolOptions());
 
     /**
      * @brief Move ctor implementation.
      */
-    ThreadPoolImpl(ThreadPoolImpl&& rhs) noexcept;
+    ThreadPoolImpl(ThreadPoolImpl && rhs) noexcept;
 
     /**
      * @brief ~ThreadPool Stop all workers and destroy thread pool.
@@ -99,7 +83,7 @@ public:
     /**
      * @brief Move assignment implementaion.
      */
-    ThreadPoolImpl& operator=(ThreadPoolImpl&& rhs) noexcept;
+    ThreadPoolImpl & operator=(ThreadPoolImpl && rhs) noexcept;
 
     /**
      * @brief post Try post job to thread pool.
@@ -109,7 +93,7 @@ public:
      * @note All exceptions thrown by handler will be suppressed.
      */
     // template <typename Handler>
-    bool tryPost(Job&& handler);
+    bool tryPost(Job && handler);
 
     /**
      * @brief post Post job to thread pool.
@@ -119,10 +103,10 @@ public:
      * @note All exceptions thrown by handler will be suppressed.
      */
     // template <typename Handler>
-    void post(Job&& handler);
+    void post(Job && handler);
 
     // template <typename Handler>
-    void scheduleOrThrow(Job&& handler);
+    void scheduleOrThrow(Job && handler);
 
 
     /**
@@ -135,12 +119,9 @@ public:
 
     void finalize();
 
-    size_t getActiveThreads()
-    {
-        return m_num_workers;
-    }
+    size_t getActiveThreads() { return m_num_workers; }
 
-    void tryShrink(Worker<Task>*);
+    void tryShrink(Worker<Task> *);
 
     bool steal(Task & task, size_t acceptor_num);
 
@@ -154,17 +135,18 @@ public:
     /// added by atexit is undefined for different translation units.
     using OnDestroyCallback = std::function<void()>;
     void addOnDestroyCallback(OnDestroyCallback && callback);
+
 private:
     const size_t skip_shrink_attempts = 1; // 3
     const long idle_milliseconds = 50; // 1000
 
-    Worker<Task>* getWorker();
+    Worker<Task> * getWorker();
     void onDestroy();
 
     ThreadPoolOptions m_options;
     std::atomic<size_t> m_num_workers;
     std::vector<std::unique_ptr<Worker<Task>>> m_workers;
-    std::vector<atomwrapper<Worker<Task>*>> m_raw_workers;
+    std::vector<atomwrapper<Worker<Task> *>> m_raw_workers;
     std::vector<std::unique_ptr<Worker<Task>>> m_orphaned_workers;
     std::vector<size_t> m_free_workers;
     std::atomic<size_t> m_next_worker;

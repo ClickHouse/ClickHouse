@@ -3,12 +3,12 @@
 #include <atomic>
 #include <thread>
 // #include <semaphore>
-#include <mutex>
 #include <condition_variable>
+#include <mutex>
 #include <boost/circular_buffer.hpp>
 
-#include "./handler.hpp"
 #include <iostream>
+#include "./handler.hpp"
 
 namespace tp
 {
@@ -31,12 +31,12 @@ public:
     /**
      * @brief Move ctor implementation.
      */
-    Worker(Worker&& rhs) noexcept;
+    Worker(Worker && rhs) noexcept;
 
     /**
      * @brief Move assignment implementaion.
      */
-    Worker& operator=(Worker&& rhs) noexcept;
+    Worker & operator=(Worker && rhs) noexcept;
 
     /**
      * @brief start Create the executing thread and start tasks execution.
@@ -56,7 +56,7 @@ public:
      * @return true on success.
      */
     template <typename Handler>
-    bool post(Handler&& handler);
+    bool post(Handler && handler);
 
 
     /**
@@ -83,17 +83,11 @@ public:
         }
     }
 
-    ssize_t get_id()
-    {
-        return m_id;
-    }
+    ssize_t get_id() { return m_id; }
 
-    std::chrono::time_point<std::chrono::steady_clock> idleSince()
-    {
-        return m_idle_since;
-    }
+    std::chrono::time_point<std::chrono::steady_clock> idleSince() { return m_idle_since; }
 
-    bool steal(Task& task);
+    bool steal(Task & task);
 
 private:
     /**
@@ -134,7 +128,6 @@ private:
 
     std::chrono::time_point<std::chrono::steady_clock> m_idle_since;
     std::function<bool(Task &, size_t)> parent_steal;
-
 };
 
 
@@ -142,30 +135,28 @@ private:
 
 namespace detail
 {
-    inline size_t* thread_id()
-    {
-        static thread_local size_t tss_id = -1u;
-        return &tss_id;
-    }
+inline size_t * thread_id()
+{
+    static thread_local size_t tss_id = -1u;
+    return &tss_id;
+}
 }
 
 template <typename Task>
 inline Worker<Task>::Worker(size_t queue_size, ActiveWorkers<Task> * handler_ptr)
-    : m_cb(queue_size)
-    , m_running_flag(true)
-    , m_handler_ptr(handler_ptr)
-    // , m_busy(false)
+    : m_cb(queue_size), m_running_flag(true), m_handler_ptr(handler_ptr)
+// , m_busy(false)
 {
 }
 
 template <typename Task>
-inline Worker<Task>::Worker(Worker&& rhs) noexcept
+inline Worker<Task>::Worker(Worker && rhs) noexcept
 {
     *this = rhs;
 }
 
 template <typename Task>
-inline Worker<Task>& Worker<Task>::operator=(Worker&& rhs) noexcept
+inline Worker<Task> & Worker<Task>::operator=(Worker && rhs) noexcept
 {
     if (this != &rhs)
     {
@@ -193,20 +184,18 @@ inline void Worker<Task>::start(size_t id, std::function<bool(Task &, size_t)> p
 {
     m_id = id;
 
-    assert (!m_thread.joinable());
+    assert(!m_thread.joinable());
     parent_steal = std::move(parent_steal_);
 
     m_thread = std::thread(&Worker<Task>::threadFunc, this, id);
-
 }
 
 template <typename Task>
 inline size_t Worker<Task>::getWorkerIdForCurrentThread()
 {
-    size_t id =  *detail::thread_id();
+    size_t id = *detail::thread_id();
     // std::cout << std::this_thread::get_id() << " id=" << id << std::endl;
     return id;
-
 }
 
 template <typename Task>
@@ -217,7 +206,7 @@ inline void Worker<Task>::setWorkerIdForCurrentThread(size_t id)
 
 template <typename Task>
 template <typename Handler>
-inline bool Worker<Task>::post(Handler&& handler)
+inline bool Worker<Task>::post(Handler && handler)
 {
     bool ret = true;
     {
@@ -237,7 +226,7 @@ inline bool Worker<Task>::post(Handler&& handler)
 }
 
 template <typename Task>
-inline bool Worker<Task>::steal(Task& task)
+inline bool Worker<Task>::steal(Task & task)
 {
     std::lock_guard lock(m_mutex);
     if (pop(task))
@@ -265,7 +254,7 @@ inline void Worker<Task>::threadFunc(size_t id)
         }
 
 
-        if (got_task  || (parent_steal(handler, m_id)))
+        if (got_task || (parent_steal(handler, m_id)))
         {
             // lock.unlock();  // too late in case of steal
             try
@@ -279,7 +268,7 @@ inline void Worker<Task>::threadFunc(size_t id)
                 // m_active = true;
                 handler();
             }
-            catch(...)
+            catch (...)
             {
                 // suppress all exceptions
             }

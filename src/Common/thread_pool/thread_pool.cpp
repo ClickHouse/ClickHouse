@@ -5,7 +5,7 @@ namespace tp
 {
 
 template <typename Task>
-inline ThreadPoolImpl<Task>::ThreadPoolImpl(const ThreadPoolOptions& options)
+inline ThreadPoolImpl<Task>::ThreadPoolImpl(const ThreadPoolOptions & options)
     : m_options(options)
     // , m_num_workers(options.threadCount() - options.maxFreeThreads())
     , m_num_workers(std::max(2UL, options.maxFreeThreads()))
@@ -15,26 +15,22 @@ inline ThreadPoolImpl<Task>::ThreadPoolImpl(const ThreadPoolOptions& options)
     , m_next_worker(0)
 {
     m_free_workers.reserve(options.threadCount());
-    for(size_t i = 0; i < m_num_workers; ++i)
+    for (size_t i = 0; i < m_num_workers; ++i)
     // for(auto& worker_ptr : m_workers)
     {
         m_workers[i].reset(new Worker<Task>(options.queueSize(), this));
         m_raw_workers[i].store(m_workers[i].get());
     }
 
-    for(size_t i = m_num_workers; i < m_workers.size(); ++i)
-    {
+    for (size_t i = m_num_workers; i < m_workers.size(); ++i)
         m_free_workers.push_back(i);
-    }
 
-    for(size_t i = 0; i < m_num_workers; ++i)
-    {
-        m_workers[i]->start(i, [this](Task & task, size_t acceptor_num) {return this->steal(task, acceptor_num);});
-    }
+    for (size_t i = 0; i < m_num_workers; ++i)
+        m_workers[i]->start(i, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
 }
 
 template <typename Task>
-inline ThreadPoolImpl<Task>::ThreadPoolImpl(ThreadPoolImpl<Task>&& rhs) noexcept
+inline ThreadPoolImpl<Task>::ThreadPoolImpl(ThreadPoolImpl<Task> && rhs) noexcept
 {
     std::unique_lock lock(m_mutex);
     *this = std::move(rhs);
@@ -47,7 +43,7 @@ inline ThreadPoolImpl<Task>::~ThreadPoolImpl()
     {
         finalize();
     }
-    catch(...)
+    catch (...)
     {
     }
 }
@@ -56,7 +52,7 @@ template <typename Task>
 inline bool ThreadPoolImpl<Task>::steal(Task & task, size_t acceptor_num)
 {
     // precheck if small number of tasks
-    for (size_t attempt = 1; attempt <= 2; ++ attempt)
+    for (size_t attempt = 1; attempt <= 2; ++attempt)
     {
         auto donor_num = (acceptor_num + attempt) % m_num_workers;
         auto ptr = m_raw_workers[donor_num].load();
@@ -64,9 +60,7 @@ inline bool ThreadPoolImpl<Task>::steal(Task & task, size_t acceptor_num)
         {
             auto ret = ptr->steal(task);
             if (ret)
-            {
                 return true;
-            }
         }
     }
     return false;
@@ -103,8 +97,7 @@ inline void ThreadPoolImpl<Task>::wait()
 }
 
 template <typename Task>
-inline ThreadPoolImpl<Task>&
-ThreadPoolImpl<Task>::operator=(ThreadPoolImpl<Task>&& rhs) noexcept
+inline ThreadPoolImpl<Task> & ThreadPoolImpl<Task>::operator=(ThreadPoolImpl<Task> && rhs) noexcept
 {
     if (this != &rhs)
     {
@@ -123,7 +116,7 @@ ThreadPoolImpl<Task>::operator=(ThreadPoolImpl<Task>&& rhs) noexcept
 
 template <typename Task>
 // template <typename Handler>
-inline bool ThreadPoolImpl<Task>::tryPost(Job&& handler)
+inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
 {
     auto worker = getWorker();
     bool try_shrink = false;
@@ -159,7 +152,7 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job&& handler)
                         break;
                     }
 
-                    assert(!m_free_workers.empty());  // need atomic check !
+                    assert(!m_free_workers.empty()); // need atomic check !
 
                     new_worker_num = m_free_workers.back();
                     m_free_workers.pop_back();
@@ -168,7 +161,7 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job&& handler)
 
                     worker = m_workers[new_worker_num].get();
 
-                    worker->start(new_worker_num, [this](Task & task, size_t acceptor_num) {return this->steal(task, acceptor_num);});
+                    worker->start(new_worker_num, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
                     break;
                 }
             }
@@ -181,15 +174,13 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job&& handler)
 
     const auto & post_ret = worker->post(std::forward<Job>(handler));
     if (try_shrink)
-    {
         tryShrink(worker);
-    }
     return post_ret;
 }
 
 
 template <typename Task>
-inline void ThreadPoolImpl<Task>::tryShrink(Worker<Task>* /* worker */)
+inline void ThreadPoolImpl<Task>::tryShrink(Worker<Task> * /* worker */)
 {
     // std::cout << "Top of tryShrink()" << std::endl;
 
@@ -234,39 +225,31 @@ inline void ThreadPoolImpl<Task>::tryShrink(Worker<Task>* /* worker */)
 
 template <typename Task>
 // template <typename Handler>
-inline void ThreadPoolImpl<Task>::post(Job&& handler)
+inline void ThreadPoolImpl<Task>::post(Job && handler)
 {
     const auto ok = tryPost(std::forward<Job>(handler));
     if (!ok)
-    {
         throw std::runtime_error("thread pool queue is full");
-    }
 }
 
 template <typename Task>
 // template <typename Handler>
-inline void ThreadPoolImpl<Task>::scheduleOrThrow(Job&& handler)
+inline void ThreadPoolImpl<Task>::scheduleOrThrow(Job && handler)
 {
     const auto ok = tryPost(std::forward<Job>(handler));
     if (!ok)
-    {
         throw std::runtime_error("thread pool queue is full");
-    }
 }
 
 template <typename Task>
-inline Worker<Task>* ThreadPoolImpl<Task>::getWorker()
+inline Worker<Task> * ThreadPoolImpl<Task>::getWorker()
 {
     auto id = Worker<Task>::getWorkerIdForCurrentThread();
 
-    Worker<Task>* raw_ptr = nullptr;
+    Worker<Task> * raw_ptr = nullptr;
     for (; !raw_ptr; id = m_next_worker.fetch_add(1, std::memory_order_relaxed) % m_workers.size())
-    {
         if (id < m_workers.size())
-        {
             raw_ptr = m_raw_workers[id].load();
-        }
-    }
 
 
     // std::cerr << id << ", " << std::this_thread::get_id() << std::endl;
