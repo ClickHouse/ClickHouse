@@ -19,7 +19,7 @@ struct QueryPlanResourceHolder
     QueryPlanResourceHolder();
     QueryPlanResourceHolder(QueryPlanResourceHolder &&) noexcept;
     ~QueryPlanResourceHolder();
-    
+
     QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &) = delete;
 
     /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
