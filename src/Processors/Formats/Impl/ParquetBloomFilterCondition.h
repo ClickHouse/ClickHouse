@@ -55,7 +55,7 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent);
+    bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out);
 
     bool traverseTreeIn(
         const String & function_name,
@@ -70,8 +70,7 @@ private:
         const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
-        RPNElement & out,
-        const RPNBuilderTreeNode * parent);
+        RPNElement & out);
 };
 
 }
