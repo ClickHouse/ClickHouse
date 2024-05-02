@@ -1305,6 +1305,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 std::swap(table_join_clause.key_names_right.at(asof_condition.key_index), table_join_clause.key_names_right.back());
             }
         }
+
+        if (join_clauses_and_actions.mixed_join_expressions_actions)
+        {
+            ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
+            mixed_join_expression = std::make_shared<ExpressionActions>(
+                join_clauses_and_actions.mixed_join_expressions_actions,
+                ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
+        }
     }
     else if (join_node.isUsingJoinExpression())
     {
