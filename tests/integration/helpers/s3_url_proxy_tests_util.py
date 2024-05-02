@@ -2,8 +2,8 @@ import os
 import time
 
 
-def check_proxy_logs(
-    cluster, proxy_instance, protocol, bucket, http_methods={"POST", "PUT", "GET"}
+def has_any_proxy_related_logs(
+cluster, proxy_instance, protocol, bucket, http_methods={"POST", "PUT", "GET"}
 ):
     for i in range(10):
         logs = cluster.get_container_logs(proxy_instance)
@@ -13,10 +13,10 @@ def check_proxy_logs(
                 logs.find(http_method + f" {protocol}://minio1:9001/root/data/{bucket}")
                 >= 0
             ):
-                return
+                return True
             time.sleep(1)
         else:
-            assert False, f"{http_methods} method not found in logs of {proxy_instance}"
+            return False
 
 
 def wait_resolver(cluster):
@@ -85,4 +85,16 @@ def simple_test(cluster, proxies, protocol, bucket):
     perform_simple_queries(node, minio_endpoint)
 
     for proxy in proxies:
-        check_proxy_logs(cluster, proxy, protocol, bucket)
+        has_proxy_logs = has_any_proxy_related_logs(cluster, proxy, protocol, bucket)
+        assert has_proxy_logs, f"Did not find any proxy related logs in {proxy}"
+
+
+def simple_test_assert_no_proxy(cluster, proxies, protocol, bucket):
+   minio_endpoint = build_s3_endpoint(protocol, bucket)
+   node = cluster.instances[f"{bucket}"]
+
+   perform_simple_queries(node, minio_endpoint)
+
+   for proxy in proxies:
+       no_proxy_logs = not has_any_proxy_related_logs(cluster, proxy, protocol, bucket)
+       assert no_proxy_logs, f"Found proxy logs in {proxy} and it should not have found it"
