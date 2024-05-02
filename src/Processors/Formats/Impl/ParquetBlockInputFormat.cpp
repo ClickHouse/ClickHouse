@@ -235,47 +235,35 @@ static std::optional<Field> decodePlainParquetValueSlow(const std::string & data
     return field;
 }
 
-static auto bloomFilterMaybeContains(
-    int row_group, ActionsDAGPtr filter_dag,
-    const Block & header,
-    const auto & column_name_to_index,
-    auto arrow_file,
-    auto metadata,
-    auto context)
+static auto getHeaderIndexByColumnName(const std::string & column_name, const Block & header)
 {
-    std::unique_ptr<parquet::arrow::FileReader> file_reader;
-
-    parquet::arrow::FileReaderBuilder builder;
-    THROW_ARROW_NOT_OK(
-        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
-    //        builder.properties(properties);
-    // TODO: Pass custom memory_pool() to enable memory accounting with non-jemalloc allocators.
-    THROW_ARROW_NOT_OK(builder.Build(&file_reader));
-
-    auto & bf_reader = file_reader->parquet_reader()->GetBloomFilterReader();
-    auto rg_bf = bf_reader.RowGroup(row_group);
-
-    if (!rg_bf)
+    for (auto i = 0u; i < header.columns(); ++i)
     {
-        return true;
+        if (header.getByPosition(i).name == column_name)
+        {
+            return i;
+        }
     }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} not found in Parquet file", column_name);
+}
+
+static auto buildColumnIndexToBF(
+    parquet::BloomFilterReader & bf_reader,
+    int row_group,
+    const Block & header,
+    const auto & column_name_to_index
+)
+{
+    auto rg_bf = bf_reader.RowGroup(row_group);
 
     ParquetBloomFilterCondition::IndexToColumnBF index_to_column_bf;
 
-    auto get_header_index_by_column_name = [&](const std::string & column_name) -> std::size_t
+    if (!rg_bf)
     {
-        for (auto i = 0u; i < header.columns(); ++i)
-        {
-            if (header.getByPosition(i).name == column_name)
-            {
-                return i;
-            }
-        }
+        return index_to_column_bf;
+    }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} not found in Parquet file", column_name);
-    };
-
-    // build index_to_bf based on column_name_to_index
     for (const auto & [column_name, index] : column_name_to_index)
     {
         auto bf = rg_bf->GetColumnBloomFilter(index);
@@ -285,10 +273,10 @@ static auto bloomFilterMaybeContains(
             continue;
         }
 
-        index_to_column_bf[get_header_index_by_column_name(column_name)] = std::move(bf);
+        index_to_column_bf[getHeaderIndexByColumnName(column_name, header)] = std::move(bf);
     }
 
-    return ParquetBloomFilterCondition(filter_dag, context, header).mayBeTrueOnRowGroup(index_to_column_bf);
+    return index_to_column_bf;
 }
 
 /// Range of values for each column, based on statistics in the Parquet metadata.
@@ -475,6 +463,17 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         column_indices.push_back(index);
     }
 
+    auto bloom_filter_condition = ParquetBloomFilterCondition(filter_dag, ctx, getPort().getHeader());
+
+    std::unique_ptr<parquet::arrow::FileReader> file_reader;
+
+    parquet::arrow::FileReaderBuilder builder;
+    THROW_ARROW_NOT_OK(
+        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
+    THROW_ARROW_NOT_OK(builder.Build(&file_reader));
+
+    auto & bf_reader = file_reader->parquet_reader()->GetBloomFilterReader();
+
     int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
 
@@ -483,12 +482,14 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (skip_row_groups.contains(row_group))
             continue;
 
-        // this has to be checked every loop, but the dag evaluation should not afaik. hmm that's tricky
-        // two options: 1. make it happen every time. 2. store raw columns and hash only at the end
-        if (format_settings.parquet.bloom_filter_push_down
-            && !bloomFilterMaybeContains(row_group, filter_dag, getPort().getHeader(), column_name_to_index, arrow_file, metadata, ctx))
+        if (format_settings.parquet.bloom_filter_push_down)
         {
-            continue;
+            const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, getPort().getHeader(), column_name_to_index);
+
+            if (!bloom_filter_condition.mayBeTrueOnRowGroup(column_index_to_bf))
+            {
+                continue;
+            }
         }
 
         if (format_settings.parquet.filter_push_down && key_condition
