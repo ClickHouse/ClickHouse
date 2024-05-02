@@ -3,7 +3,6 @@
 
 #if USE_MYSQL
 
-#include <base/StringRef.h>
 #include <Common/VersionNumber.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
@@ -149,7 +148,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     StreamSettings mysql_input_stream_settings(settings, false, true);
     auto variables_input = std::make_unique<MySQLSource>(connection, check_query, variables_header, mysql_input_stream_settings);
 
-    std::unordered_map<StringRef, StringRef> variables_error_message;
+    std::unordered_map<String, String> variables_error_message;
     String version;
 
     QueryPipeline pipeline(std::move(variables_input));
@@ -201,8 +200,8 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
         {
-            const StringRef variable_name = variable_name_column->getDataAt(index).toString();
-            const StringRef variable_val = variable_value_column->getDataAt(index).toString();
+            const String variable_name = variable_name_column->getDataAt(index).toString();
+            const String variable_val = variable_value_column->getDataAt(index).toString();
             const auto & error_message_it = variables_error_message.find(variable_name);
 
             if (error_message_it != variables_error_message.end() && variable_val == error_message_it->second)
