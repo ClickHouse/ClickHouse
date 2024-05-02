@@ -1,7 +1,9 @@
 #include "EnvironmentProxyConfigurationResolver.h"
 #include <unordered_set>
+#include <sstream>
 
 #include <Common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -13,6 +15,7 @@ namespace DB
  * */
 static constexpr auto PROXY_HTTP_ENVIRONMENT_VARIABLE = "http_proxy";
 static constexpr auto PROXY_HTTPS_ENVIRONMENT_VARIABLE = "https_proxy";
+static constexpr auto NO_PROXY_ENVIRONMENT_VARIABLE = "no_proxy";
 
 EnvironmentProxyConfigurationResolver::EnvironmentProxyConfigurationResolver(
     Protocol request_protocol_, bool disable_tunneling_for_https_requests_over_http_proxy_)
@@ -36,28 +39,26 @@ namespace
         }
     }
 
-    std::vector<Poco::URI> getNoProxyHosts()
+    std::vector<std::string> getNoProxyHosts()
     {
-        std::vector<Poco::URI> result;
+        std::vector<std::string> result;
 
-        const char * no_proxy = std::getenv("NO_PROXY"); // NOLINT(concurrency-mt-unsafe)
+        const char * no_proxy = std::getenv(NO_PROXY_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
+
         if (!no_proxy)
         {
             return result;
         }
 
-        std::string no_proxy_str(no_proxy);
-        std::istringstream no_proxy_stream(no_proxy_str);
+        std::istringstream no_proxy_stream(no_proxy);
         std::string host;
         while (std::getline(no_proxy_stream, host, ','))
         {
-            try
+            trim(host);
+
+            if (!host.empty())
             {
-                result.emplace(host);
-            }
-            catch (const Poco::SyntaxException & e)
-            {
-                LOG_WARNING(getLogger("EnvironmentProxyConfigurationResolver"), "Failed to parse NO_PROXY host '{}': {}", host, e.displayText());
+                result.emplace_back(host);
             }
         }
 
@@ -86,7 +87,8 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
         ProxyConfiguration::protocolFromString(scheme),
         port,
         useTunneling(request_protocol, ProxyConfiguration::protocolFromString(scheme), disable_tunneling_for_https_requests_over_http_proxy),
-        request_protocol
+        request_protocol,
+        getNoProxyHosts()
     };
 }
 

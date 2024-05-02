@@ -76,7 +76,10 @@ inline std::string xmlNodeAsString(Poco::XML::Node *pNode)
 
 struct EnvironmentProxySetter
 {
-    EnvironmentProxySetter(const Poco::URI & http_proxy, const Poco::URI & https_proxy)
+    EnvironmentProxySetter(
+        const Poco::URI & http_proxy,
+        const Poco::URI & https_proxy,
+        const std::string & no_proxy = {})
     {
         if (!http_proxy.empty())
         {
@@ -86,6 +89,11 @@ struct EnvironmentProxySetter
         if (!https_proxy.empty())
         {
             setenv("https_proxy", https_proxy.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+
+        if (!no_proxy.empty())
+        {
+            setenv("no_proxy", no_proxy.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
         }
     }
 
