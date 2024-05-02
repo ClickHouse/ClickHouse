@@ -150,7 +150,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     auto variables_input = std::make_unique<MySQLSource>(connection, check_query, variables_header, mysql_input_stream_settings);
 
     std::unordered_map<StringRef, StringRef> variables_error_message;
-    StringRef version;
+    String version;
 
     QueryPipeline pipeline(std::move(variables_input));
 
@@ -164,7 +164,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         for (size_t index = 0; index < variables_block.rows(); ++index)
         {
             const String variable_name = variable_name_column->getDataAt(index).toString();
-            if variable_name == "version"
+            if ( variable_name == "version" )
             {
                 version = variable_value_column->getDataAt(index).toString();
                 break;
