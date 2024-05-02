@@ -7,6 +7,8 @@ toc_max_heading_level: 2
 
 # Core Settings
 
+All below settings are also available in table [system.settings](/docs/en/operations/system-tables/settings).
+
 ## additional_table_filters
 
 An additional filter expression that is applied after reading
@@ -3931,19 +3933,6 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
 :::
 
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
-Cloud default value: `1`.
-
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -4383,17 +4372,6 @@ Possible values:
 - `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
-
-## first_day_of_week
-
-The first day of the week assumed by [`toStartOfInterval`](../../sql-reference/functions/date-time-functions.md#toStartOfInterval) function when using weeks as unit.
-
-Possible values:
-
-- Monday - Week starts on Monday
-- Sunday - Week starts on Sunday
-
-Default value: 'Monday'.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 

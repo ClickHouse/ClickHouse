@@ -443,8 +443,7 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
         or pr_info.number == 0
     )
 
-    # FIXME: For now, always set mergeable check in the Merge Queue. It's required to pass MQ
-    if not_run and not pr_info.is_merge_queue:
+    if not_run:
         # Let's avoid unnecessary work
         return
 

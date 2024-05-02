@@ -305,7 +305,7 @@ InputFormatPtr FormatFactory::getInput(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
-    size_t max_parsing_threads = _max_parsing_threads.value_or(settings.max_threads);
+    size_t max_parsing_threads = _max_parsing_threads.value_or(settings.max_parsing_threads);
     size_t max_download_threads = _max_download_threads.value_or(settings.max_download_threads);
 
     RowInputFormatParams row_input_format_params;

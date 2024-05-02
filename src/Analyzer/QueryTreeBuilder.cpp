@@ -271,6 +271,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_name.empty());
     current_query_tree->setCTEName(cte_name);
+    current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
     current_query_tree->setIsGroupByWithTotals(select_query_typed.group_by_with_totals);
@@ -287,7 +288,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
+    {
         current_query_tree->getWithNode() = buildExpressionList(select_with_list, current_context);
+
+        if (select_query_typed.recursive_with)
+        {
+            for (auto & with_node : current_query_tree->getWith().getNodes())
+            {
+                auto * with_union_node = with_node->as<UnionNode>();
+                if (!with_union_node)
+                    continue;
+
+                with_union_node->setIsRecursiveCTE(true);
+            }
+        }
+    }
 
     auto select_expression_list = select_query_typed.select();
     if (select_expression_list)
