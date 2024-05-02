@@ -4373,17 +4373,6 @@ Possible values:
 
 Default value: `ignore`.
 
-## first_day_of_week
-
-The first day of the week assumed by [`toStartOfInterval`](../../sql-reference/functions/date-time-functions.md#toStartOfInterval) function when using weeks as unit.
-
-Possible values:
-
-- Monday - Week starts on Monday
-- Sunday - Week starts on Sunday
-
-Default value: 'Monday'.
-
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
