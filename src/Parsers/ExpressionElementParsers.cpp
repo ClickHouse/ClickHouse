@@ -357,6 +357,16 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
     }
 
+    if (function.name == "count")
+    {
+        /// Remove child from function.arguments if it's '*' because countIf(*) is not supported.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/61004
+        std::erase_if(function.arguments->children, [] (const ASTPtr & child)
+        {
+            return typeid_cast<const ASTAsterisk *>(child.get()) || typeid_cast<const ASTQualifiedAsterisk *>(child.get());
+        });
+    }
+
     function.name += "If";
     function.arguments->children.push_back(condition->children[0]);
     return true;
@@ -2075,28 +2085,28 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     int direction = 1;
 
-    if (descending.ignore(pos) || desc.ignore(pos))
+    if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
         direction = -1;
     else
-        ascending.ignore(pos) || asc.ignore(pos);
+        ascending.ignore(pos, expected) || asc.ignore(pos, expected);
 
     int nulls_direction = direction;
     bool nulls_direction_was_explicitly_specified = false;
 
-    if (nulls.ignore(pos))
+    if (nulls.ignore(pos, expected))
     {
         nulls_direction_was_explicitly_specified = true;
 
-        if (first.ignore(pos))
+        if (first.ignore(pos, expected))
             nulls_direction = -direction;
-        else if (last.ignore(pos))
+        else if (last.ignore(pos, expected))
             ;
         else
             return false;
     }
 
     ASTPtr locale_node;
-    if (collate.ignore(pos))
+    if (collate.ignore(pos, expected))
     {
         if (!collate_locale_parser.parse(pos, locale_node, expected))
             return false;
@@ -2107,16 +2117,16 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ASTPtr fill_from;
     ASTPtr fill_to;
     ASTPtr fill_step;
-    if (with_fill.ignore(pos))
+    if (with_fill.ignore(pos, expected))
     {
         has_with_fill = true;
-        if (from.ignore(pos) && !exp_parser.parse(pos, fill_from, expected))
+        if (from.ignore(pos, expected) && !exp_parser.parse(pos, fill_from, expected))
             return false;
 
-        if (to.ignore(pos) && !exp_parser.parse(pos, fill_to, expected))
+        if (to.ignore(pos, expected) && !exp_parser.parse(pos, fill_to, expected))
             return false;
 
-        if (step.ignore(pos) && !exp_parser.parse(pos, fill_step, expected))
+        if (step.ignore(pos, expected) && !exp_parser.parse(pos, fill_step, expected))
             return false;
     }
 
@@ -2244,27 +2254,27 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 
-    if (s_to_disk.ignore(pos))
+    if (s_to_disk.ignore(pos, expected))
     {
         mode = TTLMode::MOVE;
         destination_type = DataDestinationType::DISK;
     }
-    else if (s_to_volume.ignore(pos))
+    else if (s_to_volume.ignore(pos, expected))
     {
         mode = TTLMode::MOVE;
         destination_type = DataDestinationType::VOLUME;
     }
-    else if (s_group_by.ignore(pos))
+    else if (s_group_by.ignore(pos, expected))
     {
         mode = TTLMode::GROUP_BY;
     }
-    else if (s_recompress.ignore(pos))
+    else if (s_recompress.ignore(pos, expected))
     {
         mode = TTLMode::RECOMPRESS;
     }
     else
     {
-        s_delete.ignore(pos);
+        s_delete.ignore(pos, expected);
         mode = TTLMode::DELETE;
     }
 
@@ -2276,7 +2286,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::MOVE)
     {
-        if (s_if_exists.ignore(pos))
+        if (s_if_exists.ignore(pos, expected))
             if_exists = true;
 
         ASTPtr ast_space_name;
@@ -2290,7 +2300,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_keys_list.parse(pos, group_by_key, expected))
             return false;
 
-        if (s_set.ignore(pos))
+        if (s_set.ignore(pos, expected))
         {
             ParserList parser_assignment_list(
                 std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
@@ -2299,14 +2309,14 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
     }
-    else if (mode == TTLMode::DELETE && s_where.ignore(pos))
+    else if (mode == TTLMode::DELETE && s_where.ignore(pos, expected))
     {
         if (!parser_exp.parse(pos, where_expr, expected))
             return false;
     }
     else if (mode == TTLMode::RECOMPRESS)
     {
-        if (!s_codec.ignore(pos))
+        if (!s_codec.ignore(pos, expected))
             return false;
 
         if (!parser_codec.parse(pos, recompression_codec, expected))

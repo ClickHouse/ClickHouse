@@ -43,7 +43,6 @@ DROP DATABASE test_01148_atomic;
 DROP TABLE rmt;
 DROP TABLE rmt1;
 
-SET allow_experimental_database_replicated=1;
 DROP DATABASE IF EXISTS imdb_01148;
 CREATE DATABASE imdb_01148 ENGINE = Replicated('/test/databases/imdb_01148', '{shard}', '{replica}');
 CREATE TABLE imdb_01148.movie_directors (`director_id` UInt64, `movie_id` UInt64) ENGINE = ReplicatedMergeTree ORDER BY (director_id, movie_id) SETTINGS index_granularity = 8192;
