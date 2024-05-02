@@ -92,7 +92,7 @@ SELECT * FROM test1;
 
 The optional RECURSIVE modifier allows for a WITH query to refer to its own output. Example:
 
-**Example:** Sum integers from 1 throught 100
+**Example:** Sum integers from 1 through 100
 
 ```sql
 WITH RECURSIVE test_table AS (
@@ -293,7 +293,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 
 ## Infinite queries
 
-It is also possible to use inifinite recursive CTE queries if `LIMIT` is used in outer query:
+It is also possible to use infinite recursive CTE queries if `LIMIT` is used in outer query:
 
 **Example:** Infinite recursive CTE query
 ```sql
