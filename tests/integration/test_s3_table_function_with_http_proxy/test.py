@@ -36,6 +36,16 @@ def cluster():
             instance_env_variables=True,
         )
 
+        cluster.add_instance(
+            "env_node_no_proxy",
+            with_minio=True,
+            env_variables={
+                "http_proxy": "http://proxy1",
+                "no_proxy": "not_important_host,,  minio1  ,",
+            },
+            instance_env_variables=True,
+        )
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -58,3 +68,7 @@ def test_s3_with_http_remote_proxy(cluster):
 
 def test_s3_with_http_env_proxy(cluster):
     proxy_util.simple_test(cluster, ["proxy1"], "http", "env_node")
+
+
+def test_s3_with_http_no_proxy(cluster):
+    proxy_util.simple_test_assert_no_proxy(cluster, ["proxy1"], "http", "env_node_no_proxy")
