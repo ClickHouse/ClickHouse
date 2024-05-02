@@ -13,6 +13,7 @@
 #include <Storages/StreamQueue/StorageStreamQueue.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include "Common/ZooKeeper/Types.h"
+#include "Parsers/ASTLiteral.h"
 
 namespace DB
 {
@@ -63,6 +64,7 @@ StorageStreamQueue::StorageStreamQueue(
     const StorageID & table_id_,
     ContextPtr context_,
     StorageID source_table_id_,
+    std::shared_ptr<ASTIdentifier> key_column_,
     const Names & column_names_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -72,7 +74,7 @@ StorageStreamQueue::StorageStreamQueue(
     , settings(std::move(settings_))
     , source_table_id(source_table_id_)
     , column_names(column_names_)
-    , key_column(column_names_[0])
+    , key_column(key_column_)
     , log(getLogger("StorageStreamQueue (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -158,16 +160,14 @@ void StorageStreamQueue::move_data()
         select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
-    auto new_function_and = makeASTFunction("and");
-    auto gt_function = makeASTFunction(">");
-    gt_function->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column));
+    auto gt_function = makeASTFunction("greaterOrEquals");
+    gt_function->arguments->children.push_back(key_column);
     gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(10));
-    new_function_and->arguments->children.push_back(std::move(gt_function));
-    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
+    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(gt_function));
 
     auto order_by = std::make_shared<ASTExpressionList>();
     auto order_by_elem = std::make_shared<ASTOrderByElement>();
-    order_by_elem->children.push_back(std::make_shared<ASTIdentifier>(key_column));
+    order_by_elem->children.push_back(key_column);
     order_by_elem->direction = 1;
     order_by->children.push_back(order_by_elem);
     select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
@@ -200,13 +200,10 @@ void StorageStreamQueue::move_data()
 StoragePtr createStorage(const StorageFactory::Arguments & args)
 {
     auto & engine_args = args.engine_args;
-    if (engine_args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
-
-    if (engine_args.size() != 1)
+    if (engine_args.size() != 2)
         throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage StreamQueue requires exactly 1 arguments: {}", StreamQueueArgumentName);
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage StreamQueue requires exactly 2 arguments: {}, <key column name>", StreamQueueArgumentName);
 
     const auto arg = engine_args[0];
 
@@ -219,6 +216,18 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
             arg ? arg->getID() : "NULL",
             arg ? arg->formatForErrorMessage() : "NULL");
     }
+
+    const auto key_arg = engine_args[1];
+    if (!key_arg->as<ASTIdentifier>())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument <key column name> must be table identifier, get {} (value: {})",
+            key_arg ? key_arg->getID() : "NULL",
+            key_arg ? key_arg->formatForErrorMessage() : "NULL");
+    }
+
+    auto key_column = static_pointer_cast<ASTIdentifier>(key_arg);
 
     const ASTIdentifier & identifier_expression = *arg->as<ASTIdentifier>();
     auto source_storage_id = getSourceStorage(args.getLocalContext(), identifier_expression);
@@ -248,6 +257,7 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
         args.table_id,
         args.getContext(),
         source_storage_id,
+        key_column,
         column_names,
         args.columns,
         args.constraints,

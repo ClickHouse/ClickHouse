@@ -22,6 +22,7 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         StorageID source_table_id_,
+        std::shared_ptr<ASTIdentifier> key_column_,
         const Names & column_names_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -44,7 +45,7 @@ private:
     StorageID source_table_id;
 
     Names column_names;
-    String key_column;
+    std::shared_ptr<ASTIdentifier> key_column;
 
     BackgroundSchedulePool::TaskHolder task;
     bool shutdown_called = false;
