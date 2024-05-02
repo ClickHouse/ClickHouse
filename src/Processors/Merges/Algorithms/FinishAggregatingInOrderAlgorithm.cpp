@@ -51,11 +51,14 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     if (!input.chunk.hasRows())
         return;
 
-    const auto & arenas_info = input.chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>();
-    if (!arenas_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoWithAllocatedBytes was not set for chunk in FinishAggregatingInOrderAlgorithm");
+    if (input.chunk.getChunkInfos().empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in FinishAggregatingInOrderAlgorithm");
 
-    states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
+    Int64 allocated_bytes = 0;
+    if (auto arenas_info = input.chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
+        allocated_bytes = arenas_info->allocated_bytes;
+
+    states[source_num] = State{input.chunk, description, allocated_bytes};
 }
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()

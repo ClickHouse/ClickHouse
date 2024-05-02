@@ -81,8 +81,8 @@ private:
 
     std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSyncChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block);
 
-    QueryPipeline buildInsertSelectPipeline();
-    QueryPipeline buildInsertPipeline();
+    QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
+    QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     Chain buildSink(
         const StoragePtr & table,

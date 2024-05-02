@@ -4,6 +4,7 @@
 #include <memory>
 #include <typeindex>
 #include <vector>
+#include <string>
 
 
 namespace DB
@@ -107,6 +108,19 @@ public:
 
         records.erase(it);
         return cast;
+    }
+
+    std::string debug() const
+    {
+        std::string result;
+
+        for (auto & rec : records)
+        {
+            result.append(rec.type_idx.name());
+            result.append(" ");
+        }
+
+        return result;
     }
 
 private:

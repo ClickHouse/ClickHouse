@@ -429,12 +429,10 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
 }
 
 
-QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline()
+QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
-    auto & query = query_ptr->as<ASTInsertQuery &>();
 
-    StoragePtr table = getTable(query);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
 
@@ -641,12 +639,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline()
 }
 
 
-QueryPipeline InterpreterInsertQuery::buildInsertPipeline()
+QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
-    auto & query = query_ptr->as<ASTInsertQuery &>();
 
-    StoragePtr table = getTable(query);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
 
@@ -714,9 +710,11 @@ BlockIO InterpreterInsertQuery::execute()
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
+    bool is_table_dist = false;
     if (auto * dist_storage = dynamic_cast<StorageDistributed *>(table.get()))
     {
-         LOG_DEBUG(getLogger("InsertQuery"),
+        is_table_dist = true;
+        LOG_DEBUG(getLogger("InsertQuery"),
               "dist_storage engine {} table name {}.{}", dist_storage->getName(), dist_storage->getStorageID().database_name, dist_storage->getStorageID().table_name);
     }
 
@@ -748,18 +746,26 @@ BlockIO InterpreterInsertQuery::execute()
         {
             auto distributed = table->distributedWrite(query, getContext());
             if (distributed)
+            {
+                 LOG_DEBUG(getLogger("InsertQuery"),"as dist pipeline, is_table_dist {}", is_table_dist);
                 res.pipeline = std::move(*distributed);
+            }
             else
-                res.pipeline = buildInsertSelectPipeline();
+            {
+                LOG_DEBUG(getLogger("InsertQuery"),"as insert select after dist, is_table_dist {}", is_table_dist);
+                res.pipeline = buildInsertSelectPipeline(query, table);
+            }
         }
         else
         {
-            res.pipeline = buildInsertSelectPipeline();
+            LOG_DEBUG(getLogger("InsertQuery"),"as insert select, is_table_dist {}", is_table_dist);
+            res.pipeline = buildInsertSelectPipeline(query, table);
         }
     }
     else
     {
-        res.pipeline = buildInsertPipeline();
+        LOG_DEBUG(getLogger("InsertQuery"),"as just insert, is_table_dist {}", is_table_dist);
+        res.pipeline = buildInsertPipeline(query, table);
     }
 
     res.pipeline.addStorageHolder(table);
