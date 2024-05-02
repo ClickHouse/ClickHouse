@@ -1824,13 +1824,9 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
 void StorageDistributed::delayInsertOrThrowIfNeeded() const
 {
-    LOG_WARNING(log, "delayInsertOrThrowIfNeeded");
-
     if (!distributed_settings.bytes_to_throw_insert &&
         !distributed_settings.bytes_to_delay_insert)
         return;
-
-    LOG_WARNING(log, "delayInsertOrThrowIfNeeded getContext() is null: {}", getContext() == nullptr);
 
     UInt64 total_bytes = *totalBytes(getContext()->getSettingsRef());
 
