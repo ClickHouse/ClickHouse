@@ -2557,13 +2557,27 @@ Like function `YYYYMMDDhhmmssToDate()` but produces a [DateTime64](../../sql-ref
 
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 
-## addYears, addQuarters, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addMilliseconds, addMicroseconds, addNanoseconds
+## addYears
 
-These functions add units of the interval specified by the function name to a date, a date with time or a string-encoded date / date with time. A date or date with time is returned.
+Adds a specified number of years to a date, a date with time or a string-encoded date / date with time.
 
-Example:
+**Syntax**
 
-``` sql
+```sql
+addYears(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of years to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of years to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` years. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
 WITH
     toDate('2024-01-01') AS date,
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -2574,10 +2588,454 @@ SELECT
     addYears(date_time_string, 1) AS add_years_with_date_time_string
 ```
 
-``` text
+```response
 ┌─add_years_with_date─┬─add_years_with_date_time─┬─add_years_with_date_time_string─┐
 │          2025-01-01 │      2025-01-01 00:00:00 │         2025-01-01 00:00:00.000 │
 └─────────────────────┴──────────────────────────┴─────────────────────────────────┘
+```
+
+## addQuarters
+
+Adds a specified number of quarters to a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+addQuarters(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of quarters to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of quarters to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` quarters. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addQuarters(date, 1) AS add_quarters_with_date,
+    addQuarters(date_time, 1) AS add_quarters_with_date_time,
+    addQuarters(date_time_string, 1) AS add_quarters_with_date_time_string
+```
+
+```response
+┌─add_quarters_with_date─┬─add_quarters_with_date_time─┬─add_quarters_with_date_time_string─┐
+│             2024-04-01 │         2024-04-01 00:00:00 │            2024-04-01 00:00:00.000 │
+└────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+## addMonths
+
+Adds a specified number of months to a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+addMonths(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of months to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of months to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` months. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addMonths(date, 6) AS add_months_with_date,
+    addMonths(date_time, 6) AS add_months_with_date_time,
+    addMonths(date_time_string, 6) AS add_months_with_date_time_string
+```
+
+```response
+┌─add_months_with_date─┬─add_months_with_date_time─┬─add_months_with_date_time_string─┐
+│           2024-07-01 │       2024-07-01 00:00:00 │          2024-07-01 00:00:00.000 │
+└──────────────────────┴───────────────────────────┴──────────────────────────────────┘
+```
+
+## addWeeks
+
+Adds a specified number of weeks to a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+addWeeks(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of weeks to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of weeks to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` weeks. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addWeeks(date, 5) AS add_weeks_with_date,
+    addWeeks(date_time, 5) AS add_weeks_with_date_time,
+    addWeeks(date_time_string, 5) AS add_weeks_with_date_time_string
+```
+
+```response
+┌─add_weeks_with_date─┬─add_weeks_with_date_time─┬─add_weeks_with_date_time_string─┐
+│          2024-02-05 │      2024-02-05 00:00:00 │         2024-02-05 00:00:00.000 │
+└─────────────────────┴──────────────────────────┴─────────────────────────────────┘
+```
+
+## addDays
+
+Adds a specified number of days to a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+addDays(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of days to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of days to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` days. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addDays(date, 5) AS add_days_with_date,
+    addDays(date_time, 5) AS add_days_with_date_time,
+    addDays(date_time_string, 5) AS add_days_with_date_time_string
+```
+
+```response
+┌─add_days_with_date─┬─add_days_with_date_time─┬─add_days_with_date_time_string─┐
+│         2024-01-06 │     2024-01-06 00:00:00 │        2024-01-06 00:00:00.000 │
+└────────────────────┴─────────────────────────┴────────────────────────────────┘
+```
+
+## addHours
+
+Adds a specified number of days to a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+addHours(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of hours to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of hours to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` hours. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addHours(date, 12) AS add_hours_with_date,
+    addHours(date_time, 12) AS add_hours_with_date_time,
+    addHours(date_time_string, 12) AS add_hours_with_date_time_string
+```
+
+```response
+┌─add_hours_with_date─┬─add_hours_with_date_time─┬─add_hours_with_date_time_string─┐
+│ 2024-01-01 12:00:00 │      2024-01-01 12:00:00 │         2024-01-01 12:00:00.000 │
+└─────────────────────┴──────────────────────────┴─────────────────────────────────┘
+```
+
+## addMinutes
+
+Adds a specified number of minutes to a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+addMinutes(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of minutes to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of minutes to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` minutes. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addMinutes(date, 20) AS add_minutes_with_date,
+    addMinutes(date_time, 20) AS add_minutes_with_date_time,
+    addMinutes(date_time_string, 20) AS add_minutes_with_date_time_string
+```
+
+```response
+┌─add_minutes_with_date─┬─add_minutes_with_date_time─┬─add_minutes_with_date_time_string─┐
+│   2024-01-01 00:20:00 │        2024-01-01 00:20:00 │           2024-01-01 00:20:00.000 │
+└───────────────────────┴────────────────────────────┴───────────────────────────────────┘
+```
+
+## addSeconds
+
+Adds a specified number of seconds to a date, a date with time or a string-encoded date / date with time.
+
+**Syntax**
+
+```sql
+addSeconds(date, x)
+```
+
+**Parameters**
+
+- `date`: Date / date with time to add specified number of seconds to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of seconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date` plus `x` seconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDate('2024-01-01') AS date,
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addSeconds(date, 30) AS add_seconds_with_date,
+    addSeconds(date_time, 30) AS add_seconds_with_date_time,
+    addSeconds(date_time_string, 30) AS add_seconds_with_date_time_string
+```
+
+```response
+┌─add_seconds_with_date─┬─add_seconds_with_date_time─┬─add_seconds_with_date_time_string─┐
+│   2024-01-01 00:00:30 │        2024-01-01 00:00:30 │           2024-01-01 00:00:30.000 │
+└───────────────────────┴────────────────────────────┴───────────────────────────────────┘
+```
+
+## addMilliseconds
+
+Adds a specified number of milliseconds to a date with time or a string-encoded date with time.
+
+**Syntax**
+
+```sql
+addMilliseconds(date_time, x)
+```
+
+**Parameters**
+
+- `date_time`: Date with time to add specified number of milliseconds to. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of milliseconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date_time` plus `x` milliseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addMilliseconds(date_time, 1000) AS add_milliseconds_with_date_time,
+    addMilliseconds(date_time_string, 1000) AS add_milliseconds_with_date_time_string
+```
+
+```response
+┌─add_milliseconds_with_date_time─┬─add_milliseconds_with_date_time_string─┐
+│         2024-01-01 00:00:01.000 │                2024-01-01 00:00:01.000 │
+└─────────────────────────────────┴────────────────────────────────────────┘
+```
+
+## addMicroseconds
+
+Adds a specified number of microseconds to a date with time or a string-encoded date with time.
+
+**Syntax**
+
+```sql
+addMicroseconds(date_time, x)
+```
+
+**Parameters**
+
+- `date_time`: Date with time to add specified number of microseconds to. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of microseconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date_time` plus `x` microseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addMicroseconds(date_time, 1000000) AS add_microseconds_with_date_time,
+    addMicroseconds(date_time_string, 1000000) AS add_microseconds_with_date_time_string
+```
+
+```response
+┌─add_microseconds_with_date_time─┬─add_microseconds_with_date_time_string─┐
+│      2024-01-01 00:00:01.000000 │             2024-01-01 00:00:01.000000 │
+└─────────────────────────────────┴────────────────────────────────────────┘
+```
+
+## addNanoseconds
+
+Adds a specified number of microseconds to a date with time or a string-encoded date with time.
+
+**Syntax**
+
+```sql
+addNanoseconds(date_time, x)
+```
+
+**Parameters**
+
+- `date_time`: Date with time to add specified number of nanoseconds to. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `x`: Number of nanoseconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+
+**Returned value**
+- Returns `date_time` plus `x` nanoseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+```sql
+WITH
+    toDateTime('2024-01-01 00:00:00') AS date_time,
+    '2024-01-01 00:00:00' AS date_time_string
+SELECT
+    addNanoseconds(date_time, 1000) AS add_nanoseconds_with_date_time,
+    addNanoseconds(date_time_string, 1000) AS add_nanoseconds_with_date_time_string
+```
+
+```response
+┌─add_nanoseconds_with_date_time─┬─add_nanoseconds_with_date_time_string─┐
+│  2024-01-01 00:00:00.000001000 │         2024-01-01 00:00:00.000001000 │
+└────────────────────────────────┴───────────────────────────────────────┘
+```
+
+## addInterval
+
+Adds an interval to another interval or tuple of intervals.
+
+**Syntax**
+
+```sql
+addInterval(interval_1, interval_2)
+```
+
+**Parameters**
+
+- `interval_1`: First interval or interval of tuples. [interval](../data-types/special-data-types/interval.md), [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
+- `interval_2`: Second interval to be added. [interval](../data-types/special-data-types/interval.md).
+
+**Returned value**
+- Returns a tuple of intervals. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
+
+:::note
+If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
+SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH);
+SELECT addInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
+```
+
+Result:
+
+```response
+┌─addInterval(toIntervalDay(1), toIntervalMonth(1))─┐
+│ (1,1)                                             │
+└───────────────────────────────────────────────────┘
+┌─addInterval((toIntervalDay(1), toIntervalYear(1)), toIntervalMonth(1))─┐
+│ (1,1,1)                                                                │
+└────────────────────────────────────────────────────────────────────────┘
+┌─addInterval(toIntervalDay(2), toIntervalDay(1))─┐
+│ (3)                                             │
+└─────────────────────────────────────────────────┘
+```
+
+## addTupleOfIntervals
+
+Consecutively adds a tuple of intervals to a Date or a DateTime.
+
+**Syntax**
+
+```sql
+addTupleOfIntervals(interval_1, interval_2)
+```
+
+**Parameters**
+
+- `date`: First interval or interval of tuples. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- `intervals`: Tuple of intervals to add to `date`. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
+
+**Returned value**
+- Returns `date` with added `intervals`. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+
+**Example**
+
+Query:
+
+```sql
+WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 MONTH, INTERVAL 1 YEAR))
+```
+
+Result:
+
+```response
+┌─addTupleOfIntervals(date, (toIntervalDay(1), toIntervalMonth(1), toIntervalYear(1)))─┐
+│                                                                           2019-02-02 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## subtractYears, subtractQuarters, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractMilliseconds, subtractMicroseconds, subtractNanoseconds
