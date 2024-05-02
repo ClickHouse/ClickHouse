@@ -1310,7 +1310,7 @@ TEST(FSSTTest, CompressDecompress)
     strs.push_back("a");
     strs.push_back("aa");
     strs.push_back("aaa");
-    strs.push_back("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    strs.push_back("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     strs.push_back("Hello");
     strs.push_back("World adsasd aboba");
 

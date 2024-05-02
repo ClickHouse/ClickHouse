@@ -39,7 +39,7 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override {
-        std::cerr << "Fsst compress " << source_size << " " << strlen(dest) << std::endl;
+        std::cerr << "Fsst compress " << std::endl;
 
         std::vector<size_t> len_in;
         std::vector<const unsigned char*> str_in;
@@ -54,8 +54,8 @@ protected:
 
         size_t len_out[rows_count];
         const unsigned char* str_out[rows_count];
-        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(len_out) + sizeof(str_out) + sizeof(size_t) * len_in.size()};
-        /* codec_header |(dest*) fsst_header(encoder) rows_count len_out str_out len_in data */
+        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(len_out) + (sizeof(size_t) * len_in.size())};
+        /* codec_header |(dest*) fsst_header(encoder) rows_count len_out len_in data */
 
         if (fsst_compress(encoder,
                         rows_count,
@@ -67,7 +67,7 @@ protected:
                         const_cast<SplittedMutableRows>(str_out)) < rows_count) {
             throw std::runtime_error("FSST compression failed");
         }
-        fsst_destroy(encoder);
+        // fsst_destroy(encoder); TODO(ebek): Понять почему вызывается деструктор какого-то левого кодека
 
         /* Copy prerequisites to dest */
         memcpy(dest + fsst_header_size, &rows_count, sizeof(rows_count));
@@ -75,15 +75,10 @@ protected:
         memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out), len_in.data(), len_in.size() * sizeof(size_t));
 
         /* Count data total compressed size without header */
-        std::cerr << "Compress" << std::endl; 
         UInt32 compressed_size{0};
         for (size_t i = 0; i < rows_count; ++i) {
             compressed_size += len_out[i];
-            std::cerr << len_out[i] << std::endl;
-            std::cerr << str_out[i] - reinterpret_cast<const unsigned char*>(source) << std::endl;
-            std::cerr << std::endl;
         }
-
         return static_cast<UInt32>(header_size) + compressed_size;
     }
 
@@ -102,18 +97,20 @@ protected:
         std::vector<size_t> len_in(rows_count);
         memcpy(lens, source + fsst_header_size + sizeof(rows_count), sizeof(lens));
         memcpy(len_in.data(), source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(size_t) * len_in.size());
-        const char* str_iter = source + fsst_header_size + sizeof(rows_count) + sizeof(lens) + sizeof(size_t) * len_in.size();
+        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(lens) + sizeof(size_t) * len_in.size()};
 
+        const char* str{source + header_size};
         for (size_t i = 0; i < rows_count; ++i) {
             dest = writeVarUInt(len_in[i], dest);
+
             auto decompressed_size = fsst_decompress(&decoder,
                 lens[i],
-                reinterpret_cast<unsigned char*>(const_cast<char*>(str_iter)),
+                reinterpret_cast<unsigned char*>(const_cast<char*>(str)),
                 OUT_SIZE, /* дичь какая-то */
                 reinterpret_cast<unsigned char *>(dest)
             );
-            str_iter += lens[i];
-            std::cerr << "decompressed " << decompressed_size << std::endl;
+
+            str += lens[i];
             dest += decompressed_size;
         }
     }
