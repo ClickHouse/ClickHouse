@@ -365,7 +365,7 @@
 	url = https://github.com/ada-url/idna.git
 [submodule "contrib/fsst"]
 	path = contrib/fsst
-	url = https://github.com/cwida/fsst
+	url = https://github.com/cwida/fsst.git
 [submodule "contrib/rust_vendor"]
 	path = contrib/rust_vendor
 	url = https://github.com/ClickHouse/rust_vendor.git
