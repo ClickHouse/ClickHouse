@@ -6,7 +6,7 @@ sidebar_label: MongoDB
 
 # MongoDB
 
-MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. `INSERT` queries are not supported.
+MongoDB engine is read-only table engine which allows to read data from remote MongoDB collection.
 
 Only MongoDB v3.6+ servers are supported.
 
@@ -27,17 +27,9 @@ Only MongoDB v3.6+ servers are supported.
 
 If key not found in MongoDB document, default value or null(if the column is nullable) will be inserted.
 
-## Where conditions
-Only basic conditions are supported:
- * equals
- * graterThan
- * in
- * lessThan
- * lessOrEquals
- * notEquals
- * notIn
- * and
- * or
+## Supported conditions
+### WHERE
+Only constant literals are allowed.
 
 Types that can be used in WHERE section:
  * Null
@@ -52,9 +44,24 @@ Types that can be used in WHERE section:
  * Bool
  * Object
 
-## Other restrictions
-* `LIMIT BY` is not supported
-* window functions are not supported
+Prewhere is not supported.
+
+### LIMIT and OFFSET
+Only `LIMIT` is supported.
+
+### ORDER BY
+Simple expressions only are supported, without any modification like COLLATE, WITH, TO, etc.
+
+### WINDOW
+Not supported.
+
+### GROUP BY
+Not supported.
+
+### Aggregation functions
+Not supported.
+
+
 ## Creating a Table {#creating-a-table}
 
 ``` sql
@@ -132,3 +139,6 @@ CREATE TABLE mongo_table
     data String
 ) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'connectTimeoutMS=100000');
 ```
+
+## Troubleshooting
+You can see the generated MongoDB query in DEBUG level logs.

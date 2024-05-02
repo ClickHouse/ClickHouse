@@ -1,3 +1,8 @@
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/SortNode.h>
+#include <Formats/BSONTypes.h>
+
+
 #include "config.h"
 
 #if USE_MONGODB
@@ -40,7 +45,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 mongocxx::instance inst{};
@@ -90,7 +95,7 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find();
 
-    return Pipe(std::make_shared<MongoDBSource>(uri, database_name, collection_name, createMongoDBQuery(&options, &query_info),
+    return Pipe(std::make_shared<MongoDBSource>(uri, database_name, collection_name, buildMongoDBQuery(&options, &query_info),
                                                 std::move(options), sample_block, max_block_size));
 }
 
@@ -147,7 +152,7 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
     return configuration;
 }
 
-String StorageMongoDB::getFuncName(const String & func)
+String StorageMongoDB::getMongoFuncName(const String & func)
 {
     if (func == "equals")
         return "$eq";
@@ -227,63 +232,115 @@ bsoncxx::types::bson_value::value StorageMongoDB::toBSONValue(const Field * fiel
     }
 }
 
-bsoncxx::document::value StorageMongoDB::visitFunction(const ASTFunction * func)
+bsoncxx::document::value StorageMongoDB::visitWhereFunction(const ASTFunction * func)
 {
-    const auto & func_name = getFuncName(func->name);
+    const auto & func_name = getMongoFuncName(func->name);
     if (const auto & explist = func->children.at(0)->as<ASTExpressionList>())
     {
         if (const auto & identifier = explist->children.at(0)->as<ASTIdentifier>())
         {
             const auto & expression = explist->children.at(1);
             if (const auto & literal = expression->as<ASTLiteral>())
+            {
+                if (identifier->shortName() == "_id")
+                {
+                    if (literal->value.getType() != Field::Types::String)
+                        throw Exception(ErrorCodes::TYPE_MISMATCH, "oid can be converted to String only, got type '{}'", literal->value.getTypeName());
+                    return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, bsoncxx::oid{literal->value.get<String &>()}))));
+                }
                 return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, toBSONValue(&literal->value)))));
+            }
             if (const auto & child_func = expression->as<ASTFunction>())
-                return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, visitFunction(child_func)))));
-
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "error during parsing the AST: the Function must have an ExpressionList or a Function as second argument, got '{}' instead",
-                expression->formatForErrorMessage());
+            {
+                if (child_func->name == "_CAST")
+                {
+                    const auto & literal = child_func->children.at(0)->as<ASTExpressionList>()->children.at(0)->as<ASTLiteral>();
+                    if (identifier->shortName() == "_id")
+                    {
+                        if (literal->value.getType() != Field::Types::String)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "oid can be converted to String only, got type '{}'", literal->value.getTypeName());
+                        return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, bsoncxx::oid{literal->value.get<String &>()}))));
+                    }
+                    return make_document(kvp(identifier->shortName(), make_document(kvp(func_name, visitWhereFunction(child_func)))));
+                }
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "only constant expressions are supported in WHERE section");
+            }
         }
-
 
         auto arr = array();
         for (const auto & child : explist->children)
         {
             if (const auto & child_func = child->as<ASTFunction>())
-                arr.append(visitFunction(child_func));
+                arr.append(visitWhereFunction(child_func));
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "error during parsing the AST: expected a function in the ExpressionList, got '{}' instead",
-                    child->formatForErrorMessage());
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "only constant expressions are supported in WHERE section");
         }
         return make_document(kvp(func_name, std::move(arr)));
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "error during parsing the AST: first child must be an ExpressionList, got '{}' instead", func->children.at(0)->formatForErrorMessage());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "only constant expressions are supported in WHERE section");
 }
 
-bsoncxx::document::value StorageMongoDB::createMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query)
+void StorageMongoDB::visitProjectionNode(const QueryTreeNodePtr & node, document * projection)
+{
+    for (const auto & child : node->getChildren())
+    {
+        if (const auto & column = child->as<ColumnNode>())
+            projection->append(kvp(column->getColumnName(), 1));
+        else if (const auto & function = child->as<FunctionNode>())
+        {
+            visitProjectionNode(function->getArgumentsNode(), projection);
+        }
+    }
+}
+
+bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query)
 {
     auto & query_tree = query->query_tree->as<QueryNode &>();
 
+    if (query_tree.hasHaving())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HAVING section is not supported");
+    if (query_tree.hasGroupBy())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUP BY section is not supported");
+    if (query_tree.hasWindow())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WINDOW section is not supported");
+    if (query_tree.hasPrewhere())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PREWHERE section is not supported");
+    if (query_tree.hasOffset())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET section is not supported");
+
     if (query_tree.hasLimit())
         options->limit(query->limit);
-    if (query_tree.hasLimitBy()) 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,"LIMIT BY is not supported.");
-    if (query_tree.hasOffset())
-        options->skip(query_tree.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>());
-    if (query_tree.hasWindow())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,"WINDOW is not supported.");
 
-    // TODO: _CAST support
-    // TODO: projections
-    // TODO: sort
-    // TODO: aggregation functions
+    if (query_tree.hasOrderBy())
+    {
+        document sort{};
+        for (const auto & child : query_tree.getOrderByNode()->getChildren())
+        {
+            if (const auto & sort_node = child->as<SortNode>())
+            {
+                if (sort_node->withFill() || sort_node->hasFillTo() || sort_node->hasFillFrom() || sort_node->hasFillStep())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "only simple sort is supported");
+                if (const auto & column = sort_node->getExpression()->as<ColumnNode>())
+                    sort.append(kvp(column->getColumnName(), sort_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1));
+                else
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "only simple sort is supported");
+            }
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "only simple sort is supported");
+        }
+        LOG_DEBUG(log, "MongoDB sort has built: '{}'", bsoncxx::to_json(sort));
+        options->sort(sort.extract());
+    }
+
+    document projection{};
+    visitProjectionNode(query_tree.getProjectionNode(), &projection);
+    LOG_DEBUG(log, "MongoDB projection has built: '{}'", bsoncxx::to_json(projection));
+    options->projection(projection.extract());
 
     if (query_tree.hasWhere())
     {
-        auto filter = visitFunction( query_tree.getWhere()->toAST()->as<ASTFunction>());
-        LOG_INFO(log, "MongoDB query has built: '{}'", bsoncxx::to_json(filter));
+        auto filter = visitWhereFunction( query_tree.getWhere()->toAST()->as<ASTFunction>());
+        LOG_DEBUG(log, "MongoDB query has built: '{}'", bsoncxx::to_json(filter));
         return filter;
     }
 

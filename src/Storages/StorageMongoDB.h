@@ -71,9 +71,10 @@ private:
     LoggerPtr log;
 
     static bsoncxx::types::bson_value::value toBSONValue(const Field * field);
-    static String getFuncName(const String & func);
-    static bsoncxx::document::value visitFunction(const ASTFunction * func);
-    bsoncxx::document::value createMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query);
+    static String getMongoFuncName(const String & func);
+    static bsoncxx::document::value visitWhereFunction(const ASTFunction * func);
+    static void visitProjectionNode(const QueryTreeNodePtr & node, bsoncxx::builder::basic::document * projection);
+    bsoncxx::document::value buildMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query);
 };
 
 }

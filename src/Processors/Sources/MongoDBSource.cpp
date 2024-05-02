@@ -142,15 +142,7 @@ namespace
                                     bsoncxx::to_string(value.type()), name);
                 break;
             }
-            case ValueType::vtArray:
-            {
-                if (value.type() != bsoncxx::type::k_array)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected array, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-                auto & ar = assert_cast<ColumnArray &>(column);
-                auto t = ar.get;
-            }
-            default:
+            default: // TODO: arrays
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} has unsupported type", column.getName());
         }
     }
