@@ -563,6 +563,7 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+Monotonicity
 MsgPack
 multiSearchAllPositionsCaseInsensitive
 multiSearchAllPositionsCaseInsensitiveUTF
@@ -614,6 +615,7 @@ NetworkSendErrors
 NetworkSendPackets
 Noaa
 NodeJs
+NonMonotonic
 NuRaft
 NumHexagons
 NumPy
@@ -922,6 +924,7 @@ TAVG
 TCPConnection
 TCPThreads
 TDigest
+ThreadMonotonic
 TINYINT
 TLSv
 TMAX
@@ -1006,7 +1009,9 @@ URLPathHierarchy
 USearch
 UUIDNumToString
 UUIDStringToNum
+UUIDToNum
 UUIDs
+UUIDv
 UUid
 Uber
 Uint
@@ -1041,6 +1046,8 @@ Wether
 WikiStat
 WindowView
 Winkler
+WithCounter
+WithFastCounter
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1969,6 +1976,7 @@ modularization
 moduloOrZero
 moduli
 mongodb
+monotonicity
 monthName
 mortonDecode
 mortonEncode
@@ -2758,6 +2766,7 @@ userspace
 userver
 utils
 uuid
+uuidv
 varPop
 varPopStable
 varSamp
