@@ -2511,6 +2511,8 @@ subtractQuarters
 subtractSeconds
 subtractWeeks
 subtractYears
+subtractInterval
+subtractTupleOfIntervals
 subtree
 subtrees
 subtype
