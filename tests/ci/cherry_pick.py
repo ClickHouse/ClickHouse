@@ -348,7 +348,7 @@ class Backport:
         repo: str,
         fetch_from: Optional[str],
         dry_run: bool,
-        must_create_backport_label: str,
+        must_create_backport_labels: List[str],
         backport_created_label: str,
     ):
         self.gh = gh
@@ -356,7 +356,7 @@ class Backport:
         self._fetch_from = fetch_from
         self.dry_run = dry_run
 
-        self.must_create_backport_label = must_create_backport_label
+        self.must_create_backport_labels = must_create_backport_labels
         self.backport_created_label = backport_created_label
 
         self._remote = ""
@@ -414,9 +414,6 @@ class Backport:
                 f"v{branch}-must-backport" for branch in fetch_release_branches
             ]
 
-            # Forcefully add also non cloud backports
-            self.labels_to_backport += [Labels.MUST_BACKPORT]
-
             logging.info("Fetching from %s", self._fetch_from)
             fetch_from_repo = self.gh.get_repo(self._fetch_from)
             git_runner(
@@ -460,7 +457,7 @@ class Backport:
         query_args = {
             "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
             "label": ",".join(
-                self.labels_to_backport + [self.must_create_backport_label]
+                self.labels_to_backport + self.must_create_backport_labels
             ),
             "merged": [since_date, tomorrow],
         }
@@ -483,13 +480,18 @@ class Backport:
 
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
-        # We backport any vXXX-must-backport to all branches of the fetch repo (better than no backport)
-        if self.must_create_backport_label in pr_labels or self._fetch_from:
-            branches = [
-                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
-                for br in self.release_branches
-            ]  # type: List[ReleaseBranch]
-        else:
+
+        for label in self.must_create_backport_labels:
+            # We backport any vXXX-must-backport to all branches of the fetch repo (better than no backport)
+            if label in pr_labels or self._fetch_from:
+                branches = [
+                    ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                    for br in self.release_branches
+                ]  # type: List[ReleaseBranch]
+                found = True
+                break
+
+        if not branches:
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in [
@@ -498,13 +500,13 @@ class Backport:
                     if label in self.labels_to_backport
                 ]
             ]
-        if not branches:
-            # This is definitely some error. There must be at least one branch
-            # It also make the whole program exit code non-zero
-            self.error = Exception(
-                f"There are no branches to backport PR #{pr.number}, logical error"
-            )
-            raise self.error
+            if not branches:
+                # This is definitely some error. There must be at least one branch
+                # It also make the whole program exit code non-zero
+                self.error = Exception(
+                    f"There are no branches to backport PR #{pr.number}, logical error"
+                )
+                raise self.error
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",
@@ -512,40 +514,40 @@ class Backport:
             ", ".join(map(str, branches)),
         )
         # All PRs for cherrypick and backport branches as heads
-        query_suffix = " ".join(
-            [
-                f"head:{branch.backport_branch} head:{branch.cherrypick_branch}"
-                for branch in branches
-            ]
-        )
-        bp_cp_prs = self.gh.get_pulls_from_search(
-            query=f"type:pr repo:{self._repo_name} {query_suffix}",
-            label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
-        )
-        for br in branches:
-            br.pop_prs(bp_cp_prs)
-
-        if bp_cp_prs:
-            # This is definitely some error. All prs must be consumed by
-            # branches with ReleaseBranch.pop_prs. It also makes the whole
-            # program exit code non-zero
-            self.error = Exception(
-                "The following PRs are not filtered by release branches:\n"
-                "\n".join(map(str, bp_cp_prs))
-            )
-            raise self.error
-
-        if all(br.backported for br in branches):
-            # Let's check if the PR is already backported
-            self.mark_pr_backported(pr)
-            return
-
-        for br in branches:
-            br.process(self.dry_run)
-
-        if all(br.backported for br in branches):
-            # And check it after the running
-            self.mark_pr_backported(pr)
+        # query_suffix = " ".join(
+        #     [
+        #         f"head:{branch.backport_branch} head:{branch.cherrypick_branch}"
+        #         for branch in branches
+        #     ]
+        # )
+        # bp_cp_prs = self.gh.get_pulls_from_search(
+        #     query=f"type:pr repo:{self._repo_name} {query_suffix}",
+        #     label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
+        # )
+        # for br in branches:
+        #     br.pop_prs(bp_cp_prs)
+        #
+        # if bp_cp_prs:
+        #     # This is definitely some error. All prs must be consumed by
+        #     # branches with ReleaseBranch.pop_prs. It also makes the whole
+        #     # program exit code non-zero
+        #     self.error = Exception(
+        #         "The following PRs are not filtered by release branches:\n"
+        #         "\n".join(map(str, bp_cp_prs))
+        #     )
+        #     raise self.error
+        #
+        # if all(br.backported for br in branches):
+        #     # Let's check if the PR is already backported
+        #     self.mark_pr_backported(pr)
+        #     return
+        #
+        # for br in branches:
+        #     br.process(self.dry_run)
+        #
+        # if all(br.backported for br in branches):
+        #     # And check it after the running
+        #     self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:
@@ -587,6 +589,7 @@ def parse_args():
         default=Labels.MUST_BACKPORT,
         choices=(Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD),
         help="label to filter PRs to backport",
+        nargs="+",
     )
     parser.add_argument(
         "--backport-created-label",
@@ -658,7 +661,9 @@ def main():
         args.repo,
         args.from_repo,
         args.dry_run,
-        args.must_create_backport_label,
+        args.must_create_backport_label
+        if isinstance(args.must_create_backport_label, list)
+        else [args.must_create_backport_label],
         args.backport_created_label,
     )
     # https://github.com/python/mypy/issues/3004
