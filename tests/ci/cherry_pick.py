@@ -514,40 +514,40 @@ class Backport:
             ", ".join(map(str, branches)),
         )
         # All PRs for cherrypick and backport branches as heads
-        # query_suffix = " ".join(
-        #     [
-        #         f"head:{branch.backport_branch} head:{branch.cherrypick_branch}"
-        #         for branch in branches
-        #     ]
-        # )
-        # bp_cp_prs = self.gh.get_pulls_from_search(
-        #     query=f"type:pr repo:{self._repo_name} {query_suffix}",
-        #     label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
-        # )
-        # for br in branches:
-        #     br.pop_prs(bp_cp_prs)
-        #
-        # if bp_cp_prs:
-        #     # This is definitely some error. All prs must be consumed by
-        #     # branches with ReleaseBranch.pop_prs. It also makes the whole
-        #     # program exit code non-zero
-        #     self.error = Exception(
-        #         "The following PRs are not filtered by release branches:\n"
-        #         "\n".join(map(str, bp_cp_prs))
-        #     )
-        #     raise self.error
-        #
-        # if all(br.backported for br in branches):
-        #     # Let's check if the PR is already backported
-        #     self.mark_pr_backported(pr)
-        #     return
-        #
-        # for br in branches:
-        #     br.process(self.dry_run)
-        #
-        # if all(br.backported for br in branches):
-        #     # And check it after the running
-        #     self.mark_pr_backported(pr)
+        query_suffix = " ".join(
+            [
+                f"head:{branch.backport_branch} head:{branch.cherrypick_branch}"
+                for branch in branches
+            ]
+        )
+        bp_cp_prs = self.gh.get_pulls_from_search(
+            query=f"type:pr repo:{self._repo_name} {query_suffix}",
+            label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
+        )
+        for br in branches:
+            br.pop_prs(bp_cp_prs)
+
+        if bp_cp_prs:
+            # This is definitely some error. All prs must be consumed by
+            # branches with ReleaseBranch.pop_prs. It also makes the whole
+            # program exit code non-zero
+            self.error = Exception(
+                "The following PRs are not filtered by release branches:\n"
+                "\n".join(map(str, bp_cp_prs))
+            )
+            raise self.error
+
+        if all(br.backported for br in branches):
+            # Let's check if the PR is already backported
+            self.mark_pr_backported(pr)
+            return
+
+        for br in branches:
+            br.process(self.dry_run)
+
+        if all(br.backported for br in branches):
+            # And check it after the running
+            self.mark_pr_backported(pr)
 
     def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:
