@@ -566,7 +566,7 @@ CREATE TABLE system.parts_columns
     `column_marks_bytes` UInt64,
     `column_modification_time` Nullable(DateTime),
     `column_ttl_info.min` Nullable(DateTime),
-    `column_ttl_info.max` Nullable(DateTime),    
+    `column_ttl_info.max` Nullable(DateTime),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),

@@ -254,7 +254,7 @@ void StorageSystemPartsColumns::processNextStorage(
             }
             bool column_has_ttl = part->ttl_infos.columns_ttl.contains(column.name);
             if (columns_mask[src_index++])
-            {   
+            {
                 if (column_has_ttl)
                     columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].min));
                 else
