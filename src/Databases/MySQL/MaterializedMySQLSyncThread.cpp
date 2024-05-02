@@ -4,6 +4,7 @@
 #if USE_MYSQL
 
 #include <base/StringRef.h>
+#include <Common/VersionNumber.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
 #include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
@@ -170,7 +171,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
             }
         }
 
-        if (version >= "8.4.0")
+        if (VersionNumber(version) >= VersionNumber("8.4.0"))
         {
             variables_error_message = {
                 {"log_bin", "ON"},
@@ -178,7 +179,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
                 {"binlog_row_image", "FULL"},
             };
         }
-        else if (versin >= "8.3.0")
+        else if (VersionNumber(version) >= VersionNumber("8.3.0"))
         {
             variables_error_message = {
                 {"log_bin", "ON"},
