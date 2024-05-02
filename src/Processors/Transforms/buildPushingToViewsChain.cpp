@@ -361,7 +361,8 @@ std::optional<Chain> generateViewChain(
         }
 
         InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
-        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, !materialized_view->hasInnerTable());
+        bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type != SQLSecurityType::INVOKER;
+        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
         if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {

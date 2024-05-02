@@ -1,3 +1,0 @@
-<clickhouse>
-    <attach_materialized_views_with_sql_security_none>0</attach_materialized_views_with_sql_security_none>
-</clickhouse>
