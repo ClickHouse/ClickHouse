@@ -157,7 +157,7 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
         }
     }
 
-    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::info_slot))
+    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::INFO_SLOT))
     {
         if (const auto * cursor_info = typeid_cast<const CursorInfo *>(chunk_info.get()))
             block.info.cursors = std::move(cursor_info->cursors);

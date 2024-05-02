@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CURSOR_LOOKUP;
-    extern const int LOGICAL_ERROR;
 }
 
 static void collapseTreeImpl(std::map<String, Int64> & collapsed_tree, std::vector<String> & path, CursorTreeNode * node)
@@ -142,7 +141,7 @@ Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
     return result;
 }
 
-Poco::JSON::Object cursorTreeToJson(const CursorTreeNodePtr & ptr)
+Poco::JSON::Object cursorTreeToJSON(const CursorTreeNodePtr & ptr)
 {
     std::map<String, Int64> collapsed_tree = collapseTree(ptr.get());
     Poco::JSON::Object json;
@@ -155,7 +154,7 @@ Poco::JSON::Object cursorTreeToJson(const CursorTreeNodePtr & ptr)
 
 String cursorTreeToString(const CursorTreeNodePtr & ptr)
 {
-    auto json = cursorTreeToJson(ptr);
+    auto json = cursorTreeToJSON(ptr);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);

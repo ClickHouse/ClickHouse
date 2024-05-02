@@ -17,10 +17,10 @@ WrapShardCursorTransform::WrapShardCursorTransform(
 
 void WrapShardCursorTransform::transform(Chunk & chunk)
 {
-    if (!chunk.hasChunkInfo(CursorInfo::info_slot))
+    if (!chunk.hasChunkInfo(CursorInfo::INFO_SLOT))
         return;
 
-    const auto & info = chunk.getChunkInfo(CursorInfo::info_slot);
+    const auto & info = chunk.getChunkInfo(CursorInfo::INFO_SLOT);
     const auto * cursor_info = typeid_cast<const CursorInfo *>(info.get());
     chassert(cursor_info);
 

@@ -16,7 +16,8 @@ namespace DB
 class ASTStreamSettings : public IAST
 {
 public:
-    struct StreamSettings {
+    struct StreamSettings
+    {
         StreamReadingStage stage = StreamReadingStage::AllData;
         std::optional<String> keeper_key;
         std::optional<Map> collapsed_tree;

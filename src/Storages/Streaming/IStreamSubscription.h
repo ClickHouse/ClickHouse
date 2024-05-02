@@ -8,7 +8,7 @@ namespace DB
 class IStreamSubscription : public TypePromotion<IStreamSubscription>
 {
 public:
-  virtual ~IStreamSubscription() = default;
+    virtual ~IStreamSubscription() = default;
 };
 
 using StreamSubscriptionPtr = std::shared_ptr<IStreamSubscription>;

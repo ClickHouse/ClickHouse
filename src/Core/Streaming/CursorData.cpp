@@ -13,31 +13,31 @@ namespace DB
 namespace
 {
 
-const String kCursor = "cursor";
-const String kKeeperKey = "keeper_key";
+const String CURSOR = "cursor";
+const String KEEPER_KEY = "keeper_key";
 
-Poco::JSON::Object cursorDataToJson(const CursorData & data)
+Poco::JSON::Object cursorDataToJSON(const CursorData & data)
 {
     Poco::JSON::Object json;
 
     if (data.keeper_key.has_value())
-        json.set(kKeeperKey, data.keeper_key.value());
+        json.set(KEEPER_KEY, data.keeper_key.value());
 
-    json.set(kCursor, cursorTreeToJson(data.tree));
+    json.set(CURSOR, cursorTreeToJSON(data.tree));
 
     return json;
 }
 
-CursorData parseDataFromJson(const Poco::Dynamic::Var & var)
+CursorData parseDataFromJSON(const Poco::Dynamic::Var & var)
 {
     const auto & json = var.extract<Poco::JSON::Object::Ptr>();
 
     CursorData data {
-        .tree = buildCursorTree(json->getObject(kCursor)),
+        .tree = buildCursorTree(json->getObject(CURSOR)),
     };
 
-    if (json->has(kKeeperKey))
-        data.keeper_key = json->getValue<String>(kKeeperKey);
+    if (json->has(KEEPER_KEY))
+        data.keeper_key = json->getValue<String>(KEEPER_KEY);
 
     return data;
 }
@@ -53,7 +53,7 @@ void readBinary(CursorDataMap & data_map, ReadBuffer & buf)
     auto json = parser.parse(str_repr).extract<Poco::JSON::Object::Ptr>();
 
     for (const auto & [table, serialized_data] : *json)
-        data_map[table] = parseDataFromJson(serialized_data);
+        data_map[table] = parseDataFromJSON(serialized_data);
 }
 
 void writeBinary(const CursorDataMap & data_map, WriteBuffer & buf)
@@ -61,7 +61,7 @@ void writeBinary(const CursorDataMap & data_map, WriteBuffer & buf)
     Poco::JSON::Object json;
 
     for (const auto & [table, data] : data_map)
-        json.set(table, cursorDataToJson(data));
+        json.set(table, cursorDataToJSON(data));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);

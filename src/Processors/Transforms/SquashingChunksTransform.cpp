@@ -16,7 +16,7 @@ Block buildBlock(const Block & header, Chunk & chunk)
 {
     auto block = header.cloneWithColumns(chunk.detachColumns());
 
-    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::info_slot))
+    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::INFO_SLOT))
         if (const auto * cursor_info = typeid_cast<const CursorInfo *>(chunk_info.get()))
             block.info.cursors = std::move(cursor_info->cursors);
 
@@ -28,7 +28,7 @@ void completeChunk(Chunk & chunk, Block block)
     chunk.setColumns(block.getColumns(), block.rows());
 
     if (!block.info.cursors.empty())
-        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors)), CursorInfo::info_slot);
+        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors)), CursorInfo::INFO_SLOT);
 }
 
 }

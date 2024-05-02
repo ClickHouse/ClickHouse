@@ -127,7 +127,7 @@ Chunk MergeTreePartSequentialReader::readNext()
     transformer.transform(result_block);
 
     Chunk chunk(result_block.getColumns(), rows_read);
-    chunk.setChunkInfo(info, PartitionIdChunkInfo::info_slot);
+    chunk.setChunkInfo(info, PartitionIdChunkInfo::INFO_SLOT);
 
     return chunk;
 }
@@ -154,7 +154,7 @@ Chunk MergeTreePartitionSequentialSource::useCachedData()
     }
 
     /// have no reader or it is empty -> must reinit reader
-    /// drop it explicitly otherwise
+    /// drop it explicitly in any case.
     reader.reset();
 
     while (!cached_data.empty())

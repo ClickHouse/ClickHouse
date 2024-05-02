@@ -1984,7 +1984,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
 {
     auto && parts_with_ranges = std::move(result.parts_with_ranges);
 
-    const size_t partitions_cnt = countPartitions(parts_with_ranges);
+    const size_t partitions_cnt = countPartitions(prepared_parts);
     const size_t readers_cnt = std::max<size_t>(1, std::min(partitions_cnt, requested_num_streams));
 
     const auto storage_full_name = data.getStorageID().getFullTableName();

@@ -44,7 +44,7 @@ private:
 
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
 String cursorTreeToString(const CursorTreeNodePtr & ptr);
-Poco::JSON::Object cursorTreeToJson(const CursorTreeNodePtr & ptr);
+Poco::JSON::Object cursorTreeToJSON(const CursorTreeNodePtr & ptr);
 
 CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
 CursorTreeNodePtr buildCursorTree(const String & serialized_tree);

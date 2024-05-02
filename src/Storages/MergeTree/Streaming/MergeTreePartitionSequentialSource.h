@@ -14,7 +14,7 @@ namespace DB
 
 struct PartitionIdChunkInfo : public ChunkInfo
 {
-    static constexpr size_t info_slot = 2;
+    static constexpr size_t INFO_SLOT = 2;
     const String partition_id;
 
     explicit PartitionIdChunkInfo(String partition_id_);

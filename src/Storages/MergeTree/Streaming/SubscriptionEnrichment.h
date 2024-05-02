@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/Streaming/IStreamSubscription.h>

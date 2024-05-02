@@ -1,10 +1,11 @@
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/Streaming/RangesInDataPartStreamSubscription.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 
 namespace DB
 {
 
-namespace {
+namespace
+{
 
 bool isPartitionConnectsToSubscription(const String & partition_id, size_t subscriptions_count, size_t subscription_index)
 {
@@ -149,7 +150,6 @@ CursorPromotersMap constructPromoters(
     CursorPromotersMap promoters;
 
     for (auto && [partition_id, ranges] : partition_ranges)
-    {
         if (auto it = committing_block_numbers.find(partition_id); it != committing_block_numbers.end())
             promoters.emplace(
                 std::piecewise_construct,
@@ -160,7 +160,6 @@ CursorPromotersMap constructPromoters(
                 std::piecewise_construct,
                 std::forward_as_tuple(partition_id),
                 std::forward_as_tuple(std::set<Int64>{}, std::move(ranges)));
-    }
 
     return promoters;
 }

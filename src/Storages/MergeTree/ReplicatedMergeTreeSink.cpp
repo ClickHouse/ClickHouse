@@ -273,7 +273,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     std::optional<CursorDataMap> cursors;
 
-    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::info_slot))
+    if (auto chunk_info = chunk.getChunkInfo(CursorInfo::INFO_SLOT))
         if (const auto * cursor_info = typeid_cast<const CursorInfo *>(chunk_info.get()))
             cursors = std::move(cursor_info->cursors);
 

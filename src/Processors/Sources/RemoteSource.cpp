@@ -181,7 +181,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     }
 
     if (!block.info.cursors.empty())
-        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors)), CursorInfo::info_slot);
+        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors)), CursorInfo::INFO_SLOT);
 
     return chunk;
 }

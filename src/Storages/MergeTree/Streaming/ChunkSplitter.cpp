@@ -26,8 +26,8 @@ void ChunkSplitterTransform::transform(Chunk & chunk)
     if (chunk.empty())
         return;
 
-    chassert(chunk.hasChunkInfo(PartitionIdChunkInfo::info_slot));
-    const auto & info = chunk.getChunkInfo(PartitionIdChunkInfo::info_slot);
+    chassert(chunk.hasChunkInfo(PartitionIdChunkInfo::INFO_SLOT));
+    const auto & info = chunk.getChunkInfo(PartitionIdChunkInfo::INFO_SLOT);
     const auto * partition_id_info = typeid_cast<const PartitionIdChunkInfo *>(info.get());
     const String & partition_id = partition_id_info->partition_id;
 
@@ -46,7 +46,7 @@ void ChunkSplitterTransform::transform(Chunk & chunk)
         chunk = Chunk();
 
     auto cursor_info = buildMergeTreeCursorInfo(storage_full_name, partition_id, keeper_key, right.block_number, right.block_offset);
-    chunk.setChunkInfo(std::move(cursor_info), CursorInfo::info_slot);
+    chunk.setChunkInfo(std::move(cursor_info), CursorInfo::INFO_SLOT);
 
     if (current < right)
         current = right;
