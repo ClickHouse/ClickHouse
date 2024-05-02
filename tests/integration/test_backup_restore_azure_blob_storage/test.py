@@ -162,7 +162,7 @@ def put_azure_file_content(filename, port, data):
 
     blob_client = container_client.get_blob_client(filename)
     buf = io.BytesIO(data)
-    blob_client.upload_blob(buf)g
+    blob_client.upload_blob(buf)
 
 
 def test_backup_restore(cluster):
