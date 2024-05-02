@@ -83,7 +83,6 @@ public:
         Poco::Logger * log_,
         size_t max_batch_size,
         size_t poll_timeout_,
-        bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
         const Names & _topics);
 
@@ -143,7 +142,6 @@ private:
 
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
-    bool intermediate_commit = true;
     size_t waited_for_assignment = 0;
 
     const std::atomic<bool> & stopped;

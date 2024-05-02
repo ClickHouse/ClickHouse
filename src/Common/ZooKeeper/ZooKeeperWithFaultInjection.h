@@ -212,7 +212,7 @@ public:
 
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode);
 
-    Coordination::Responses multi(const Coordination::Requests & requests);
+    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false);
 
     void createIfNotExists(const std::string & path, const std::string & data);
 
@@ -242,9 +242,9 @@ public:
 
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
 
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
-    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
     ///
     /// mirror ZooKeeper interface: Async functions

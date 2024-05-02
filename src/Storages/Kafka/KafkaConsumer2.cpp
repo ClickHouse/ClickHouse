@@ -61,14 +61,12 @@ KafkaConsumer2::KafkaConsumer2(
     Poco::Logger * log_,
     size_t max_batch_size,
     size_t poll_timeout_,
-    bool intermediate_commit_,
     const std::atomic<bool> & stopped_,
     const Names & _topics)
     : consumer(consumer_)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
-    , intermediate_commit(intermediate_commit_)
     , stopped(stopped_)
     , current(messages.begin())
     , topics(_topics)

@@ -1,4 +1,5 @@
 #include <Common/PODArray.h>
+#include <Common/formatReadable.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -137,7 +138,7 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 void PrettyCompactBlockOutputFormat::writeRow(
     size_t row_num,
     const Block & header,
-    const Columns & columns,
+    const Chunk & chunk,
     const WidthsPerColumn & widths,
     const Widths & max_widths)
 {
@@ -146,10 +147,12 @@ void PrettyCompactBlockOutputFormat::writeRow(
         // Write row number;
         auto row_num_string = std::to_string(row_num + 1 + total_rows) + ". ";
         for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
-        {
-            writeCString(" ", out);
-        }
+            writeChar(' ', out);
+        if (color)
+            writeCString("\033[90m", out);
         writeString(row_num_string, out);
+        if (color)
+            writeCString("\033[0m", out);
     }
 
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
@@ -157,6 +160,11 @@ void PrettyCompactBlockOutputFormat::writeRow(
                                        ascii_grid_symbols;
 
     size_t num_columns = max_widths.size();
+    const auto & columns = chunk.getColumns();
+
+    size_t cut_to_width = format_settings.pretty.max_value_width;
+    if (!format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0)
+        cut_to_width = 0;
 
     writeCString(grid_symbols.bar, out);
 
@@ -167,10 +175,11 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], type.shouldAlignRightInPrettyFormats());
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
     }
 
     writeCString(grid_symbols.bar, out);
+    writeReadableNumberTip(chunk);
     writeCString("\n", out);
 }
 
@@ -180,7 +189,6 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
     size_t num_rows = chunk.getNumRows();
     const auto & header = getPort(port_kind).getHeader();
-    const auto & columns = chunk.getColumns();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -190,7 +198,8 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     writeHeader(header, max_widths, name_widths);
 
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
-        writeRow(i, header, columns, widths, max_widths);
+        writeRow(i, header, chunk, widths, max_widths);
+
 
     writeBottom(max_widths);
 

@@ -346,7 +346,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
 
-MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfo::Settings & settings) const
+MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
@@ -376,6 +376,14 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names, SerializationInfo::Settings{});
 }
 
+void DataTypeTuple::forEachChild(const ChildCallback & callback) const
+{
+    for (const auto & elem : elems)
+    {
+        callback(*elem);
+        elem->forEachChild(callback);
+    }
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

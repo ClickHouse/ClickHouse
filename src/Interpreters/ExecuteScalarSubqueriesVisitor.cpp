@@ -112,7 +112,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
 
-    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter;
     bool hit = false;
     bool is_local = false;
 
@@ -281,7 +281,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         if (data.only_analyze)
         {
             ast->as<ASTFunction>()->alias.clear();
-            auto func = makeASTFunction("identity", std::move(ast));
+            auto func = makeASTFunction("__scalarSubqueryResult", std::move(ast));
             func->alias = subquery_alias;
             func->prefer_alias_to_column_name = prefer_alias_to_column_name;
             ast = std::move(func);

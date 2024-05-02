@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
@@ -30,19 +31,31 @@ struct StorageKafkaInterceptors
 
 struct KafkaConfigLoader
 {
-    static constexpr std::string_view CONFIG_KAFKA_TAG = "kafka";
-    static constexpr std::string_view CONFIG_KAFKA_TOPIC_TAG = "kafka_topic";
-    static constexpr std::string_view CONFIG_NAME_TAG = "name";
+    static inline const String CONFIG_KAFKA_TAG = "kafka";
+    static inline const String CONFIG_KAFKA_TOPIC_TAG = "kafka_topic";
+    static inline const String CONFIG_NAME_TAG = "name";
+    static inline const String CONFIG_KAFKA_CONSUMER_TAG = "consumer";
+    static inline const String CONFIG_KAFKA_PRODUCER_TAG = "producer";
 
-    /// Read server configuration into cppkafka configuration, used by global configuration and by legacy per-topic configuration
-    static void loadConfig(
-        cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
-    /// Read server configuration into cppkafa configuration, used by new per-topic configuration
-    static void loadTopicConfig(
+    static void loadConsumerConfig(
         cppkafka::Configuration & kafka_config,
         const Poco::Util::AbstractConfiguration & config,
+        const String & collection_name,
+        const String & prefix,
+        const Names & topics);
+
+    static void loadProducerConfig(
+        cppkafka::Configuration & kafka_config,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & collection_name,
+        const String & prefix,
+        const Names & topics);
+
+    static void loadFromConfig(
+        cppkafka::Configuration & kafka_config,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & collection_name,
         const String & config_prefix,
-        const String & topic);
+        const Names & topics);
 };
 }

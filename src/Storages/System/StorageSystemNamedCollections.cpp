@@ -25,11 +25,11 @@ ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
 }
 
 StorageSystemNamedCollections::StorageSystemNamedCollections(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_)
+    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
 }
 
-void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & access = context->getAccess();
 

@@ -6,10 +6,11 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaSettings.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include "Core/Block.h"
+#include <Core/Block.h>
 
 #include <Poco/Semaphore.h>
 
@@ -75,8 +76,6 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    NamesAndTypesList getVirtuals() const override;
-    Names getVirtualColumnNames() const;
     StreamingHandleErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
 private:
@@ -142,7 +141,6 @@ private:
     const size_t num_consumers; /// total number of consumers
     Poco::Logger * log;
     Poco::Semaphore semaphore;
-    const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
     std::atomic<bool> mv_attached = false;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
@@ -160,11 +158,26 @@ private:
 
     SettingsChanges createSettingsAdjustments();
     KafkaConsumer2Ptr createConsumer(size_t consumer_number);
+    // Returns full consumer related configuration, also the configuration
+    // contains global kafka properties.
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    // Returns full producer related configuration, also the configuration
+    // contains global kafka properties.
+    cppkafka::Configuration getProducerConfiguration();
+    // Load Kafka global configuration
+    // https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md#global-configuration-properties
+    void updateGlobalConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from consumer configuration
+    // NOTE: librdkafka allow to set a consumer property to a producer and vice versa,
+    //       but a warning will be generated e.g:
+    //       "Configuration property session.timeout.ms is a consumer property and
+    //        will be ignored by this producer instance"
+    void updateConsumerConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from producer configuration
+    void updateProducerConfiguration(cppkafka::Configuration & kafka_config);
 
     UUID uuid{UUIDHelpers::generateV4()};
 
-    // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config);
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
@@ -196,7 +209,9 @@ private:
 
     zkutil::ZooKeeperPtr getZooKeeper();
 
-    std::string getTopicPartitionPath(const TopicPartition& topic_partition );
+    std::string getTopicPartitionPath(const TopicPartition & topic_partition);
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

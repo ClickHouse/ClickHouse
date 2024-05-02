@@ -114,6 +114,7 @@ Hierarchy of privileges:
     - `ALTER VIEW`
         - `ALTER VIEW REFRESH`
         - `ALTER VIEW MODIFY QUERY`
+        - `ALTER VIEW MODIFY SQL SECURITY`
 - [CREATE](#grant-create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
@@ -201,6 +202,14 @@ Hierarchy of privileges:
     - `S3`
 - [dictGet](#grant-dictget)
 - [displaySecretsInShowAndSelect](#grant-display-secrets)
+- [NAMED COLLECTION ADMIN](#grant-named-collection-admin)
+    - `CREATE NAMED COLLECTION`
+    - `DROP NAMED COLLECTION`
+    - `ALTER NAMED COLLECTION`
+    - `SHOW NAMED COLLECTIONS`
+    - `SHOW NAMED COLLECTIONS SECRETS`
+    - `NAMED COLLECTION`
+- [TABLE ENGINE](#grant-table-engine)
 
 Examples of how this hierarchy is treated:
 
@@ -307,6 +316,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
     - `ALTER VIEW` Level: `GROUP`
         - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
         - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
+        - `ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
 
 Examples of how this hierarchy is treated:
 
@@ -409,6 +419,7 @@ Allows a user to execute queries that manage users, roles and row policies.
         - `SHOW_ROW_POLICIES`. Level: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
         - `SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
         - `SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+    - `ALLOW SQL SECURITY NONE`. Level: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
@@ -494,6 +505,37 @@ Allows a user to view secrets in `SHOW` and `SELECT` queries if both
 and
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 are turned on.
+
+
+### NAMED COLLECTION ADMIN
+
+Allows a certain operation on a specified named collection. Before version 23.7 it was called NAMED COLLECTION CONTROL, and after 23.7 NAMED COLLECTION ADMIN was added and NAMED COLLECTION CONTROL is preserved as an alias.
+
+- `NAMED COLLECTION ADMIN`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION CONTROL`
+    - `CREATE NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+    - `DROP NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+    - `ALTER NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+    - `SHOW NAMED COLLECTIONS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS`
+    - `SHOW NAMED COLLECTIONS SECRETS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS SECRETS`
+    - `NAMED COLLECTION`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
+
+Unlike all other grants (CREATE, DROP, ALTER, SHOW) grant NAMED COLLECTION was added only in 23.7, while all others were added earlier - in 22.12.
+
+**Examples**
+
+Assuming a named collection is called abc, we grant privilege CREATE NAMED COLLECTION to user john.
+- `GRANT CREATE NAMED COLLECTION ON abc TO john`
+
+
+### TABLE ENGINE
+
+Allows using a specified table engine when creating a table. Applies to [table engines](../../engines/table-engines/index.md).
+
+**Examples**
+
+- `GRANT TABLE ENGINE ON * TO john`
+- `GRANT TABLE ENGINE ON TinyLog TO john`
+
 
 ### ALL
 

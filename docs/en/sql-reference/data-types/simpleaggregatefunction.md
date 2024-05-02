@@ -1,5 +1,7 @@
 ---
 slug: /en/sql-reference/data-types/simpleaggregatefunction
+sidebar_position: 48
+sidebar_label: SimpleAggregateFunction
 ---
 # SimpleAggregateFunction
 

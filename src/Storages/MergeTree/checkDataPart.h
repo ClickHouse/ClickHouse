@@ -15,6 +15,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
     bool throw_on_broken_projection = false);
 
 bool isNotEnoughMemoryErrorCode(int code);
-bool isRetryableException(const std::exception_ptr exception_ptr);
+bool isRetryableException(std::exception_ptr exception_ptr);
 
 }

@@ -1,7 +1,8 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
@@ -19,12 +20,13 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
-
 
 IMergeTreeReader::IMergeTreeReader(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     const NamesAndTypesList & columns_,
+    const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
@@ -47,6 +49,7 @@ IMergeTreeReader::IMergeTreeReader(
     , part_columns(data_part_info_for_read->isWidePart()
         ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
         : data_part_info_for_read->getColumnsDescription())
+    , virtual_fields(virtual_fields_)
 {
     columns_to_read.reserve(requested_columns.size());
     serializations.reserve(requested_columns.size());
@@ -63,7 +66,49 @@ const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() 
     return avg_value_size_hints;
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number) const
+void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
+{
+    chassert(columns.size() == requested_columns.size());
+
+    const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
+    if (!loaded_part_info)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
+
+    const auto & data_part = loaded_part_info->getDataPart();
+    const auto & storage_columns = storage_snapshot->getMetadataForQuery()->getColumns();
+    const auto & virtual_columns = storage_snapshot->virtual_columns;
+
+    auto it = requested_columns.begin();
+    for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
+    {
+        if (columns[pos] || storage_columns.has(it->name))
+            continue;
+
+        auto virtual_column = virtual_columns->tryGet(it->name);
+        if (!virtual_column)
+            continue;
+
+        if (!it->type->equals(*virtual_column->type))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Data type for virtual column {} mismatched. Requested type: {}, virtual column type: {}",
+                it->name, it->type->getName(), virtual_column->type->getName());
+        }
+
+        if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
+
+        Field field;
+        if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
+            field = field_it->second;
+        else
+            field = getFieldForConstVirtualColumn(it->name, *data_part);
+
+        columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
+    }
+}
+
+void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
 {
     try
     {
@@ -72,7 +117,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
             res_columns, num_rows,
             Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
-            partially_read_columns, storage_snapshot->metadata, block_number);
+            partially_read_columns, storage_snapshot->metadata);
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });

@@ -2,9 +2,12 @@ import os
 
 import pytest
 import time
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -599,9 +602,7 @@ def test_schema_inference_with_globs(started_cluster):
         f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
-    assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
-    )
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
 
 
 def test_insert_select_schema_inference(started_cluster):
@@ -1044,7 +1045,115 @@ def test_union_schema_inference_mode(started_cluster):
     error = node.query_and_get_error(
         "desc hdfs('hdfs://hdfs1:9000/test_union_schema_inference*.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
     )
-    assert "Cannot extract table structure" in error
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in error
+
+
+def test_format_detection(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(
+        "insert into function hdfs('hdfs://hdfs1:9000/test_format_detection0', JSONEachRow) select number as x, 'str_' || toString(number) as y from numbers(0)"
+    )
+
+    node.query(
+        "insert into function hdfs('hdfs://hdfs1:9000/test_format_detection1', JSONEachRow) select number as x, 'str_' || toString(number) as y from numbers(10)"
+    )
+
+    expected_desc_result = node.query(
+        "desc hdfs('hdfs://hdfs1:9000/test_format_detection1', JSONEachRow)"
+    )
+
+    desc_result = node.query("desc hdfs('hdfs://hdfs1:9000/test_format_detection1')")
+
+    assert expected_desc_result == desc_result
+
+    expected_result = node.query(
+        "select * from hdfs('hdfs://hdfs1:9000/test_format_detection1', JSONEachRow, 'x UInt64, y String') order by x, y"
+    )
+
+    result = node.query(
+        "select * from hdfs('hdfs://hdfs1:9000/test_format_detection1') order by x, y"
+    )
+
+    assert expected_result == result
+
+    result = node.query(
+        "select * from hdfs('hdfs://hdfs1:9000/test_format_detection1', auto, 'x UInt64, y String') order by x, y"
+    )
+
+    assert expected_result == result
+
+    result = node.query(
+        "select * from hdfs('hdfs://hdfs1:9000/test_format_detection{0,1}') order by x, y"
+    )
+
+    assert expected_result == result
+
+    node.query("system drop schema cache for hdfs")
+
+    result = node.query(
+        "select * from hdfs('hdfs://hdfs1:9000/test_format_detection{0,1}') order by x, y"
+    )
+
+    assert expected_result == result
+
+    result = node.query(
+        "select * from hdfsCluster(test_cluster_two_shards, 'hdfs://hdfs1:9000/test_format_detection{0,1}') order by x, y"
+    )
+
+    assert expected_result == result
+
+    result = node.query(
+        "select * from hdfsCluster(test_cluster_two_shards, 'hdfs://hdfs1:9000/test_format_detection{0,1}', auto, auto) order by x, y"
+    )
+
+    assert expected_result == result
+
+    result = node.query(
+        "select * from hdfsCluster(test_cluster_two_shards, 'hdfs://hdfs1:9000/test_format_detection{0,1}', auto, 'x UInt64, y String') order by x, y"
+    )
+
+    assert expected_result == result
+
+
+def test_respect_object_existence_on_partitioned_write(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(
+        "insert into function hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV) select 42 settings hdfs_truncate_on_insert=1"
+    )
+
+    result = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
+    )
+
+    assert int(result) == 42
+
+    error = node.query_and_get_error(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 42 settings hdfs_truncate_on_insert=0"
+    )
+
+    assert "BAD_ARGUMENTS" in error
+
+    node.query(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 43 settings hdfs_truncate_on_insert=1"
+    )
+
+    result = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
+    )
+
+    assert int(result) == 43
+
+    node.query(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 44 settings hdfs_truncate_on_insert=0, hdfs_create_new_file_on_insert=1"
+    )
+
+    result = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.1.csv', CSV)"
+    )
+
+    assert int(result) == 44
 
 
 if __name__ == "__main__":

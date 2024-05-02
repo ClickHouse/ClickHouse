@@ -9,6 +9,8 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
+#include <Common/PageCache.h>
+
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
@@ -51,8 +53,8 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
-    int update_period_seconds,
-    int heavy_metrics_update_period_seconds,
+    unsigned update_period_seconds,
+    unsigned heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
@@ -75,6 +77,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
+    }
+
+    if (auto page_cache = getContext()->getPageCache())
+    {
+        auto rss = page_cache->getResidentSetSize();
+        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
+        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
+
+        if (rss.unreclaimable_rss.has_value())
+            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
@@ -266,7 +278,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
 
-            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            // Note that we skip not yet loaded tables, so metrics could possibly be lower than expected on fully loaded database just after server start if `async_load_databases = true`.
+            for (auto iterator = db.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/true); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 if (is_system)
@@ -396,7 +409,7 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
         if (!db.second->canContainMergeTreeTables())
             continue;
 
-        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
             if (!table)

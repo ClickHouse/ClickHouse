@@ -17,6 +17,7 @@
 #include <Common/logger_useful.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/setThreadName.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <boost/algorithm/string/replace.hpp>
 #include <cppkafka/cppkafka.h>
@@ -137,70 +138,171 @@ rd_kafka_resp_err_t StorageKafkaInterceptors<TStorageKafka>::rdKafkaOnConfDup(
     return status;
 }
 
-void KafkaConfigLoader::loadConfig(
-    cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value)
 {
-    /// Read all tags one level below <kafka>
-    Poco::Util::AbstractConfiguration::Keys tags;
-    config.keys(config_prefix, tags);
+    /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+    /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+    const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+    kafka_config.set(setting_name_in_kafka_config, value);
+}
 
-    for (const auto & tag : tags)
+void loadConfigProperty(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const String & tag)
+{
+    const String property_path = config_prefix + "." + tag;
+    const String property_value = config.getString(property_path);
+
+    setKafkaConfigValue(kafka_config, tag, property_value);
+}
+
+void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const String & collection_name, const String & config_prefix)
+{
+    const auto & collection = NamedCollectionFactory::instance().get(collection_name);
+    for (const auto & key : collection->getKeys(-1, config_prefix))
     {
-        if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG)) /// multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
-            continue; /// used by new per-topic configuration, ignore
-
-        const String setting_path = config_prefix + "." + tag;
-        const String setting_value = config.getString(setting_path);
-
-        /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
-        /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-        const String setting_name_in_kafka_config = (tag == "log_level") ? tag : boost::replace_all_copy(tag, "_", ".");
-        kafka_config.set(setting_name_in_kafka_config, setting_value);
+        // Cut prefix with '.' before actual config tag.
+        const auto param_name = key.substr(config_prefix.size() + 1);
+        setKafkaConfigValue(kafka_config, param_name, collection->get<String>(key));
     }
 }
 
-void KafkaConfigLoader::loadTopicConfig(
-    cppkafka::Configuration & kafka_config,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    const String & topic)
+void loadLegacyTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & collection_name, const String & config_prefix)
 {
+    if (!collection_name.empty())
+    {
+        loadNamedCollectionConfig(kafka_config, collection_name, config_prefix);
+        return;
+    }
+
+    Poco::Util::AbstractConfiguration::Keys tags;
+    config.keys(config_prefix, tags);
+
+    for (const auto & tag : tags)
+    {
+        loadConfigProperty(kafka_config, config, config_prefix, tag);
+    }
+}
+
+/// Read server configuration into cppkafa configuration, used by new per-topic configuration
+void loadTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & collection_name, const String & config_prefix, const String & topic)
+{
+    if (!collection_name.empty())
+    {
+        const auto topic_prefix = fmt::format("{}.{}", config_prefix, KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG);
+        const auto & collection = NamedCollectionFactory::instance().get(collection_name);
+        for (const auto & key : collection->getKeys(1, config_prefix))
+        {
+            /// Only consider key <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+            if (!key.starts_with(topic_prefix))
+                continue;
+
+            const String kafka_topic_path = config_prefix + "." + key;
+            const String kafka_topic_name_path = kafka_topic_path + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+            if (topic == collection->get<String>(kafka_topic_name_path))
+                /// Found it! Now read the per-topic configuration into cppkafka.
+                loadNamedCollectionConfig(kafka_config, collection_name, kafka_topic_path);
+        }
+    }
+    else
+    {
+        /// Read all tags one level below <kafka>
+        Poco::Util::AbstractConfiguration::Keys tags;
+        config.keys(config_prefix, tags);
+
+        for (const auto & tag : tags)
+        {
+            if (tag == KafkaConfigLoader::CONFIG_NAME_TAG)
+                continue; // ignore <name>, it is used to match topic configurations
+            loadConfigProperty(kafka_config, config, config_prefix, tag);
+        }
+    }
+}
+
+/// Read server configuration into cppkafka configuration, used by global configuration and by legacy per-topic configuration
+void KafkaConfigLoader::loadFromConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & collection_name, const String & config_prefix, const Names & topics)
+{
+    if (!collection_name.empty())
+    {
+        loadNamedCollectionConfig(kafka_config, collection_name, config_prefix);
+        return;
+    }
+
     /// Read all tags one level below <kafka>
     Poco::Util::AbstractConfiguration::Keys tags;
     config.keys(config_prefix, tags);
 
     for (const auto & tag : tags)
     {
-        /// Only consider tag <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
-        if (!tag.starts_with(CONFIG_KAFKA_TOPIC_TAG))
+        if (tag == KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG || tag == KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG)
+            /// Do not load consumer/producer properties, since they should be separated by different configuration objects.
             continue;
 
-        /// Read topic name between <name>...</name>
-        const String kafka_topic_path = config_prefix + "." + tag;
-        const String kafka_topic_name_path = kafka_topic_path + "." + String{CONFIG_NAME_TAG};
-
-        const String topic_name = config.getString(kafka_topic_name_path);
-        if (topic_name == topic)
+        if (tag.starts_with(KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG)) /// multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
         {
-            /// Found it! Now read the per-topic configuration into cppkafka.
-            Poco::Util::AbstractConfiguration::Keys inner_tags;
-            config.keys(kafka_topic_path, inner_tags);
-            for (const auto & inner_tag : inner_tags)
+            // Update consumer topic-specific configuration (new syntax). Example with topics "football" and "baseball":
+            //     <kafka>
+            //         <kafka_topic>
+            //             <name>football</name>
+            //             <retry_backoff_ms>250</retry_backoff_ms>
+            //             <fetch_min_bytes>5000</fetch_min_bytes>
+            //         </kafka_topic>
+            //         <kafka_topic>
+            //             <name>baseball</name>
+            //             <retry_backoff_ms>300</retry_backoff_ms>
+            //             <fetch_min_bytes>2000</fetch_min_bytes>
+            //         </kafka_topic>
+            //     </kafka>
+            // Advantages: The period restriction no longer applies (e.g. <name>sports.football</name> will work), everything
+            // Kafka-related is below <kafka>.
+            for (const auto & topic : topics)
             {
-                if (inner_tag == CONFIG_NAME_TAG)
-                    continue; // ignore <name>
+                /// Read topic name between <name>...</name>
+                const String kafka_topic_path = config_prefix + "." + tag;
+                const String kafka_topic_name_path = kafka_topic_path + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+                const String topic_name = config.getString(kafka_topic_name_path);
 
-                /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
-                /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-                const String setting_path = kafka_topic_path + "." + inner_tag;
-                const String setting_value = config.getString(setting_path);
-
-                const String setting_name_in_kafka_config
-                    = (inner_tag == "log_level") ? inner_tag : boost::replace_all_copy(inner_tag, "_", ".");
-                kafka_config.set(setting_name_in_kafka_config, setting_value);
+                if (topic_name != topic)
+                    continue;
+                loadTopicConfig(kafka_config, config, collection_name, kafka_topic_path, topic);
             }
+            continue;
         }
+        if (tag.starts_with(KafkaConfigLoader::CONFIG_KAFKA_TAG))
+            /// skip legacy configuration per topic e.g. <kafka_TOPIC_NAME>.
+            /// it will be processed is a separate function
+            continue;
+        // Update configuration from the configuration. Example:
+        //     <kafka>
+        //         <retry_backoff_ms>250</retry_backoff_ms>
+        //         <fetch_min_bytes>100000</fetch_min_bytes>
+        //     </kafka>
+        loadConfigProperty(kafka_config, config, config_prefix, tag);
     }
+}
+
+void loadLegacyConfigSyntax(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & collection_name, const String & prefix, const Names & topics)
+{
+    for (const auto & topic : topics)
+    {
+        const String kafka_topic_path = prefix + "." + KafkaConfigLoader::CONFIG_KAFKA_TAG + "_" + topic;
+        loadLegacyTopicConfig(kafka_config, config, collection_name, kafka_topic_path);
+    }
+}
+
+void KafkaConfigLoader::loadConsumerConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & collection_name, const String & prefix, const Names & topics)
+{
+    const String consumer_path = prefix + "." + CONFIG_KAFKA_CONSUMER_TAG;
+    loadLegacyConfigSyntax(kafka_config, config, collection_name, prefix, topics);
+    // A new syntax has higher priority
+    loadFromConfig(kafka_config, config, collection_name, consumer_path, topics);
+}
+
+void KafkaConfigLoader::loadProducerConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & collection_name, const String & prefix, const Names & topics)
+{
+    const String producer_path = prefix + "." + CONFIG_KAFKA_PRODUCER_TAG;
+    loadLegacyConfigSyntax(kafka_config, config, collection_name, prefix, topics);
+    // A new syntax has higher priority
+    loadFromConfig(kafka_config, config, collection_name, producer_path, topics);
+
 }
 
 
@@ -386,7 +488,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto context = args.getContext();
         // Unfold {database} and {table} macro on table creation, so table can be renamed.
-        if (!args.attach)
+        if (args.mode < LoadingStrictnessLevel::ATTACH)
         {
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
