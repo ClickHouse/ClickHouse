@@ -23,6 +23,7 @@
 
 #include <Columns/ColumnConst.h>
 
+#include "Common/logger_useful.h"
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -106,6 +107,7 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
+#include <cstddef>
 #include <memory>
 #include <filesystem>
 #include <cassert>
@@ -1822,9 +1824,13 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
 void StorageDistributed::delayInsertOrThrowIfNeeded() const
 {
+    LOG_WARNING(log, "delayInsertOrThrowIfNeeded");
+
     if (!distributed_settings.bytes_to_throw_insert &&
         !distributed_settings.bytes_to_delay_insert)
         return;
+
+    LOG_WARNING(log, "delayInsertOrThrowIfNeeded getContext() is null: {}", getContext() == nullptr);
 
     UInt64 total_bytes = *totalBytes(getContext()->getSettingsRef());
 
