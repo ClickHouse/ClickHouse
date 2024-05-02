@@ -77,23 +77,35 @@ def commit_push_staged(pr_info: PRInfo) -> None:
         return
     git_staged = git_runner("git diff --cached --name-only")
     if not git_staged:
+        logging.info("No fixes are staged")
         return
-    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    head = git_runner("git rev-parse HEAD^{}")
-    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
-    # The fetch to avoid issue 'pushed branch tip is behind its remote'
-    fetch_cmd = (
-        f"{GIT_PREFIX} fetch {remote_url} --no-recurse-submodules --depth=2 {head}"
-    )
-    push_cmd = f"{GIT_PREFIX} push {remote_url} HEAD:{pr_info.head_ref}"
+
+    def push_fix() -> None:
+        """
+        Stash staged changes to commit them on the top of the PR's head.
+        `pull_request` event runs on top of a temporary merge_commit, we need to avoid
+        including it in the autofix
+        """
+        remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
+        head = pr_info.sha
+        git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
+        fix_commit = git_runner("git rev-parse HEAD")
+        logging.info(
+            "Fetching PR's head, check it out and cherry-pick autofix: %s", head
+        )
+        git_runner(
+            f"{GIT_PREFIX} fetch {remote_url} --no-recurse-submodules --depth=1 {head}"
+        )
+        git_runner(f"git reset --hard {head}")
+        git_runner(f"{GIT_PREFIX} cherry-pick {fix_commit}")
+        git_runner(f"{GIT_PREFIX} push {remote_url} HEAD:{pr_info.head_ref}")
+
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
         with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
-            git_runner(fetch_cmd)
-            git_runner(push_cmd)
+            push_fix()
             return
 
-    git_runner(fetch_cmd)
-    git_runner(push_cmd)
+    push_fix()
 
 
 def _check_mime(file: Union[Path, str], mime: str) -> bool:
@@ -179,8 +191,14 @@ def main():
             future = executor.submit(subprocess.run, cmd_shell, shell=True)
             _ = future.result()
 
+    autofix_description = ""
     if args.push:
-        commit_push_staged(pr_info)
+        try:
+            commit_push_staged(pr_info)
+        except subprocess.SubprocessError:
+            # do not fail the whole script if the autofix didn't work out
+            logging.error("Unable to push the autofix. Continue.")
+            autofix_description = "Failed to push autofix to the PR. "
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
@@ -192,7 +210,7 @@ def main():
     state, description, test_results, additional_files = process_result(temp_path)
 
     JobReport(
-        description=description,
+        description=f"{autofix_description}{description}",
         test_results=test_results,
         status=state,
         start_time=stopwatch.start_time_str,

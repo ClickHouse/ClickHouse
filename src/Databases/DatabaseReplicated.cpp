@@ -1139,8 +1139,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
     LOG_INFO(log, "All tables are created successfully");
 
-    chassert(max_log_ptr_at_creation || our_log_ptr);
     UInt32 first_entry_to_mark_finished = new_replica ? max_log_ptr_at_creation : our_log_ptr;
+    /// NOTE first_entry_to_mark_finished can be 0 if our replica has crashed just after creating its nodes in ZK,
+    /// so it's a new replica, but after restarting we don't know max_log_ptr_at_creation anymore...
+    /// It's a very rare case, and it's okay if some queries throw TIMEOUT_EXCEEDED when waiting for all replicas
     if (first_entry_to_mark_finished)
     {
         /// If the replica is new and some of the queries applied during recovery
@@ -1708,9 +1710,18 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        zookeeper_path = args.context->getMacros()->expand(zookeeper_path);
-        shard_name = args.context->getMacros()->expand(shard_name);
-        replica_name = args.context->getMacros()->expand(replica_name);
+        /// Expand macros.
+        Macros::MacroExpansionInfo info;
+        info.table_id.database_name = args.database_name;
+        info.table_id.uuid = args.uuid;
+        zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
+
+        info.level = 0;
+        info.table_id.uuid = UUIDHelpers::Nil;
+        shard_name = args.context->getMacros()->expand(shard_name, info);
+
+        info.level = 0;
+        replica_name = args.context->getMacros()->expand(replica_name, info);
 
         DatabaseReplicatedSettings database_replicated_settings{};
         if (engine_define->settings)

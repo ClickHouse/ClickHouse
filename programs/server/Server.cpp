@@ -138,6 +138,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
+#   include <azure/core/diagnostics/logger.hpp>
 #endif
 
 #include <incbin.h>
@@ -610,6 +611,45 @@ static void sanityChecks(Server & server)
             " But the feature of 'zero-copy replication' is under development and is not ready for production."
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
+}
+
+static void initializeAzureSDKLogger(
+    [[ maybe_unused ]] const ServerSettings & server_settings,
+    [[ maybe_unused ]] int server_logs_level)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (!server_settings.enable_azure_sdk_logging)
+        return;
+
+    using AzureLogsLevel = Azure::Core::Diagnostics::Logger::Level;
+
+    static const std::unordered_map<AzureLogsLevel, std::pair<Poco::Message::Priority, DB::LogsLevel>> azure_to_server_mapping =
+    {
+        {AzureLogsLevel::Error, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
+        {AzureLogsLevel::Warning, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
+        {AzureLogsLevel::Informational, {Poco::Message::PRIO_TRACE, LogsLevel::trace}},
+        {AzureLogsLevel::Verbose, {Poco::Message::PRIO_TEST, LogsLevel::test}},
+    };
+
+    static const std::map<Poco::Message::Priority, AzureLogsLevel> server_to_azure_mapping =
+    {
+        {Poco::Message::PRIO_DEBUG, AzureLogsLevel::Warning},
+        {Poco::Message::PRIO_TRACE, AzureLogsLevel::Informational},
+        {Poco::Message::PRIO_TEST, AzureLogsLevel::Verbose},
+    };
+
+    static const LoggerPtr azure_sdk_logger = getLogger("AzureSDK");
+
+    auto it = server_to_azure_mapping.lower_bound(static_cast<Poco::Message::Priority>(server_logs_level));
+    chassert(it != server_to_azure_mapping.end());
+    Azure::Core::Diagnostics::Logger::SetLevel(it->second);
+
+    Azure::Core::Diagnostics::Logger::SetListener([](AzureLogsLevel level, const std::string & message)
+    {
+        auto [poco_level, db_level] = azure_to_server_mapping.at(level);
+        LOG_IMPL(azure_sdk_logger, db_level, poco_level, fmt::runtime(message));
+    });
+#endif
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
@@ -1533,8 +1573,11 @@ try
 
                 global_context->reloadQueryMaskingRulesIfChanged(config);
 
-                std::lock_guard lock(servers_lock);
-                updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                if (global_context->isServerCompletelyStarted())
+                {
+                    std::lock_guard lock(servers_lock);
+                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                }
             }
 
             global_context->updateStorageConfiguration(*config);
@@ -1860,6 +1903,7 @@ try
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
+        initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
