@@ -7,7 +7,7 @@
 
 # 2024 Changelog
 
-### <a id="244"></a> ClickHouse release 24.4 LTS, 2024-04-30
+### <a id="244"></a> ClickHouse release 24.4, 2024-04-30
 
 #### Upgrade Notes
 * `clickhouse-odbc-bridge` and `clickhouse-library-bridge` are now separate packages. This closes [#61677](https://github.com/ClickHouse/ClickHouse/issues/61677). [#62114](https://github.com/ClickHouse/ClickHouse/pull/62114) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -33,7 +33,6 @@
 #### Performance Improvement
 * JOIN filter push down improvements using equivalent sets. [#61216](https://github.com/ClickHouse/ClickHouse/pull/61216) ([Maksim Kita](https://github.com/kitaisreal)).
 * Convert OUTER JOIN to INNER JOIN optimization if the filter after JOIN always filters default values. Optimization can be controlled with setting `query_plan_convert_outer_join_to_inner_join`, enabled by default. [#62907](https://github.com/ClickHouse/ClickHouse/pull/62907) ([Maksim Kita](https://github.com/kitaisreal)).
-* Enabled fast Parquet encoder by default (output_format_parquet_use_custom_encoder). [#62088](https://github.com/ClickHouse/ClickHouse/pull/62088) ([Michael Kolupaev](https://github.com/al13n321)).
 * Improvement for AWS S3. Client has to send header 'Keep-Alive: timeout=X' to the server. If a client receives a response from the server with that header, client has to use the value from the server. Also for a client it is better not to use a connection which is nearly expired in order to avoid connection close race. [#62249](https://github.com/ClickHouse/ClickHouse/pull/62249) ([Sema Checherinda](https://github.com/CheSema)).
 * Reduce overhead of the mutations for SELECTs (v2). [#60856](https://github.com/ClickHouse/ClickHouse/pull/60856) ([Azat Khuzhin](https://github.com/azat)).
 * More frequently invoked functions in PODArray are now force-inlined. [#61144](https://github.com/ClickHouse/ClickHouse/pull/61144) ([李扬](https://github.com/taiyang-li)).
@@ -348,6 +347,7 @@
 * Add sanity check for number of threads and block sizes. [#60138](https://github.com/ClickHouse/ClickHouse/pull/60138) ([Raúl Marín](https://github.com/Algunenano)).
 * Don't infer floats in exponential notation by default. Add a setting `input_format_try_infer_exponent_floats` that will restore previous behaviour (disabled by default). Closes [#59476](https://github.com/ClickHouse/ClickHouse/issues/59476). [#59500](https://github.com/ClickHouse/ClickHouse/pull/59500) ([Kruglov Pavel](https://github.com/Avogar)).
 * Allow alter operations to be surrounded by parenthesis. The emission of parentheses can be controlled by the `format_alter_operations_with_parentheses` config. By default, in formatted queries the parentheses are emitted as we store the formatted alter operations in some places as metadata (e.g.: mutations). The new syntax clarifies some of the queries where alter operations end in a list. E.g.: `ALTER TABLE x MODIFY TTL date GROUP BY a, b, DROP COLUMN c` cannot be parsed properly with the old syntax. In the new syntax the query `ALTER TABLE x (MODIFY TTL date GROUP BY a, b), (DROP COLUMN c)` is obvious. Older versions are not able to read the new syntax, therefore using the new syntax might cause issues if newer and older version of ClickHouse are mixed in a single cluster. [#59532](https://github.com/ClickHouse/ClickHouse/pull/59532) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Fix for the materialized view security issue, which allowed a user to insert into a table without required grants for that. Fix validates that the user has permission to insert not only into a materialized view but also into all underlying tables. This means that some queries, which worked before, now can fail with `Not enough privileges`. To address this problem, the release introduces a new feature of SQL security for views https://clickhouse.com/docs/en/sql-reference/statements/create/view#sql_security. [#54901](https://github.com/ClickHouse/ClickHouse/pull/54901) [#60439](https://github.com/ClickHouse/ClickHouse/pull/60439) ([pufit](https://github.com/pufit)).
 
 #### New Feature
 * Added new syntax which allows to specify definer user in View/Materialized View. This allows to execute selects/inserts from views without explicit grants for underlying tables. So, a View will encapsulate the grants. [#54901](https://github.com/ClickHouse/ClickHouse/pull/54901) [#60439](https://github.com/ClickHouse/ClickHouse/pull/60439) ([pufit](https://github.com/pufit)).
