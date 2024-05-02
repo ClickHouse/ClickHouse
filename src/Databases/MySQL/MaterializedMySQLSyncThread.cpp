@@ -164,6 +164,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
             const String variable_name = variable_name_column->getDataAt(index).toString();
             if variable_name == "version" {
                 version = variable_value_column->getDataAt(index).toString();
+                break;
             }
         }
 
