@@ -22,7 +22,7 @@ jobs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: DebugInfo
-        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
+        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -158,7 +158,7 @@ jobs:
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [Tests_1, Tests_2, Builds_1_Report, Builds_2_Report]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
@@ -171,7 +171,7 @@ jobs:
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py
+          python3 finish_check.py ${{ (contains(needs.*.result, 'failure') && github.event_name == 'merge_group') && '--pipeline-failure' || '' }}
       - name: Auto merge if approved
         if: ${{ github.event_name != 'merge_group' }}
         run: |

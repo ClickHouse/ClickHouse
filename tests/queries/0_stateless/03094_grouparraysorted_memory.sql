@@ -33,4 +33,4 @@ GROUP BY
     ServiceName;
 
 
-INSERT INTO 03094_grouparrysorted_src SELECT * FROM generateRandom() LIMIT 5000000;
+INSERT INTO 03094_grouparrysorted_src SELECT * FROM generateRandom() LIMIT 500000;

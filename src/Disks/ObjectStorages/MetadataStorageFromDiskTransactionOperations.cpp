@@ -32,7 +32,7 @@ void SetLastModifiedOperation::execute(std::unique_lock<SharedMutex> &)
     disk.setLastModified(path, new_timestamp);
 }
 
-void SetLastModifiedOperation::undo()
+void SetLastModifiedOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.setLastModified(path, old_timestamp);
 }
@@ -50,7 +50,7 @@ void ChmodOperation::execute(std::unique_lock<SharedMutex> &)
     disk.chmod(path, mode);
 }
 
-void ChmodOperation::undo()
+void ChmodOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.chmod(path, old_mode);
 }
@@ -68,7 +68,7 @@ void UnlinkFileOperation::execute(std::unique_lock<SharedMutex> &)
     disk.removeFile(path);
 }
 
-void UnlinkFileOperation::undo()
+void UnlinkFileOperation::undo(std::unique_lock<SharedMutex> &)
 {
     auto buf = disk.writeFile(path);
     writeString(prev_data, *buf);
@@ -86,7 +86,7 @@ void CreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
     disk.createDirectory(path);
 }
 
-void CreateDirectoryOperation::undo()
+void CreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.removeDirectory(path);
 }
@@ -112,7 +112,7 @@ void CreateDirectoryRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
         disk.createDirectory(path_to_create);
 }
 
-void CreateDirectoryRecursiveOperation::undo()
+void CreateDirectoryRecursiveOperation::undo(std::unique_lock<SharedMutex> &)
 {
     for (const auto & path_created : paths_created)
         disk.removeDirectory(path_created);
@@ -129,7 +129,7 @@ void RemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
     disk.removeDirectory(path);
 }
 
-void RemoveDirectoryOperation::undo()
+void RemoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.createDirectory(path);
 }
@@ -149,7 +149,7 @@ void RemoveRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
         disk.moveDirectory(path, temp_path);
 }
 
-void RemoveRecursiveOperation::undo()
+void RemoveRecursiveOperation::undo(std::unique_lock<SharedMutex> &)
 {
     if (disk.isFile(temp_path))
         disk.moveFile(temp_path, path);
@@ -187,10 +187,10 @@ void CreateHardlinkOperation::execute(std::unique_lock<SharedMutex> & lock)
     disk.createHardLink(path_from, path_to);
 }
 
-void CreateHardlinkOperation::undo()
+void CreateHardlinkOperation::undo(std::unique_lock<SharedMutex> & lock)
 {
     if (write_operation)
-        write_operation->undo();
+        write_operation->undo(lock);
     disk.removeFile(path_to);
 }
 
@@ -206,7 +206,7 @@ void MoveFileOperation::execute(std::unique_lock<SharedMutex> &)
     disk.moveFile(path_from, path_to);
 }
 
-void MoveFileOperation::undo()
+void MoveFileOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.moveFile(path_to, path_from);
 }
@@ -223,7 +223,7 @@ void MoveDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
     disk.moveDirectory(path_from, path_to);
 }
 
-void MoveDirectoryOperation::undo()
+void MoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.moveDirectory(path_to, path_from);
 }
@@ -244,7 +244,7 @@ void ReplaceFileOperation::execute(std::unique_lock<SharedMutex> &)
     disk.replaceFile(path_from, path_to);
 }
 
-void ReplaceFileOperation::undo()
+void ReplaceFileOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.moveFile(path_to, path_from);
     disk.moveFile(temp_path_to, path_to);
@@ -275,7 +275,7 @@ void WriteFileOperation::execute(std::unique_lock<SharedMutex> &)
     buf->finalize();
 }
 
-void WriteFileOperation::undo()
+void WriteFileOperation::undo(std::unique_lock<SharedMutex> &)
 {
     if (!existed)
     {
@@ -303,10 +303,10 @@ void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
     write_operation->execute(metadata_lock);
 }
 
-void AddBlobOperation::undo()
+void AddBlobOperation::undo(std::unique_lock<SharedMutex> & lock)
 {
     if (write_operation)
-        write_operation->undo();
+        write_operation->undo(lock);
 }
 
 void UnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
@@ -325,17 +325,17 @@ void UnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metada
     unlink_operation->execute(metadata_lock);
 }
 
-void UnlinkMetadataFileOperation::undo()
+void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 {
     /// Operations MUST be reverted in the reversed order, so
     /// when we apply operation #1 (write) and operation #2 (unlink)
     /// we should revert #2 and only after it #1. Otherwise #1 will overwrite
     /// file with incorrect data.
     if (unlink_operation)
-        unlink_operation->undo();
+        unlink_operation->undo(lock);
 
     if (write_operation)
-        write_operation->undo();
+        write_operation->undo(lock);
 
     /// Update outcome to reflect the fact that we have restored the file.
     outcome->num_hardlinks++;
@@ -349,10 +349,10 @@ void SetReadonlyFileOperation::execute(std::unique_lock<SharedMutex> & metadata_
     write_operation->execute(metadata_lock);
 }
 
-void SetReadonlyFileOperation::undo()
+void SetReadonlyFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 {
     if (write_operation)
-        write_operation->undo();
+        write_operation->undo(lock);
 }
 
 }

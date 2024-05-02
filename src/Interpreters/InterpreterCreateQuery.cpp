@@ -258,15 +258,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_mysql to use it");
     }
 
-    if (create.storage->engine->name == "Replicated"
-        && !getContext()->getSettingsRef().allow_experimental_database_replicated
-        && !internal && !create.attach)
-    {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
-                        "Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it");
-    }
-
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql
         && !internal && !create.attach)
@@ -790,6 +781,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
 
+        if (!create.comment && !as_storage_metadata->comment.empty())
+            create.set(create.comment, std::make_shared<ASTLiteral>(as_storage_metadata->comment));
+
         /// Secondary indices and projections make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
@@ -1083,7 +1077,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
-    if (!create.sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
