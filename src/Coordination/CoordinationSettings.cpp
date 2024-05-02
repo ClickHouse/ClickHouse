@@ -1,9 +1,10 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Common/logger_useful.h>
-#include <filesystem>
 #include <Coordination/Defines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
+
+#include "config.h"
 
 namespace DB
 {
@@ -33,10 +34,19 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
             e.addMessage("in Coordination settings config");
         throw;
     }
+
+    /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
+    /// if max_requests_append_size was not changed
+    if (!max_requests_append_size.changed)
+        max_requests_append_size = max_requests_batch_size;
 }
 
 
-const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld";
+const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD =
+#if USE_JEMALLOC
+"jmst,jmfp,jmep,jmdp,"
+#endif
+"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,pfev";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
@@ -104,6 +114,8 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(static_cast<uint64_t>(coordination_settings->election_timeout_lower_bound_ms));
     writeText("election_timeout_upper_bound_ms=", buf);
     write_int(static_cast<uint64_t>(coordination_settings->election_timeout_upper_bound_ms));
+    writeText("leadership_expiry_ms=", buf);
+    write_int(static_cast<uint64_t>(coordination_settings->leadership_expiry_ms));
 
     writeText("reserved_log_items=", buf);
     write_int(coordination_settings->reserved_log_items);

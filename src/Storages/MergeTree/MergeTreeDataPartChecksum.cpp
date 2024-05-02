@@ -8,6 +8,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <optional>
 
 
@@ -27,40 +28,41 @@ namespace ErrorCodes
 }
 
 
-void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const
+void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name, const String & part_name) const
 {
     if (is_compressed && have_uncompressed)
     {
         if (!rhs.is_compressed)
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "No uncompressed checksum for file {}", name);
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "No uncompressed checksum for file {}, data part {}", name, part_name);
+
         if (rhs.uncompressed_size != uncompressed_size)
         {
-            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected uncompressed size of file {} in data part ({} vs {})",
-                name, uncompressed_size, rhs.uncompressed_size);
+            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected uncompressed size of file {} in data part {} ({} vs {})",
+                name, part_name, uncompressed_size, rhs.uncompressed_size);
         }
         if (rhs.uncompressed_hash != uncompressed_hash)
         {
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for uncompressed file {} in data part ({} vs {})",
-                name, getHexUIntLowercase(uncompressed_hash), getHexUIntLowercase(rhs.uncompressed_hash));
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for uncompressed file {} in data part {} ({} vs {})",
+                name, part_name, getHexUIntLowercase(uncompressed_hash), getHexUIntLowercase(rhs.uncompressed_hash));
         }
         return;
     }
     if (rhs.file_size != file_size)
     {
-        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {} in data part ({} vs {})",
-            name, file_size, rhs.file_size);
+        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {} in data part {} ({} vs {})",
+            name, part_name, file_size, rhs.file_size);
     }
     if (rhs.file_hash != file_hash)
     {
-        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for file {} in data part ({} vs {})",
-            name, getHexUIntLowercase(file_hash), getHexUIntLowercase(rhs.file_hash));
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for file {} in data part {} ({} vs {})",
+            name, part_name, getHexUIntLowercase(file_hash), getHexUIntLowercase(rhs.file_hash));
     }
 }
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
     /// Skip inverted index files, these have a default MergeTreeDataPartChecksum with file_size == 0
-    if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
+    if (isGinFile(name))
         return;
 
     if (!storage.exists(name))
@@ -78,7 +80,7 @@ void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, cons
 }
 
 
-void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const
+void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed, const String & part_name) const
 {
     for (const auto & [name, _] : rhs.files)
         if (!files.contains(name))
@@ -94,7 +96,7 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
         if (it == rhs.files.end())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No file {} in data part", name);
 
-        checksum.checkEqual(it->second, have_uncompressed, name);
+        checksum.checkEqual(it->second, have_uncompressed, name, part_name);
     }
 }
 
@@ -434,19 +436,19 @@ String MinimalisticDataPartChecksums::getSerializedString(const MergeTreeDataPar
     return checksums.getSerializedString();
 }
 
-void MinimalisticDataPartChecksums::checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const
+void MinimalisticDataPartChecksums::checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const
 {
     if (full_checksums && rhs.full_checksums)
-        full_checksums->checkEqual(*rhs.full_checksums, check_uncompressed_hash_in_compressed_files);
+        full_checksums->checkEqual(*rhs.full_checksums, check_uncompressed_hash_in_compressed_files, part_name);
 
     // If full checksums were checked, check total checksums just in case
     checkEqualImpl(rhs, check_uncompressed_hash_in_compressed_files);
 }
 
-void MinimalisticDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const
+void MinimalisticDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const
 {
     if (full_checksums)
-        full_checksums->checkEqual(rhs, check_uncompressed_hash_in_compressed_files);
+        full_checksums->checkEqual(rhs, check_uncompressed_hash_in_compressed_files, part_name);
 
     // If full checksums were checked, check total checksums just in case
     MinimalisticDataPartChecksums rhs_minimalistic;

@@ -12,7 +12,7 @@ Join produces a new table by combining columns from one or multiple tables by us
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -165,6 +165,68 @@ Result:
 └───┴────┴─────┘
 ```
 
+## [experimental] Join with inequality conditions
+
+:::note
+This feature is experimental. To use it, set `allow_experimental_join_condition` to 1 in your configuration files or by using the `SET` command:
+
+```sql
+SET allow_experimental_join_condition=1
+```
+
+Otherwise, you'll get `INVALID_JOIN_ON_EXPRESSION`.
+
+:::
+
+Clickhouse currently supports `ALL INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
+
+**Example**
+
+Table `t1`:
+
+```
+┌─key──┬─attr─┬─a─┬─b─┬─c─┐
+│ key1 │ a    │ 1 │ 1 │ 2 │
+│ key1 │ b    │ 2 │ 3 │ 2 │
+│ key1 │ c    │ 3 │ 2 │ 1 │
+│ key1 │ d    │ 4 │ 7 │ 2 │
+│ key1 │ e    │ 5 │ 5 │ 5 │
+│ key2 │ a2   │ 1 │ 1 │ 1 │
+│ key4 │ f    │ 2 │ 3 │ 4 │
+└──────┴──────┴───┴───┴───┘
+```
+
+Table `t2`
+
+```
+┌─key──┬─attr─┬─a─┬─b─┬─c─┐
+│ key1 │ A    │ 1 │ 2 │ 1 │
+│ key1 │ B    │ 2 │ 1 │ 2 │
+│ key1 │ C    │ 3 │ 4 │ 5 │
+│ key1 │ D    │ 4 │ 1 │ 6 │
+│ key3 │ a3   │ 1 │ 1 │ 1 │
+│ key4 │ F    │ 1 │ 1 │ 1 │
+└──────┴──────┴───┴───┴───┘
+```
+
+```sql
+SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+```
+
+```
+key1	a	1	1	2	key1	B	2	1	2
+key1	a	1	1	2	key1	C	3	4	5
+key1	a	1	1	2	key1	D	4	1	6
+key1	b	2	3	2	key1	C	3	4	5
+key1	b	2	3	2	key1	D	4	1	6
+key1	c	3	2	1	key1	D	4	1	6
+key1	d	4	7	2			0	0	\N
+key1	e	5	5	5			0	0	\N
+key2	a2	1	1	1			0	0	\N
+key4	f	2	3	4			0	0	\N
+```
+
+
 ## NULL values in JOIN keys
 
 The NULL is not equal to any value, including itself. It means that if a JOIN key has a NULL value in one table, it won't match a NULL value in the other table.
@@ -273,7 +335,7 @@ For example, consider the following tables:
 ## PASTE JOIN Usage
 
 The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subquery.
-The rows are matched based on their positions in the original tables (the order of rows should be defined). 
+The rows are matched based on their positions in the original tables (the order of rows should be defined).
 If the subqueries return a different number of rows, extra rows will be cut.
 
 Example:
@@ -294,6 +356,34 @@ PASTE JOIN
 ┌─a─┬─t2.a─┐
 │ 0 │    1 │
 │ 1 │    0 │
+└───┴──────┘
+```
+Note: In this case result can be nondeterministic if the reading is parallel. Example:
+```SQL
+SELECT *
+FROM
+(
+    SELECT number AS a
+    FROM numbers_mt(5)
+) AS t1
+PASTE JOIN
+(
+    SELECT number AS a
+    FROM numbers(10)
+    ORDER BY a DESC
+) AS t2
+SETTINGS max_block_size = 2;
+
+┌─a─┬─t2.a─┐
+│ 2 │    9 │
+│ 3 │    8 │
+└───┴──────┘
+┌─a─┬─t2.a─┐
+│ 0 │    7 │
+│ 1 │    6 │
+└───┴──────┘
+┌─a─┬─t2.a─┐
+│ 4 │    5 │
 └───┴──────┘
 ```
 

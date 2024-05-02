@@ -1,6 +1,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -70,6 +71,17 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         query->replace(ast_create_query.refresh_strategy, metadata.refresh);
     }
 
+    if (metadata.sql_security_type)
+    {
+        auto new_sql_security = std::make_shared<ASTSQLSecurity>();
+        new_sql_security->type = metadata.sql_security_type;
+
+        if (metadata.definer)
+            new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
+
+        ast_create_query.sql_security = std::move(new_sql_security);
+    }
+
     /// MaterializedView, Dictionary are types of CREATE query without storage.
     if (ast_create_query.storage)
     {
@@ -108,7 +120,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 }
 
 
-ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary, uint32_t max_parser_depth, bool throw_on_error)
+ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error)
 {
     auto table_id = storage->getStorageID();
     auto metadata_ptr = storage->getInMemoryMetadataPtr();
@@ -148,7 +161,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                 Expected expected;
                 expected.max_parsed_pos = string_end;
                 Tokens tokens(type_name.c_str(), string_end);
-                IParser::Pos pos(tokens, max_parser_depth);
+                IParser::Pos pos(tokens, max_parser_depth, max_parser_backtracks);
                 ParserDataType parser;
                 if (!parser.parse(pos, ast_type, expected))
                 {
@@ -197,7 +210,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
+        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
 {
 }
 
@@ -213,7 +226,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
     return tryGetTableNoWait(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
@@ -350,7 +363,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
 {
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
 
-    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
+    for (auto it = getTablesIterator(local_context, filter, /*skip_not_loaded=*/false); it->isValid(); it->next())
     {
         auto storage = it->table();
         if (!storage)

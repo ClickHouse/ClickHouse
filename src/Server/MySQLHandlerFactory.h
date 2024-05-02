@@ -4,6 +4,7 @@
 #include <memory>
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
+#include <Common/ProfileEvents.h>
 
 #include "config.h"
 
@@ -19,7 +20,7 @@ class MySQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
 
 #if USE_SSL
     struct RSADeleter
@@ -37,8 +38,11 @@ private:
 #endif
 
     std::atomic<unsigned> last_connection_id = 0;
+
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 public:
-    explicit MySQLHandlerFactory(IServer & server_);
+    explicit MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     void readRSAKeys();
 

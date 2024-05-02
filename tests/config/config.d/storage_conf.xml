@@ -4,16 +4,22 @@
             <s3_disk>
                 <type>s3</type>
                 <path>s3_disk/</path>
-                <endpoint>http://localhost:11111/test/common/</endpoint>
+                <endpoint>http://localhost:11111/test/s3/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <request_timeout_ms>20000</request_timeout_ms>
             </s3_disk>
+            <s3_plain_disk>
+                <type>s3_plain</type>
+                <endpoint>http://localhost:11111/test/s3_plain/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </s3_plain_disk>
             <s3_cache>
                 <type>cache</type>
                 <disk>s3_disk</disk>
                 <path>s3_cache/</path>
-                <max_size>64Mi</max_size>
+                <max_size>104857600</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <cache_policy>LRU</cache_policy>
@@ -31,11 +37,13 @@
             </s3_cache_02933>
             <!-- local disks -->
             <local_disk>
-                <type>local_blob_storage</type>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
                 <path>local_disk/</path>
             </local_disk>
             <local_disk_2>
-                <type>local_blob_storage</type>
+                <type>object_storage</type>
+                <object_storage_type>local_blob_storage</object_storage_type>
                 <path>local_disk_2/</path>
             </local_disk_2>
             <local_disk_3>

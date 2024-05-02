@@ -134,7 +134,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             do
             {
-                skipJSONField(*in, "skip_field");
+                skipJSONField(*in, "skip_field", format_settings.json);
                 ++num_rows;
             } while (!reader->checkColumnEndOrSkipFieldDelimiter());
         }
@@ -215,7 +215,7 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 {
 }
 
-void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
+void JSONColumnsSchemaReaderBase::setContext(const ContextPtr & ctx)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, ctx, hints_parsing_error))
@@ -326,7 +326,7 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
             break;
         }
 
-        readJSONField(field, in);
+        readJSONField(field, in, format_settings.json);
         DataTypePtr field_type = tryInferDataTypeForSingleJSONField(field, format_settings, &inference_info);
         chooseResultColumnType(*this, column_type, field_type, nullptr, column_name, rows_read);
         ++rows_read;

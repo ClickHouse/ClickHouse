@@ -6,33 +6,33 @@
 namespace DB
 {
 
-ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_, ContextPtr context_, Context::QualifiedProjectionName qualified_projection_name_)
-    : SourceStepWithFilter(DataStream{.header = pipe_.getHeader()})
+ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
+    : ISourceStep(DataStream{.header = pipe_.getHeader()})
     , pipe(std::move(pipe_))
-    , context(std::move(context_))
-    , qualified_projection_name(std::move(qualified_projection_name_))
 {
 }
 
 void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (context && context->hasQueryContext())
-        context->getQueryContext()->addQueryAccessInfo(qualified_projection_name);
-
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
 }
 
-void ReadFromStorageStep::applyFilters()
+ReadFromStorageStep::ReadFromStorageStep(
+    Pipe pipe_,
+    String storage_name,
+    ContextPtr context_,
+    const SelectQueryInfo & query_info_)
+    : ReadFromPreparedSource(std::move(pipe_))
+    , context(std::move(context_))
+    , query_info(query_info_)
 {
-    if (!context)
-        return;
+    setStepDescription(storage_name);
 
     for (const auto & processor : pipe.getProcessors())
-        if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
-            source->setKeyCondition(filter_nodes.nodes, context);
+        processor->setStorageLimits(query_info.storage_limits);
 }
 
 }

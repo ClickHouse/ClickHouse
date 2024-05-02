@@ -33,6 +33,7 @@ public:
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
+    bool sendNack();
 
 private:
     StorageRabbitMQ & storage;
@@ -47,7 +48,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     RabbitMQConsumerPtr consumer;
 
     uint64_t max_execution_time_ms = 0;

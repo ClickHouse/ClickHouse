@@ -8,13 +8,13 @@ on: # yamllint disable-line rule:truthy
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-  workflow_call:
 jobs:
   KeeperJepsenRelease:
     uses: ./.github/workflows/reusable_simple_job.yml
     with:
       test_name: Jepsen keeper check
       runner_type: style-checker
+      report_required: true
       run_command: |
         python3 jepsen_check.py keeper
   # ServerJepsenRelease:

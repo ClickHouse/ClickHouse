@@ -5,7 +5,7 @@ import time
 import pytz
 import uuid
 import grpc
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 from threading import Thread
 import gzip
 import lz4.frame
@@ -20,8 +20,14 @@ import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py 
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
 
+# GRPC is disabled on ARM build - skip tests
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 # Utilities
+
+IPV6_ADDRESS = "2001:3984:3989::1:1111"
 
 config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
@@ -32,12 +38,15 @@ node = cluster.add_instance(
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
+    ipv6_address=IPV6_ADDRESS,
 )
 main_channel = None
 
 
-def create_channel():
-    node_ip_with_grpc_port = cluster.get_instance_ip("node") + ":" + str(GRPC_PORT)
+def create_channel(hostname=None):
+    if not hostname:
+        hostname = cluster.get_instance_ip("node")
+    node_ip_with_grpc_port = hostname + ":" + str(GRPC_PORT)
     channel = grpc.insecure_channel(node_ip_with_grpc_port)
     grpc.channel_ready_future(channel).result(timeout=10)
     global main_channel
@@ -198,6 +207,11 @@ def reset_after_test():
 
 def test_select_one():
     assert query("SELECT 1") == "1\n"
+
+
+def test_ipv6_select_one():
+    with create_channel(f"[{IPV6_ADDRESS}]") as channel:
+        assert query("SELECT 1", channel=channel) == "1\n"
 
 
 def test_ordinary_query():
@@ -391,6 +405,9 @@ def test_progress():
             )
         ),
     ]
+
+    # Stats data can be returned, which broke the test
+    results = [i for i in results if not isinstance(i, clickhouse_grpc_pb2.Stats)]
 
     assert results == expected_results
 

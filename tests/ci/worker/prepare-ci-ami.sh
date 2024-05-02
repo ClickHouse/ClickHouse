@@ -9,7 +9,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.311.0
+export RUNNER_VERSION=2.315.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -137,6 +137,49 @@ gpg --verify /tmp/amazon-cloudwatch-agent.deb.sig
 dpkg -i /tmp/amazon-cloudwatch-agent.deb
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 systemctl enable amazon-cloudwatch-agent.service
+
+
+echo "Install tailscale"
+# Build get-authkey for tailscale
+docker run --rm -v /usr/local/bin/:/host-local-bin -i golang:alpine sh -ex <<'EOF'
+  CGO_ENABLED=0 go install -tags tag:svc-core-ci-github tailscale.com/cmd/get-authkey@main
+  mv /go/bin/get-authkey /host-local-bin
+EOF
+
+# install tailscale
+curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$(lsb_release -cs).noarmor.gpg" > /usr/share/keyrings/tailscale-archive-keyring.gpg
+curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$(lsb_release -cs).tailscale-keyring.list" > /etc/apt/sources.list.d/tailscale.list
+apt-get update
+apt-get install tailscale --yes --no-install-recommends
+
+
+# Create a common script for the instances
+mkdir /usr/local/share/scripts -p
+cat > /usr/local/share/scripts/init-network.sh << 'EOF'
+#!/usr/bin/env bash
+
+# Add cloudflare DNS as a fallback
+# Get default gateway interface
+IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
+# `Link 2 (eth0): 172.31.0.2`
+ETH_DNS=$(resolvectl dns "$IFACE") || :
+CLOUDFLARE_NS=1.1.1.1
+if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
+  # Cut the leading legend
+  ETH_DNS=${ETH_DNS#*: }
+  # shellcheck disable=SC2206
+  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
+  resolvectl dns "$IFACE" "${new_dns[@]}"
+fi
+
+# Setup tailscale, the very first action
+TS_API_CLIENT_ID=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-id --query 'Parameter.Value' --output text --with-decryption)
+TS_API_CLIENT_SECRET=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-secret --query 'Parameter.Value' --output text --with-decryption)
+export TS_API_CLIENT_ID TS_API_CLIENT_SECRET
+TS_AUTHKEY=$(get-authkey -tags tag:svc-core-ci-github -reusable -ephemeral)
+tailscale up --ssh --auth-key="$TS_AUTHKEY" --hostname="ci-runner-$INSTANCE_ID"
+EOF
+
 
 # The following line is used in aws TOE check.
 touch /var/tmp/clickhouse-ci-ami.success

@@ -63,7 +63,7 @@ public:
     ~KeeperTCPHandler() override;
 
 private:
-    Poco::Logger * log;
+    LoggerPtr log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan min_session_timeout;

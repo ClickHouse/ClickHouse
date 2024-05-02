@@ -6,11 +6,12 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/loadMetadata.h>
 
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
@@ -55,9 +56,11 @@ static void executeCreateQuery(
     bool create,
     bool has_force_restore_data_flag)
 {
+    const Settings & settings = context->getSettingsRef();
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
-        parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
+        parser, query.data(), query.data() + query.size(), "in file " + file_name,
+        0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.setDatabase(database);
@@ -156,7 +159,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
 
 LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
-    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
+    LoggerPtr log = getLogger("loadMetadata");
 
     String path = context->getPath() + "metadata";
 
@@ -234,7 +237,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
-    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /*secondary*/ false);
     TablesLoader loader{context, std::move(loaded_databases), mode};
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
@@ -257,10 +260,10 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     }
     else
     {
+        // NOTE: some tables can still be started up in the "loading" phase if they are required by dependencies during loading of other tables
         LOG_INFO(log, "Start synchronous loading of databases");
-
-        // Note that wait implicitly calls schedule
         waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
+        LOG_INFO(log, "Start synchronous startup of databases");
         waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
         return {};
     }
@@ -290,7 +293,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     }
 }
 
-static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePtr context, const DatabasePtr & database,
+static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr context, const DatabasePtr & database,
                                             const String & name, const String tmp_name)
 {
     /// It's kind of C++ script that creates temporary database with Atomic engine,
@@ -369,7 +372,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
 /// Can be called only during server startup when there are no queries from users.
 static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const String & database_name, LoadTaskPtrs * startup_tasks = nullptr)
 {
-    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
+    LoggerPtr log = getLogger("loadMetadata");
 
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
     if (!database)
@@ -482,7 +485,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     if (!fs::exists(convert_flag_path))
         return;
 
-    LOG_INFO(&Poco::Logger::get("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
+    LOG_INFO(getLogger("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
                                                  "will try to convert all Ordinary databases to Atomic");
 
     // Wait for all table to be loaded and started
@@ -492,7 +495,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
             maybeConvertOrdinaryDatabaseToAtomic(context, name);
 
-    LOG_INFO(&Poco::Logger::get("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
+    LOG_INFO(getLogger("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
     fs::remove(convert_flag_path);
 }
 

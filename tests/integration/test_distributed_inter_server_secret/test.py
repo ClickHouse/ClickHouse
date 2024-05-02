@@ -7,7 +7,7 @@ import uuid
 import time
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 cluster = ClickHouseCluster(__file__)
 
@@ -23,6 +23,9 @@ def make_instance(name, cfg, *args, **kwargs):
     )
 
 
+# DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 added in 23.3, ensure that CLICKHOUSE_CI_MIN_TESTED_VERSION fits
+assert CLICKHOUSE_CI_MIN_TESTED_VERSION < "23.3"
+
 # _n1/_n2 contains cluster with different <secret> -- should fail
 n1 = make_instance("n1", "configs/remote_servers_n1.xml")
 n2 = make_instance("n2", "configs/remote_servers_n2.xml")
@@ -31,9 +34,8 @@ backward = make_instance(
     "configs/remote_servers_backward.xml",
     image="clickhouse/clickhouse-server",
     # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    tag="22.6",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 users = pytest.mark.parametrize(

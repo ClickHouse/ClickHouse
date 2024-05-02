@@ -10,6 +10,7 @@
 #include <Processors/Chunk.h>
 
 #include <future>
+#include <shared_mutex>
 #include <variant>
 
 namespace DB
@@ -36,15 +37,15 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        std::future<void> future;
+        std::future<void> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
-        std::unique_ptr<ReadBuffer> insert_data_buffer;
+        std::unique_ptr<ReadBuffer> insert_data_buffer{};
 
         /// Block that contains received by Native
         /// protocol data in case of too much data.
-        Block insert_block;
+        Block insert_block{};
     };
 
     enum class DataKind
@@ -53,12 +54,18 @@ public:
         Preprocessed = 1,
     };
 
+    static void validateSettings(const Settings & settings, LoggerPtr log);
+
     /// Force flush the whole queue.
     void flushAll();
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
+
+    /// This method should be called manually because it's not flushed automatically in dtor
+    /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
+    void flushAndShutdown();
 
 private:
 
@@ -114,6 +121,17 @@ private:
                 return DataKind::Parsed;
         }
 
+        bool empty() const
+        {
+            return std::visit([]<typename T>(const T & arg)
+            {
+                if constexpr (std::is_same_v<T, Block>)
+                    return arg.rows() == 0;
+                else
+                    return arg.empty();
+            }, *this);
+        }
+
         const String * asString() const { return std::get_if<String>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
@@ -137,7 +155,9 @@ private:
                 const String & format_,
                 MemoryTracker * user_memory_tracker_);
 
+            void resetChunk();
             void finish(std::exception_ptr exception_ = nullptr);
+
             std::future<void> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
@@ -145,6 +165,9 @@ private:
             std::promise<void> promise;
             std::atomic_bool finished = false;
         };
+
+        InsertData() = default;
+        explicit InsertData(Milliseconds timeout_ms_) : timeout_ms(timeout_ms_) { }
 
         ~InsertData()
         {
@@ -163,6 +186,7 @@ private:
 
         std::list<EntryPtr> entries;
         size_t size_in_bytes = 0;
+        Milliseconds timeout_ms = Milliseconds::zero();
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -180,6 +204,8 @@ private:
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 
+    using OptionalTimePoint = std::optional<std::chrono::steady_clock::time_point>;
+
     struct QueueShard
     {
         mutable std::mutex mutex;
@@ -187,12 +213,30 @@ private:
 
         Queue queue;
         QueueIteratorByKey iterators;
+
+        OptionalTimePoint last_insert_time;
+        std::chrono::milliseconds busy_timeout_ms;
+    };
+
+    /// Times of the two most recent queue flushes.
+    /// Used to calculate adaptive timeout.
+    struct QueueShardFlushTimeHistory
+    {
+    public:
+        using TimePoints = std::pair<OptionalTimePoint, OptionalTimePoint>;
+        TimePoints getRecentTimePoints() const;
+        void updateWithCurrentTime();
+
+    private:
+        mutable std::shared_mutex mutex;
+        TimePoints time_points;
     };
 
     const size_t pool_size;
     const bool flush_on_shutdown;
 
     std::vector<QueueShard> queue_shards;
+    std::vector<QueueShardFlushTimeHistory> flush_time_history_per_queue_shard;
 
     /// Logic and events behind queue are as follows:
     ///  - async_insert_busy_timeout_ms:
@@ -214,29 +258,37 @@ private:
     /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
-    Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
+    LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
     PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
+
+    Milliseconds getBusyWaitTimeoutMs(
+        const Settings & settings,
+        const QueueShard & shard,
+        const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
+        std::chrono::steady_clock::time_point now) const;
+
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
     void processBatchDeadlines(size_t shard_num);
-    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
 
-    static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
+    static void processData(
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
         const InsertQuery & key,
-        const std::list<InsertData::EntryPtr> & entries,
+        const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & insert_context,
-        const Poco::Logger * logger,
+        LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
         const InsertQuery & key,
-        const std::list<InsertData::EntryPtr> & entries,
+        const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
@@ -247,7 +299,7 @@ private:
 public:
     auto getQueueLocked(size_t shard_num) const
     {
-        auto & shard = queue_shards[shard_num];
+        const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);
         return std::make_pair(std::ref(shard.queue), std::move(lock));
     }

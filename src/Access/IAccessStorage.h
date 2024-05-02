@@ -6,11 +6,14 @@
 #include <Parsers/IParser.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/SettingsChanges.h>
+#include <Common/callOnce.h>
 
 #include <atomic>
 #include <functional>
 #include <optional>
 #include <vector>
+
+#include <boost/noncopyable.hpp>
 
 
 namespace Poco { class Logger; }
@@ -30,7 +33,7 @@ struct AuthResult
 {
     UUID user_id;
     /// Session settings received from authentication server (if any)
-    SettingsChanges settings;
+    SettingsChanges settings{};
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -225,9 +228,9 @@ protected:
         SettingsChanges & settings) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
     static UUID generateRandomID();
-    Poco::Logger * getLogger() const;
+    LoggerPtr getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
-    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_);
+    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
@@ -246,7 +249,9 @@ protected:
 
 private:
     const String storage_name;
-    mutable std::atomic<Poco::Logger *> log = nullptr;
+
+    mutable OnceFlag log_initialized;
+    mutable LoggerPtr log = nullptr;
 };
 
 

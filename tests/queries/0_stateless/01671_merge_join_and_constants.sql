@@ -1,3 +1,4 @@
+SET output_format_pretty_color=1;
 SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS table1;

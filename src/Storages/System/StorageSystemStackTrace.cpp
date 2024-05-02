@@ -1,6 +1,5 @@
 #ifdef OS_LINUX /// Because of 'rt_tgsigqueueinfo' functions and RT signals.
 
-#include <csignal>
 #include <poll.h>
 
 #include <mutex>
@@ -168,12 +167,12 @@ bool wait(int timeout_ms)
                 continue;   /// Drain delayed notifications.
         }
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
     }
 }
 
 using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
-ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, Poco::Logger * log)
+ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, LoggerPtr log)
 {
     ThreadIdToName tid_to_name;
     MutableColumnPtr all_thread_names = ColumnString::create();
@@ -274,15 +273,21 @@ bool isSignalBlocked(UInt64 tid, int signal)
 class StackTraceSource : public ISource
 {
 public:
-    StackTraceSource(const Names & column_names, Block header_, ASTPtr && query_, ActionsDAGPtr && filter_dag_, ContextPtr context_, UInt64 max_block_size_, Poco::Logger * log_)
+    StackTraceSource(
+        const Names & column_names,
+        Block header_,
+        ActionsDAGPtr && filter_dag_,
+        ContextPtr context_,
+        UInt64 max_block_size_,
+        LoggerPtr log_)
         : ISource(header_)
         , context(context_)
         , header(std::move(header_))
-        , query(std::move(query_))
         , filter_dag(std::move(filter_dag_))
         , predicate(filter_dag ? filter_dag->getOutputs().at(0) : nullptr)
         , max_block_size(max_block_size_)
-        , pipe_read_timeout_ms(static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
+        , pipe_read_timeout_ms(
+              static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
         , log(log_)
         , proc_it("/proc/self/task")
         /// It shouldn't be possible to do concurrent reads from this table.
@@ -417,7 +422,6 @@ protected:
 private:
     ContextPtr context;
     Block header;
-    const ASTPtr query;
     const ActionsDAGPtr filter_dag;
     const ActionsDAG::Node * predicate;
 
@@ -426,7 +430,7 @@ private:
     bool send_signal = false;
     bool read_thread_names = false;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::filesystem::directory_iterator proc_it;
     std::filesystem::directory_iterator end;
@@ -463,11 +467,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
             getOutputStream().header,
-            std::move(query),
             std::move(filter_actions_dag),
             context,
             max_block_size,
@@ -477,15 +479,14 @@ public:
 
     ReadFromSystemStackTrace(
         const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
-        ASTPtr && query_,
-        ContextPtr context_,
         size_t max_block_size_,
-        Poco::Logger * log_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        LoggerPtr log_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
-        , query(query_)
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , log(log_)
     {
@@ -493,10 +494,8 @@ public:
 
 private:
     Names column_names;
-    ASTPtr query;
-    ContextPtr context;
     size_t max_block_size;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }
@@ -504,15 +503,15 @@ private:
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     : IStorage(table_id_)
-    , log(&Poco::Logger::get("StorageSystemStackTrace"))
+    , log(getLogger("StorageSystemStackTrace"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({
-        { "thread_name", std::make_shared<DataTypeString>() },
-        { "thread_id", std::make_shared<DataTypeUInt64>() },
-        { "query_id", std::make_shared<DataTypeString>() },
-        { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-    }, { /* aliases */ }));
+        {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
+        {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
+        {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+    }));
     setInMemoryMetadata(storage_metadata);
 
     notification_pipe.open();
@@ -548,12 +547,7 @@ void StorageSystemStackTrace::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto reading = std::make_unique<ReadFromSystemStackTrace>(
-        column_names,
-        sample_block,
-        query_info.query->clone(),
-        context,
-        max_block_size,
-        log);
+        column_names, query_info, storage_snapshot, context, sample_block, max_block_size, log);
     query_plan.addStep(std::move(reading));
 }
 

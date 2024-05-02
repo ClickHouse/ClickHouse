@@ -204,6 +204,52 @@ namespace
             res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         }
 
+        /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
+        static const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
+            {AccessType::FILE, "File"},
+            {AccessType::URL, "URL"},
+            {AccessType::REMOTE, "Distributed"},
+            {AccessType::MONGO, "MongoDB"},
+            {AccessType::REDIS, "Redis"},
+            {AccessType::MYSQL, "MySQL"},
+            {AccessType::POSTGRES, "PostgreSQL"},
+            {AccessType::SQLITE, "SQLite"},
+            {AccessType::ODBC, "ODBC"},
+            {AccessType::JDBC, "JDBC"},
+            {AccessType::HDFS, "HDFS"},
+            {AccessType::S3, "S3"},
+            {AccessType::HIVE, "Hive"},
+            {AccessType::AZURE, "AzureBlobStorage"}
+        };
+
+        /// Sync SOURCE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
+        if (access_control.doesTableEnginesRequireGrant())
+        {
+            for (const auto & source_and_table_engine : source_and_table_engines)
+            {
+                const auto & source = std::get<0>(source_and_table_engine);
+                if (res.isGranted(source))
+                {
+                    const auto & table_engine = std::get<1>(source_and_table_engine);
+                    res.grant(AccessType::TABLE_ENGINE, table_engine);
+                }
+            }
+        }
+        else
+        {
+            /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
+            res.grant(AccessType::TABLE_ENGINE);
+            for (const auto & source_and_table_engine : source_and_table_engines)
+            {
+                const auto & source = std::get<0>(source_and_table_engine);
+                if (!res.isGranted(source))
+                {
+                    const auto & table_engine = std::get<1>(source_and_table_engine);
+                    res.revoke(AccessType::TABLE_ENGINE, table_engine);
+                }
+            }
+        }
+
         return res;
     }
 
@@ -298,7 +344,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     }
 
     user_name = user->getName();
-    trace_log = &Poco::Logger::get("ContextAccess (" + user_name + ")");
+    trace_log = getLogger("ContextAccess (" + user_name + ")");
 
     std::vector<UUID> current_roles, current_roles_with_admin_option;
     if (params.use_default_roles)

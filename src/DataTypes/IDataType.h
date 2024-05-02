@@ -7,8 +7,6 @@
 #include <Common/COW.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-
 
 namespace DB
 {
@@ -37,6 +35,11 @@ struct DataTypeWithConstInfo
 };
 
 using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
+
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+using MutableSerializationInfoPtr = std::shared_ptr<SerializationInfo>;
+struct SerializationInfoSettings;
 
 /** Properties of data type.
   *
@@ -86,6 +89,8 @@ public:
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
+    /// Storage type (e.g. Int64 for Interval)
+    virtual TypeIndex getColumnType() const { return getTypeId(); }
 
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
@@ -109,9 +114,13 @@ public:
         const SubcolumnCallback & callback,
         const SubstreamData & data);
 
+    /// Call callback for each nested type recursively.
+    using ChildCallback = std::function<void(const IDataType &)>;
+    virtual void forEachChild(const ChildCallback &) const {}
+
     Names getSubcolumnNames() const;
 
-    virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const;
+    virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
     virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
@@ -150,7 +159,7 @@ public:
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    ColumnPtr createColumnConst(size_t size, const Field & field) const;
+    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
     ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
@@ -412,74 +421,82 @@ struct WhichDataType
     constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
     constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
+
+    constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
 
-template <typename T> inline bool isUInt8(const T & data_type) { return WhichDataType(data_type).isUInt8(); }
-template <typename T> inline bool isUInt16(const T & data_type) { return WhichDataType(data_type).isUInt16(); }
-template <typename T> inline bool isUInt32(const T & data_type) { return WhichDataType(data_type).isUInt32(); }
-template <typename T> inline bool isUInt64(const T & data_type) { return WhichDataType(data_type).isUInt64(); }
-template <typename T> inline bool isNativeUInt(const T & data_type) { return WhichDataType(data_type).isNativeUInt(); }
-template <typename T> inline bool isUInt(const T & data_type) { return WhichDataType(data_type).isUInt(); }
+#define FOR_TYPES_OF_TYPE(M) \
+    M(TypeIndex) \
+    M(const IDataType &) \
+    M(const DataTypePtr &) \
+    M(WhichDataType)
 
-template <typename T> inline bool isInt8(const T & data_type) { return WhichDataType(data_type).isInt8(); }
-template <typename T> inline bool isInt16(const T & data_type) { return WhichDataType(data_type).isInt16(); }
-template <typename T> inline bool isInt32(const T & data_type) { return WhichDataType(data_type).isInt32(); }
-template <typename T> inline bool isInt64(const T & data_type) { return WhichDataType(data_type).isInt64(); }
-template <typename T> inline bool isNativeInt(const T & data_type) { return WhichDataType(data_type).isNativeInt(); }
-template <typename T> inline bool isInt(const T & data_type) { return WhichDataType(data_type).isInt(); }
+#define DISPATCH(TYPE) \
+bool isUInt8(TYPE data_type); \
+bool isUInt16(TYPE data_type); \
+bool isUInt32(TYPE data_type); \
+bool isUInt64(TYPE data_type); \
+bool isNativeUInt(TYPE data_type); \
+bool isUInt(TYPE data_type); \
+\
+bool isInt8(TYPE data_type); \
+bool isInt16(TYPE data_type); \
+bool isInt32(TYPE data_type); \
+bool isInt64(TYPE data_type); \
+bool isNativeInt(TYPE data_type); \
+bool isInt(TYPE data_type); \
+\
+bool isInteger(TYPE data_type); \
+bool isNativeInteger(TYPE data_type); \
+\
+bool isDecimal(TYPE data_type); \
+\
+bool isFloat(TYPE data_type); \
+\
+bool isNativeNumber(TYPE data_type); \
+bool isNumber(TYPE data_type); \
+\
+bool isEnum8(TYPE data_type); \
+bool isEnum16(TYPE data_type); \
+bool isEnum(TYPE data_type); \
+\
+bool isDate(TYPE data_type); \
+bool isDate32(TYPE data_type); \
+bool isDateOrDate32(TYPE data_type); \
+bool isDateTime(TYPE data_type); \
+bool isDateTime64(TYPE data_type); \
+bool isDateTimeOrDateTime64(TYPE data_type); \
+bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type); \
+\
+bool isString(TYPE data_type); \
+bool isFixedString(TYPE data_type); \
+bool isStringOrFixedString(TYPE data_type); \
+\
+bool isUUID(TYPE data_type); \
+bool isIPv4(TYPE data_type); \
+bool isIPv6(TYPE data_type); \
+bool isArray(TYPE data_type); \
+bool isTuple(TYPE data_type); \
+bool isMap(TYPE data_type); \
+bool isInterval(TYPE data_type); \
+bool isObject(TYPE data_type); \
+bool isVariant(TYPE data_type); \
+bool isNothing(TYPE data_type); \
+\
+bool isColumnedAsNumber(TYPE data_type); \
+\
+bool isColumnedAsDecimal(TYPE data_type); \
+\
+bool isNotCreatable(TYPE data_type); \
+\
+bool isNotDecimalButComparableToDecimal(TYPE data_type); \
 
-template <typename T> inline bool isInteger(const T & data_type) { return WhichDataType(data_type).isInteger(); }
-template <typename T> inline bool isNativeInteger(const T & data_type) { return WhichDataType(data_type).isNativeInteger(); }
+FOR_TYPES_OF_TYPE(DISPATCH)
 
-template <typename T> inline bool isDecimal(const T & data_type) { return WhichDataType(data_type).isDecimal(); }
-
-template <typename T> inline bool isFloat(const T & data_type) { return WhichDataType(data_type).isFloat(); }
-
-template <typename T> inline bool isNativeNumber(const T & data_type) { return WhichDataType(data_type).isNativeNumber(); }
-template <typename T> inline bool isNumber(const T & data_type) { return WhichDataType(data_type).isNumber(); }
-
-template <typename T> inline bool isEnum8(const T & data_type) { return WhichDataType(data_type).isEnum8(); }
-template <typename T> inline bool isEnum16(const T & data_type) { return WhichDataType(data_type).isEnum16(); }
-template <typename T> inline bool isEnum(const T & data_type) { return WhichDataType(data_type).isEnum(); }
-
-template <typename T> inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
-template <typename T> inline bool isDate32(const T & data_type) { return WhichDataType(data_type).isDate32(); }
-template <typename T> inline bool isDateOrDate32(const T & data_type) { return WhichDataType(data_type).isDateOrDate32(); }
-template <typename T> inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
-template <typename T> inline bool isDateTime64(const T & data_type) { return WhichDataType(data_type).isDateTime64(); }
-template <typename T> inline bool isDateTimeOrDateTime64(const T & data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); }
-template <typename T> inline bool isDateOrDate32OrDateTimeOrDateTime64(const T & data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); }
-
-template <typename T> inline bool isString(const T & data_type) { return WhichDataType(data_type).isString(); }
-template <typename T> inline bool isFixedString(const T & data_type) { return WhichDataType(data_type).isFixedString(); }
-template <typename T> inline bool isStringOrFixedString(const T & data_type) { return WhichDataType(data_type).isStringOrFixedString(); }
-
-template <typename T> inline bool isUUID(const T & data_type) { return WhichDataType(data_type).isUUID(); }
-template <typename T> inline bool isIPv4(const T & data_type) { return WhichDataType(data_type).isIPv4(); }
-template <typename T> inline bool isIPv6(const T & data_type) { return WhichDataType(data_type).isIPv6(); }
-template <typename T> inline bool isArray(const T & data_type) { return WhichDataType(data_type).isArray(); }
-template <typename T> inline bool isTuple(const T & data_type) { return WhichDataType(data_type).isTuple(); }
-template <typename T> inline bool isMap(const T & data_type) {return WhichDataType(data_type).isMap(); }
-template <typename T> inline bool isInterval(const T & data_type) {return WhichDataType(data_type).isInterval(); }
-template <typename T> inline bool isObject(const T & data_type) { return WhichDataType(data_type).isObject(); }
-
-template <typename T> inline bool isNothing(const T & data_type) { return WhichDataType(data_type).isNothing(); }
-
-template <typename T>
-inline bool isColumnedAsNumber(const T & data_type)
-{
-    WhichDataType which(data_type);
-    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6();
-}
-
-template <typename T>
-inline bool isColumnedAsDecimal(const T & data_type)
-{
-    WhichDataType which(data_type);
-    return which.isDecimal() || which.isDateTime64();
-}
+#undef DISPATCH
+#undef FOR_TYPES_OF_TYPE
 
 // Same as isColumnedAsDecimal but also checks value type of underlyig column.
 template <typename T, typename DataType>
@@ -487,19 +504,6 @@ inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
     return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
-}
-
-template <typename T>
-inline bool isNotCreatable(const T & data_type)
-{
-    WhichDataType which(data_type);
-    return which.isNothing() || which.isFunction() || which.isSet();
-}
-
-inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
-{
-    WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat();
 }
 
 inline bool isBool(const DataTypePtr & data_type)
@@ -532,6 +536,8 @@ class DataTypeDateTime;
 class DataTypeDateTime64;
 
 template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+
+/// TODO: this is garbage, remove it.
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;

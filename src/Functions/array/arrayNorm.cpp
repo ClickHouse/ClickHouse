@@ -175,8 +175,7 @@ public:
         }
     }
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();

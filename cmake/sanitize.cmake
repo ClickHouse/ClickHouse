@@ -8,9 +8,6 @@ option (SANITIZE "Enable one of the code sanitizers" "")
 
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
-# It's possible to pass an ignore list to sanitizers (-fsanitize-ignorelist). Intentionally not doing this because
-# 1. out-of-source suppressions are awkward 2. it seems ignore lists don't work after the Clang v16 upgrade (#49829)
-
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
         set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
@@ -30,7 +27,7 @@ if (SANITIZE)
     elseif (SANITIZE STREQUAL "thread")
         set (TSAN_FLAGS "-fsanitize=thread")
         if (COMPILER_CLANG)
-            set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/tests/tsan_suppressions.txt")
+            set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/tsan_ignorelist.txt")
         endif()
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
@@ -48,7 +45,7 @@ if (SANITIZE)
             set(UBSAN_FLAGS "${UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
         if (COMPILER_CLANG)
-            set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/tests/ubsan_suppressions.txt")
+            set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
         endif()
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
@@ -63,14 +60,14 @@ endif()
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
 if (WITH_COVERAGE)
-    message (INFORMATION "Enabled instrumentation for code coverage")
+    message (STATUS "Enabled instrumentation for code coverage")
     set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
 endif()
 
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
 
 if (SANITIZE_COVERAGE)
-    message (INFORMATION "Enabled instrumentation for code coverage")
+    message (STATUS "Enabled instrumentation for code coverage")
 
     # We set this define for whole build to indicate that at least some parts are compiled with coverage.
     # And to expose it in system.build_options.
@@ -79,6 +76,10 @@ if (SANITIZE_COVERAGE)
 
     # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
     set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
-endif()
 
-set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")
+    set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")
+    set (WITHOUT_COVERAGE_FLAGS_LIST -fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table)
+else()
+    set (WITHOUT_COVERAGE_FLAGS "")
+    set (WITHOUT_COVERAGE_FLAGS_LIST "")
+endif()

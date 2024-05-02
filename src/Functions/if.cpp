@@ -1,28 +1,34 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/MaskOperations.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/MaskOperations.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/GatherUtils/Algorithms.h>
-#include <Functions/FunctionIfBase.h>
-#include <Interpreters/castColumn.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionIfBase.h>
+#include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+
 #include <type_traits>
 
 namespace DB
@@ -32,6 +38,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -42,12 +49,32 @@ using namespace GatherUtils;
 /** Selection function by condition: if(cond, then, else).
   * cond - UInt8
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
-  * For better performance, try to use branch free code for numeric types(i.e. cond ? a : b --> !!cond * a + !cond * b), except floating point types because of Inf or NaN.
+  * For better performance, try to use branch free code for numeric types(i.e. cond ? a : b --> !!cond * a + !cond * b)
 */
+
+template <typename ResultType>
+concept is_native_int_or_decimal_v
+    = std::is_integral_v<ResultType> || (is_decimal<ResultType> && sizeof(ResultType) <= 8);
+
+// This macro performs a branch-free conditional assignment for floating point types.
+// It uses bitwise operations to avoid branching, which can be beneficial for performance.
+#define BRANCHFREE_IF_FLOAT(TYPE, vc, va, vb, vr) \
+    using UIntType = typename NumberTraits::Construct<false, false, sizeof(TYPE)>::Type; \
+    using IntType = typename NumberTraits::Construct<true, false, sizeof(TYPE)>::Type; \
+    auto mask = static_cast<UIntType>(static_cast<IntType>(vc) - 1); \
+    auto new_a = static_cast<ResultType>(va); \
+    auto new_b = static_cast<ResultType>(vb); \
+    UIntType uint_a; \
+    std::memcpy(&uint_a, &new_a, sizeof(UIntType)); \
+    UIntType uint_b; \
+    std::memcpy(&uint_b, &new_b, sizeof(UIntType)); \
+    UIntType tmp = (~mask & uint_a) | (mask & uint_b); \
+    (vr) = *(reinterpret_cast<ResultType *>(&tmp));
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
 inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
 {
+
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
     bool b_is_short = b.size() < size;
@@ -57,47 +84,68 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
         size_t a_index = 0, b_index = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType>)
-            {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-                a_index += !!cond[i];
-                b_index += !cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[b_index], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[b_index++]);
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[b_index]);
+
+            a_index += !!cond[i];
+            b_index += !cond[i];
         }
     }
     else if (a_is_short)
     {
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
-            if constexpr (std::is_integral_v<ResultType>)
-            {
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[i]);
-                a_index += !!cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b[i], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[i]);
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[i]);
+
+            a_index += !!cond[i];
+        }
     }
     else if (b_is_short)
     {
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            if constexpr (std::is_integral_v<ResultType>)
-            {
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-                b_index += !cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[b_index], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index++]);
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index]);
+
+            b_index += !cond[i];
+        }
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            if constexpr (std::is_integral_v<ResultType>)
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
+            }
             else
+            {
                 res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+            }
+        }
     }
 }
 
@@ -110,21 +158,32 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
     {
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
-            if constexpr (std::is_integral_v<ResultType>)
-            {
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b);
-                a_index += !!cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[a_index], b, res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b);
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b);
+
+            a_index += !!cond[i];
+        }
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            if constexpr (std::is_integral_v<ResultType>)
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
+            }
             else
                 res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+        }
     }
 }
 
@@ -137,21 +196,63 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
     {
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            if constexpr (std::is_integral_v<ResultType>)
-            {
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-                b_index += !cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[b_index], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index++]);
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index]);
+
+            b_index += !cond[i];
+        }
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            if constexpr (std::is_integral_v<ResultType>)
+        {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
+            }
             else
                 res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+        }
+    }
+}
+
+template <typename ArrayCond, typename A, typename B, typename ArrayResult, typename ResultType>
+inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult & res)
+{
+    size_t size = cond.size();
+
+    /// We manually optimize the loop for types like (U)Int128|256 or Decimal128/256 to avoid branches
+    if constexpr (is_over_big_int<ResultType>)
+    {
+        alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
+        for (size_t i = 0; i < size; ++i)
+        {
+            res[i] = ab[!cond[i]];
+        }
+    }
+    else if constexpr (std::is_same_v<ResultType, Decimal32> || std::is_same_v<ResultType, Decimal64>)
+    {
+        ResultType new_a = static_cast<ResultType>(a);
+        ResultType new_b = static_cast<ResultType>(b);
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// Reuse new_a and new_b to achieve auto-vectorization
+            res[i] = cond[i] ? new_a : new_b;
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
     }
 }
 
@@ -197,8 +298,7 @@ struct NumIfImpl
         auto col_res = ColVecResult::create(size);
         ArrayResult & res = col_res->getData();
 
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+        fillConstantConstant<ArrayCond, A, B, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 };
@@ -247,8 +347,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         auto col_res = ColVecResult::create(size, scale);
         ArrayResult & res = col_res->getData();
 
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+        fillConstantConstant<ArrayCond, A, B, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 };
@@ -258,9 +357,16 @@ class FunctionIf : public FunctionIfBase
 {
 public:
     static constexpr auto name = "if";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIf>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionIf>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+    }
+
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
 
 private:
+    bool use_variant_when_no_common_type = false;
+
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
     {
@@ -616,7 +722,6 @@ private:
                 conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(col_res->getData(), col_res->getOffsets(), rows), cond_data);
             else
                 return nullptr;
-
             return res;
         }
 
@@ -668,14 +773,102 @@ private:
         return ColumnTuple::create(tuple_columns);
     }
 
+    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        auto extract_kv_from_map = [](const ColumnMap * map)
+        {
+            const ColumnTuple & tuple = map->getNestedData();
+            const auto & keys = tuple.getColumnPtr(0);
+            const auto & values = tuple.getColumnPtr(1);
+            const auto & offsets = map->getNestedColumn().getOffsetsPtr();
+            return std::make_pair(ColumnArray::create(keys, offsets), ColumnArray::create(values, offsets));
+        };
+
+        /// Extract keys and values from both arguments
+        Columns key_cols(2);
+        Columns value_cols(2);
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto & arg = arguments[i + 1];
+            if (const ColumnMap * map = checkAndGetColumn<ColumnMap>(arg.column.get()))
+            {
+                auto [key_col, value_col] = extract_kv_from_map(map);
+                key_cols[i] = std::move(key_col);
+                value_cols[i] = std::move(value_col);
+            }
+            else if (const ColumnConst * const_map = checkAndGetColumnConst<ColumnMap>(arg.column.get()))
+            {
+                const ColumnMap * map_data = assert_cast<const ColumnMap *>(&const_map->getDataColumn());
+                auto [key_col, value_col] = extract_kv_from_map(map_data);
+
+                size_t size = const_map->size();
+                key_cols[i] = ColumnConst::create(std::move(key_col), size);
+                value_cols[i] = ColumnConst::create(std::move(value_col), size);
+            }
+            else
+                return nullptr;
+        }
+
+        /// Compose temporary columns for keys and values
+        ColumnsWithTypeAndName key_columns(3);
+        key_columns[0] = arguments[0];
+        ColumnsWithTypeAndName value_columns(3);
+        value_columns[0] = arguments[0];
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto & arg = arguments[i + 1];
+            const DataTypeMap & type = static_cast<const DataTypeMap &>(*arg.type);
+            const auto & key_type = type.getKeyType();
+            const auto & value_type = type.getValueType();
+            key_columns[i + 1] = {key_cols[i], std::make_shared<DataTypeArray>(key_type), {}};
+            value_columns[i + 1] = {value_cols[i], std::make_shared<DataTypeArray>(value_type), {}};
+        }
+
+        /// Calculate function corresponding keys and values in map
+        const DataTypeMap & map_result_type = static_cast<const DataTypeMap &>(*result_type);
+        auto key_result_type = std::make_shared<DataTypeArray>(map_result_type.getKeyType());
+        auto value_result_type = std::make_shared<DataTypeArray>(map_result_type.getValueType());
+        ColumnPtr key_result = executeImpl(key_columns, key_result_type, input_rows_count);
+        ColumnPtr value_result = executeImpl(value_columns, value_result_type, input_rows_count);
+
+        /// key_result and value_result are not constant columns otherwise we won't reach here in executeMap
+        const auto * key_array = assert_cast<const ColumnArray *>(key_result.get());
+        const auto * value_array = assert_cast<const ColumnArray *>(value_result.get());
+        if (!key_array)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Key result column should be {} instead of {} in executeMap of function {}",
+                key_result_type->getName(),
+                key_result->getName(),
+                getName());
+        if (!value_array)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Value result column should be {} instead of {} in executeMap of function {}",
+                key_result_type->getName(),
+                value_result->getName(),
+                getName());
+        if (!key_array->hasEqualOffsets(*value_array))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Key array and value array must have equal sizes in executeMap of function {}", getName());
+
+        auto nested_column = ColumnArray::create(
+            ColumnTuple::create(Columns{key_array->getDataPtr(), value_array->getDataPtr()}), key_array->getOffsetsPtr());
+        return ColumnMap::create(std::move(nested_column));
+    }
+
     static ColumnPtr executeGeneric(
-        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool use_variant_when_no_common_type)
     {
         /// Convert both columns to the common type (if needed).
         const ColumnWithTypeAndName & arg1 = arguments[1];
         const ColumnWithTypeAndName & arg2 = arguments[2];
 
-        DataTypePtr common_type = getLeastSupertype(DataTypes{arg1.type, arg2.type});
+        DataTypePtr common_type;
+        if (use_variant_when_no_common_type)
+            common_type = getLeastSupertypeOrVariant(DataTypes{arg1.type, arg2.type});
+        else
+            common_type = getLeastSupertype(DataTypes{arg1.type, arg2.type});
 
         ColumnPtr col_then = castColumn(arg1, common_type);
         ColumnPtr col_else = castColumn(arg2, common_type);
@@ -850,6 +1043,10 @@ private:
 
     ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
+        /// If result type is Variant, we don't need to remove Nullable.
+        if (isVariant(result_type))
+            return nullptr;
+
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         const ColumnWithTypeAndName & arg_then = arguments[1];
         const ColumnWithTypeAndName & arg_else = arguments[2];
@@ -955,6 +1152,11 @@ private:
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     return result_column;
                 }
+                else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
+                {
+                    variant_column->applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
+                    return result_column;
+                }
                 else
                     return ColumnNullable::create(materializeColumnIfConst(result_column), arg_cond.column);
             }
@@ -991,6 +1193,11 @@ private:
                 if (isColumnNullable(*result_column))
                 {
                     assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    return result_column;
+                }
+                else if (auto * variant_column = typeid_cast<ColumnVariant *>(result_column.get()))
+                {
+                    variant_column->applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column).getData());
                     return result_column;
                 }
                 else
@@ -1059,7 +1266,7 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
-        settings.enable_lazy_execution_for_first_argument = false;
+        settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
         settings.force_enable_lazy_execution = false;
         return true;
@@ -1081,6 +1288,9 @@ public:
         if (!WhichDataType(arguments[0]).isUInt8())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
                 "Must be UInt8.", arguments[0]->getName());
+
+        if (use_variant_when_no_common_type)
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
 
         return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
     }
@@ -1112,17 +1322,12 @@ public:
 
         if (cond_const_col)
         {
-            if (arg_then.type->equals(*arg_else.type))
-            {
-                return cond_const_col->getValue<UInt8>()
-                    ? arg_then.column
-                    : arg_else.column;
-            }
+            UInt8 value = cond_const_col->getValue<UInt8>();
+            const ColumnWithTypeAndName & arg = value ? arg_then : arg_else;
+            if (arg.type->equals(*result_type))
+                return arg.column;
             else
-            {
-                materialized_cond_col = cond_const_col->convertToFullColumn();
-                cond_col = typeid_cast<const ColumnUInt8 *>(&*materialized_cond_col);
-            }
+                return castColumn(arg, result_type);
         }
 
         if (!cond_col)
@@ -1159,13 +1364,16 @@ public:
         TypeIndex left_id = left_type->getTypeId();
         TypeIndex right_id = right_type->getTypeId();
 
+        /// TODO optimize for map type
+        /// TODO optimize for nullable type
         if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
             || (res = executeString(cond_col, arguments, result_type))
             || (res = executeGenericArray(cond_col, arguments, result_type))
-            || (res = executeTuple(arguments, result_type, input_rows_count))))
+            || (res = executeTuple(arguments, result_type, input_rows_count))
+            || (res = executeMap(arguments, result_type, input_rows_count))))
         {
-            return executeGeneric(cond_col, arguments, input_rows_count);
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
         }
 
         return res;
@@ -1203,6 +1411,11 @@ public:
 REGISTER_FUNCTION(If)
 {
     factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
+}
+
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
 }
 
 }

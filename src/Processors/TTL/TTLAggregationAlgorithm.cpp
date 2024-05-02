@@ -5,13 +5,14 @@ namespace DB
 {
 
 TTLAggregationAlgorithm::TTLAggregationAlgorithm(
+    const TTLExpressions & ttl_expressions_,
     const TTLDescription & description_,
     const TTLInfo & old_ttl_info_,
     time_t current_time_,
     bool force_,
     const Block & header_,
     const MergeTreeData & storage_)
-    : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , header(header_)
 {
     current_key_value.resize(description.group_by_keys.size());
@@ -75,8 +76,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
         const auto & column_names = header.getNames();
         MutableColumns aggregate_columns = header.cloneEmptyColumns();
 
-        auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
-        auto where_column = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
+        auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+        auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
@@ -157,8 +158,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
     /// If some rows were aggregated we have to recalculate ttl info's
     if (some_rows_were_aggregated)
     {
-        auto ttl_column_after_aggregation = executeExpressionAndGetColumn(description.expression, block, description.result_column);
-        auto where_column_after_aggregation = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
+        auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+        auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
         for (size_t i = 0; i < block.rows(); ++i)
         {
             bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);

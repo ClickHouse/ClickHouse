@@ -1,21 +1,25 @@
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteIntText.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/StorageFileLog.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -50,6 +54,76 @@ namespace
 
 static constexpr auto TMP_SUFFIX = ".tmp";
 
+
+class ReadFromStorageFileLog final : public ReadFromStreamLikeEngine
+{
+public:
+    ReadFromStorageFileLog(
+        const Names & column_names_,
+        StoragePtr storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        SelectQueryInfo & query_info,
+        ContextPtr context_)
+        : ReadFromStreamLikeEngine{column_names_, storage_snapshot_, query_info.storage_limits, context_}
+        , column_names{column_names_}
+        , storage{storage_}
+        , storage_snapshot{storage_snapshot_}
+    {
+    }
+
+    String getName() const override { return "ReadFromStorageFileLog"; }
+
+private:
+    Pipe makePipe() final
+    {
+        auto & file_log = storage->as<StorageFileLog &>();
+        if (file_log.mv_attached)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageFileLog with attached materialized views");
+
+        std::lock_guard lock(file_log.file_infos_mutex);
+        if (file_log.running_streams)
+            throw Exception(ErrorCodes::CANNOT_SELECT, "Another select query is running on this table, need to wait it finish.");
+
+        file_log.updateFileInfos();
+
+        /// No files to parse
+        if (file_log.file_infos.file_names.empty())
+        {
+            LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
+            return Pipe{};
+        }
+
+        auto modified_context = Context::createCopy(getContext());
+
+        auto max_streams_number = std::min<UInt64>(file_log.filelog_settings->max_threads, file_log.file_infos.file_names.size());
+
+        /// Each stream responsible for closing it's files and store meta
+        file_log.openFilesAndSetPos();
+
+        Pipes pipes;
+        pipes.reserve(max_streams_number);
+        for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
+        {
+            pipes.emplace_back(std::make_shared<FileLogSource>(
+                file_log,
+                storage_snapshot,
+                modified_context,
+                column_names,
+                file_log.getMaxBlockSize(),
+                file_log.getPollTimeoutMillisecond(),
+                stream_number,
+                max_streams_number,
+                file_log.filelog_settings->handle_error_mode));
+        }
+
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
+    const Names column_names;
+    StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
+};
+
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -59,14 +133,14 @@ StorageFileLog::StorageFileLog(
     const String & format_name_,
     std::unique_ptr<FileLogSettings> settings,
     const String & comment,
-    bool attach)
+    LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.table_name + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait(filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds())
 {
@@ -74,10 +148,11 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals(filelog_settings->handle_error_mode));
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (attach)
+        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
@@ -92,7 +167,7 @@ StorageFileLog::StorageFileLog(
     bool created_metadata_directory = false;
     try
     {
-        if (!attach)
+        if (mode < LoadingStrictnessLevel::ATTACH)
         {
             if (disk->exists(metadata_base_path))
             {
@@ -105,7 +180,7 @@ StorageFileLog::StorageFileLog(
             created_metadata_directory = true;
         }
 
-        loadMetaFiles(attach);
+        loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
 
         assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
@@ -119,7 +194,7 @@ StorageFileLog::StorageFileLog(
     }
     catch (...)
     {
-        if (!attach)
+        if (mode <= LoadingStrictnessLevel::ATTACH)
         {
             if (created_metadata_directory)
                 disk->removeRecursive(metadata_base_path);
@@ -128,6 +203,22 @@ StorageFileLog::StorageFileLog(
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+VirtualColumnsDescription StorageFileLog::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+    }
+
+    return desc;
 }
 
 void StorageFileLog::loadMetaFiles(bool attach)
@@ -296,62 +387,19 @@ UInt64 StorageFileLog::getInode(const String & file_name)
     return file_stat.st_ino;
 }
 
-Pipe StorageFileLog::read(
+void StorageFileLog::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr local_context,
+    SelectQueryInfo & query_info,
+    ContextPtr query_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
+
 {
-    /// If there are MVs depended on this table, we just forbid reading
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
-
-    if (mv_attached)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageFileLog with attached materialized views");
-
-    std::lock_guard lock(file_infos_mutex);
-    if (running_streams)
-    {
-        throw Exception(ErrorCodes::CANNOT_SELECT, "Another select query is running on this table, need to wait it finish.");
-    }
-
-    updateFileInfos();
-
-    /// No files to parse
-    if (file_infos.file_names.empty())
-    {
-        LOG_WARNING(log, "There is a idle table named {}, no files need to parse.", getName());
-        return Pipe{};
-    }
-
-    auto modified_context = Context::createCopy(local_context);
-
-    auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads, file_infos.file_names.size());
-
-    /// Each stream responsible for closing it's files and store meta
-    openFilesAndSetPos();
-
-    Pipes pipes;
-    pipes.reserve(max_streams_number);
-    for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
-    {
-        pipes.emplace_back(std::make_shared<FileLogSource>(
-            *this,
-            storage_snapshot,
-            modified_context,
-            column_names,
-            getMaxBlockSize(),
-            getPollTimeoutMillisecond(),
-            stream_number,
-            max_streams_number,
-            filelog_settings->handle_error_mode));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    query_plan.addStep(
+        std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 
 void StorageFileLog::increaseStreams()
@@ -419,7 +467,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end);
+            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -815,7 +863,7 @@ void registerStorageFileLog(StorageFactory & factory)
             format,
             std::move(filelog_settings),
             args.comment,
-            args.attach);
+            args.mode);
     };
 
     factory.registerStorage(
@@ -977,21 +1025,6 @@ bool StorageFileLog::updateFileInfos()
     assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
-}
-
-NamesAndTypesList StorageFileLog::getVirtuals() const
-{
-    auto virtuals = NamesAndTypesList{
-        {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_offset", std::make_shared<DataTypeUInt64>()}};
-
-    if (filelog_settings->handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        virtuals.push_back({"_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-    }
-
-    return virtuals;
 }
 
 }

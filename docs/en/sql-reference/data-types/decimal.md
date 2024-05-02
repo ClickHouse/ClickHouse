@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/decimal
-sidebar_position: 42
+sidebar_position: 6
 sidebar_label: Decimal
 ---
 
@@ -10,7 +10,7 @@ Signed fixed-point numbers that keep precision during add, subtract and multiply
 
 ## Parameters
 
-- P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction). By default the precision is 10.
+- P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction). By default, the precision is 10.
 - S - scale. Valid range: \[ 0 : P \]. Determines how many decimal digits fraction can have.
 
 Decimal(P) is equivalent to Decimal(P, 0). Similarly, the syntax Decimal is equivalent to Decimal(10, 0).

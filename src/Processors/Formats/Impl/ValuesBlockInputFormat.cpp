@@ -194,7 +194,7 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
     auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
-    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
+    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth), static_cast<unsigned>(context->getSettingsRef().max_parser_backtracks));
     auto const & first = (*token_iterator).get();
     if (first.isError() || first.isEnd())
     {
@@ -293,7 +293,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
@@ -418,7 +418,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     {
         Expected expected;
         /// Keep a copy to the start of the column tokens to use if later if necessary
-        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -492,7 +492,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 &found_in_cache,
                 delimiter);
 
-            LOG_TEST(&Poco::Logger::get("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+            LOG_TEST(getLogger("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
                      column_idx, structure->dumpTemplate());
 
             templates[column_idx].emplace(structure);
