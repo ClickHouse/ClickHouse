@@ -1135,7 +1135,10 @@ bool StorageRabbitMQ::tryStreamToViews()
     if (!connection->isConnected())
     {
         if (shutdown_called)
+        {
+            LOG_DEBUG(log, "Shutdown called, quitting");
             return false;
+        }
 
         if (connection->reconnect())
         {
@@ -1192,7 +1195,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     if (write_failed)
     {
         LOG_TRACE(log, "Write failed, reschedule");
-        return false;
+        return true;
     }
 
     if (!hasDependencies(getStorageID()))
@@ -1214,7 +1217,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         startLoop();
     }
 
-    /// Do not reschedule, do not stop event loop.
+    /// Reschedule.
     return true;
 }
 

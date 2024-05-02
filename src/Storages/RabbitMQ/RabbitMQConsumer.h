@@ -111,7 +111,7 @@ private:
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
 
-    UInt64 last_commited_delivery_tag;
+    UInt64 last_commited_delivery_tag = 0;
 
     std::condition_variable cv;
     std::mutex mutex;
