@@ -526,8 +526,6 @@ template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
 
-
-
 // std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
 

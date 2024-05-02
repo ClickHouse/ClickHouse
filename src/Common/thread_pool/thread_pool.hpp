@@ -54,7 +54,7 @@ using ThreadPool = ThreadPoolImpl<std::function<void()>>;
  * It is highly scalable and fast.
  * It is header only.
  * It implements both work-stealing and work-distribution balancing
- * startegies.
+ * strategies.
  * It implements cooperative scheduling strategy for tasks.
  */
 template <typename Task>
@@ -81,7 +81,7 @@ public:
     ~ThreadPoolImpl() override;
 
     /**
-     * @brief Move assignment implementaion.
+     * @brief Move assignment implementation.
      */
     ThreadPoolImpl & operator=(ThreadPoolImpl && rhs) noexcept;
 
