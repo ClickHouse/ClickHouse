@@ -72,8 +72,7 @@ protected:
         /* Copy prerequisites to dest */
         memcpy(dest + fsst_header_size, &rows_count, sizeof(rows_count));
         memcpy(dest + fsst_header_size + sizeof(rows_count), len_out, sizeof(len_out));
-        memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out), str_out, sizeof(str_out));
-        memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out) + sizeof(str_out), len_in.data(), len_in.size());
+        memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out), len_in.data(), len_in.size() * sizeof(size_t));
 
         /* Count data total compressed size without header */
         std::cerr << "Compress" << std::endl; 
@@ -81,9 +80,7 @@ protected:
         for (size_t i = 0; i < rows_count; ++i) {
             compressed_size += len_out[i];
             std::cerr << len_out[i] << std::endl;
-            for (size_t j = 0; j < len_out[i]; ++j) {
-                std::cerr << (size_t)str_out[j];
-            }
+            std::cerr << str_out[i] - reinterpret_cast<const unsigned char*>(source) << std::endl;
             std::cerr << std::endl;
         }
 
@@ -102,20 +99,20 @@ protected:
         memcpy(&rows_count, source + fsst_header_size, sizeof(rows_count));
 
         size_t lens[rows_count];
-        unsigned char* strs[rows_count]; /* Mutable */
         std::vector<size_t> len_in(rows_count);
         memcpy(lens, source + fsst_header_size + sizeof(rows_count), sizeof(lens));
-        memcpy(strs, source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(strs));
-        memcpy(len_in.data(), source + fsst_header_size + sizeof(rows_count) + sizeof(lens) + sizeof(strs), sizeof(size_t) * len_in.size());
+        memcpy(len_in.data(), source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(size_t) * len_in.size());
+        const char* str_iter = source + fsst_header_size + sizeof(rows_count) + sizeof(lens) + sizeof(size_t) * len_in.size();
 
         for (size_t i = 0; i < rows_count; ++i) {
             dest = writeVarUInt(len_in[i], dest);
             auto decompressed_size = fsst_decompress(&decoder,
                 lens[i],
-                strs[i],
+                reinterpret_cast<unsigned char*>(const_cast<char*>(str_iter)),
                 OUT_SIZE, /* дичь какая-то */
                 reinterpret_cast<unsigned char *>(dest)
             );
+            str_iter += lens[i];
             std::cerr << "decompressed " << decompressed_size << std::endl;
             dest += decompressed_size;
         }
