@@ -414,6 +414,9 @@ class Backport:
                 f"v{branch}-must-backport" for branch in fetch_release_branches
             ]
 
+            # Forcefully add also non cloud backports
+            self.labels_to_backport += [Labels.MUST_BACKPORT]
+
             logging.info("Fetching from %s", self._fetch_from)
             fetch_from_repo = self.gh.get_repo(self._fetch_from)
             git_runner(
