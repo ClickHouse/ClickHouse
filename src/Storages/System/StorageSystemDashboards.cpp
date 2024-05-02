@@ -338,7 +338,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         {
             { "dashboard", "Cloud overview" },
             { "title", "Page cache hit rate" },
-            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes))) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
+            { "query", "SELECT \n  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,\n  avg(metric)\nFROM (\n  SELECT event_time, greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes) - sum(ProfileEvent_ReadBufferFromS3Bytes)) / (sum(ProfileEvent_OSReadChars))) AS metric \n  FROM clusterAllReplicas(default, merge('system', '^metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
         },
         {
             { "dashboard", "Cloud overview" },
