@@ -23,9 +23,9 @@ bool cgroupsV2MemoryControllerEnabled()
 {
 #if defined(OS_LINUX)
     chassert(cgroupsV2Enabled());
-    /// According to https://docs.kernel.org/admin-guide/cgroup-v2.html, file "cgroup.controllers" defines
-    /// which controllers are enabled for the current cgroup. Check the bottom-most nested "cgroup.controllers"
-    /// file.
+    /// According to https://docs.kernel.org/admin-guide/cgroup-v2.html, file "cgroup.controllers" defines which controllers are available
+    /// for the current + child cgroups. The set of available controllers can be restricted from level to level using file
+    /// "cgroups.subtree_control". It is therefore sufficient to check the bottom-most nested "cgroup.controllers" file.
     std::string cgroup = cgroupV2OfProcess();
     auto cgroup_dir = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
     std::ifstream controllers_file(cgroup_dir / "cgroup.controllers");
@@ -33,9 +33,7 @@ bool cgroupsV2MemoryControllerEnabled()
         return false;
     std::string controllers;
     std::getline(controllers_file, controllers);
-    if (controllers.find("memory") != std::string::npos)
-        return true;
-    return false;
+    return controllers.find("memory") != std::string::npos;
 #else
     return false;
 #endif
