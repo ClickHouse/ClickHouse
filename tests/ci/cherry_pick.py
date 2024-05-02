@@ -402,11 +402,18 @@ class Backport:
         logging.info("Getting release PRs")
         self.release_prs = self.gh.get_release_pulls(self._repo_name)
         self.release_branches = [pr.head.ref for pr in self.release_prs]
-        self.labels_to_backport = [
-            f"v{branch}-must-backport" for branch in self.release_branches
-        ]
 
-        if self._fetch_from:
+        if not self._fetch_from:
+            self.labels_to_backport = [
+                f"v{branch}-must-backport" for branch in self.release_branches
+            ]
+        else:
+            fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
+            fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
+            self.labels_to_backport = [
+                f"v{branch}-must-backport" for branch in fetch_release_branches
+            ]
+
             logging.info("Fetching from %s", self._fetch_from)
             fetch_from_repo = self.gh.get_repo(self._fetch_from)
             git_runner(
@@ -445,7 +452,7 @@ class Backport:
         ) - timedelta(days=reserve_search_days)
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
-        logging.info("Receive PRs suppose to be backported")
+        logging.info("Receive PRs supposed to be backported")
 
         query_args = {
             "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
@@ -473,7 +480,8 @@ class Backport:
 
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
-        if self.must_create_backport_label in pr_labels:
+        # We backport any vXXX-must-backport to all branches of the fetch repo (better than no backport)
+        if self.must_create_backport_label in pr_labels or self._fetch_from:
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in self.release_branches
@@ -496,7 +504,7 @@ class Backport:
             raise self.error
 
         logging.info(
-            "  PR #%s is suppose to be backported to %s",
+            "  PR #%s is supposed to be backported to %s",
             pr.number,
             ", ".join(map(str, branches)),
         )
@@ -657,7 +665,7 @@ def main():
     bp.receive_prs_for_backport(args.reserve_search_days)
     bp.process_backports()
     if bp.error is not None:
-        logging.error("Finished successfully, but errors occured!")
+        logging.error("Finished successfully, but errors occurred!")
         raise bp.error
 
 
