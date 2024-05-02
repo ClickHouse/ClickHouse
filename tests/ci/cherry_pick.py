@@ -488,7 +488,6 @@ class Backport:
                     ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                     for br in self.release_branches
                 ]  # type: List[ReleaseBranch]
-                found = True
                 break
 
         if not branches:
