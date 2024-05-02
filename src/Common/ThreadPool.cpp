@@ -1,3 +1,4 @@
+#include "Common/logger_useful.h"
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -6,8 +7,11 @@
 #include <Common/noexcept_scope.h>
 
 #include <cassert>
+#include <memory>
 #include <type_traits>
+#include <set>
 
+#include <Poco/Timestamp.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
@@ -28,6 +32,104 @@ namespace CurrentMetrics
     extern const Metric GlobalThreadScheduled;
 }
 
+class TimeoutAndCancellationTaskChecker
+{
+public:
+    using CancellationCallback = std::function<void()>;
+    struct TimedTask
+    {
+        std::chrono::steady_clock::time_point expiry_time;
+        std::shared_ptr<JobWithPriority> task;
+        CancellationCallback on_cancel;
+
+        bool operator<(const TimedTask& other) const
+        {
+            return expiry_time < other.expiry_time;
+        }
+    };
+
+    explicit TimeoutAndCancellationTaskChecker(int timeout_microseconds = 300)
+        : timeout(timeout_microseconds), worker_thread([this] { this->threadFunction(); }) {}
+
+    ~TimeoutAndCancellationTaskChecker()
+    {
+        shutdownChecker();
+        if (worker_thread.joinable())
+            worker_thread.join();
+    }
+
+    void addTask(const std::chrono::steady_clock::time_point& timestamp, std::shared_ptr<JobWithPriority> task, CancellationCallback on_cancel = {})
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        tasks.insert({timestamp + std::chrono::microseconds(timeout), task, on_cancel});
+        cv.notify_one();
+        LOG_TRACE(getLogger("TimeoutAndCancellationTaskChecker"), "Add task to CancellationChecker");
+    }
+
+    void cancelTask(std::shared_ptr<JobWithPriority> task)
+    {
+        LOG_TRACE(getLogger("TimeoutAndCancellationTaskChecker"), "Cancel task due to timeout");
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto it = tasks.begin(); it != tasks.end(); )
+        {
+            if (it->task == task)
+            {
+                if (it->on_cancel)
+                    it->on_cancel(); // Call the cancellation callback
+                it = tasks.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    void setTaskTimeout(int new_timeout)
+    {
+        timeout = new_timeout;
+    }
+
+    void shutdownChecker()
+    {
+        shutdown = true;
+        cv.notify_one();
+    }
+private:
+    std::string name = "TimeoutAndCancellationTaskChecker";
+    std::set<TimedTask> tasks;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::atomic<bool> shutdown{false};
+    int timeout; // Timeout value in microseconds
+    std::thread worker_thread;
+
+    void threadFunction()
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        while (!shutdown)
+        {
+            if (!tasks.empty())
+            {
+                auto now = std::chrono::steady_clock::now();
+                auto next_expiry = tasks.begin()->expiry_time;
+                if (now >= next_expiry)
+                {
+                    // Task has expired; invoke cancellation callback and erase it
+                    auto expired_task = *tasks.begin();
+
+                    if (expired_task.on_cancel)
+                        expired_task.on_cancel();
+                    tasks.erase(tasks.begin());
+                }
+                else
+                    cv.wait_until(lock, next_expiry); // Wait until the next task is due to expire or a new task is added
+            }
+            else
+                cv.wait(lock, [this] { return shutdown || !tasks.empty(); }); // Wait indefinitely for a new task to be added or for shutdown
+        }
+    }
+
+};
+
 class JobWithPriority
 {
 public:
@@ -36,6 +138,7 @@ public:
     Job job;
     Priority priority;
     CurrentMetrics::Increment metric_increment;
+    CurrentMetrics::Metric metric;
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
     /// Call stacks of all jobs' schedulings leading to this one
@@ -43,10 +146,10 @@ public:
     bool enable_job_stack_trace = false;
 
     JobWithPriority(
-        Job job_, Priority priority_, CurrentMetrics::Metric metric,
+        Job job_, Priority priority_, CurrentMetrics::Metric metric_,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
         bool capture_frame_pointers)
-        : job(job_), priority(priority_), metric_increment(metric),
+        : job(job_), priority(priority_), metric_increment(metric_), metric(metric_),
         thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
@@ -54,6 +157,11 @@ public:
         /// Save all previous jobs call stacks and append with current
         frame_pointers = DB::Exception::thread_frame_pointers;
         frame_pointers.push_back(StackTrace().getFramePointers());
+    }
+
+    std::shared_ptr<JobWithPriority> cloneShared()
+    {
+        return std::make_shared<JobWithPriority>(this->job, this->priority, this->metric, this->thread_trace_context, this->enable_job_stack_trace);
     }
 
     bool operator<(const JobWithPriority & rhs) const
@@ -68,6 +176,7 @@ template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
     : ThreadPoolImpl(metric_threads_, metric_active_threads_, metric_scheduled_jobs_, getNumberOfPhysicalCPUCores())
 {
+    checker = std::make_shared<TimeoutAndCancellationTaskChecker>();
 }
 
 
@@ -79,6 +188,7 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     size_t max_threads_)
     : ThreadPoolImpl(metric_threads_, metric_active_threads_, metric_scheduled_jobs_, max_threads_, max_threads_, max_threads_)
 {
+    checker = std::make_shared<TimeoutAndCancellationTaskChecker>();
 }
 
 template <typename Thread>
@@ -98,6 +208,7 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
 {
+    checker = std::make_shared<TimeoutAndCancellationTaskChecker>();
 }
 
 template <typename Thread>
@@ -452,7 +563,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 
+            auto start_time = std::chrono::steady_clock::now();
+            checker->addTask(start_time, job_data->cloneShared());
             job_data->job();
+            checker->cancelTask(job_data->cloneShared());
 
             if (thread_trace_context.root_span.isTraceEnabled())
             {

@@ -1,4 +1,3 @@
-#include <cmath>
 #include <IO/S3/Client.h>
 
 #if USE_AWS_S3
@@ -53,50 +52,17 @@ namespace ErrorCodes
 namespace S3
 {
 
-Int64 calculateDelayOnRetries(const Int64 retries, const Int64 scaleFactor)
-{
-    return (1ul << std::min(retries, 31l)) * scaleFactor;
-}
-
-Int64 calculateNumberOfRequiredRetries(const Int64 executionTime, const Int64 scaleFactor, uint32_t maxDelayMs)
-{
-    Int64 tries = -1;
-    /// Calculating number of retries based on the `executionTime` and delays between retries
-    if (executionTime > 0)
-    {
-        Int64 execution_time = executionTime / 2; /// Here we put total time/2 knowing that we will do retries
-                                                       /// two times in the doRequest: first time in `getRegionForBucket()`
-                                                       /// and the second time in `request_fn()` so that we can follow
-                                                       /// `executionTime` correctly.
-
-        auto delta = calculateDelayOnRetries(2, scaleFactor) / calculateDelayOnRetries(1, scaleFactor);
-        auto min_delay_ms = scaleFactor * delta;
-        auto tries_until_max_delay = UInt32(log10(maxDelayMs/min_delay_ms) / log10(delta) + 1);
-        auto time_left = execution_time - UInt32(min_delay_ms * (pow(delta, tries_until_max_delay) - 1) / (delta - 1)); // execution time - time until max delay
-
-        if (time_left > 0) // Case if we reached the max delay
-            tries = tries_until_max_delay + UInt32(time_left / maxDelayMs);
-        else
-            tries = UInt32(log10(execution_time / min_delay_ms) / log10(delta));
-    }
-    return tries;
-}
-
-Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, Int64 max_execution_time, uint32_t scaleFactor_, uint32_t maxDelayMs_)
+Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, uint32_t scaleFactor_, uint32_t maxDelayMs_)
     : maxRetries(maxRetries_)
     , scaleFactor(scaleFactor_)
     , maxDelayMs(maxDelayMs_)
 {
-    retriesOnMaxExecutionTime = calculateNumberOfRequiredRetries(max_execution_time, scaleFactor, maxDelayMs);
     chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
 bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
-    if (retriesOnMaxExecutionTime > 0 && retriesOnMaxExecutionTime < attemptedRetries)
-        return false;
-
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
@@ -104,7 +70,7 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        return false;
+            return false;
 
     return error.ShouldRetry();
 }
@@ -117,8 +83,8 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
         return 0;
     }
 
-    uint64_t calculated_delay = calculateDelayOnRetries(attemptedRetries, scaleFactor);
-    return std::min<uint64_t>(calculated_delay, maxDelayMs);
+    uint64_t backoffLimitedPow = 1ul << std::min(attemptedRetries, 31l);
+    return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
@@ -908,8 +874,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     ServerSideEncryptionKMSConfig sse_kms_config,
     HTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
-    const String & session_token,
-    Int64 max_execution_time)
+    const String & session_token)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -939,7 +904,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             std::move(credentials),
             credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts, max_execution_time);
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())
