@@ -745,8 +745,9 @@ void StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, modified_context, column_names, 1,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, reject_unhandled_messages, rabbitmq_settings->rabbitmq_commit_on_select);
+            *this, storage_snapshot, modified_context, column_names, /* max_block_size */1,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, reject_unhandled_messages,
+            rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -1154,6 +1155,8 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
+        LOG_TEST(log, "Will {} messages for {} channels", write_failed ? "nack" : "ack", sources.size());
+
         /// Commit
         for (auto & source : sources)
         {
@@ -1214,6 +1217,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
+        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
         startLoop();
     }
 
