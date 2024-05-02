@@ -31,7 +31,8 @@ struct BlockInfo
       */
 
     /** cursor:
-      * TODO
+      * Filled only when using Streaming queries. Stores cursor data and keeper keys for each of the tables that were used
+      * to create this block. In non-Streaming queries case there will be empty map.
     */
 
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M) \

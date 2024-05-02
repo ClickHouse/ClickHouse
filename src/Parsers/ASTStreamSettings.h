@@ -8,7 +8,11 @@
 namespace DB
 {
 
-/// TODO
+/// Streaming query settings:
+///  - TAIL modifier
+///  - CURSOR
+///    - keeper key
+///    - cursor tree map
 class ASTStreamSettings : public IAST
 {
 public:

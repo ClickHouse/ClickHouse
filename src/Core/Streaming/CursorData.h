@@ -18,7 +18,9 @@ struct CursorData
     std::optional<String> keeper_key;
 };
 
-/// full storage name -> CursorData
+/// stream name -> CursorData
+/// TODO: for now stream name = storage full name, but it doesn't seem to be extendable, maybe use an alias?
+/// TODO: remove keeper key somehow.
 using CursorDataMap = std::map<String, CursorData>;
 
 void readBinary(CursorDataMap & data_map, ReadBuffer & buf);

@@ -52,7 +52,9 @@ private:
     size_t current_row = 0;
 };
 
-/// TODO:
+/// Simple MergeTree Partition reader in sequential order(in order of block numbers).
+/// Integrated with subscriptions to be used in streaming queries.
+/// Reads each part that is pushed to subscription in the same order.
 class MergeTreePartitionSequentialSource : public QueueSubscriptionSourceAdapter<RangesInDataPart>
 {
     void initNextReader();

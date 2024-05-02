@@ -8,6 +8,7 @@
 namespace DB
 {
 
+/// Struct with numeric ranges built from block number part borders.
 class PartBlockNumberRanges
 {
     struct BlockNumberRange
@@ -31,6 +32,8 @@ private:
     std::map<Int64, BlockNumberRange> right_index;
 };
 
+/// Main logic to determine what data a subscription should read next.
+/// Logic is very similar to merge predicate.
 class MergeTreeCursorPromoter
 {
 public:

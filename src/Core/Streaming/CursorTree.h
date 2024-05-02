@@ -16,7 +16,8 @@ namespace DB
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
-/// TODO
+/// Single node of cursor tree, which represents logical entry of cursor.
+/// Example: partition/shard etc.
 class CursorTreeNode
 {
     using Data = std::map<String, std::variant<Int64, CursorTreeNodePtr>>;
