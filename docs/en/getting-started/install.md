@@ -45,7 +45,7 @@ On Linux, macOS and FreeBSD:
    ```
 
    `clickhouse-local` allows you to process local and remote files using ClickHouse's powerful SQL and without a need for configuration. Table
-   data is stored in a temporary location, meaning that after a restart of `clickhouse-local` all previously created tables are no longer
+   data is stored in a temporary location, meaning that after a restart of `clickhouse-local` previously created tables are no longer
    available.
 
    As an alternative, you can start the ClickHouse server with this command ...
@@ -54,7 +54,7 @@ On Linux, macOS and FreeBSD:
     ./clickhouse server
     ```
 
-   ... and open a new terminal and use `clickhouse-client` to connect to the server:
+   ... and open a new terminal to connect to the server with `clickhouse-client`:
 
     ```bash
     ./clickhouse client
@@ -71,7 +71,7 @@ On Linux, macOS and FreeBSD:
 
    Table data is stored in the current directory and still available after a restart of ClickHouse server. If necessary, you can pass
    `-C config.xml` as an additional command line argument to `./clickhouse server` and provide further configuration in a configuration
-   file. All available configuration settings are documented [here](../operations/settings.md) and in an [example configuration file
+   file. All available configuration settings are documented [here](../operations/settings/settings.md) and in an [example configuration file
    template](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
 
    You are ready to start sending SQL commands to ClickHouse!
