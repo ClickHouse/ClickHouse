@@ -119,17 +119,6 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
         const auto & converted_requested_columns = Nested::convertToSubcolumns(requested_columns);
         auto converted_requested_column = converted_requested_columns.begin();
         auto num_columns = converted_requested_columns.size();
-        std::vector<size_t> columns_to_cut;
-
-        if (offset > 0)
-        {
-            for (size_t i = 0; i < num_columns; ++i, ++converted_requested_column)
-            {
-                const auto & [name, type] = *converted_requested_column;
-                if (!res_columns[i] && partially_read_columns.contains(name))
-                    columns_to_cut.emplace_back(i);
-            }
-        }
 
         DB::fillMissingColumns(
             res_columns, num_rows, offset, converted_requested_columns,
@@ -138,11 +127,12 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 
         if (offset > 0)
         {
-            for (const auto column_idx : columns_to_cut)
+            for (size_t i = 0; i < num_columns; ++i, ++converted_requested_column)
             {
-                auto tmp_column = res_columns[column_idx];
-                if (tmp_column)
-                    res_columns[column_idx] = tmp_column->cut(offset, tmp_column->size() - offset);
+                const auto & [name, type] = *converted_requested_column;
+                auto tmp_column = res_columns[i];
+                if (tmp_column && partially_read_columns.contains(name))
+                    res_columns[i] = tmp_column->cut(offset, tmp_column->size() - offset);
             }
         }
 
