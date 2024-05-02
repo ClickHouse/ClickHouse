@@ -89,7 +89,7 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-RUN npm install -g azurite \
+RUN npm install -g azurite@3.29.0 \
     && npm install -g tslib
 
 COPY run.sh /
