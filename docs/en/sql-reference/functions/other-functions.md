@@ -556,7 +556,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Parameters**
 
 - `database` : name of the database. [String literal](../syntax#syntax-string-literal)
-- `table` : name of the table. [String literal](../syntax#syntax-string-literal) 
+- `table` : name of the table. [String literal](../syntax#syntax-string-literal)
 - `column` : name of the column. [String literal](../syntax#syntax-string-literal)
 - `hostname` : remote server name to perform the check on. [String literal](../syntax#syntax-string-literal)
 - `username` : username for remote server. [String literal](../syntax#syntax-string-literal)
@@ -565,7 +565,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Returned value**
 
 - `1` if the given column exists.
-- `0`, otherwise. 
+- `0`, otherwise.
 
 **Implementation details**
 
@@ -2451,7 +2451,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultRoles
 
-Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
+Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
 
 **Syntax**
 
