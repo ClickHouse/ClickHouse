@@ -8337,6 +8337,11 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(const StorageMet
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
 }
 
+Chain MergeTreeData::toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
+{
+    return Chain();
+}
+
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
 {
     switch (type.getValue())
