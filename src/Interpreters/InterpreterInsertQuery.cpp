@@ -499,6 +499,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline()
             InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
             pipeline = interpreter_select.buildQueryPipeline();
         }
+
+        // auto resources = QueryPlanResourceHolder();
+        // resources.interpreter_context.push_back(select_context);
+        // pipeline.addResources(std::move(resources));
     }
 
     pipeline.dropTotalsAndExtremes();
@@ -709,6 +713,12 @@ BlockIO InterpreterInsertQuery::execute()
 
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
+
+    if (auto * dist_storage = dynamic_cast<StorageDistributed *>(table.get()))
+    {
+         LOG_DEBUG(getLogger("InsertQuery"),
+              "dist_storage engine {} table name {}.{}", dist_storage->getName(), dist_storage->getStorageID().database_name, dist_storage->getStorageID().table_name);
+    }
 
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
