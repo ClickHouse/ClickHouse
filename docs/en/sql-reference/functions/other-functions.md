@@ -556,7 +556,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Parameters**
 
 - `database` : name of the database. [String literal](../syntax#syntax-string-literal)
-- `table` : name of the table. [String literal](../syntax#syntax-string-literal) 
+- `table` : name of the table. [String literal](../syntax#syntax-string-literal)
 - `column` : name of the column. [String literal](../syntax#syntax-string-literal)
 - `hostname` : remote server name to perform the check on. [String literal](../syntax#syntax-string-literal)
 - `username` : username for remote server. [String literal](../syntax#syntax-string-literal)
@@ -565,7 +565,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Returned value**
 
 - `1` if the given column exists.
-- `0`, otherwise. 
+- `0`, otherwise.
 
 **Implementation details**
 
@@ -675,7 +675,7 @@ There are two variations of this function:
 
 Signature:
 
-For `x` equal to one of the elements in `array_from`, the function returns the corresponding element in `array_to`, i.e. the one at the same array index. Otherwise, it returns `default`. If multiple matching elements exist `array_from`, an arbitrary corresponding element from `array_to` is returned.
+For `x` equal to one of the elements in `array_from`, the function returns the corresponding element in `array_to`, i.e. the one at the same array index. Otherwise, it returns `default`. If multiple matching elements exist `array_from`, it returns the element corresponding to the first of them.
 
 `transform(T, Array(T), Array(U), U) -> U`
 
@@ -915,6 +915,34 @@ Returns the larger value of a and b.
 
 Returns the server’s uptime in seconds.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+
+**Syntax**
+
+``` sql
+uptime()
+```
+
+**Returned value**
+
+- Time value of seconds.
+
+Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT uptime() as Uptime;
+```
+
+Result:
+
+``` response
+┌─Uptime─┐
+│  55867 │
+└────────┘
+```
 
 ## version()
 
@@ -2416,7 +2444,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultRoles
 
-Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
+Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
 
 **Syntax**
 
@@ -3183,6 +3211,74 @@ Result:
 ┌─sample_size───────────────────────────┐
 │ (616.2931945826209,108.8825,115.6175) │
 └───────────────────────────────────────┘
+```
+
+## connectionId
+
+Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
+
+**Syntax**
+
+```sql
+connectionId()
+```
+
+**Parameters**
+
+None.
+
+**Returned value**
+
+Returns an integer of type UInt64.
+
+**Implementation details**
+
+This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
+
+**Example**
+
+Query:
+
+```sql
+SELECT connectionId();
+```
+
+```response
+0
+```
+
+## connection_id
+
+An alias of `connectionId`. Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
+
+**Syntax**
+
+```sql
+connection_id()
+```
+
+**Parameters**
+
+None.
+
+**Returned value**
+
+Returns an integer of type UInt64.
+
+**Implementation details**
+
+This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
+
+**Example**
+
+Query:
+
+```sql
+SELECT connection_id();
+```
+
+```response
+0
 ```
 
 ## getClientHTTPHeader
