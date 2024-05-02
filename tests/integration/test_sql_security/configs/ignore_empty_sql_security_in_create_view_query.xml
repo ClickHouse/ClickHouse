@@ -1,3 +1,0 @@
-<clickhouse>
-    <ignore_empty_sql_security_in_create_view_query>1</ignore_empty_sql_security_in_create_view_query>
-</clickhouse>

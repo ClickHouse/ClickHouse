@@ -98,7 +98,7 @@ StorageMaterializedView::StorageMaterializedView(
                                                                      local_context->getGlobalContext());
 
     ASTPtr sql_security = query.sql_security;
-    if (!sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+    if (!sql_security && query.attach && getContext()->getServerSettings().attach_materialized_views_with_sql_security_none)
     {
         /// This allows materialized views to be loaded during startup with default SQL security for backward compatibility.
         /// If ClickHouse loads an old materialized view created without SQL security, it will use the default `SQL SECURITY NONE`

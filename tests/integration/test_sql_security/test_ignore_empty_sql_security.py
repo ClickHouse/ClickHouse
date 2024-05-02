@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node1",
-    main_configs=["configs/ignore_empty_sql_security_in_create_view_query.xml"],
+    main_configs=["configs/attach_materialized_views_with_sql_security_none.xml"],
     stay_alive=True,
 )
 
@@ -36,8 +36,8 @@ def test_load_mv_with_security_none(started_cluster: ClickHouseCluster):
 
     node.replace_in_config(
         "/etc/clickhouse-server/config.d/ignore_empty_sql_security_in_create_view_query.xml",
-        "1",
         "0",
+        "1",
     )
 
     node.restart_clickhouse()
