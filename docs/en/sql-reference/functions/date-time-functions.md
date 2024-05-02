@@ -1891,7 +1891,7 @@ Result:
 
 **See Also**
 
-- [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
+- [toStartOfInterval](#tostartofintervaldate_or_date_with_time-interval-x-unit--time_zone)
 
 ## date\_add
 
