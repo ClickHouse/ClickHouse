@@ -73,9 +73,17 @@ ObjectStoragePtr createObjectStorage(
         return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
     else if (isPlainRewritableStorage(type, config, config_prefix))
     {
-        /// TODO(jkartseva@): Test support for generic disk type
-        if (type != ObjectStorageType::S3)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "plain_rewritable metadata storage support is implemented only for S3");
+        /// HDFS object storage currently does not support iteration and does not implement listObjects method.
+        /// StaticWeb object storage is read-only and works with its dedicated metadata type.
+        constexpr auto supported_object_storage_types
+            = std::array{ObjectStorageType::S3, ObjectStorageType::Local, ObjectStorageType::Azure};
+        if (std::find(supported_object_storage_types.begin(), supported_object_storage_types.end(), type)
+            == supported_object_storage_types.end())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "plain_rewritable metadata storage support is not implemented for '{}' object storage",
+                DataSourceDescription{DataSourceType::ObjectStorage, type, MetadataStorageType::PlainRewritable, /*description*/ ""}
+                    .toString());
 
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
     }
