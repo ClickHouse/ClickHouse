@@ -70,6 +70,11 @@ namespace CurrentMetrics
 
 namespace
 {
+    /*
+     * ClickHouse holds a list of hosts, while Poco expects a regex. Build an or-based regex with all the hosts
+     * Favoring simplicity. https://about.gitlab.com/blog/2021/01/27/we-need-to-talk-no-proxy/
+     * Open for discussions
+     * */
     std::string buildPocoNonProxyHosts(const DB::ProxyConfiguration & proxy_configuration)
     {
         bool first = true;
