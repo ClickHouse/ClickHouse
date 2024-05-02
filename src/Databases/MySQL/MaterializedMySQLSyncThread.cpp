@@ -3,6 +3,7 @@
 
 #if USE_MYSQL
 
+#include <base/StringRef.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
 #include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
@@ -147,8 +148,8 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     StreamSettings mysql_input_stream_settings(settings, false, true);
     auto variables_input = std::make_unique<MySQLSource>(connection, check_query, variables_header, mysql_input_stream_settings);
 
-    std::unordered_map<String, String> variables_error_message;
-    String version;
+    std::unordered_map<StringRef, StringRef> variables_error_message;
+    StringRef version;
 
     QueryPipeline pipeline(std::move(variables_input));
 
@@ -162,7 +163,8 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         for (size_t index = 0; index < variables_block.rows(); ++index)
         {
             const String variable_name = variable_name_column->getDataAt(index).toString();
-            if variable_name == "version" {
+            if variable_name == "version"
+            {
                 version = variable_value_column->getDataAt(index).toString();
                 break;
             }
@@ -175,14 +177,18 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
                 {"binlog_format", "ROW"},
                 {"binlog_row_image", "FULL"},
             };
-        } else if (versin >= "8.3.0") {
+        }
+        else if (versin >= "8.3.0")
+        {
             variables_error_message = {
                 {"log_bin", "ON"},
                 {"binlog_format", "ROW"},
                 {"binlog_row_image", "FULL"},
                 {"default_authentication_plugin", "mysql_native_password"},
             };
-        } else {
+        }
+        else
+        {
             variables_error_message = {
                 {"log_bin", "ON"},
                 {"binlog_format", "ROW"},
@@ -194,8 +200,8 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
         {
-            const String variable_name = variable_name_column->getDataAt(index).toString();
-            const String variable_val = variable_value_column->getDataAt(index).toString();
+            const StringRef variable_name = variable_name_column->getDataAt(index).toString();
+            const StringRef variable_val = variable_value_column->getDataAt(index).toString();
             const auto & error_message_it = variables_error_message.find(variable_name);
 
             if (error_message_it != variables_error_message.end() && variable_val == error_message_it->second)
