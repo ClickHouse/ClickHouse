@@ -378,19 +378,21 @@ void registerStorageKafka(StorageFactory & factory)
         const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
             && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
-        // TODO(antaljanosbenjamin): attach query?
-        // TODO(antaljanosbenjamin): why not on single atomic database?
+        // UUID macro is only allowed:
+        // - with Atomic database only with ON CLUSTER queries, otherwise it is easy to misuse: each replica would have separate uuid generated.
+        // - with Replicated database
+        // - with attach queries, as those are used on server startup
         const auto allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
 
         auto context = args.getContext();
-        /// Unfold {database} and {table} macro on table creation, so table can be renamed.
+        // Unfold {database} and {table} macro on table creation, so table can be renamed.
         if (!args.attach)
         {
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
             info.table_id = args.table_id;
-            // TODO(antaljanosbenjamin): why to skip UUID here?
+            // We could probably unfold UUID here too, but let's keep it similar to ReplicatedMergeTree, which doesn't do the unfolding.
             info.table_id.uuid = UUIDHelpers::Nil;
             kafka_settings->kafka_keeper_path.value = context->getMacros()->expand(kafka_settings->kafka_keeper_path.value, info);
 
@@ -405,14 +407,14 @@ void registerStorageKafka(StorageFactory & factory)
         settings_query->changes.setSetting("kafka_keeper_path", kafka_settings->kafka_keeper_path.value);
         settings_query->changes.setSetting("kafka_replica_name", kafka_settings->kafka_replica_name.value);
 
-        /// Expand other macros (such as {shard} and {replica}). We do not expand them on previous step
-        /// to make possible copying metadata files between replicas.
+        // Expand other macros (such as {replica}). We do not expand them on previous step to make possible copying metadata files between replicas.
+        // Disable expanding {shard} macro, because it can lead to incorrect behavior and it doesn't make sense to shard Kafka tables.
         Macros::MacroExpansionInfo info;
         info.table_id = args.table_id;
         if (is_replicated_database)
         {
             auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
-            info.shard = getReplicatedDatabaseShardName(database);
+            info.shard.reset();
             info.replica = getReplicatedDatabaseReplicaName(database);
         }
         if (!allow_uuid_macro)
