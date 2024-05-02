@@ -26,8 +26,6 @@ class SubscriptionEnricher
 
         if (canPromote(partition_id, max_block_number, part->info))
         {
-            LOG_DEBUG(log, "Enriching {} | {} -> {}", partition_id, max_block_number, part->info.max_block);
-
             auto alter_convertions = storage.getAlterConversionsForPart(part);
             subscription->push(RangesInDataPart(part, alter_convertions, 0, MarkRanges{MarkRange(0, part->getMarksCount())}));
 
@@ -35,8 +33,6 @@ class SubscriptionEnricher
 
             return true;
         }
-
-        LOG_DEBUG(log, "Enrichion {} | {} -> {} banned", partition_id, max_block_number, part->info.max_block);
 
         return false;
     }
@@ -48,32 +44,13 @@ class SubscriptionEnricher
 
         if (canPromote(partition_id, max_block_number, part->info))
         {
-            LOG_DEBUG(log, "Enriching {} | {} -> {}", partition_id, max_block_number, part->info.max_block);
-
             subscription->push(ranges);
             max_block_number = part->info.max_block;
 
             return true;
         }
 
-        LOG_DEBUG(log, "Enrichion {} | {} -> {} banned", partition_id, max_block_number, part->info.max_block);
-
         return false;
-    }
-
-    void logAtStart() const
-    {
-        std::vector<String> promoters_dump;
-        promoters_dump.reserve(promoters.size());
-
-        for (const auto & [partition_id, promoter] : promoters)
-            promoters_dump.push_back(fmt::format("{}: {{{}}}", partition_id, promoter.dumpStructure()));
-
-        LOG_DEBUG(
-            log,
-            "Started Enrichion of subscription: {}, promoters: {{{}}}",
-            subscription->dumpStructure(),
-            boost::join(promoters_dump, ", "));
     }
 
 public:
@@ -92,8 +69,6 @@ public:
 
     bool enrichSubscription()
     {
-        logAtStart();
-
         bool enriched = false;
 
         for (const auto & [partition_id, parts] : data_parts)

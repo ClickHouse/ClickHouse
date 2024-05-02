@@ -1,10 +1,3 @@
-#include <magic_enum.hpp>
-
-#include <base/defines.h>
-#include <base/types.h>
-
-#include <Common/logger_useful.h>
-
 #include <Processors/IProcessor.h>
 #include <Processors/StreamingAdapter.h>
 
@@ -20,8 +13,6 @@ StreamingAdapter::StreamingAdapter(const Block & header_) : IProcessor(InputPort
 
 IProcessor::Status StreamingAdapter::prepare()
 {
-    LOG_DEBUG(log, "current state: {}", magic_enum::enum_name(state));
-
     if (isCancelled())
         return Status::Finished;
 
@@ -30,8 +21,6 @@ IProcessor::Status StreamingAdapter::prepare()
 
     if (state == StreamingState::ReadingFromStorage)
     {
-        LOG_DEBUG(log, "reading from storage source");
-
         Status status = preparePair(input_storage_port, output_port);
 
         if (status == Status::Finished)
@@ -48,9 +37,6 @@ IProcessor::Status StreamingAdapter::prepare()
     }
 
     chassert(state == StreamingState::ReadingFromSubscription);
-
-    LOG_DEBUG(log, "reading from subscription source");
-
     return preparePair(input_subscription_port, output_port);
 }
 

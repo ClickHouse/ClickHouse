@@ -223,7 +223,7 @@ private:
 
     MergeTreeReaderSettings reader_settings;
 
-    const MergeTreeData::DataPartsVector prepared_parts;
+    MergeTreeData::DataPartsVector prepared_parts;
     std::vector<AlterConversionsPtr> alter_conversions_for_parts;
 
     Names all_column_names;

@@ -1558,16 +1558,6 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         /// parallel replicas and unused shards into optimization, similar to projection analysis.
         query_info.filter_actions_dag = filter_actions_dag;
 
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-        LOG_INFO(&Poco::Logger::get("ReadFromMergeTree::applyFilters"), "BUILDING INDEXES");
-
         buildIndexes(
             indexes,
             filter_actions_dag,
@@ -2049,14 +2039,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         result.total_marks_pk,
         result.selected_marks,
         result.selected_ranges);
-
-    for (const auto& part_with_ranges : result.parts_with_ranges) {
-        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
-        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
-        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
-        LOG_DEBUG(log, "PART_NAME: {}, RANGES_COUNT: {}", part_with_ranges.data_part->name, part_with_ranges.ranges.size());
-        LOG_DEBUG(log, "--------------");
-    }
 
     // Adding partition info to QueryAccessInfo.
     if (context->hasQueryContext() && !query_info.is_internal)

@@ -35,16 +35,6 @@ void ChunkSplitterTransform::transform(Chunk & chunk)
     PartitionCursor left = getCursor(chunk, 0);
     PartitionCursor right = getCursor(chunk, chunk.getNumRows() - 1);
 
-    LOG_DEBUG(
-        &Poco::Logger::get("ChunkSplitterTransform"),
-        "before split: {}.{} -- {}.{}, current cursor: {}.{}",
-        left.block_number,
-        left.block_offset,
-        right.block_number,
-        right.block_offset,
-        current.block_number,
-        current.block_offset);
-
     if (current < left)
         // only new data
         ;
@@ -60,16 +50,6 @@ void ChunkSplitterTransform::transform(Chunk & chunk)
 
     if (current < right)
         current = right;
-
-    LOG_DEBUG(
-        &Poco::Logger::get("ChunkSplitterTransform"),
-        "after split: {}.{} -- {}.{}, current cursor: {}.{}",
-        left.block_number,
-        left.block_offset,
-        right.block_number,
-        right.block_offset,
-        current.block_number,
-        current.block_offset);
 }
 
 Chunk ChunkSplitterTransform::splitByCursor(Chunk && chunk, const PartitionCursor & current)
@@ -87,8 +67,6 @@ Chunk ChunkSplitterTransform::splitByCursor(Chunk && chunk, const PartitionCurso
         else
             r = mid;
     }
-
-    LOG_DEBUG(&Poco::Logger::get("ChunkSplitterTransform"), "chunk_size: {}, l: {}, r: {}", chunk_size, l, r);
 
     size_t splitted_size = chunk_size - r;
 

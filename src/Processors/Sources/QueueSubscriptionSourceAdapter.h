@@ -87,14 +87,11 @@ std::optional<Chunk> QueueSubscriptionSourceAdapter<T>::tryGenerate()
             return Chunk();
         }
 
-        LOG_DEBUG(log, "extracting new batch");
         auto new_data = subscription.extractAll();
         cached_data.splice(cached_data.end(), new_data);
 
         need_new_data = false;
     }
-
-    LOG_DEBUG(log, "cached data size: {}", cached_data.size());
 
     return useCachedData();
 }
@@ -103,7 +100,7 @@ template <class T>
 int QueueSubscriptionSourceAdapter<T>::schedule()
 {
     chassert(fd.has_value());
-    LOG_DEBUG(log, "waiting on descriptor: {}", fd.value());
+    LOG_INFO(log, "waiting on descriptor: {}", fd.value());
     return fd.value();
 }
 
@@ -112,7 +109,7 @@ void QueueSubscriptionSourceAdapter<T>::onUpdatePorts()
 {
     if (getPort().isFinished())
     {
-        LOG_DEBUG(log, "output port is finished, disabling subscription");
+        LOG_INFO(log, "output port is finished, disabling subscription");
         subscription.disable();
     }
 }
@@ -120,7 +117,7 @@ void QueueSubscriptionSourceAdapter<T>::onUpdatePorts()
 template <class T>
 void QueueSubscriptionSourceAdapter<T>::onCancel()
 {
-    LOG_DEBUG(log, "query is cancelled, disabling subscription");
+    LOG_INFO(log, "query is cancelled, disabling subscription");
     subscription.disable();
 }
 

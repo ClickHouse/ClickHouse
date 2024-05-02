@@ -25,6 +25,8 @@ public:
         StreamReadingStage stage;
         CursorTreeNodePtr tree;
         std::optional<String> keeper_key;
+
+        bool operator==(const StreamSettings & other) const;
     };
 
     TableExpressionModifiers(bool has_final_,
@@ -108,7 +110,7 @@ private:
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
-    return lhs.hasFinal() == rhs.hasFinal() && lhs.hasStream() == rhs.hasStream() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
+    return lhs.hasFinal() == rhs.hasFinal() && lhs.getStreamSettings() == rhs.getStreamSettings() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
 }
 
 inline bool operator!=(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)

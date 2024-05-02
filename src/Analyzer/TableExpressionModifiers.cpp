@@ -12,6 +12,13 @@
 namespace DB
 {
 
+bool TableExpressionModifiers::StreamSettings::operator==(const StreamSettings & other) const
+{
+    auto lhs_cursor_str = cursorTreeToString(tree);
+    auto rhs_cursor_str = cursorTreeToString(other.tree);
+    return std::tie(stage, keeper_key, lhs_cursor_str) == std::tie(other.stage, other.keeper_key, rhs_cursor_str);
+}
+
 void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 {
     buffer << "final: " << has_final;
@@ -51,8 +58,8 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
     if (stream_settings.has_value())
     {
         hash_state.update(stream_settings->stage);
-        hash_state.update(stream_settings->tree);
         hash_state.update(stream_settings->keeper_key);
+        hash_state.update(cursorTreeToString(stream_settings->tree));
     }
 
     if (sample_size_ratio.has_value())
