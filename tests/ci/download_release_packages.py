@@ -19,6 +19,8 @@ CLICKHOUSE_COMMON_STATIC_DBG_PACKAGE_NAME = (
     "clickhouse-common-static-dbg_{version}_amd64.deb"
 )
 CLICKHOUSE_CLIENT_PACKAGE_NAME = "clickhouse-client_{version}_amd64.deb"
+CLICKHOUSE_LIBRARY_BRIDGE_PACKAGE_NAME = "clickhouse-library-bridge_{version}_amd64.deb"
+CLICKHOUSE_ODBC_BRIDGE_PACKAGE_NAME = "clickhouse-odbc-bridge_{version}_amd64.deb"
 CLICKHOUSE_SERVER_PACKAGE_NAME = "clickhouse-server_{version}_amd64.deb"
 
 PACKAGES_DIR = "previous_release_package_folder/"
@@ -56,8 +58,10 @@ def download_packages(release, dest_path=PACKAGES_DIR):
     for pkg in (
         CLICKHOUSE_COMMON_STATIC_PACKAGE_NAME,
         CLICKHOUSE_COMMON_STATIC_DBG_PACKAGE_NAME,
-        CLICKHOUSE_SERVER_PACKAGE_NAME,
         CLICKHOUSE_CLIENT_PACKAGE_NAME,
+        CLICKHOUSE_LIBRARY_BRIDGE_PACKAGE_NAME,
+        CLICKHOUSE_ODBC_BRIDGE_PACKAGE_NAME,
+        CLICKHOUSE_SERVER_PACKAGE_NAME,
     ):
         url = (DOWNLOAD_PREFIX + pkg).format(version=release.version, type=release.type)
         pkg_name = get_dest_path(pkg.format(version=release.version))
