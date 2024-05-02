@@ -16,7 +16,7 @@ jobs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: DebugInfo
-        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
+        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -239,15 +239,14 @@ jobs:
       build_name: binary_riscv64
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
-  # disabled because s390x refused to build in the migration to OpenSSL
-  # BuilderBinS390X:
-  #   needs: [RunConfig, BuilderDebRelease]
-  #   if: ${{ !failure() && !cancelled() }}
-  #   uses: ./.github/workflows/reusable_build.yml
-  #   with:
-  #     build_name: binary_s390x
-  #     data: ${{ needs.RunConfig.outputs.data }}
-  #     checkout_depth: 0
+  BuilderBinS390X:
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_s390x
+      data: ${{ needs.RunConfig.outputs.data }}
+      checkout_depth: 0
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -298,7 +297,7 @@ jobs:
       - BuilderBinFreeBSD
       - BuilderBinPPC64
       - BuilderBinRISCV64
-      # - BuilderBinS390X # disabled because s390x refused to build in the migration to OpenSSL
+      - BuilderBinS390X
       - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy

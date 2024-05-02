@@ -43,8 +43,6 @@ struct S3ObjectStorageSettings
 class S3ObjectStorage : public IObjectStorage
 {
 private:
-    friend class S3PlainObjectStorage;
-
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
@@ -54,11 +52,11 @@ private:
         ObjectStorageKeysGeneratorPtr key_generator_,
         const String & disk_name_)
         : uri(uri_)
-        , key_generator(std::move(key_generator_))
         , disk_name(disk_name_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
+        , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
     {
     }
@@ -161,8 +159,11 @@ public:
     bool supportParallelWrite() const override { return true; }
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
 
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
+
+    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { key_generator = gen; }
 
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
@@ -172,12 +173,13 @@ private:
 
     const S3::URI uri;
 
-    ObjectStorageKeysGeneratorPtr key_generator;
     std::string disk_name;
 
     MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
+
+    ObjectStorageKeysGeneratorPtr key_generator;
 
     LoggerPtr log;
 };
