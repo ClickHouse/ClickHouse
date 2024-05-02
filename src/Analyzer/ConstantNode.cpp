@@ -148,7 +148,9 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
-    if (constant_value.getColumn()->compareAt(0, 0, *rhs_typed.constant_value.getColumn(), 1) != 0)
+    const auto & column = constant_value.getColumn();
+    const auto & rhs_column = rhs_typed.constant_value.getColumn();
+    if (column->getDataType() != rhs_column->getDataType() || column->compareAt(0, 0, *rhs_column, 1) != 0)
         return false;
 
     return !compare_options.compare_types || constant_value.getType()->equals(*rhs_typed.constant_value.getType());
