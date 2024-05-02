@@ -13,19 +13,20 @@ file(GLOB_RECURSE SRCS
 )
 
 add_library(_pulsar ${SRCS})
-add_library(ch_contrib::pulsar ALIAS _pulsar)
+
+target_include_directories(_pulsar SYSTEM PUBLIC "${LIBRARY_DIR}/include" "${LIBRARY_DIR}/lib" "${LIBRARY_DIR}")
 
 target_link_libraries(_pulsar
-  PRIVATE
+  PUBLIC
+    boost::headers_only
     boost::system
-    boost:filesystem
+    boost::filesystem
     ch_contrib::zlib
     ch_contrib::zstd
     OpenSSL::Crypto OpenSSL::SSL
     ch_contrib::curl
     ch_contrib::snappy
-    
+    ch_contrib::protobuf
 )
 
-target_include_directories(_pulsar PRIVATE "${LIBRARY_DIR}/include")
-target_include_directories(_pulsar SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include/pulsar")
+add_library(ch_contrib::pulsar ALIAS _pulsar)
