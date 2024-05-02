@@ -71,7 +71,7 @@ On Linux, macOS and FreeBSD:
 
    Table data is stored in the current directory and still available after a restart of ClickHouse server. If necessary, you can pass
    `-C config.xml` as an additional command line argument to `./clickhouse server` and provide further configuration in a configuration
-   file. All availabe configuration settings are documented [here](../operations/settings.md) and in an [example configuration file
+   file. All available configuration settings are documented [here](../operations/settings.md) and in an [example configuration file
    template](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
 
    You are ready to start sending SQL commands to ClickHouse!
