@@ -79,7 +79,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = Columns;
+    using Index = std::shared_ptr<Columns>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -367,8 +367,9 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    const Index & getIndex() const;
-    void setIndex(Columns index_);
+    Index getIndex() const;
+    void setIndex(Index index_);
+    void unloadIndex();
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
