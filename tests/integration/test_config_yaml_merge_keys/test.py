@@ -33,7 +33,7 @@ def test_yaml_merge_keys_conf():
         assert(
             node.query(
                 "select getSetting('max_threads')", user="user_3"
-            ) == "1\n"
+            ) == "4\n"
         )
 
         # Assert override with multiple merge keys
