@@ -165,29 +165,6 @@ def put_azure_file_content(filename, port, data):
     blob_client.upload_blob(buf)
 
 
-@pytest.fixture(autouse=True, scope="function")
-def delete_all_files(cluster):
-    port = cluster.env_variables["AZURITE_PORT"]
-    connection_string = (
-        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-        f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-        f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;"
-    )
-    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-    containers = blob_service_client.list_containers()
-    for container in containers:
-        container_client = blob_service_client.get_container_client(container)
-        blob_list = container_client.list_blobs()
-        for blob in blob_list:
-            print(blob)
-            blob_client = container_client.get_blob_client(blob)
-            blob_client.delete_blob()
-
-        assert len(list(container_client.list_blobs())) == 0
-
-    yield
-
-
 def test_backup_restore(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
@@ -302,7 +279,6 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
 
 def test_backup_restore_on_merge_tree(cluster):
     node = cluster.instances["node"]
-    port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
         f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'",
@@ -321,3 +297,5 @@ def test_backup_restore_on_merge_tree(cluster):
     assert (
         azure_query(node, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
     )
+    azure_query(node, f"DROP TABLE test_simple_merge_tree")
+    azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")

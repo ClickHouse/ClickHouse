@@ -849,7 +849,6 @@ class CiOptions:
         jobs_to_do: List[str],
         jobs_to_skip: List[str],
         jobs_params: Dict[str, Dict[str, Any]],
-        run_only_if_included: bool,
     ) -> Tuple[List[str], List[str], Dict[str, Dict[str, Any]]]:
         """
         Applies specified options on CI Run Config
@@ -932,10 +931,6 @@ class CiOptions:
                 )
             jobs_to_do_requested = list(label_config.run_jobs)
 
-        if run_only_if_included and not jobs_to_do_requested:
-            jobs_to_skip += jobs_to_do
-            jobs_to_do = []
-
         if jobs_to_do_requested:
             jobs_to_do_requested = list(set(jobs_to_do_requested))
             print(
@@ -948,10 +943,12 @@ class CiOptions:
             #   we need to add params - otherwise it won't run as "batches" list will be empty
             for job in jobs_to_do:
                 if job not in jobs_params:
-                    num_batches = CI_CONFIG.get_job_config(job).num_batches
+                    job_config = CI_CONFIG.get_job_config(job)
+                    num_batches = job_config.num_batches
                     jobs_params[job] = {
                         "batches": list(range(num_batches)),
                         "num_batches": num_batches,
+                        "run_if_ci_option_include_set": job_config.run_by_ci_option,
                     }
 
         # 4. Handle "batch_" tags
@@ -962,6 +959,18 @@ class CiOptions:
             for job, params in jobs_params.items():
                 if params["num_batches"] > 1:
                     params["batches"] = self.job_batches
+
+        for job in jobs_to_do[:]:
+            job_param = jobs_params[job]
+            if (
+                job_param["run_if_ci_option_include_set"]
+                and job not in jobs_to_do_requested
+            ):
+                print(
+                    f"Erasing job '{job}' from list because it's not in included set, but will run only by include"
+                )
+                jobs_to_skip.append(job)
+                jobs_to_do.remove(job)
 
         return jobs_to_do, jobs_to_skip, jobs_params
 
@@ -1455,7 +1464,7 @@ def _configure_jobs(
                 ]
 
     jobs_to_do, jobs_to_skip, jobs_params = ci_options.apply(
-        jobs_to_do, jobs_to_skip, jobs_params, job_config.run_by_ci_option
+        jobs_to_do, jobs_to_skip, jobs_params
     )
 
     return {

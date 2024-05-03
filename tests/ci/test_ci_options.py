@@ -44,6 +44,10 @@ _TEST_BODY_3 = """
 - [x] <!---ci_include_analyzer--> Must include all tests for analyzer
 """
 
+_TEST_BODY_4 = """
+"""
+
+
 _TEST_JOB_LIST = [
     "Style check",
     "Fast test",
@@ -152,9 +156,15 @@ class TestCIOptions(unittest.TestCase):
         )
         jobs_to_do = list(_TEST_JOB_LIST)
         jobs_to_skip = []
-        job_params = {}
+        job_params = {
+            "Stateless tests (azure, asan)": {
+                "batches": list(range(3)),
+                "num_batches": 3,
+                "run_if_ci_option_include_set": True,
+            }
+        }
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params, False
+            jobs_to_do, jobs_to_skip, job_params
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -186,7 +196,7 @@ class TestCIOptions(unittest.TestCase):
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params, False
+            jobs_to_do, jobs_to_skip, job_params
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -197,4 +207,33 @@ class TestCIOptions(unittest.TestCase):
                 "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
                 "package_asan",
             ],
+        )
+
+    def test_options_applied_3(self):
+        self.maxDiff = None
+        ci_options = CiOptions.create_from_pr_message(
+            _TEST_BODY_4, update_from_api=False
+        )
+        self.assertIsNone(ci_options.include_keywords, None)
+        self.assertIsNone(ci_options.exclude_keywords, None)
+        jobs_to_do = list(_TEST_JOB_LIST)
+        jobs_to_skip = []
+        job_params = {}
+
+        for job in _TEST_JOB_LIST:
+            if "Stateless" in job:
+                job_params[job] = {
+                    "batches": list(range(3)),
+                    "num_batches": 3,
+                    "run_if_ci_option_include_set": "azure" in job,
+                }
+            else:
+                job_params[job] = {"run_if_ci_option_include_set": False}
+
+        jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
+            jobs_to_do, jobs_to_skip, job_params
+        )
+        self.assertNotIn(
+            "Stateless tests (azure, asan)",
+            jobs_to_do,
         )

@@ -78,7 +78,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_COMPAT = "binary_amd64_compat"
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
-    # BINARY_S390X = "binary_s390x" # disabled because s390x refused to build in the migration to OpenSSL
+    BINARY_S390X = "binary_s390x"
     FUZZERS = "fuzzers"
 
 
@@ -131,6 +131,7 @@ class JobNames(metaclass=WithIter):
     STRESS_TEST_MSAN = "Stress test (msan)"
     STRESS_TEST_DEBUG = "Stress test (debug)"
     STRESS_TEST_AZURE_TSAN = "Stress test (azure, tsan)"
+    STRESS_TEST_AZURE_MSAN = "Stress test (azure, msan)"
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
@@ -1033,13 +1034,12 @@ CI_CONFIG = CIConfig(
             package_type="binary",
             static_binary_name="riscv64",
         ),
-        # disabled because s390x refused to build in the migration to OpenSSL
-        # Build.BINARY_S390X: BuildConfig(
-        #     name=Build.BINARY_S390X,
-        #     compiler="clang-17-s390x",
-        #     package_type="binary",
-        #     static_binary_name="s390x",
-        # ),
+        Build.BINARY_S390X: BuildConfig(
+            name=Build.BINARY_S390X,
+            compiler="clang-17-s390x",
+            package_type="binary",
+            static_binary_name="s390x",
+        ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-17",
@@ -1069,7 +1069,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_DARWIN_AARCH64,
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
-                # Build.BINARY_S390X, # disabled because s390x refused to build in the migration to OpenSSL
+                Build.BINARY_S390X,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
@@ -1233,6 +1233,9 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+        ),
+        JobNames.STRESS_TEST_AZURE_MSAN: TestConfig(
+            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
