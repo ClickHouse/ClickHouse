@@ -1413,9 +1413,10 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 ```
 
-## toStartOfInterval(date_or_date_with_time, INTERVAL x unit \[, time_zone\])
+## toStartOfInterval
 
-This function generalizes other `toStartOf*()` functions. For example,
+This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
+For example,
 - `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
 - `toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,
 - `toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
@@ -1439,6 +1440,8 @@ The calculation is performed relative to specific points in time:
 
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
     hour values between 1 and 23 are useful.
+
+If unit `week` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
 **See Also**
 
@@ -1670,10 +1673,10 @@ Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../.
 
 ## age
 
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 nanosecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
-For an alternative to `age`, see function `date\_diff`.
+For an alternative to `age`, see function `date_diff`.
 
 **Syntax**
 
@@ -1686,16 +1689,17 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1741,14 +1745,14 @@ Result:
 ```
 
 
-## date\_diff
+## date_diff
 
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for unit `day` (see [toRelativeDayNum](#torelativedaynum)), 1 month for unit `month` (see [toRelativeMonthNum](#torelativemonthnum)) and 1 year for unit `year` (see [toRelativeYearNum](#torelativeyearnum)).
 
-If unit `week` was specified, `date\_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
+If unit `week` was specified, `date_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
 
-For an alternative to `date\_diff`, see function `age`.
+For an alternative to `date_diff`, see function `age`.
 
 **Syntax**
 
@@ -1763,16 +1767,17 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1834,6 +1839,9 @@ Alias: `dateTrunc`.
 - `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
     Possible values:
 
+    - `nanosecond` - Compatible only with DateTime64
+    - `microsecond` - Compatible only with DateTime64
+    - `milisecond` - Compatible only with DateTime64
     - `second`
     - `minute`
     - `hour`
@@ -1886,7 +1894,7 @@ Result:
 
 **See Also**
 
-- [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
+- [toStartOfInterval](#tostartofintervaldate_or_date_with_time-interval-x-unit--time_zone)
 
 ## date\_add
 
@@ -1900,11 +1908,17 @@ If the addition results in a value outside the bounds of the data type, the resu
 date_add(unit, value, date)
 ```
 
+Alternative syntax:
+
+``` sql
+date_add(date, INTERVAL value unit)
+```
+
 Aliases: `dateAdd`, `DATE_ADD`.
 
 **Arguments**
 
-- `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+- `unit` — The type of interval to add. Note: This is not a [String](../../sql-reference/data-types/string.md) and must therefore not be quoted.
     Possible values:
 
     - `second`
@@ -1939,6 +1953,20 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
+```sql
+SELECT date_add(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+```text
+┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                    2021-01-01 │
+└───────────────────────────────────────────────┘
+```
+
+
+
 **See Also**
 
 - [addDate](#addDate)
@@ -1955,11 +1983,18 @@ If the subtraction results in a value outside the bounds of the data type, the r
 date_sub(unit, value, date)
 ```
 
+Alternative syntax:
+
+``` sql
+date_sub(date, INTERVAL value unit)
+```
+
+
 Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
-- `unit` — The type of interval to subtract. Note: The unit should be unquoted.
+- `unit` — The type of interval to subtract. Note: This is not a [String](../../sql-reference/data-types/string.md) and must therefore not be quoted.
 
     Possible values:
 
@@ -1994,6 +2029,19 @@ Result:
 │                                     2015-01-01 │
 └────────────────────────────────────────────────┘
 ```
+
+``` sql
+SELECT date_sub(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+``` text
+┌─minus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                     2015-01-01 │
+└────────────────────────────────────────────────┘
+```
+
 
 **See Also**
 
@@ -2838,7 +2886,7 @@ Result:
 
 ## fromUnixTimestamp
 
-This function converts a Unix timestamp to a calendar date and a time of a day. 
+This function converts a Unix timestamp to a calendar date and a time of a day.
 
 It can be called in two ways:
 
