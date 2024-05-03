@@ -29,7 +29,7 @@ INSERT INTO without_deduplication VALUES (43);
 SELECT count() FROM with_deduplication;
 SELECT count() FROM without_deduplication;
 
--- Implicit insert isn't deduplicated
+-- Implicit insert is deduplicated even for MV without_deduplication_mv
 SELECT '';
 SELECT countMerge(cnt) FROM with_deduplication_mv;
 SELECT countMerge(cnt) FROM without_deduplication_mv;

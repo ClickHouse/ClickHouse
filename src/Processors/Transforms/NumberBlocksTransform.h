@@ -228,4 +228,24 @@ namespace DB
         String token_part;
     };
 
+    class RestoreChunkInfosTransform : public ISimpleTransform
+    {
+    public:
+        RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, const Block & header_)
+                : ISimpleTransform(header_, header_, true)
+                , chunk_infos(chunk_infos_)
+        {
+        }
+
+        String getName() const override { return "RestoreChunkInfosTransform"; }
+
+        void transform(Chunk & chunk) override
+        {
+            chunk.getChunkInfos().append(chunk_infos.clone());
+        }
+
+    private:
+        Chunk::ChunkInfoCollection chunk_infos;
+    };
+
 }

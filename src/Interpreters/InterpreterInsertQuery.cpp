@@ -471,8 +471,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
         if (table->prefersLargeBlocks())
         {
-            new_settings.max_block_size = std::max(settings.min_insert_block_size_rows, settings.max_block_size);
-            new_settings.preferred_block_size_bytes = std::max(settings.min_insert_block_size_bytes, settings.preferred_block_size_bytes);
+            if (settings.min_insert_block_size_rows)
+                new_settings.max_block_size = settings.min_insert_block_size_rows;
+            if (settings.min_insert_block_size_bytes)
+                new_settings.preferred_block_size_bytes = settings.min_insert_block_size_bytes;
         }
 
         auto context_for_trivial_select = Context::createCopy(context);
@@ -497,10 +499,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
             pipeline = interpreter_select.buildQueryPipeline();
         }
-
-        // auto resources = QueryPlanResourceHolder();
-        // resources.interpreter_context.push_back(select_context);
-        // pipeline.addResources(std::move(resources));
     }
 
     pipeline.dropTotalsAndExtremes();

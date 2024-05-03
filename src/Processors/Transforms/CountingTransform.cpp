@@ -17,6 +17,9 @@ namespace DB
 
 void CountingTransform::onConsume(Chunk chunk)
 {
+    LOG_DEBUG(getLogger("CountingTransform"),
+              "onConsume {}", chunk.getNumRows());
+
     if (quota)
         quota->used(QuotaType::WRITTEN_BYTES, chunk.bytes());
 

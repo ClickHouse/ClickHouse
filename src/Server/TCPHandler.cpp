@@ -890,18 +890,18 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     while (readDataNext())
     {
         auto result = squashing.add(std::move(state.block_for_insert));
-        if (result)
+        if (result.block)
         {
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
-                .insert_block = std::move(result),
+                .insert_block = std::move(result.block),
             };
         }
     }
 
     auto result = squashing.add({});
-    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
+    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result.block), query_context);
 }
 
 void TCPHandler::processInsertQuery()
