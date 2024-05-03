@@ -193,6 +193,7 @@ private:
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
             auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
+            replacement_table_expression->setAlias(table_node->getAlias());
 
             if (modifiers)
                 replacement_table_expression->setTableExpressionModifiers(modifiers.value());
@@ -314,9 +315,54 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     return temporary_table_expression_node;
 }
 
+class ShardChangesVisitor : public InDepthQueryTreeVisitor<ShardChangesVisitor>
+{
+    bool collect_keeper_keys = false;
+    std::map<const IQueryTreeNode *, String> table_expression_to_alias;
+    std::map<const IQueryTreeNode *, std::optional<String>> table_expression_to_keeper_key;
+
+    void processNode(const IQueryTreeNode * node, const std::optional<TableExpressionModifiers> & modifiers)
+    {
+        table_expression_to_alias[node] = node->getAlias();
+
+        if (!collect_keeper_keys || !modifiers || !modifiers->hasStream())
+            return;
+
+        table_expression_to_keeper_key[node] = modifiers->getStreamSettings()->keeper_key;
+    }
+
+public:
+    using Base = InDepthQueryTreeVisitor<ShardChangesVisitor>;
+    using Base::Base;
+
+    explicit ShardChangesVisitor(bool collect_keeper_keys_)
+        : collect_keeper_keys(collect_keeper_keys_)
+    {
+    }
+
+    std::map<const IQueryTreeNode *, String> extractAliases()
+    {
+        return std::move(table_expression_to_alias);
+    }
+
+    std::map<const IQueryTreeNode *, std::optional<String>> extractKeeperKeys()
+    {
+        return std::move(table_expression_to_keeper_key);
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (const auto * table_node = node->as<const TableNode>())
+            processNode(table_node, table_node->getTableExpressionModifiers());
+        else if (const auto * function_node = node->as<const TableFunctionNode>())
+            processNode(function_node, function_node->getTableExpressionModifiers());
+    }
+};
+
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
+QueryTreeNodePtr buildQueryTreeForShard(
+    const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, ShardCursorChanges * changes)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -396,7 +442,29 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
+    std::map<const IQueryTreeNode *, String> prev_aliases;
+    if (changes)
+    {
+        ShardChangesVisitor changes_visitor(/*collect_keeper_keys_=*/ false);
+        changes_visitor.visit(query_tree_to_modify);
+        prev_aliases = changes_visitor.extractAliases();
+    }
+
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+
+    if (changes)
+    {
+        ShardChangesVisitor changes_visitor(/*collect_keeper_keys_=*/ true);
+        changes_visitor.visit(query_tree_to_modify);
+        auto new_aliases = changes_visitor.extractAliases();
+        auto keeper_keys = changes_visitor.extractKeeperKeys();
+
+        for (const auto & [node, new_alias] : new_aliases)
+            changes->stream_name_restore_map[new_alias] = prev_aliases.at(node);
+
+        for (const auto & [node, keeper_key] : keeper_keys)
+            changes->keeper_restore_map[new_aliases.at(node)] = keeper_key;
+    }
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings
@@ -464,86 +532,6 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 {
     RewriteJoinToGlobalJoinVisitor visitor(context);
     visitor.visit(query_tree_to_modify);
-}
-
-class ShardCursorChangesVisitor : public InDepthQueryTreeVisitor<ShardCursorChangesVisitor>
-{
-    ShardCursorChanges changes;
-    DistributedProductMode mode;
-
-public:
-    using Base = InDepthQueryTreeVisitor<ShardCursorChangesVisitor>;
-    using Base::Base;
-
-    explicit ShardCursorChangesVisitor(DistributedProductMode mode_)
-        : mode(mode_)
-    {
-    }
-
-    ShardCursorChanges extractShardCursorChanges()
-    {
-        return std::move(changes);
-    }
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto * table_node = node->as<TableNode>())
-            processTableNode(*table_node);
-        else if (auto * table_function_node = node->as<TableFunctionNode>())
-            processTableFunction(*table_function_node);
-    }
-
-private:
-    void processTableNode(TableNode & node)
-    {
-        const auto & storage_id = node.getStorageID();
-        const auto & modifiers = node.getTableExpressionModifiers();
-
-        const auto * distributed_storage = typeid_cast<const StorageDistributed *>(node.getStorage().get());
-        if (!distributed_storage)
-        {
-            addRestoreInfo(storage_id, storage_id, modifiers);
-            return;
-        }
-
-        bool distributed_valid_for_rewrite = distributed_storage->getShardCount() >= 2;
-        if (!distributed_valid_for_rewrite)
-        {
-            addRestoreInfo(storage_id, storage_id, modifiers);
-            return;
-        }
-
-        if (mode == DistributedProductMode::LOCAL)
-        {
-            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(), distributed_storage->getRemoteTableName()};
-            addRestoreInfo(remote_storage_id, storage_id, modifiers);
-        }
-
-        /// other modes either do not change the storage or are not supported in streaming queries.
-    }
-
-    void processTableFunction(TableFunctionNode & node)
-    {
-        const auto & storage_id = node.getStorageID();
-        const auto & modifiers = node.getTableExpressionModifiers();
-        addRestoreInfo(storage_id, storage_id, modifiers);
-    }
-
-    void addRestoreInfo(const StorageID & real_id, const StorageID & wrapped_id, const std::optional<TableExpressionModifiers> & modifiers)
-    {
-        if (!modifiers || !modifiers->hasStream())
-            return;
-
-        changes.storage_restore_map[real_id.getFullTableName()] = wrapped_id.getFullTableName();
-        changes.keeper_restore_map[real_id.getFullTableName()] = modifiers->getStreamSettings()->keeper_key;
-    }
-};
-
-ShardCursorChanges extractShardCursorChanges(QueryTreeNodePtr query_tree, DistributedProductMode mode)
-{
-    ShardCursorChangesVisitor visitor(mode);
-    visitor.visit(query_tree);
-    return visitor.extractShardCursorChanges();
 }
 
 class NarrowShardCursorsVisitor : public InDepthQueryTreeVisitor<NarrowShardCursorsVisitor>

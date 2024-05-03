@@ -18,8 +18,8 @@ public:
 protected:
     void transform(Chunk & chunk) override;
 
-    const String & getActualStorage(const String & real_storage_id) const;
-    std::optional<String> getKeeperKey(const String & real_storage_id) const;
+    const String & getActualStreamName(const String & stream_name) const;
+    std::optional<String> getKeeperKey(const String & stream_name) const;
 
 private:
     String shard_key;

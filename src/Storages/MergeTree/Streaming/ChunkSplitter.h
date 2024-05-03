@@ -10,7 +10,7 @@ namespace DB
 class ChunkSplitterTransform : public ISimpleTransform
 {
 public:
-    ChunkSplitterTransform(Block header_, MergeTreeCursor cursor_, String storage_full_name_, std::optional<String> keeper_key_);
+    ChunkSplitterTransform(Block header_, MergeTreeCursor cursor_, String stream_name_, std::optional<String> keeper_key_);
 
     String getName() const override { return "ChunkSplitterTransform"; }
 
@@ -23,7 +23,7 @@ protected:
 
 private:
     MergeTreeCursor cursor;
-    String storage_full_name;
+    String stream_name;
     std::optional<String> keeper_key;
 
     size_t block_number_column_index = 0;

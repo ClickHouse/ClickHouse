@@ -26,12 +26,12 @@ void WrapShardCursorTransform::transform(Chunk & chunk)
 
     CursorDataMap updated;
 
-    for (auto & [real_storage_id, cursor] : cursor_info->cursors)
+    for (auto & [stream_name, cursor] : cursor_info->cursors)
     {
-        const String & actual_storage = getActualStorage(real_storage_id);
-        auto & data = (updated[actual_storage] = std::move(cursor));
+        const String & actual_stream_name = getActualStreamName(stream_name);
+        auto & data = (updated[actual_stream_name] = std::move(cursor));
 
-        data.keeper_key = getKeeperKey(real_storage_id);
+        data.keeper_key = getKeeperKey(stream_name);
 
         auto wrapped_tree = std::make_shared<CursorTreeNode>();
         wrapped_tree->setSubtree(shard_key, std::move(data.tree));
@@ -41,17 +41,17 @@ void WrapShardCursorTransform::transform(Chunk & chunk)
     cursor_info->cursors = std::move(updated);
 }
 
-const String & WrapShardCursorTransform::getActualStorage(const String & real_storage_id) const
+const String & WrapShardCursorTransform::getActualStreamName(const String & stream_name) const
 {
-    if (auto it = changes.storage_restore_map.find(real_storage_id); it != changes.storage_restore_map.end())
+    if (auto it = changes.stream_name_restore_map.find(stream_name); it != changes.stream_name_restore_map.end())
         return it->second;
 
-    return  real_storage_id;
+    return stream_name;
 }
 
-std::optional<String> WrapShardCursorTransform::getKeeperKey(const String & real_storage_id) const
+std::optional<String> WrapShardCursorTransform::getKeeperKey(const String & stream_name) const
 {
-    if (auto it = changes.keeper_restore_map.find(real_storage_id); it != changes.keeper_restore_map.end())
+    if (auto it = changes.keeper_restore_map.find(stream_name); it != changes.keeper_restore_map.end())
         return it->second;
 
     return std::nullopt;

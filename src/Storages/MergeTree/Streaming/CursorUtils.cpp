@@ -55,7 +55,7 @@ MergeTreeCursor buildMergeTreeCursor(
 }
 
 std::shared_ptr<CursorInfo> buildMergeTreeCursorInfo(
-    const String & storage_full_name,
+    const String & stream_name,
     const String & partition_id,
     const std::optional<String> & keeper_key,
     Int64 block_number,
@@ -66,7 +66,7 @@ std::shared_ptr<CursorInfo> buildMergeTreeCursorInfo(
     partition_subtree->setValue("block_number", block_number);
     partition_subtree->setValue("block_offset", block_offset);
 
-    CursorDataMap data = {{storage_full_name, CursorData{.tree = std::move(tree), .keeper_key = keeper_key}}};
+    CursorDataMap data = {{stream_name, CursorData{.tree = std::move(tree), .keeper_key = keeper_key}}};
     return std::make_shared<CursorInfo>(std::move(data));
 }
 

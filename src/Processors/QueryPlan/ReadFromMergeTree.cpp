@@ -1987,7 +1987,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
     const size_t partitions_cnt = countPartitions(prepared_parts);
     const size_t readers_cnt = std::max<size_t>(1, std::min(partitions_cnt, requested_num_streams));
 
-    const auto storage_full_name = data.getStorageID().getFullTableName();
+    const auto stream_name = query_info.table_expression->getAlias();
     const auto keeper_key = query_info.table_expression_modifiers->getStreamSettings()->keeper_key;
 
     const auto initial_offsets = buildInitialBlockNumberOffsets(cursor, prepared_parts, parts_with_ranges);
@@ -2007,7 +2007,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
 
         Pipe partition_reader = createMergeTreePartitionSequentialSource(data, storage_snapshot, subscription, result.column_names_to_read);
         partition_reader.addSimpleTransform(
-            [&](const Block header) { return std::make_unique<ChunkSplitterTransform>(header, cursor, storage_full_name, keeper_key); });
+            [&](const Block header) { return std::make_unique<ChunkSplitterTransform>(header, cursor, stream_name, keeper_key); });
 
         pipes.push_back(std::move(partition_reader));
     }

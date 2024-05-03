@@ -822,11 +822,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
     replase_alias_columns_visitor.visit(query_tree_to_modify);
 
-    changes = extractShardCursorChanges(query_tree_to_modify, query_info.planner_context->getQueryContext()->getSettings().distributed_product_mode);
-    if (!remote_table_function)
-        changes.storage_restore_map[remote_storage_id.getFullTableName()] = query_info.table_expression->as<TableNode>()->getStorageID().getFullTableName();
-
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, &changes);
 }
 
 }

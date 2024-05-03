@@ -31,7 +31,7 @@ MergeTreeCursor buildMergeTreeCursor(
     StreamReadingStage reading_stage, const CursorTreeNodePtr & cursor_tree, const CursorPromotersMap & promoters);
 
 std::shared_ptr<CursorInfo> buildMergeTreeCursorInfo(
-    const String & storage_full_name,
+    const String & stream_name,
     const String & partition_id,
     const std::optional<String> & keeper_key,
     Int64 block_number,

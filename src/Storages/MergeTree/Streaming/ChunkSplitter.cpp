@@ -11,10 +11,10 @@ namespace DB
 {
 
 ChunkSplitterTransform::ChunkSplitterTransform(
-    Block header_, MergeTreeCursor cursor_, String storage_full_name_, std::optional<String> keeper_key_)
+    Block header_, MergeTreeCursor cursor_, String stream_name_, std::optional<String> keeper_key_)
     : ISimpleTransform(header_, header_, true)
     , cursor(std::move(cursor_))
-    , storage_full_name(std::move(storage_full_name_))
+    , stream_name(std::move(stream_name_))
     , keeper_key(std::move(keeper_key_))
 {
     block_number_column_index = getOutputPort().getHeader().getPositionByName(QueueBlockNumberColumn::name);
@@ -45,7 +45,7 @@ void ChunkSplitterTransform::transform(Chunk & chunk)
         // only old data
         chunk = Chunk();
 
-    auto cursor_info = buildMergeTreeCursorInfo(storage_full_name, partition_id, keeper_key, right.block_number, right.block_offset);
+    auto cursor_info = buildMergeTreeCursorInfo(stream_name, partition_id, keeper_key, right.block_number, right.block_offset);
     chunk.setChunkInfo(std::move(cursor_info), CursorInfo::INFO_SLOT);
 
     if (current < right)
