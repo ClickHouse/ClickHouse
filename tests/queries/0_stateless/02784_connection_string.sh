@@ -120,7 +120,7 @@ runClient "clickhouse:" --database "$CLICKHOUSE_DATABASE" --port "$CLICKHOUSE_PO
 runClient "clickhouse:" --connection "connection" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
 # Space is used in connection string (This is prohibited).
-runClient " clickhouse:" 2>&1 | grep -o 'BAD_ARGUMENTS'
+runClient " clickhouse:" 2>&1 | grep -o 'SYNTAX_ERROR'
 runClient "clickhouse: " 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://host1 /" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://host1, host2/" 2>&1 | grep -o 'BAD_ARGUMENTS'
