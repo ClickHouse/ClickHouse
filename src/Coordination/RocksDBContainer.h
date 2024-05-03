@@ -31,24 +31,6 @@ struct RocksDBContainer
     using Node = Node_;
 
 private:
-    /// this is only for debug.
-    std::string toHex(std::string origin)
-    {
-        auto toHexChar = [](char v)
-        {
-            if (v <= 9)
-                return v + '0';
-            return 'A' + v - 10;
-        };
-        std::string result;
-        result.reserve(2 * origin.size());
-        for (unsigned char c : origin)
-        {
-            result.push_back(toHexChar(c >> 4));
-            result.push_back(toHexChar(c & 0xf));
-        }
-        return result;
-    }
 
     UInt16 getKeyDepth(const std::string & key)
     {
@@ -184,13 +166,11 @@ public:
         if (disk == nullptr)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb disk");
-            return;
         }
         auto options = context->getRocksDBOptions();
         if (options == nullptr)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb options");
-            return;
         }
         rocksdb_dir = disk->getPath();
         rocksdb::DB * db;
@@ -365,7 +345,7 @@ public:
             return false;
         if (status.ok())
         {
-            counter --;
+            counter--;
             return true;
         }
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during erase. The error message is {}.", status.ToString());
