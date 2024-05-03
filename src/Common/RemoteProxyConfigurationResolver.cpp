@@ -19,9 +19,11 @@ namespace ErrorCodes
 RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
     const RemoteServerConfiguration & remote_server_configuration_,
     Protocol request_protocol_,
-    bool disable_tunneling_for_https_requests_over_http_proxy_
+    bool disable_tunneling_for_https_requests_over_http_proxy_,
+    const std::string & no_proxy_hosts_
 )
-: ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_), remote_server_configuration(remote_server_configuration_)
+: ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_),
+    remote_server_configuration(remote_server_configuration_), no_proxy_hosts(no_proxy_hosts_)
 {
 }
 
@@ -105,6 +107,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         cached_config.port = proxy_port;
         cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
         cached_config.original_request_protocol = request_protocol;
+        cached_config.no_proxy_hosts = no_proxy_hosts;
         cache_timestamp = std::chrono::system_clock::now();
         cache_valid = true;
 

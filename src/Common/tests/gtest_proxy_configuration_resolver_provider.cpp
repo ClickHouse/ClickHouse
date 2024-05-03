@@ -31,9 +31,11 @@ Poco::URI https_env_proxy_server = Poco::URI("http://https_environment_proxy:312
 Poco::URI http_list_proxy_server = Poco::URI("http://http_list_proxy:3128");
 Poco::URI https_list_proxy_server = Poco::URI("http://https_list_proxy:3128");
 
+static std::string no_proxy_hosts = "localhost,,127.0.0.1,some_other_domain,,,, last_domain,";
+
 TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {
-    EnvironmentProxySetter setter(http_env_proxy_server, https_env_proxy_server);
+    EnvironmentProxySetter setter(http_env_proxy_server, https_env_proxy_server, no_proxy_hosts);
     const auto & config = getContext().context->getConfigRef();
 
     auto http_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP, config)->resolve();
@@ -42,10 +44,12 @@ TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedI
     ASSERT_EQ(http_configuration.host, http_env_proxy_server.getHost());
     ASSERT_EQ(http_configuration.port, http_env_proxy_server.getPort());
     ASSERT_EQ(http_configuration.protocol, DB::ProxyConfiguration::protocolFromString(http_env_proxy_server.getScheme()));
+    ASSERT_EQ(http_configuration.no_proxy_hosts, no_proxy_hosts);
 
     ASSERT_EQ(https_configuration.host, https_env_proxy_server.getHost());
     ASSERT_EQ(https_configuration.port, https_env_proxy_server.getPort());
     ASSERT_EQ(https_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_env_proxy_server.getScheme()));
+    ASSERT_EQ(https_configuration.no_proxy_hosts, no_proxy_hosts);
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
@@ -53,6 +57,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
+    config->setString("proxy.no_proxy", no_proxy_hosts);
     config->setString("proxy.http", "");
     config->setString("proxy.http.uri", http_list_proxy_server.toString());
     context->setConfig(config);
@@ -62,18 +67,21 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
     ASSERT_EQ(http_proxy_configuration.host, http_list_proxy_server.getHost());
     ASSERT_EQ(http_proxy_configuration.port, http_list_proxy_server.getPort());
     ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(http_list_proxy_server.getScheme()));
+    ASSERT_EQ(http_proxy_configuration.no_proxy_hosts, no_proxy_hosts);
 
     auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
 
     // No https configuration since it's not set
     ASSERT_EQ(https_proxy_configuration.host, "");
     ASSERT_EQ(https_proxy_configuration.port, 0);
+    ASSERT_EQ(https_proxy_configuration.no_proxy_hosts, "");
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
 {
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
+    config->setString("proxy.no_proxy", no_proxy_hosts);
     config->setString("proxy", "");
     config->setString("proxy.https", "");
     config->setString("proxy.https.uri", https_list_proxy_server.toString());
@@ -91,12 +99,14 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
     // still HTTP because the proxy host is not HTTPS
     ASSERT_EQ(https_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_list_proxy_server.getScheme()));
     ASSERT_EQ(https_proxy_configuration.port, https_list_proxy_server.getPort());
+    ASSERT_EQ(https_proxy_configuration.no_proxy_hosts, no_proxy_hosts);
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
 {
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
+    config->setString("proxy.no_proxy", no_proxy_hosts);
     config->setString("proxy", "");
     config->setString("proxy.http", "");
     config->setString("proxy.http.uri", http_list_proxy_server.toString());
@@ -112,6 +122,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
     ASSERT_EQ(http_proxy_configuration.host, http_list_proxy_server.getHost());
     ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(http_list_proxy_server.getScheme()));
     ASSERT_EQ(http_proxy_configuration.port, http_list_proxy_server.getPort());
+    ASSERT_EQ(http_proxy_configuration.no_proxy_hosts, no_proxy_hosts);
 
     auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
 
@@ -120,6 +131,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
     // still HTTP because the proxy host is not HTTPS
     ASSERT_EQ(https_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_list_proxy_server.getScheme()));
     ASSERT_EQ(https_proxy_configuration.port, https_list_proxy_server.getPort());
+    ASSERT_EQ(https_proxy_configuration.no_proxy_hosts, no_proxy_hosts);
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolConfigurationHTTP)
@@ -157,6 +169,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolC
     ASSERT_EQ(http_proxy_configuration.host, http_env_proxy_server.getHost());
     ASSERT_EQ(http_proxy_configuration.port, http_env_proxy_server.getPort());
     ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(http_env_proxy_server.getScheme()));
+    ASSERT_EQ(http_proxy_configuration.no_proxy_hosts, no_proxy_hosts);
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolConfigurationHTTPS)
@@ -194,6 +207,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolC
     ASSERT_EQ(http_proxy_configuration.host, https_env_proxy_server.getHost());
     ASSERT_EQ(http_proxy_configuration.port, https_env_proxy_server.getPort());
     ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_env_proxy_server.getScheme()));
+    ASSERT_EQ(http_proxy_configuration.no_proxy_hosts, no_proxy_hosts);
 }
 
 // remote resolver is tricky to be tested in unit tests

@@ -17,6 +17,11 @@ namespace ErrorCodes
 
 namespace
 {
+    std::string getNoProxyHosts(const Poco::Util::AbstractConfiguration & configuration)
+    {
+        return configuration.getString("proxy.no_proxy", "");
+    }
+
     bool isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(
         const Poco::Util::AbstractConfiguration & configuration)
     {
@@ -49,7 +54,8 @@ namespace
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
-            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
+            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration),
+            getNoProxyHosts(configuration));
     }
 
     auto extractURIList(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -87,7 +93,11 @@ namespace
 
         return uris.empty()
             ? nullptr
-            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
+            : std::make_shared<ProxyListConfigurationResolver>(
+                  uris,
+                  request_protocol,
+                  isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration),
+                  getNoProxyHosts(configuration));
     }
 
     bool hasRemoteResolver(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
