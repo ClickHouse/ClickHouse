@@ -19,8 +19,6 @@
 #include <stdexcept>
 #include <fsst.h>
 
-#include <iostream>
-
 namespace DB
 {
 
@@ -38,8 +36,6 @@ public:
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override
     {
-        std::cerr << "Fsst compress " << std::endl;
-
         std::vector<size_t> len_in;
         std::vector<const unsigned char *> str_in;
 
@@ -82,8 +78,6 @@ protected:
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override
     {
-        std::cerr << "Fsst decompress" << std::endl;
-
         UNUSED(uncompressed_size, source_size);
         fsst_decoder_t decoder;
         size_t fsst_header_size = fsst_import(&decoder, reinterpret_cast<unsigned char *>(const_cast<char *>(source)));
@@ -141,7 +135,6 @@ void registerCodecFSST(CompressionCodecFactory & factory)
     auto codec_builder = [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         UNUSED(arguments);
-        std::cerr << "Register FSST codec" << std::endl;
         return std::make_shared<CompressionCodecFSST>();
     };
     factory.registerCompressionCodec("FSST", static_cast<UInt8>(CompressionMethodByte::FSST), codec_builder);
