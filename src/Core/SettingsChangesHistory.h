@@ -87,6 +87,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
 {
     {"24.5", {{"allow_deprecated_functions", true, false, "Allow usage of deprecated functions"},
               {"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
+              {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
               }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"max_parsing_threads", 0, 0, "Add a separate setting to control number of threads in parallel parsing from files"},
@@ -101,8 +102,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"azure_allow_parallel_part_upload", "true", "true", "Use multiple threads for azure multipart upload."},
               {"max_recursive_cte_evaluation_depth", DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, "Maximum limit on recursive CTE evaluation depth"},
               {"query_plan_convert_outer_join_to_inner_join", false, true, "Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values"},
-              {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
-    }},
+              }},
     {"24.3", {{"s3_connect_timeout_ms", 1000, 1000, "Introduce new dedicated setting for s3 connection timeout"},
               {"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
               {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
