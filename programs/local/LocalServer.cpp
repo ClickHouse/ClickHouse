@@ -693,6 +693,7 @@ void LocalServer::processConfig()
     if (config().has("path"))
     {
         String path = global_context->getPath();
+        fs::create_directories(fs::path(path));
 
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
