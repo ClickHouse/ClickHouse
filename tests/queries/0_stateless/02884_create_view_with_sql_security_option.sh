@@ -259,6 +259,6 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000"
 ${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM session_events"
-${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM materialized_events"
+${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM materialized_events"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";

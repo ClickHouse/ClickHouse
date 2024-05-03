@@ -98,6 +98,12 @@ StorageMaterializedView::StorageMaterializedView(
                                                                      local_context->getGlobalContext());
 
     ASTPtr sql_security = query.sql_security;
+
+    /// Materialized view doesn't support SQL SECURITY INVOKER. It's reserved type for backward compatibility
+    if (sql_security && sql_security->as<ASTSQLSecurity &>().type == SQLSecurityType::INVOKER)
+        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
+
+    // TODO: remove after we turn `ignore_empty_sql_security_in_create_view_query=false`
     if (!sql_security)
     {
         /// This allows materialized views to be loaded during startup with default SQL security for backward compatibility.
@@ -106,8 +112,7 @@ StorageMaterializedView::StorageMaterializedView(
         sql_security->as<ASTSQLSecurity &>().type = SQLSecurityType::INVOKER;
     }
 
-    if (sql_security)
-        storage_metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
+    storage_metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -225,6 +230,8 @@ void StorageMaterializedView::read(
         context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
 
     auto storage_id = storage->getStorageID();
+
+    /// TODO: remove INVOKER check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
     if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type != SQLSecurityType::INVOKER)
         context->checkAccess(AccessType::SELECT, storage_id, column_names);
@@ -274,6 +281,8 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     auto storage_id = storage->getStorageID();
+
+    /// TODO: remove INVOKER check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
     if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type != SQLSecurityType::INVOKER)
     {

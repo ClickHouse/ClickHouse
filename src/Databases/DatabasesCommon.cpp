@@ -73,13 +73,18 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
     if (metadata.sql_security_type)
     {
-        auto new_sql_security = std::make_shared<ASTSQLSecurity>();
-        new_sql_security->type = metadata.sql_security_type;
+        /// TODO: remove after we turn `ignore_empty_sql_security_in_create_view_query=false`
+        /// If materialized view has SQL SECURITY INVOKER we shouldn't dump it on disk.
+        if (!ast_create_query.is_materialized_view || metadata.sql_security_type != SQLSecurityType::INVOKER)
+        {
+            auto new_sql_security = std::make_shared<ASTSQLSecurity>();
+            new_sql_security->type = metadata.sql_security_type;
 
-        if (metadata.definer)
-            new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
+            if (metadata.definer)
+                new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
 
-        ast_create_query.sql_security = std::move(new_sql_security);
+            ast_create_query.sql_security = std::move(new_sql_security);
+        }
     }
 
     /// MaterializedView, Dictionary are types of CREATE query without storage.
