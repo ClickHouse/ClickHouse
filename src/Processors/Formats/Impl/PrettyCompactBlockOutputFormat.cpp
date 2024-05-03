@@ -176,21 +176,18 @@ void PrettyCompactBlockOutputFormat::writeRow(
             writeCString(grid_symbols.bar, out);
 
         const auto & type = *header.getByPosition(j).type;
-        const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        bool has_break_line = false;
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type), has_break_line);
-
-        if (has_break_line)
+        size_t cur_width = widths[j].empty() ? max_widths[j] : widths[j][row_num];
+        String serialized_value;
         {
-            has_transferred_row = true;
-            String serialized_value = " ";
-            {
-                WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
-                serializations[j]->serializeText(*columns[j], row_num, out_serialize, format_settings);
-            }
-            size_t break_line_pos = serialized_value.find_first_of('\n');
-            transferred_row[j] = serialized_value.substr(break_line_pos + 1);
+            WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+            serializations[j]->serializeText(*columns[j], row_num, out_serialize, format_settings);
         }
+        if (cut_to_width)
+            splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width);
+        has_transferred_row |= !transferred_row[j].empty() && cur_width <= cut_to_width;
+
+        writeValueWithPadding(serialized_value, cur_width, max_widths[j], cut_to_width,
+            type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[j].empty(), false);
     }
 
     writeCString(grid_symbols.bar, out);
@@ -198,7 +195,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
     writeCString("\n", out);
 
     if (has_transferred_row)
-        writeTransferredRow(max_widths, transferred_row, false);
+        writeTransferredRow(max_widths, header, transferred_row, cut_to_width, false);
 }
 
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)

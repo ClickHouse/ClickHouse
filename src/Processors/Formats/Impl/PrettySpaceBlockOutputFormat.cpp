@@ -94,29 +94,25 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
                 writeCString(" ", out);
 
             const auto & type = *header.getByPosition(column).type;
-            auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            bool has_break_line = false;
-            writeValueWithPadding(*columns[column], *serializations[column],
-                row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type), has_break_line);
-
-            if (has_break_line)
+            size_t cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
+            String serialized_value;
             {
-                has_transferred_row = true;
-                String serialized_value = " ";
-                {
-                    WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
-                    serializations[column]->serializeText(*columns[column], row, out_serialize, format_settings);
-                }
-                size_t break_line_pos = serialized_value.find_first_of('\n');
-                transferred_row[column] = serialized_value.substr(break_line_pos + 1);
+                WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+                serializations[column]->serializeText(*columns[column], row, out_serialize, format_settings);
             }
+            if (cut_to_width)
+                splitValueAtBreakLine(serialized_value, transferred_row[column], cur_width);
+            has_transferred_row |= !transferred_row[column].empty() && cur_width <= cut_to_width;
+
+            writeValueWithPadding(serialized_value, cur_width, max_widths[column], cut_to_width,
+                type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[column].empty(), false);
         }
 
         writeReadableNumberTip(chunk);
         writeChar('\n', out);
 
         if (has_transferred_row)
-            writeTransferredRow(max_widths, transferred_row, true);
+            writeTransferredRow(max_widths, header, transferred_row, cut_to_width, true);
     }
 
     total_rows += num_rows;
