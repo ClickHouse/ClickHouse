@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     VirtualFields shared_virtual_fields_,
@@ -115,7 +120,23 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 
     auto get_part_name = [](const auto & task_info) -> String
     {
-        return task_info.data_part->isProjectionPart() ? task_info.data_part->getParentPartName() : task_info.data_part->name;
+        const auto & data_part = task_info.data_part;
+
+        if (data_part->isProjectionPart())
+        {
+            auto parent_part_name = data_part->getParentPartName();
+
+            auto parent_part = data_part->storage.getPartIfExists(
+                parent_part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+
+            if (!parent_part)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for potentially broken projection part {}",
+                            parent_part_name, data_part->getDataPartStorage().getFullPath());
+
+            return parent_part_name;
+        }
+
+        return data_part->name;
     };
 
     auto extras = getExtras();
