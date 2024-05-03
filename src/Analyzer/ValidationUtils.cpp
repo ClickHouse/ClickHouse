@@ -190,7 +190,7 @@ private:
         {
             if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
             {
-                /** Column sources shoul be compared with aliases for correct GROUP BY keys validation,
+                /** Column sources should be compared with aliases for correct GROUP BY keys validation,
                   * otherwise t2.x and t1.x will be considered as the same column:
                   * SELECT t2.x FROM t1 JOIN t1 as t2 ON t1.x = t2.x GROUP BY t1.x;
                   */
