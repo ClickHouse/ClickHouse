@@ -152,7 +152,14 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             if (res_columns[pos] == nullptr)
                 continue;
 
-            additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+            /// We must take column type from part if it exists. Because at the end of defaults
+            /// calculations we will materialize ALL the columns, not only missing.
+            /// If column doesn't exist in part than it will be substituted with default expression
+            const auto * column_in_part = part_columns.tryGet(name_and_type->name);
+            if (column_in_part != nullptr)
+                additional_columns.insert({res_columns[pos], column_in_part->type, name_and_type->name});
+            else
+                additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
         auto dag = DB::evaluateMissingDefaults(
