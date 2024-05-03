@@ -23,3 +23,14 @@ TEST(ProxyConfigurationToPocoProxyConfiguration, TestNoProxyHostRegexBuildMatchA
 
     ASSERT_EQ(poco_proxy_configuration.nonProxyHosts, "(.*?)");
 }
+
+TEST(ProxyConfigurationToPocoProxyConfiguration, TestNoProxyHostRegexBuildEmpty)
+{
+    DB::ProxyConfiguration proxy_configuration;
+
+    proxy_configuration.no_proxy_hosts = "";
+
+    auto poco_proxy_configuration = DB::proxyConfigurationToPocoProxyConfig(proxy_configuration);
+
+    ASSERT_EQ(poco_proxy_configuration.nonProxyHosts, "");
+}

@@ -1,9 +1,6 @@
 #include "EnvironmentProxyConfigurationResolver.h"
-#include <unordered_set>
-#include <sstream>
 
 #include <Common/logger_useful.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Poco/URI.h>
 
 namespace DB
