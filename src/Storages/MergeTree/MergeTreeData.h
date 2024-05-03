@@ -1208,7 +1208,7 @@ protected:
     IExecutableTask::TaskResultCallback common_assignee_trigger;
     IExecutableTask::TaskResultCallback moves_assignee_trigger;
 
-    /// Assignes parts for streaming queries to read.
+    /// Assigns parts for streaming queries to read.
     /// Enabled only if queue mode is configured.
     std::optional<BackgroundJobsAssignee> background_streaming_assignee;
     IExecutableTask::TaskResultCallback streaming_assignee_trigger;
