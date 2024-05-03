@@ -39,18 +39,6 @@ def cluster():
             instance_env_variables=True,
         )
 
-        cluster.add_instance(
-            "env_node_no_proxy",
-            main_configs=[
-                "configs/config.d/proxy_env.xml",
-            ],
-            with_minio=True,
-            env_variables={
-                "https_proxy": "http://proxy1",
-            },
-            instance_env_variables=True,
-        )
-
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
