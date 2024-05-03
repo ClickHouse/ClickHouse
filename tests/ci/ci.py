@@ -2170,7 +2170,7 @@ def main() -> int:
                         post_commit_status(
                             upstream_commit,
                             get_status(mergeable_status.state),
-                            mergeable_status.target_url,
+                            "",  # let's won't expose any urls from cloud
                             mergeable_status.description,
                             StatusNames.SYNC,
                         )
