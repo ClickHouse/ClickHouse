@@ -205,6 +205,7 @@ public:
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
+    void write(WriteBufferFromFile & wb, size_t offset);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
@@ -218,8 +219,6 @@ public:
     void resetRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
-
-    void setDownloadedSize(size_t delta);
 
     void setDownloadFailed();
 
@@ -243,6 +242,9 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
+
+    void assertWriteAllowed(size_t size, size_t offset);
+    void writeImpl(size_t size, size_t offset, std::function<void()> do_write, WriteBuffer * external_wb = nullptr);
 
     String tryGetPath() const;
 

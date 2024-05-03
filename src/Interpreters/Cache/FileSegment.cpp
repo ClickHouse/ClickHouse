@@ -187,13 +187,6 @@ size_t FileSegment::getDownloadedSize() const
     return downloaded_size;
 }
 
-void FileSegment::setDownloadedSize(size_t delta)
-{
-    auto lk = lock();
-    downloaded_size += delta;
-    assert(downloaded_size == std::filesystem::file_size(getPath()));
-}
-
 bool FileSegment::isDownloaded() const
 {
     auto lk = lock();
@@ -343,7 +336,38 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 void FileSegment::write(const char * from, size_t size, size_t offset)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
+    assertWriteAllowed(size, offset);
+    writeImpl(size, offset, [&]()
+    {
+        if (!cache_writer)
+            cache_writer = std::make_unique<WriteBufferFromFile>(getPath());
 
+        cache_writer->write(from, size);
+        cache_writer->next();
+    });
+}
+
+void FileSegment::write(WriteBufferFromFile & wb, size_t offset)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
+
+    const size_t size = wb.offset();
+    assertWriteAllowed(size, offset);
+
+    const auto & current_filename = wb.getFileName();
+    const auto & expected_filename = getPath();
+    if (current_filename != expected_filename)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Write buffer has unexpected file path: {}, expected: {}",
+                        current_filename, expected_filename);
+    }
+
+    writeImpl(size, offset, [&]() { wb.next(); }, &wb);
+}
+
+void FileSegment::assertWriteAllowed(size_t size, size_t offset)
+{
     if (!size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
@@ -353,53 +377,49 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         assertNotDetachedUnlocked(lk);
     }
 
-    const auto file_segment_path = getPath();
+    if (download_state != State::DOWNLOADING)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
-    {
-        if (download_state != State::DOWNLOADING)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected DOWNLOADING state, got {}", stateToString(download_state));
+    const size_t first_non_downloaded_offset = getCurrentWriteOffset();
+    if (offset != first_non_downloaded_offset)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to write {} bytes to offset: {}, but current write offset is {}",
+            size, offset, first_non_downloaded_offset);
 
-        const size_t first_non_downloaded_offset = getCurrentWriteOffset();
-        if (offset != first_non_downloaded_offset)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Attempt to write {} bytes to offset: {}, but current write offset is {}",
-                size, offset, first_non_downloaded_offset);
+    const size_t current_downloaded_size = getDownloadedSize();
+    chassert(reserved_size >= current_downloaded_size);
 
-        const size_t current_downloaded_size = getDownloadedSize();
-        chassert(reserved_size >= current_downloaded_size);
+    const size_t free_reserved_size = reserved_size - current_downloaded_size;
+    if (free_reserved_size < size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
 
-        const size_t free_reserved_size = reserved_size - current_downloaded_size;
-        if (free_reserved_size < size)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
+    if (!is_unbound && current_downloaded_size == range().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
-        if (!is_unbound && current_downloaded_size == range().size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+    if (!cache_writer && current_downloaded_size > 0)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cache writer was finalized (downloaded size: {}, state: {})",
+            current_downloaded_size, stateToString(download_state));
+}
 
-        if (!cache_writer && current_downloaded_size > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cache writer was finalized (downloaded size: {}, state: {})",
-                current_downloaded_size, stateToString(download_state));
-    }
-
+void FileSegment::writeImpl(size_t size, [[maybe_unused]] size_t offset, std::function<void()> do_write, WriteBuffer * external_wb)
+{
+    auto file_segment_path = getPath();
     try
     {
-        if (!cache_writer)
-            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
-
 #ifdef ABORT_ON_LOGICAL_ERROR
         /// This mutex is only needed to have a valid assertion in assertCacheCorrectness(),
         /// which is only executed in debug/sanitizer builds (under ABORT_ON_LOGICAL_ERROR).
         std::lock_guard lock(write_mutex);
 #endif
 
-        cache_writer->write(from, size);
-        cache_writer->next();
+        do_write();
 
         downloaded_size += size;
         chassert(std::filesystem::file_size(file_segment_path) == downloaded_size);
@@ -413,6 +433,18 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
+
+        if (external_wb)
+        {
+            try
+            {
+                external_wb->finalize();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
 
         if (downloaded_size == 0 && fs::exists(file_segment_path))
         {
@@ -431,7 +463,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         }
 
         throw;
-
     }
     catch (Exception & e)
     {
@@ -597,7 +628,14 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 
     if (cache_writer)
     {
-        cache_writer->finalize();
+        try
+        {
+            cache_writer->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         cache_writer.reset();
     }
 
@@ -825,7 +863,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
     };
 
     const auto file_path = getPath();
-    if (segment_kind != FileSegmentKind::Temporary)
+
     {
         std::lock_guard lk(write_mutex);
         if (downloaded_size == 0)

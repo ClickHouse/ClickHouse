@@ -97,15 +97,14 @@ void WriteBufferToFileSegment::nextImpl()
     {
         SwapHelper swap(*this, *impl);
         /// Write data to the underlying buffer.
-        impl->next();
+        file_segment->write(*dynamic_cast<WriteBufferFromFile *>(impl.get()), written_bytes);
+        written_bytes += bytes_to_write;
     }
     catch (...)
     {
         LOG_WARNING(getLogger("WriteBufferToFileSegment"), "Failed to write to the underlying buffer ({})", file_segment->getInfoForLog());
         throw;
     }
-
-    file_segment->setDownloadedSize(bytes_to_write);
 }
 
 std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
