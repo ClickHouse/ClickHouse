@@ -49,6 +49,15 @@ def _state_rank(status: str) -> int:
         return 3
 
 
+def get_status(status: str) -> StatusType:
+    "function to get the StatusType for a status or ERROR"
+    try:
+        ind = STATUSES.index(status)  # type: ignore
+        return STATUSES[ind]
+    except ValueError:
+        return ERROR
+
+
 def get_worst_status(statuses: Iterable[str]) -> StatusType:
     worst_status = SUCCESS  # type: StatusType
     for status in statuses:
