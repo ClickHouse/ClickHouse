@@ -113,9 +113,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
         : nullptr; /// make a copy
 
-    auto get_part_name = [](const auto & task_info) -> const String &
+    auto get_part_name = [](const auto & task_info) -> String
     {
-        return task_info.data_part->isProjectionPart() ? task_info.data_part->getParentPart()->name : task_info.data_part->name;
+        return task_info.data_part->isProjectionPart() ? task_info.data_part->getParentPartName() : task_info.data_part->name;
     };
 
     auto extras = getExtras();
