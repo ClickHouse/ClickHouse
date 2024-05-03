@@ -97,22 +97,12 @@ StorageMaterializedView::StorageMaterializedView(
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
 
-    ASTPtr sql_security = query.sql_security;
+    if (query.sql_security)
+        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
-    /// Materialized view doesn't support SQL SECURITY INVOKER. It's reserved type for backward compatibility
-    if (sql_security && sql_security->as<ASTSQLSecurity &>().type == SQLSecurityType::INVOKER)
+    /// Materialized view doesn't support SQL SECURITY INVOKER.
+    if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
-
-    // TODO: remove after we turn `ignore_empty_sql_security_in_create_view_query=false`
-    if (!sql_security)
-    {
-        /// This allows materialized views to be loaded during startup with default SQL security for backward compatibility.
-        /// If ClickHouse loads an old materialized view created without SQL security, it will use the default `SQL SECURITY INVOKER`
-        sql_security = std::make_shared<ASTSQLSecurity>();
-        sql_security->as<ASTSQLSecurity &>().type = SQLSecurityType::INVOKER;
-    }
-
-    storage_metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -231,9 +221,9 @@ void StorageMaterializedView::read(
 
     auto storage_id = storage->getStorageID();
 
-    /// TODO: remove INVOKER check after we turn `ignore_empty_sql_security_in_create_view_query=false`
+    /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type != SQLSecurityType::INVOKER)
+    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type)
         context->checkAccess(AccessType::SELECT, storage_id, column_names);
 
     storage->read(query_plan, column_names, target_storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
@@ -282,9 +272,9 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 
     auto storage_id = storage->getStorageID();
 
-    /// TODO: remove INVOKER check after we turn `ignore_empty_sql_security_in_create_view_query=false`
+    /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type != SQLSecurityType::INVOKER)
+    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type)
     {
         auto query_sample_block = InterpreterInsertQuery::getSampleBlock(query->as<ASTInsertQuery &>(), storage, metadata_snapshot, context);
         context->checkAccess(AccessType::INSERT, storage_id, query_sample_block.getNames());
