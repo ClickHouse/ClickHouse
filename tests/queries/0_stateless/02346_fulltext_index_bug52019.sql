@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (
     k UInt64,
     s Map(String, String),
-    INDEX idx mapKeys(s) TYPE inverted(2) GRANULARITY 1)
+    INDEX idx mapKeys(s) TYPE full_text(2) GRANULARITY 1)
 ENGINE = MergeTree
 ORDER BY k
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
