@@ -2,6 +2,8 @@
 
 import logging
 import pytest
+import os
+import minio
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock
@@ -608,3 +610,68 @@ def test_adaptive_timeouts(cluster, broken_s3, node_name):
     else:
         assert s3_use_adaptive_timeouts == "0"
         assert s3_errors == 0
+
+
+def test_no_key_found_disk(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    node.query(
+        """
+        CREATE TABLE no_key_found_disk (
+            id Int64
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS
+            storage_policy='s3'
+        """
+    )
+
+    uuid = node.query(
+        """
+        SELECT uuid
+        FROM system.tables
+        WHERE name = 'no_key_found_disk'
+        """
+    ).strip()
+    assert uuid
+
+    node.query("INSERT INTO no_key_found_disk VALUES (1)")
+
+    data = node.query("SELECT * FROM no_key_found_disk").strip()
+
+    assert data == "1"
+
+    remote_pathes = (
+        node.query(
+            f"""
+        SELECT remote_path
+        FROM system.remote_data_paths
+        WHERE
+            local_path LIKE '%{uuid}%'
+            AND local_path LIKE '%.bin%'
+        ORDER BY ALL
+        """
+        )
+        .strip()
+        .split()
+    )
+
+    assert len(remote_pathes) > 0
+
+    # path_prefix = os.path.join('/', cluster.minio_bucket)
+    for path in remote_pathes:
+        # name = os.path.relpath(path, path_prefix)
+        # assert False, f"deleting full {path} prefix {path_prefix} name {name}"
+        assert cluster.minio_client.stat_object(cluster.minio_bucket, path).size > 0
+        cluster.minio_client.remove_object(cluster.minio_bucket, path)
+        with pytest.raises(Exception) as exc_info:
+            size = cluster.minio_client.stat_object(cluster.minio_bucket, path).size
+            assert size == 0
+        assert "code: NoSuchKey" in str(exc_info.value)
+
+    error = node.query_and_get_error("SELECT * FROM no_key_found_disk").strip()
+
+    assert (
+        "DB::Exception: The specified key does not exist. This error happened for S3 disk."
+        in error
+    )
