@@ -10,7 +10,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 
-INSERT INTO test_03143 VALUES ('2024-04-23', 123, 'Hello, world!', 'xxx yyy');
+INSERT INTO test_03143 VALUES ('2023-04-23', 123, 'Hello, world!', 'xxx yyy');
 
 SELECT
     name,
