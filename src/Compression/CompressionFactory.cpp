@@ -175,7 +175,9 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+#ifdef USE_FSST
 void registerCodecFSST(CompressionCodecFactory & factory);
+#endif
 #ifdef ENABLE_ZSTD_QAT_CODEC
 void registerCodecZSTDQAT(CompressionCodecFactory & factory);
 #endif
@@ -201,7 +203,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
+#ifdef USE_FSST
     registerCodecFSST(*this);
+#endif
 #ifdef ENABLE_ZSTD_QAT_CODEC
     registerCodecZSTDQAT(*this);
 #endif
