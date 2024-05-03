@@ -245,13 +245,20 @@ bool SystemRemoteDataPathsSource::nextFile()
         try
         {
             const auto & disk = disks[current_disk].second;
+
+            const auto current_path = getCurrentPath();
+
+            /// Files or directories can disappear due to concurrent operations
+            if (!disk->exists(current_path))
+                continue;
+
             /// Stop if current path is a file
-            if (disk->isFile(getCurrentPath()))
+            if (disk->isFile(current_path))
                 return true;
 
             /// If current path is a directory list its contents and step into it
             std::vector<std::string> children;
-            disk->listFiles(getCurrentPath(), children);
+            disk->listFiles(current_path, children);
 
             /// Use current predicate for all children
             const auto & skip_predicate = getCurrentSkipPredicate();
@@ -267,6 +274,14 @@ bool SystemRemoteDataPathsSource::nextFile()
             /// Files or directories can disappear due to concurrent operations
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
                 e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST)
+                continue;
+
+            throw;
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            /// Files or directories can disappear due to concurrent operations
+            if (e.code() == std::errc::no_such_file_or_directory)
                 continue;
 
             throw;

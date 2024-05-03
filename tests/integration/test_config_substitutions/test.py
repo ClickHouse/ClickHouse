@@ -49,6 +49,11 @@ node7 = cluster.add_instance(
     },
     instance_env_variables=True,
 )
+node8 = cluster.add_instance(
+    "node8",
+    user_configs=["configs/config_include_from_yml.xml"],
+    main_configs=["configs/include_from_source.yml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -114,6 +119,10 @@ def test_config(start_cluster):
     assert (
         node7.query("select value from system.settings where name = 'max_threads'")
         == "2\n"
+    )
+    assert (
+        node8.query("select value from system.settings where name = 'max_query_size'")
+        == "88888\n"
     )
 
 
@@ -182,6 +191,11 @@ def test_include_config(start_cluster):
     assert node3.query("select 1")
     assert node3.query("select 1", user="user_1")
     assert node3.query("select 1", user="user_2")
+
+    # <include incl="source tag" /> from .yml source
+    assert node8.query("select 1")
+    assert node8.query("select 1", user="user_1")
+    assert node8.query("select 1", user="user_2")
 
 
 def test_allow_databases(start_cluster):

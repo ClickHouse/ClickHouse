@@ -11,7 +11,7 @@ import CodeBlock from '@theme/CodeBlock';
 
 # Install ClickHouse
 
-You have three options for getting up and running with ClickHouse:
+You have four options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
 - **[Quick Install](#quick-install):** an easy-to-download binary for testing and developing with ClickHouse
@@ -32,37 +32,49 @@ On Linux, macOS and FreeBSD:
 
 1. If you are just getting started and want to see what ClickHouse can do, the simplest way to download ClickHouse locally is to run the
    following command. It downloads a single binary for your operating system that can be used to run the ClickHouse server,
-   clickhouse-client, clickhouse-local, ClickHouse Keeper, and other tools:
+   `clickhouse-client`, `clickhouse-local`, ClickHouse Keeper, and other tools:
 
-  ```bash
-  curl https://clickhouse.com/ | sh
-  ```
+   ```bash
+   curl https://clickhouse.com/ | sh
+   ```
 
-1. Run the following command to start the ClickHouse server:
+2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
+
+   ```bash
+   ./clickhouse
+   ```
+
+   `clickhouse-local` allows you to process local and remote files using ClickHouse's powerful SQL and without a need for configuration. Table
+   data is stored in a temporary location, meaning that after a restart of `clickhouse-local` previously created tables are no longer
+   available.
+
+   As an alternative, you can start the ClickHouse server with this command ...
 
     ```bash
     ./clickhouse server
     ```
 
-   The first time you run this script, the necessary files and folders are created in the current directory, then the server starts.
+   ... and open a new terminal to connect to the server with `clickhouse-client`:
 
-1. Open a new terminal and use the **./clickhouse client** to connect to your service:
+    ```bash
+    ./clickhouse client
+    ```
 
-  ```bash
-  ./clickhouse client
-  ```
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
 
-  ```response
-  ./clickhouse client
-  ClickHouse client version 23.2.1.1501 (official build).
-  Connecting to localhost:9000 as user default.
-  Connected to ClickHouse server version 23.2.1.
+    local-host :)
+    ```
 
-  local-host :)
-  ```
+   Table data is stored in the current directory and still available after a restart of ClickHouse server. If necessary, you can pass
+   `-C config.xml` as an additional command line argument to `./clickhouse server` and provide further configuration in a configuration
+   file. All available configuration settings are documented [here](../operations/settings/settings.md) and in an [example configuration file
+   template](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
 
-  You are ready to start sending DDL and SQL commands to ClickHouse!
-
+   You are ready to start sending SQL commands to ClickHouse!
 
 :::tip
 The [Quick Start](/docs/en/quick-start.mdx) walks through the steps for creating tables and inserting data.
@@ -377,14 +389,14 @@ build.
 
 ### macOS-only: Install with Homebrew
 
-To install ClickHouse using [homebrew](https://brew.sh/), see [here](https://formulae.brew.sh/cask/clickhouse).
+To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
 ## Launch {#launch}
 
 To start the server as a daemon, run:
 
 ``` bash
-$ sudo clickhouse start
+$ clickhouse start
 ```
 
 There are also other ways to run ClickHouse:
