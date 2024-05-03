@@ -14,7 +14,7 @@ public:
     String getName() const override { return "One"; }
 
 protected:
-    Chunk read() override;
+    Chunk generate() override;
 
 private:
     bool done = false;

@@ -23,14 +23,14 @@ sidebar_label: "Функции сравнения"
 
 Замечание. До версии 1.1.54134 сравнение знаковых и беззнаковых целых чисел производилось также, как в C++. То есть, вы могли получить неверный результат в таких случаях: SELECT 9223372036854775807 \> -1. С версии 1.1.54134 поведение изменилось и стало математически корректным.
 
-## equals, оператор a = b и a == b {#equals}
+## equals, оператор a = b и a == b {#function-equals}
 
-## notEquals, оператор a != b и a `<>` b {#notequals}
+## notEquals, оператор a != b и a `<>` b {#function-notequals}
 
-## less, оператор `<` {#less}
+## less, оператор `<` {#function-less}
 
-## greater, оператор `>` {#greater}
+## greater, оператор `>` {#function-greater}
 
-## lessOrEquals, оператор `<=` {#lessorequals}
+## lessOrEquals, оператор `<=` {#function-lessorequals}
 
-## greaterOrEquals, оператор `>=` {#greaterorequals}
+## greaterOrEquals, оператор `>=` {#function-greaterorequals}

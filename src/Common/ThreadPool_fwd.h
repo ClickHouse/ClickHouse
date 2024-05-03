@@ -3,12 +3,11 @@
 template <typename Thread>
 class ThreadPoolImpl;
 
-template <bool propagate_opentelemetry_context, bool global_trace_collector_allowed>
+template <bool propagate_opentelemetry_context>
 class ThreadFromGlobalPoolImpl;
 
-using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false, true>;
+using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
 
-using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true, true>;
-using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true, false>;
+using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;

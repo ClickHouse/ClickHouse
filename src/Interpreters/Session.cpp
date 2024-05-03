@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int USER_EXPIRED;
 }
 
 
@@ -113,7 +112,8 @@ public:
                 throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
             /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;
+            auto context = Context::createCopy(global_context);
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
             const auto & session = it->second;
 
             if (!thread.joinable())
@@ -128,7 +128,7 @@ public:
             /// Use existing session.
             const auto & session = it->second;
 
-            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
@@ -266,7 +266,7 @@ private:
     ThreadFromGlobalPool thread;
     bool quit = false;
 
-    LoggerPtr log = getLogger("NamedSessionsStorage");
+    Poco::Logger * log = &Poco::Logger::get("NamedSessionsStorage");
 };
 
 
@@ -283,7 +283,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(getLogger(String{magic_enum::enum_name(interface_)} + "-Session"))
+      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -350,9 +350,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
-        user_id = auth_result.user_id;
-        settings_from_auth_server = auth_result.settings;
+        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -364,17 +362,6 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     prepared_client_info->current_user = credentials_.getUserName();
     prepared_client_info->current_address = address;
-}
-
-void Session::checkIfUserIsStillValid()
-{
-    if (user && user->valid_until)
-    {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-
-        if (now > user->valid_until)
-            throw Exception(ErrorCodes::USER_EXPIRED, "User expired");
-    }
 }
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
@@ -441,12 +428,18 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHTTPClientInfo(const Poco::Net::HTTPRequest & request)
+void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     if (session_context)
-        session_context->setHTTPClientInfo(request);
+    {
+        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer);
+    }
     else
-        prepared_client_info->setFromHTTPRequest(request);
+    {
+        prepared_client_info->http_method = http_method;
+        prepared_client_info->http_user_agent = http_user_agent;
+        prepared_client_info->http_referer = http_referer;
+    }
 }
 
 void Session::setForwardedFor(const String & forwarded_for)
@@ -527,10 +520,6 @@ ContextMutablePtr Session::makeSessionContext()
         *user_id,
         {},
         session_context->getSettingsRef().max_sessions_for_user);
-
-    // Use QUERY source as for SET query for a session
-    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-    session_context->applySettingsChanges(settings_from_auth_server);
 
     recordLoginSucess(session_context);
 
@@ -707,10 +696,6 @@ void Session::releaseSessionID()
 {
     if (!named_session)
         return;
-
-    prepared_client_info = getClientInfo();
-    session_context.reset();
-
     named_session->release();
     named_session = nullptr;
 }

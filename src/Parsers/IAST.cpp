@@ -114,24 +114,24 @@ size_t IAST::checkSize(size_t max_size) const
 }
 
 
-IAST::Hash IAST::getTreeHash(bool ignore_aliases) const
+IAST::Hash IAST::getTreeHash() const
 {
     SipHash hash_state;
-    updateTreeHash(hash_state, ignore_aliases);
+    updateTreeHash(hash_state);
     return getSipHash128AsPair(hash_state);
 }
 
 
-void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
+void IAST::updateTreeHash(SipHash & hash_state) const
 {
-    updateTreeHashImpl(hash_state, ignore_aliases);
+    updateTreeHashImpl(hash_state);
     hash_state.update(children.size());
     for (const auto & child : children)
-        child->updateTreeHash(hash_state, ignore_aliases);
+        child->updateTreeHash(hash_state);
 }
 
 
-void IAST::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
+void IAST::updateTreeHashImpl(SipHash & hash_state) const
 {
     auto id = getID();
     hash_state.update(id.data(), id.size());

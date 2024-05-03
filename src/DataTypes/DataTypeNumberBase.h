@@ -25,6 +25,7 @@ public:
     using ColumnType = ColumnVector<T>;
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
+    String getSQLCompatibleName() const override;
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
 
     Field getDefault() const override;

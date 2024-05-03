@@ -4,6 +4,7 @@
 
 import argparse
 import logging
+
 from datetime import datetime
 from os import getenv
 from pprint import pformat
@@ -17,7 +18,7 @@ from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
-from report import SUCCESS
+
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -268,7 +269,7 @@ def main():
         failed_statuses = [
             status.context
             for status in get_commit_filtered_statuses(commit)
-            if status.state != SUCCESS
+            if status.state != "success"
         ]
         if failed_statuses:
             logging.warning(
