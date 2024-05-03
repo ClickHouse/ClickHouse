@@ -25,9 +25,10 @@ public:
     /// runs function on every subscription
     void executeOnEachSubscription(const std::function<void(StreamSubscriptionPtr & subscription)> & func);
 
-    /// returns count of currently running subcriptions
-    uint64_t getSubscriptionsCount() const;
+    /// returns true if no active subscriptions are registered in manager
     bool isEmpty() const;
+
+    /// opposite to isEmpty
     bool hasSome() const;
 
 private:

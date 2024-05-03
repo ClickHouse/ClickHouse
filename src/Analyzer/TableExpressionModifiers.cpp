@@ -58,7 +58,7 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
     if (stream_settings.has_value())
     {
         hash_state.update(stream_settings->stage);
-        hash_state.update(stream_settings->keeper_key);
+        hash_state.update(stream_settings->keeper_key.value_or("none"));
         hash_state.update(cursorTreeToString(stream_settings->tree));
     }
 

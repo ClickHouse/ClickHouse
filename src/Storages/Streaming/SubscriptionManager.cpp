@@ -50,14 +50,9 @@ void StreamSubscriptionManager::executeOnEachSubscription(const std::function<vo
     }
 }
 
-size_t StreamSubscriptionManager::getSubscriptionsCount() const
-{
-    return subscriptions_count.load();
-}
-
 bool StreamSubscriptionManager::isEmpty() const
 {
-    return getSubscriptionsCount() == 0;
+    return subscriptions_count.load() == 0;
 }
 
 bool StreamSubscriptionManager::hasSome() const

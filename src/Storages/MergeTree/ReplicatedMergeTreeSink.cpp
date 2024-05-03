@@ -449,7 +449,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             std::move(unmerged_block),
             std::move(part_counters), /// profile_events_scope must be reset here.
             std::move(lock_holder),
-            std::move(cursors)
+            std::exchange(cursors, {})
         ));
     }
 
