@@ -69,6 +69,7 @@ def drop_after_test():
         node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP DATABASE IF EXISTS mydb2 ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
 
 
@@ -522,6 +523,43 @@ def test_replicated_database_async():
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
+
+
+@pytest.mark.parametrize("special_macro", ["uuid", "database"])
+def test_replicated_database_with_special_macro_in_zk_path(special_macro):
+    zk_path = "/clickhouse/databases/{" + special_macro + "}"
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('"
+        + zk_path
+        + "','{shard}','{replica}')"
+    )
+
+    # ReplicatedMergeTree without arguments means ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+    node1.query("CREATE TABLE mydb.tbl(x Int64) ENGINE=ReplicatedMergeTree ORDER BY x")
+
+    node1.query("INSERT INTO mydb.tbl VALUES (-3)")
+    node1.query("INSERT INTO mydb.tbl VALUES (1)")
+    node1.query("INSERT INTO mydb.tbl VALUES (10)")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name}")
+
+    # RESTORE DATABASE with rename should work here because the new database will have another UUID and thus another zookeeper path.
+    node1.query(
+        f"RESTORE DATABASE mydb AS mydb2 ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    node1.query("INSERT INTO mydb.tbl VALUES (2)")
+
+    node1.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER 'cluster' mydb2")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb2.tbl")
+
+    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
+        [[-3], [1], [2], [10]]
+    )
+
+    assert node1.query("SELECT * FROM mydb2.tbl ORDER BY x") == TSV([[-3], [1], [10]])
+    assert node2.query("SELECT * FROM mydb2.tbl ORDER BY x") == TSV([[-3], [1], [10]])
 
 
 # By default `backup_restore_keeper_value_max_size` is 1 MB, but in this test we'll set it to 50 bytes just to check it works.

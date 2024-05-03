@@ -28,6 +28,7 @@ enum class MetadataStorageType
     None,
     Local,
     Plain,
+    PlainRewritable,
     StaticWeb,
 };
 

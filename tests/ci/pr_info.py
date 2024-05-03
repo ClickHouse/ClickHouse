@@ -6,11 +6,7 @@ import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
-# isort: off
-# for some reason this line moves to the end
 from unidiff import PatchSet  # type: ignore
-
-# isort: on
 
 from build_download_helper import get_gh_api
 from env_helper import (
@@ -19,8 +15,8 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
 )
+from lambda_shared_package.lambda_shared.pr import Labels
 
-SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
 DIFF_IN_DOCUMENTATION_EXT = [
@@ -256,7 +252,7 @@ class PRInfo:
                 self.head_ref = pull_request["head"]["ref"]
                 self.head_name = pull_request["head"]["repo"]["full_name"]
                 self.pr_html_url = pull_request["html_url"]
-                if "pr-backport" in self.labels:
+                if Labels.PR_BACKPORT in self.labels:
                     # head1...head2 gives changes in head2 since merge base
                     # Thag's why we need {self.head_ref}...master to get
                     # files changed in upstream AND master...{self.head_ref}
@@ -279,7 +275,7 @@ class PRInfo:
                     ]
                 else:
                     self.diff_urls.append(self.compare_pr_url(pull_request))
-                if "release" in self.labels:
+                if Labels.RELEASE in self.labels:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
@@ -310,27 +306,34 @@ class PRInfo:
         if need_changed_files:
             self.fetch_changed_files()
 
+    @property
     def is_master(self) -> bool:
         return self.number == 0 and self.head_ref == "master"
 
+    @property
     def is_release(self) -> bool:
         return self.number == 0 and bool(
             re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
         )
 
+    @property
     def is_release_branch(self) -> bool:
-        return self.number == 0
+        return self.number == 0 and not self.is_merge_queue
 
+    @property
     def is_pr(self):
         return self.event_type == EventType.PULL_REQUEST
 
-    def is_scheduled(self):
+    @property
+    def is_scheduled(self) -> bool:
         return self.event_type == EventType.SCHEDULE
 
-    def is_merge_queue(self):
+    @property
+    def is_merge_queue(self) -> bool:
         return self.event_type == EventType.MERGE_QUEUE
 
-    def is_dispatched(self):
+    @property
+    def is_dispatched(self) -> bool:
         return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:

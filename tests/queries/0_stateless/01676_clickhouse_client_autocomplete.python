@@ -98,6 +98,8 @@ client_compwords_positive = [
     "default",
     # system.aggregate_function_combinators
     "uniqCombined64ForEach",
+    # system.keywords
+    "CHANGEABLE_IN_READONLY",
     # FIXME: one may add separate case for suggestion_limit
     # system.databases
     "system",
@@ -128,6 +130,7 @@ if __name__ == "__main__":
     clickhouse_client = os.environ["CLICKHOUSE_CLIENT"]
     args = shlex.split(clickhouse_client)
     args.append("--wait_for_suggestions_to_load")
+    args.append("--highlight=0")
     [
         run_with_timeout(
             test_completion, [args[0], args, comp_word], COMPLETION_TIMEOUT_SECONDS
@@ -139,6 +142,7 @@ if __name__ == "__main__":
     clickhouse_local = os.environ["CLICKHOUSE_LOCAL"]
     args = shlex.split(clickhouse_local)
     args.append("--wait_for_suggestions_to_load")
+    args.append("--highlight=0")
     [
         run_with_timeout(
             test_completion, [args[0], args, comp_word], COMPLETION_TIMEOUT_SECONDS
