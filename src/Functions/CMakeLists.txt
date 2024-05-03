@@ -141,6 +141,9 @@ endif()
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
+add_subdirectory(ggmlEvaluate)
+list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_ggmlEvaluate>)
+
 add_subdirectory(keyvaluepair)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)
 

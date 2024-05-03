@@ -219,6 +219,8 @@ class SessionTracker;
 
 struct ServerSettings;
 
+class GptStorage;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -1280,6 +1282,8 @@ public:
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
     const ServerSettings & getServerSettings() const;
+
+    GptStorage & getGptStorage() const;
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
