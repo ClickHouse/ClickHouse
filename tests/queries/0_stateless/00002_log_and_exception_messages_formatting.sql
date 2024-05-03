@@ -222,7 +222,10 @@ select 'noisy Debug messages',
 -- Same as above for Info
 WITH 0.05 as threshold
 select 'noisy Info messages',
-       greatest(coalesce(((select message_format_string, count() from logs where level = 'Information' group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+       greatest(coalesce(((select message_format_string, count() from logs
+            where level = 'Information'
+              and message_format_string not in ('Sorting and writing part of data into temporary file {}', 'Done writing part of data into temporary file {}, compressed {}, uncompressed {}')
+            group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
        r <= threshold ? '' : top_message.1;
 
 -- Same as above for Warning
