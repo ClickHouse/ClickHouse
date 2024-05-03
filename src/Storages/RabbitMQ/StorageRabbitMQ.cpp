@@ -982,7 +982,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_ERROR(log, "Error while streaming to views: {}", getCurrentExceptionMessage(true));
     }
 
     mv_attached.store(false);

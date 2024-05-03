@@ -121,9 +121,8 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
     }
 
     /// Duplicate ack?
-    // if (commit_info.delivery_tag > last_commited_delivery_tag
-    //     && consumer_channel->ack(commit_info.delivery_tag, AMQP::multiple))
-    if (commit_info.delivery_tag && consumer_channel->ack(commit_info.delivery_tag, AMQP::multiple))
+    if (commit_info.delivery_tag > last_commited_delivery_tag
+        && consumer_channel->ack(commit_info.delivery_tag, AMQP::multiple))
     {
         last_commited_delivery_tag = commit_info.delivery_tag;
 

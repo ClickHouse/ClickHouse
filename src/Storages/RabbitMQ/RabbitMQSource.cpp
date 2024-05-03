@@ -186,8 +186,6 @@ Chunk RabbitMQSource::generateImpl()
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
     /// Channel id will not change during read.
-    commit_info.channel_id = consumer->getChannelID();
-
     while (true)
     {
         exception_message.reset();
@@ -212,6 +210,8 @@ Chunk RabbitMQSource::generateImpl()
                      new_rows, message.delivery_tag, consumer->getChannelID(), commit_info.delivery_tag, message.redelivered,
                      commit_info.failed_delivery_tags.size(),
                      exception_message.has_value() ? exception_message.value() : "None");
+
+            commit_info.channel_id = message.channel_id;
 
             if (exception_message.has_value() && nack_broken_messages)
             {
