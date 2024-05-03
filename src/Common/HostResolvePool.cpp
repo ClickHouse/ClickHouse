@@ -139,10 +139,8 @@ void HostResolver::setSuccess(const Poco::Net::IPAddress & address)
     if (it == records.end())
         return;
 
-    it->fail_count = 0;
-
     auto old_weight = it->getWeight();
-    ++it->usage;
+    it->setSuccess();
     auto new_weight = it->getWeight();
 
     if (old_weight != new_weight)
@@ -160,10 +158,7 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
         if (it == records.end())
             return;
 
-        it->failed = true;
-        it->fail_time = now;
-        if (it->fail_count < RECORD_FAIL_COUNT_LIMIT)
-            ++it->fail_count;
+        it->setFail(now);
     }
 
     ProfileEvents::increment(metrics.failed);
@@ -244,8 +239,7 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
     }
 
     for (auto & rec : merged)
-        if (rec.failed && rec.fail_time < now - Poco::Timespan(history.totalSeconds() * (1ull << (rec.fail_count - 1)), 0))
-            rec.failed = false;
+        rec.cleanTimeoutedFailedFlag(now, history);
 
     chassert(std::is_sorted(merged.begin(), merged.end()));
 
@@ -257,6 +251,7 @@ void HostResolver::updateImpl(Poco::Timestamp now, std::vector<Poco::Net::IPAddr
 
     updateWeights();
 }
+
 
 size_t HostResolver::getTotalWeight() const
 {

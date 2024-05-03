@@ -42,7 +42,7 @@ struct HostResolverMetrics
 };
 
 constexpr size_t DEFAULT_RESOLVE_TIME_HISTORY_SECONDS = 2*60;
-constexpr size_t RECORD_FAIL_COUNT_LIMIT = 6;
+constexpr size_t RECORD_CONSECTIVE_FAIL_COUNT_LIMIT = 6;
 
 
 class HostResolver : public std::enable_shared_from_this<HostResolver>
@@ -142,7 +142,7 @@ protected:
         size_t usage = 0;
         bool failed = false;
         Poco::Timestamp fail_time = 0;
-        size_t fail_count = 0;
+        size_t consecutive_fail_count = 0;
 
         size_t weight_prefix_sum;
 
@@ -168,6 +168,29 @@ protected:
                 return 8;
             return 10;
         }
+
+        void cleanTimeoutedFailedFlag(const Poco::Timestamp & now, const Poco::Timespan & keep_history)
+        {
+            if (!failed)
+                return;
+            /// Exponential increased time between flag cleanups
+            if (fail_time < now - Poco::Timespan(keep_history.totalSeconds() * (1ull << (consecutive_fail_count - 1)), 0))
+                failed = false;
+        }
+
+        void setFail(const Poco::Timestamp & now)
+        {
+            failed = true;
+            fail_time = now;
+            if (consecutive_fail_count < RECORD_CONSECTIVE_FAIL_COUNT_LIMIT)
+                ++consecutive_fail_count;
+        }
+
+        void setSuccess()
+        {
+            consecutive_fail_count = 0;
+            ++usage;
+        }
     };
 
     using Records = std::vector<Record>;
@@ -180,6 +203,7 @@ protected:
     void updateWeights() TSA_REQUIRES(mutex);
     void updateWeightsImpl() TSA_REQUIRES(mutex);
     size_t getTotalWeight() const TSA_REQUIRES(mutex);
+    Poco::Timespan getRecordHistoryTime(const Record&) const;
 
     const String host;
     const Poco::Timespan history;
