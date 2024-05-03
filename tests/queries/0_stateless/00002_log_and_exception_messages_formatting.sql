@@ -20,6 +20,7 @@ SELECT
                 length(message_format_string) = 0
               AND message not like '% Received from %clickhouse-staging.com:9440%'
               AND source_file not like '%/AWSLogger.cpp%'
+              AND logger_name not in ('RaftInstance')
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
