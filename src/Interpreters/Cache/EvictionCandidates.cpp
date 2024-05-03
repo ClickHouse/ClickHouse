@@ -69,7 +69,7 @@ void EvictionCandidates::add(
     ++candidates_size;
 
     auto state = candidate->getQueueEntryState();
-    state->setState(IFileCachePriority::Entry::State::Evicting, locked_key, lock);
+    state->setEvictingState(locked_key, lock);
 }
 
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)

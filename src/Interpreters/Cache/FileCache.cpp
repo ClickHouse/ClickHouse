@@ -923,7 +923,7 @@ bool FileCache::tryReserve(
     {
         /// Create a new queue entry and assign currently reserved size to it.
         queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
-        file_segment.setQueueIterator(queue_iterator);
+        file_segment_metadata.setQueueIterator(queue_iterator);
     }
 
     main_priority->check(cache_lock);

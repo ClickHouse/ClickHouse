@@ -40,12 +40,19 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
+    void setQueueIterator(Priority::IteratorPtr iterator) const
+    {
+        file_segment->setQueueIterator(iterator);
+        state = iterator->getEntry()->state_holder;
+    }
+
     template <typename Lock>
-    bool isEvictingOrRemoved(const Lock & lock)
+    bool isEvictingOrRemoved(const Lock & lock) const
     {
         auto s = state->getState(lock);
         return s == QueueEntryState::Evicting || s == QueueEntryState::Evicted;
     }
+    /// TODO: isEvictingOrPartiallyEvicted -> shouldSkipCache ?
 
     FileSegmentPtr file_segment;
 

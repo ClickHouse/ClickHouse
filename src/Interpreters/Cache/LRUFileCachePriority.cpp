@@ -69,7 +69,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
     {
         /// entry.size == 0 means entry was invalidated.
         if (queue_entry->size != 0
-            && !queue_entry->isEvicting(lock)
+            && queue_entry->state_holder->getState(lock) != Entry::State::Evicting
             && queue_entry->key == entry->key && queue_entry->offset == entry->offset)
         {
             throw Exception(
@@ -179,7 +179,7 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
             continue;
         }
 
-        if (entry.isEvicting(lock))
+        if (entry.state_holder->getState(lock) == Entry::State::Evicting)
         {
             /// Skip queue entries which are in evicting state.
             /// We threat them the same way as deleted entries.

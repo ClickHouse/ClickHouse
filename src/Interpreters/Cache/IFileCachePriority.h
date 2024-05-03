@@ -42,6 +42,11 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
+        struct StateHolder;
+        using StateHolderPtr = std::shared_ptr<StateHolder>;
+
+        const StateHolderPtr state_holder;
+
         enum class State {
             None, /// Queue entry is not created yet.
             Created, /// Queue entry created.
@@ -50,8 +55,8 @@ public:
         };
         struct StateHolder
         {
-            State getState(const CachePriorityGuard::Lock &) { return state; }
-            State getState(const LockedKey &) { return state; }
+            State getState(const CachePriorityGuard::Lock &) const { return state; }
+            State getState(const LockedKey &) const { return state; }
             /// This does not look good to have getState with two options for locks,
             /// but still it is valid as we do setState always under both of them.
             /// (Well, not always - only always for setting it to True,
@@ -62,9 +67,14 @@ public:
             /// but it will introduce one more mutex while it is avoidable.
             /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
 
-            void setState(State state_, const LockedKey &, const CachePriorityGuard::Lock &)
+            void setEvictingState(const LockedKey &, const CachePriorityGuard::Lock &)
             {
-                setStateImpl(state_);
+                setStateImpl(State::Evicting);
+            }
+
+            void setEvictedState(const LockedKey &, const CachePriorityGuard::Lock &)
+            {
+                setStateImpl(State::Evicting);
             }
 
             void resetEvictingState()
@@ -79,7 +89,7 @@ public:
             }
 
         private:
-            std::atomic<State> state;
+            std::atomic<State> state = State::None;
 
             void setStateImpl(State state_)
             {
@@ -88,10 +98,6 @@ public:
                 UNUSED(prev);
             }
         };
-        using StateHolderPtr = std::shared_ptr<StateHolder>;
-
-    private:
-        StatePtr state;
     };
     using EntryPtr = std::shared_ptr<Entry>;
 
