@@ -371,6 +371,7 @@ namespace
             if (databases)
             {
                 user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
+                user->access.grantWithGrantOption(AccessType::TABLE_ENGINE);
                 user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
                 for (const String & database : *databases)
                     user->access.grantWithGrantOption(AccessFlags::allFlags(), database);

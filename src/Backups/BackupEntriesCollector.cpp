@@ -125,7 +125,7 @@ BackupEntries BackupEntriesCollector::run()
         = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
 
     /// Do renaming in the create queries according to the renaming config.
-    renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
+    renaming_map = BackupUtils::makeRenamingMap(backup_query_elements);
 
     /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
     calculateRootPathInBackup();
@@ -570,17 +570,16 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     checkIsQueryCancelled();
 
-    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
+    auto filter_by_table_name = [&](const String & table_name)
     {
-        /// We skip inner tables of materialized views.
-        if (table_name.starts_with(".inner_id."))
+        if (BackupUtils::isInnerTable(database_name, table_name))
             return false;
 
-        if (my_database_info->tables.contains(table_name))
+        if (database_info.tables.contains(table_name))
             return true;
 
-        if (my_database_info->all_tables)
-            return !my_database_info->except_table_names.contains(table_name);
+        if (database_info.all_tables)
+            return !database_info.except_table_names.contains(table_name);
 
         return false;
     };
@@ -789,20 +788,15 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    std::vector<std::future<void>> futures;
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        futures.push_back(scheduleFromThreadPool<void>([&]()
+        runner([&]()
         {
             makeBackupEntriesForTableData(table_name);
-        }, threadpool, "BackupCollect"));
+        });
     }
-    /// Wait for all tasks.
-    for (auto & future : futures)
-        future.wait();
-    /// Make sure there is no exception.
-    for (auto & future : futures)
-        future.get();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)

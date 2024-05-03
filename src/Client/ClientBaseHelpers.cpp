@@ -125,9 +125,10 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     const char * begin = query.data();
     const char * end = begin + query.size();
-    Tokens tokens(begin, end, 1000, true);
+    Tokens tokens(begin, end, 10000, true);
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
     Expected expected;
+    expected.enable_highlighting = true;
 
     /// We don't do highlighting for foreign dialects, such as PRQL and Kusto.
     /// Only normal ClickHouse SQL queries are highlighted.
