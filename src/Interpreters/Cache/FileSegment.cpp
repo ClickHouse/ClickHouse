@@ -363,6 +363,7 @@ void FileSegment::write(WriteBufferFromFile & wb, size_t offset)
                         current_filename, expected_filename);
     }
 
+    /// Data should already be in buffer, so we only call `next`
     writeImpl(size, offset, [&]() { wb.next(); }, &wb);
 }
 
