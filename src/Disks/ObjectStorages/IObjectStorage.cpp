@@ -1,11 +1,12 @@
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/Exception.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -83,16 +84,12 @@ const std::string & IObjectStorage::getCacheName() const
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    ReadSettings settings{read_settings};
-    settings.for_object_storage = true;
-    return settings;
+    return read_settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    WriteSettings settings{write_settings};
-    settings.for_object_storage = true;
-    return settings;
+    return write_settings;
 }
 
 }

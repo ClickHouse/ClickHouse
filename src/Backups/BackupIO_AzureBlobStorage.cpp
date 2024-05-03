@@ -13,6 +13,7 @@
 #include <Disks/DiskType.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <azure/storage/blobs/blob_options.hpp>
 
 #include <filesystem>
 
@@ -37,6 +38,8 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     , configuration(configuration_)
 {
     auto client_ptr = configuration.createClient(/* is_readonly */false, /* attempt_to_create_container */true);
+    client_ptr->SetClickhouseOptions(Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=true});
+
     object_storage = std::make_unique<AzureObjectStorage>("BackupReaderAzureBlobStorage",
                                                           std::move(client_ptr),
                                                           configuration.createSettings(context_),
@@ -96,8 +99,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 /* dest_path */ blob_path[0],
                 settings,
                 read_settings,
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"),
-                /* for_disk_azure_blob_storage= */ true);
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"));
 
             return file_size;
         };
@@ -122,6 +124,8 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     , configuration(configuration_)
 {
     auto client_ptr = configuration.createClient(/* is_readonly */false, attempt_to_create_container);
+    client_ptr->SetClickhouseOptions(Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=true});
+
     object_storage = std::make_unique<AzureObjectStorage>("BackupWriterAzureBlobStorage",
                                                           std::move(client_ptr),
                                                           configuration.createSettings(context_),
@@ -181,8 +185,7 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        /* dest_path */ destination,
        settings,
        read_settings,
-       threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"),
-       /* for_disk_azure_blob_storage= */ true);
+       threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
 void BackupWriterAzureBlobStorage::copyDataToFile(

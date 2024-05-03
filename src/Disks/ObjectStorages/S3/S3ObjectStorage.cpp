@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include "Common/ObjectStorageKey.h"
 
 #if USE_AWS_S3
 
@@ -167,7 +168,7 @@ private:
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
     auto settings_ptr = s3_settings.get();
-    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {}, settings_ptr->request_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -440,7 +441,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     auto settings_ptr = s3_settings.get();
     auto object_info = S3::getObjectInfo(
         *client.get(), uri.bucket, path, {}, settings_ptr->request_settings,
-        /* with_metadata= */ true, /* for_disk_s3= */ true, /* throw_on_error= */ false);
+        /* with_metadata= */ true, /* throw_on_error= */ false);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -456,9 +457,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(
-        *client.get(), uri.bucket, path, {}, settings_ptr->request_settings,
-        /* with_metadata= */ true, /* for_disk_s3= */ true);
+    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true);
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
@@ -481,9 +480,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-        try {
+
+        try
+        {
             copyS3File(
                 current_client,
                 uri.bucket,
@@ -496,8 +497,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 patchSettings(read_settings),
                 BlobStorageLogWriter::create(disk_name),
                 object_to_attributes,
-                scheduler,
-                /* for_disk_s3= */ true);
+                scheduler);
             return;
         }
         catch (S3Exception & exc)
@@ -523,8 +523,9 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+
     copyS3File(current_client,
         uri.bucket,
         object_from.remote_path,
@@ -536,8 +537,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         patchSettings(read_settings),
         BlobStorageLogWriter::create(disk_name),
         object_to_attributes,
-        scheduler,
-        /* for_disk_s3= */ true);
+        scheduler);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
@@ -606,10 +606,17 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
-    return key_generator->generate(path);
+
+    return key_generator->generate(path, /* is_directory */ false);
 }
 
+ObjectStorageKey S3ObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
+{
+    if (!key_generator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
+    return key_generator->generate(path, /* is_directory */ true);
+}
 }
 
 #endif

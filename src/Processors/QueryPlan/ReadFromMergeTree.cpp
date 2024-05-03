@@ -292,6 +292,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
     , is_parallel_reading_from_replicas(enable_parallel_reading)
+    , enable_remove_parts_from_snapshot_optimization(query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
 {
     if (is_parallel_reading_from_replicas)
     {
@@ -1970,9 +1971,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 {
     auto result = getAnalysisResult();
 
-    /// Do not keep data parts in snapshot.
-    /// They are stored separately, and some could be released after PK analysis.
-    storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
+    if (enable_remove_parts_from_snapshot_optimization)
+    {
+        /// Do not keep data parts in snapshot.
+        /// They are stored separately, and some could be released after PK analysis.
+        storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
+    }
 
     result.checkLimits(context->getSettingsRef(), query_info);
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);

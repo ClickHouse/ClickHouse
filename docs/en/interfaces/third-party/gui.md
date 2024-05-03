@@ -172,7 +172,7 @@ Features:
 
 ### ClickVisual {#clickvisual}
 
-[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
+[ClickVisual](https://clickvisual.net/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
 
 Features:
 

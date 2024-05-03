@@ -101,6 +101,7 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -348,6 +349,7 @@ void TCPHandler::runImpl()
          */
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
+        bool user_expired = false;
         bool query_duration_already_logged = false;
         auto log_query_duration = [this, &query_duration_already_logged]()
         {
@@ -413,6 +415,9 @@ void TCPHandler::runImpl()
                 state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
+
+            if (!is_interserver_mode)
+                session->checkIfUserIsStillValid();
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
@@ -638,7 +643,10 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
 
-            if (network_error)
+            if (e.code() == ErrorCodes::USER_EXPIRED)
+                user_expired = true;
+
+            if (network_error || user_expired)
                 LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
@@ -748,7 +756,7 @@ void TCPHandler::runImpl()
             session.reset();
         }
 
-        if (network_error)
+        if (network_error || user_expired)
             break;
     }
 }
@@ -1236,6 +1244,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    Stopwatch stopwatch;
     Block block;
     ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -1247,6 +1256,11 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
+
+        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
+        if (elapsed_milliseconds > 100)
+            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+                block.rows(), block.bytes(), elapsed_milliseconds);
     }
 }
 
