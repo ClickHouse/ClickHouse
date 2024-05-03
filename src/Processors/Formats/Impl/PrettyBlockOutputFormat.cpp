@@ -453,6 +453,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         value_width = format_settings.pretty.max_value_width;
         has_break_line = false;
     }
+    else if (!has_break_line)
+        value += ' ';
 
     auto write_padding = [&]()
     {
@@ -478,8 +480,6 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
     if (has_break_line)
         writeString("…", out);
-    else if (value_width != format_settings.pretty.max_value_width)
-        writeChar(' ', out);
 }
 
 void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, const Block & header, std::vector<String> & transferred_row, size_t cut_to_width, bool space_block)
