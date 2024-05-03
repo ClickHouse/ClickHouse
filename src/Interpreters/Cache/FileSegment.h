@@ -205,6 +205,12 @@ public:
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
+
+    /** Use this overload if you need to handle file writing externally.
+      * It writes data already stored in the `wb` buffer, ensuring the file segment's invariants.
+      * The write buffer should refer to the same path that `FileSegment::getPath` returns.
+      * For each file segment instance, only one overload of `write` can be used.
+      */
     void write(WriteBufferFromFile & wb, size_t offset);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
