@@ -3,6 +3,10 @@
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #pragma GCC diagnostic ignored "-Wcast-qual"
 
+#include "config.h"
+
+#if USE_FSST
+
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
@@ -154,3 +158,5 @@ void registerCodecFSST(CompressionCodecFactory & factory)
 }
 
 }
+
+#endif
