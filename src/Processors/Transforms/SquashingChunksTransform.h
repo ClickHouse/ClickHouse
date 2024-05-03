@@ -45,6 +45,7 @@ protected:
 
 private:
     SquashingTransform squashing;
+    Chunk::ChunkInfoCollection cur_chunkinfos;
 
     /// When consumption is finished we need to release the final chunk regardless of its size.
     bool finished = false;

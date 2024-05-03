@@ -15,12 +15,12 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_b
 {
 }
 
-Block SquashingTransform::add(Block && input_block)
+SquashingTransform::SquashResult SquashingTransform::add(Block && input_block)
 {
     return addImpl<Block &&>(std::move(input_block));
 }
 
-Block SquashingTransform::add(const Block & input_block)
+SquashingTransform::SquashResult SquashingTransform::add(const Block & input_block)
 {
     return addImpl<const Block &>(input_block);
 }
@@ -32,14 +32,14 @@ Block SquashingTransform::add(const Block & input_block)
  * have to.
  */
 template <typename ReferenceType>
-Block SquashingTransform::addImpl(ReferenceType input_block)
+SquashingTransform::SquashResult SquashingTransform::addImpl(ReferenceType input_block)
 {
     /// End of input stream.
     if (!input_block)
     {
         Block to_return;
         std::swap(to_return, accumulated_block);
-        return to_return;
+        return SquashResult{std::move(to_return), false};
     }
 
     /// Just read block is already enough.
@@ -48,13 +48,13 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
         /// If no accumulated data, return just read block.
         if (!accumulated_block)
         {
-            return std::move(input_block);
+            return SquashResult{std::move(input_block), false};
         }
 
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
         Block to_return = std::move(input_block);
         std::swap(to_return, accumulated_block);
-        return to_return;
+        return SquashResult{std::move(to_return), true};
     }
 
     /// Accumulated block is already enough.
@@ -63,7 +63,7 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
         /// Return accumulated data and place new block to accumulated data.
         Block to_return = std::move(input_block);
         std::swap(to_return, accumulated_block);
-        return to_return;
+        return SquashResult{std::move(to_return), true};
     }
 
     append<ReferenceType>(std::move(input_block));
@@ -71,11 +71,11 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
     {
         Block to_return;
         std::swap(to_return, accumulated_block);
-        return to_return;
+        return SquashResult{std::move(to_return), false};
     }
 
-    /// Squashed block is not ready.
-    return {};
+    /// Squashed block is not ready, input block consumed
+    return SquashResult{{}, true};
 }
 
 

@@ -25,11 +25,16 @@ public:
     /// Conditions on rows and bytes are OR-ed. If one of them is zero, then corresponding condition is ignored.
     SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
+    struct SquashResult
+    {
+      Block block;
+      bool input_block_delayed = false;
+    };
     /** Add next block and possibly returns squashed block.
       * At end, you need to pass empty block. As the result for last (empty) block, you will get last Result with ready = true.
       */
-    Block add(Block && block);
-    Block add(const Block & block);
+    SquashResult add(Block && block);
+    SquashResult add(const Block & block);
 
 private:
     size_t min_block_size_rows;
@@ -38,7 +43,7 @@ private:
     Block accumulated_block;
 
     template <typename ReferenceType>
-    Block addImpl(ReferenceType block);
+    SquashResult addImpl(ReferenceType block);
 
     template <typename ReferenceType>
     void append(ReferenceType block);

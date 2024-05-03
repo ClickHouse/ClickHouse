@@ -17,14 +17,23 @@ SquashingChunksTransform::SquashingChunksTransform(
 
 void SquashingChunksTransform::onConsume(Chunk chunk)
 {
+        LOG_DEBUG(getLogger("SquashingChunksTransform"),
+              "onConsume {}", chunk.getNumRows());
+
     if (cur_chunkinfos.empty())
         cur_chunkinfos = chunk.getChunkInfos();
 
-    if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
+    auto result = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    if (result.block)
     {
-        cur_chunk.setColumns(block.getColumns(), block.rows());
+        cur_chunk.setColumns(result.block.getColumns(), result.block.rows());
         cur_chunk.setChunkInfos(std::move(cur_chunkinfos));
         cur_chunkinfos = {};
+    }
+
+    if (cur_chunkinfos.empty() && result.input_block_delayed)
+    {
+        cur_chunkinfos = chunk.getChunkInfos();
     }
 }
 
@@ -38,8 +47,8 @@ SquashingChunksTransform::GenerateResult SquashingChunksTransform::onGenerate()
 
 void SquashingChunksTransform::onFinish()
 {
-    auto block = squashing.add({});
-    finish_chunk.setColumns(block.getColumns(), block.rows());
+    auto result = squashing.add({});
+    finish_chunk.setColumns(result.block.getColumns(), result.block.rows());
     finish_chunk.setChunkInfos(std::move(cur_chunkinfos));
     cur_chunkinfos = {};
 }
@@ -69,12 +78,25 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 
 void SimpleSquashingChunksTransform::transform(Chunk & chunk)
 {
+    LOG_DEBUG(getLogger("SimpleSquashingChunksTransform"),
+              "transform {}", chunk.getNumRows());
+
     if (!finished)
     {
-        if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
+        if (cur_chunkinfos.empty())
+            cur_chunkinfos = chunk.getChunkInfos();
+
+        auto result = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        if (result.block)
         {
-            chunk.setColumns(block.getColumns(), block.rows());
-            chunk.setChunkInfos(chunk.getChunkInfos());
+            chunk.setColumns(result.block.getColumns(), result.block.rows());
+            chunk.setChunkInfos(std::move(cur_chunkinfos));
+            cur_chunkinfos = {};
+        }
+
+        if (cur_chunkinfos.empty() && result.input_block_delayed)
+        {
+            cur_chunkinfos = chunk.getChunkInfos();
         }
     }
     else
@@ -82,8 +104,10 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
         if (chunk.hasRows())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
 
-        auto block = squashing.add({});
-        chunk.setColumns(block.getColumns(), block.rows());
+        auto result = squashing.add({});
+        chunk.setColumns(result.block.getColumns(), result.block.rows());
+        chunk.setChunkInfos(std::move(cur_chunkinfos));
+        cur_chunkinfos = {};
     }
 }
 

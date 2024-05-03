@@ -4,6 +4,8 @@
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Access/EnabledQuota.h>
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -43,6 +45,8 @@ public:
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
+        LOG_DEBUG(getLogger("CountingTransform"),
+              "onGenerate {}", cur_chunk.getNumRows());
         GenerateResult res;
         res.chunk = std::move(cur_chunk);
         return res;

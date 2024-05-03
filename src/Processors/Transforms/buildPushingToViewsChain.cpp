@@ -124,7 +124,6 @@ private:
     {
         QueryPipeline pipeline;
         PullingPipelineExecutor executor;
-        Chunk::ChunkInfoCollection chunk_infos;
 
         explicit State(QueryPipeline pipeline_)
             : pipeline(std::move(pipeline_))
@@ -397,10 +396,13 @@ std::optional<Chain> generateViewChain(
     {
         out.addSource(std::make_shared<CheckInsertDeduplicationTokenTransform>("Right after Inner query", !disable_deduplication_for_children, out.getInputHeader()));
 
-        if (!disable_deduplication_for_children)
-        {
-            out.addSource(std::make_shared<ExtendDeduplicationWithBlockNumberFromInfoTokenTransform>(out.getInputHeader()));
-        }
+        // if (!disable_deduplication_for_children)
+        // {
+        //     // out.addSource(std::make_shared<ExtendDeduplicationWithBlockNumberFromInfoTokenTransform>(out.getInputHeader()));
+        //     // out.addSource(std::make_shared<NumberBlocksTransform>(out.getInputHeader()));
+
+        //     out.addSource(std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(out.getInputHeader()));
+        // }
 
         auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
             storage_header, views_data->views.back(), views_data);
@@ -576,7 +578,7 @@ Chain buildPushingToViewsChain(
     return result_chain;
 }
 
-static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data)
+static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data, Chunk::ChunkInfoCollection chunk_infos)
 {
     const auto & context = views_data.context;
 
@@ -623,8 +625,9 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    pipeline.addTransform(std::make_shared<NumberBlocksTransform>(pipeline.getHeader()));
-    //pipeline.addTransform(std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(pipeline.getHeader()));
+    //pipeline.addTransform(std::make_shared<NumberBlocksTransform>(pipeline.getHeader()));
+    pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getHeader()));
+    pipeline.addTransform(std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(pipeline.getHeader()));
 
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
@@ -727,8 +730,7 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(process(block, view, *views_data));
-    state->chunk_infos = chunk.getChunkInfos();
+    state.emplace(process(block, view, *views_data, chunk.getChunkInfos()));
 }
 
 
@@ -745,9 +747,6 @@ ExecutingInnerQueryFromViewTransform::GenerateResult ExecutingInnerQueryFromView
         if (res.chunk)
             break;
     }
-
-    // here are we copy chunk_infos to the all chunks generated from the one consumed chunk
-    res.chunk.getChunkInfos().append(state->chunk_infos.clone());
 
     if (res.is_done)
         state.reset();

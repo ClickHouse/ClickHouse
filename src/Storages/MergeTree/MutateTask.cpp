@@ -1298,7 +1298,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             Block projection_block;
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
+                auto result = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
+                projection_block = std::move(result.block);
             }
 
             if (projection_block)
@@ -1323,11 +1324,11 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     {
         const auto & projection = *ctx->projections_to_build[i];
         auto & projection_squash = projection_squashes[i];
-        auto projection_block = projection_squash.add({});
-        if (projection_block)
+        auto squash_result = projection_squash.add({});
+        if (squash_result.block)
         {
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                *ctx->data, ctx->log, std::move(squash_result.block), projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();
             temp_part.part->getDataPartStorage().commitTransaction();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
