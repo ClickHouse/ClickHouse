@@ -8,6 +8,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+
 #include <Storages/MergeTree/QueueModeColumns.h>
 
 namespace DB
@@ -15,6 +19,20 @@ namespace DB
 
 namespace
 {
+
+ASTPtr getCompressionCodecDeltaLZ4()
+{
+    return makeASTFunction("CODEC",
+        makeASTFunction("Delta", std::make_shared<ASTLiteral>(static_cast<UInt64>(8))),
+        std::make_shared<ASTIdentifier>("LZ4"));
+}
+
+ASTPtr getCompressionCodecDoubleDeltaLZ4()
+{
+    return makeASTFunction("CODEC",
+        std::make_shared<ASTIdentifier>("DoubleDelta"),
+        std::make_shared<ASTIdentifier>("LZ4"));
+}
 
 ColumnWithTypeAndName createPartitionIdColumn(size_t rows_count, const String & partition_id)
 {
@@ -58,11 +76,11 @@ CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size);
 
 const String QueueBlockNumberColumn::name = "_queue_block_number";
 const DataTypePtr QueueBlockNumberColumn::type = std::make_shared<DataTypeUInt64>();
-const ASTPtr QueueBlockNumberColumn::codec = getCompressionCodecDelta(8)->getFullCodecDesc();
+const ASTPtr QueueBlockNumberColumn::codec = getCompressionCodecDeltaLZ4();
 
 const String QueueBlockOffsetColumn::name = "_queue_block_offset";
 const DataTypePtr QueueBlockOffsetColumn::type = std::make_shared<DataTypeUInt64>();
-const ASTPtr QueueBlockOffsetColumn::codec = getCompressionCodecDoubleDelta(8)->getFullCodecDesc();
+const ASTPtr QueueBlockOffsetColumn::codec = getCompressionCodecDoubleDeltaLZ4();
 
 const String QueuePartitionIdColumn::name = "_queue_partition_id";
 const DataTypePtr QueuePartitionIdColumn::type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
