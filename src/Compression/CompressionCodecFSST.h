@@ -1,3 +1,9 @@
+#pragma once
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wcast-align"
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wcast-qual"
+
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
@@ -17,11 +23,6 @@ namespace DB
 
 class CompressionCodecFSST : public ICompressionCodec
 {
-private:
-    using SplittedMutableLens = size_t*;
-    using SplittedMutableRows = unsigned char**;
-    using SplittedConstRows = const unsigned char**;
-
 public:
     explicit CompressionCodecFSST() {
         setCodecDescription("FSST");
@@ -47,24 +48,23 @@ protected:
         splitDataByRows(reinterpret_cast<const unsigned char*>(source), str_in, len_in, source_size);
         size_t rows_count{len_in.size()};
 
-        fsst_encoder_t *encoder = fsst_create(rows_count, len_in.data(),
-                    const_cast<SplittedMutableRows>(str_in.data()), 0);
+        fsst_encoder_t *encoder = fsst_create(rows_count, len_in.data(), str_in.data(), 0);
 
         size_t fsst_header_size = fsst_export(encoder, reinterpret_cast<unsigned char*>(dest));
 
         size_t len_out[rows_count];
-        const unsigned char* str_out[rows_count];
+        unsigned char* str_out[rows_count];
         size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(len_out) + (sizeof(size_t) * len_in.size())};
         /* codec_header |(dest*) fsst_header(encoder) rows_count len_out len_in data */
 
         if (fsst_compress(encoder,
                         rows_count,
                         len_in.data(),
-                        const_cast<SplittedMutableRows>(str_in.data()),
+                        str_in.data(),
                         OUT_SIZE, /* дичь какая-то */
                         reinterpret_cast<unsigned char *>(dest + header_size),
                         len_out,
-                        const_cast<SplittedMutableRows>(str_out)) < rows_count) {
+                        str_out) < rows_count) {
             throw std::runtime_error("FSST compression failed");
         }
         // fsst_destroy(encoder); TODO(ebek): Понять почему вызывается деструктор какого-то левого кодека
@@ -105,7 +105,7 @@ protected:
 
             auto decompressed_size = fsst_decompress(&decoder,
                 lens[i],
-                reinterpret_cast<unsigned char*>(const_cast<char*>(str)),
+                reinterpret_cast<const unsigned char*>(str),
                 OUT_SIZE, /* дичь какая-то */
                 reinterpret_cast<unsigned char *>(dest)
             );
