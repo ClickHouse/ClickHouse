@@ -214,9 +214,9 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (request_settings.check_objects_after_upload)
     {
-        S3::checkObjectExists(*client_ptr, bucket, key, {}, request_settings, /* for_disk_s3= */ write_settings.for_object_storage, "Immediately after upload");
+        S3::checkObjectExists(*client_ptr, bucket, key, {}, request_settings, "Immediately after upload");
 
-        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {}, request_settings, /* for_disk_s3= */ write_settings.for_object_storage);
+        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {}, request_settings);
         if (actual_size != total_size)
             throw Exception(
                     ErrorCodes::S3_ERROR,
@@ -390,7 +390,7 @@ void WriteBufferFromS3::createMultipartUpload()
     client_ptr->setKMSHeaders(req);
 
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
-    if (write_settings.for_object_storage)
+    if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
     Stopwatch watch;
@@ -429,7 +429,7 @@ void WriteBufferFromS3::abortMultipartUpload()
     req.SetUploadId(multipart_upload_id);
 
     ProfileEvents::increment(ProfileEvents::S3AbortMultipartUpload);
-    if (write_settings.for_object_storage)
+    if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3AbortMultipartUpload);
 
     Stopwatch watch;
@@ -530,7 +530,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
                  getShortLogDetails(), data_size, part_number);
 
         ProfileEvents::increment(ProfileEvents::S3UploadPart);
-        if (write_settings.for_object_storage)
+        if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
         auto & request = std::get<0>(*worker_data);
@@ -606,7 +606,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < max_retry; ++i)
     {
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
-        if (write_settings.for_object_storage)
+        if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
         Stopwatch watch;
@@ -689,7 +689,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
         for (size_t i = 0; i < max_retry; ++i)
         {
             ProfileEvents::increment(ProfileEvents::S3PutObject);
-            if (write_settings.for_object_storage)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
             ResourceCost cost = request.GetContentLength();
