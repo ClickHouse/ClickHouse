@@ -92,13 +92,11 @@ private:
     std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
 };
 
-bool isS3ExpressEndpoint(const std::string & endpoint);
-
 struct ClientSettings
 {
-    bool use_virtual_addressing = false;
+    bool use_virtual_addressing;
     /// Disable checksum to avoid extra read of the input stream
-    bool disable_checksum = false;
+    bool disable_checksum;
     /// Should client send ComposeObject request after upload to GCS.
     ///
     /// Previously ComposeObject request was required to make Copy possible,
@@ -108,8 +106,7 @@ struct ClientSettings
     ///
     /// Ability to enable it preserved since likely it is required for old
     /// files.
-    bool gcs_issue_compose_request = false;
-    bool is_s3express_bucket = false;
+    bool gcs_issue_compose_request;
 };
 
 /// Client that improves the client from the AWS SDK
@@ -211,14 +208,6 @@ public:
                           const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const override;
 
     bool supportsMultiPartCopy() const;
-
-    bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
-
-    bool isClientForDisk() const
-    {
-        return client_configuration.for_disk_s3;
-    }
-
 private:
     friend struct ::MockS3::Client;
 
@@ -269,9 +258,6 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
-
-    template <typename RequestResult>
-    RequestResult enrichErrorMessage(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

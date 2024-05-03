@@ -16,7 +16,7 @@
 #ci_set_reduced
 #ci_set_arm
 #ci_set_integration
-#ci_set_old_analyzer
+#ci_set_analyzer
 
 ## To run specified job in CI:
 #job_<JOB NAME>
@@ -26,4 +26,4 @@
 
 ## To run only specified batches for multi-batch job(s)
 #batch_2
-#batch_1_2_3
+#btach_1_2_3

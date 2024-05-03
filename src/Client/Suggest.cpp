@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
@@ -26,6 +27,28 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DEADLOCK_AVOIDED;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
+}
+
+Suggest::Suggest()
+{
+    /// Keywords may be not up to date with ClickHouse parser.
+    addWords({"CREATE",       "DATABASE",      "IF",           "NOT",        "EXISTS",   "TEMPORARY",   "TABLE",      "ON",
+              "CLUSTER",      "DEFAULT",       "MATERIALIZED", "ALIAS",      "ENGINE",   "AS",          "VIEW",       "POPULATE",
+              "SETTINGS",     "ATTACH",        "DETACH",       "DROP",       "RENAME",   "TO",          "ALTER",      "ADD",
+              "MODIFY",       "CLEAR",         "COLUMN",       "AFTER",      "COPY",     "PROJECT",     "PRIMARY",    "KEY",
+              "CHECK",        "PARTITION",     "PART",         "FREEZE",     "FETCH",    "FROM",        "SHOW",       "INTO",
+              "OUTFILE",      "FORMAT",        "TABLES",       "DATABASES",  "LIKE",     "PROCESSLIST", "CASE",       "WHEN",
+              "THEN",         "ELSE",          "END",          "DESCRIBE",   "DESC",     "USE",         "SET",        "OPTIMIZE",
+              "FINAL",        "DEDUPLICATE",   "INSERT",       "VALUES",     "SELECT",   "DISTINCT",    "SAMPLE",     "ARRAY",
+              "JOIN",         "GLOBAL",        "LOCAL",        "ANY",        "ALL",      "INNER",       "LEFT",       "RIGHT",
+              "FULL",         "OUTER",         "CROSS",        "USING",      "PREWHERE", "WHERE",       "GROUP",      "BY",
+              "WITH",         "TOTALS",        "HAVING",       "ORDER",      "COLLATE",  "LIMIT",       "UNION",      "AND",
+              "OR",           "ASC",           "IN",           "KILL",       "QUERY",    "SYNC",        "ASYNC",      "TEST",
+              "BETWEEN",      "TRUNCATE",      "USER",         "ROLE",       "PROFILE",  "QUOTA",       "POLICY",     "ROW",
+              "GRANT",        "REVOKE",        "OPTION",       "ADMIN",      "EXCEPT",   "REPLACE",     "IDENTIFIED", "HOST",
+              "NAME",         "READONLY",      "WRITABLE",     "PERMISSIVE", "FOR",      "RESTRICTIVE", "RANDOMIZED", "INTERVAL",
+              "LIMITS",       "ONLY",          "TRACKING",     "IP",         "REGEXP",   "ILIKE",       "CLEANUP",    "APPEND",
+              "IGNORE NULLS", "RESPECT NULLS", "OVER",         "PASTE"});
 }
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
@@ -60,7 +83,6 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     add_column("name", "data_type_families", false, {});
     add_column("name", "merge_tree_settings", false, {});
     add_column("name", "settings", false, {});
-    add_column("keyword", "keywords", false, {});
 
     if (!basic_suggestion)
     {
@@ -89,7 +111,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 }
 
 template <typename ConnectionType>
-void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
+void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
 {
     loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
@@ -131,9 +153,6 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
     });
-
-    if (wait_for_load)
-        loading_thread.join();
 }
 
 void Suggest::load(IServerConnection & connection,
@@ -210,8 +229,8 @@ void Suggest::fillWordsFromBlock(const Block & block)
 }
 
 template
-void Suggest::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
+void Suggest::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 
 template
-void Suggest::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
+void Suggest::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 }

@@ -86,10 +86,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 {
                     for (size_t j = i + 1; j < variants.size(); ++j)
                     {
-                        /// Don't consider bool as similar to something (like number).
-                        if (isBool(variants[i]) || isBool(variants[j]))
-                            continue;
-
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
                         {
                             throw Exception(
@@ -119,13 +115,13 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
-    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
     if (!columns_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false, false);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
         validateDataType(type, validation_settings);
@@ -140,7 +136,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
     ASTPtr columns_list_raw = tryParseQuery(
-        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks, true);
+        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
     if (!columns_list_raw)
         return false;
 
@@ -153,7 +149,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
-        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
+        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false, false);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
             validateDataType(type, validation_settings);

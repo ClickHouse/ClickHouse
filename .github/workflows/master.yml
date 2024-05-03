@@ -23,10 +23,6 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
-      - name: Merge sync PR
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 sync_pr.py --merge || :
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -59,17 +55,16 @@ jobs:
     uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
-  # Tested in MQ
-  # StyleCheck:
-  #   needs: [RunConfig, BuildDockers]
-  #   if: ${{ !failure() && !cancelled() }}
-  #   uses: ./.github/workflows/reusable_test.yml
-  #   with:
-  #     test_name: Style check
-  #     runner_type: style-checker
-  #     data: ${{ needs.RunConfig.outputs.data }}
-  #     run_command: |
-  #         python3 style_check.py --no-push
+  StyleCheck:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Style check
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+          python3 style_check.py --no-push
   CompatibilityCheckX86:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
@@ -379,7 +374,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Stateless tests (release, old analyzer, s3, DatabaseReplicated)
+      test_name: Stateless tests (release, analyzer, s3, DatabaseReplicated)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestS3Debug:
@@ -445,14 +440,6 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (debug)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatelessTestAsanAzure:
-    needs: [RunConfig, BuilderDebAsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateless tests (azure, asan)
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
@@ -605,14 +592,6 @@ jobs:
       test_name: Stress test (tsan)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  StressTestTsanAzure:
-    needs: [RunConfig, BuilderDebTsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stress test (azure, tsan)
-      runner_type: stress-tester
-      data: ${{ needs.RunConfig.outputs.data }}
   StressTestMsan:
     needs: [RunConfig, BuilderDebMsan]
     if: ${{ !failure() && !cancelled() }}
@@ -653,7 +632,7 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Integration tests (asan, old analyzer)
+      test_name: Integration tests (asan, analyzer)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:

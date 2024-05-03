@@ -252,6 +252,7 @@ void dumpFlameGraph(
     fillColumn(chars, offsets, out.str());
 }
 
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
 struct AggregateFunctionFlameGraphData
 {
     struct Entry
@@ -468,6 +469,7 @@ struct AggregateFunctionFlameGraphData
         DB::dumpFlameGraph(tree.dump(max_depth, min_bytes), chars, offsets);
     }
 };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
 /// Aggregate function which builds a flamegraph using the list of stacktraces.
 /// The output is an array of strings which can be used by flamegraph.pl util.
@@ -559,7 +561,7 @@ public:
             ptr = ptrs[row_num];
         }
 
-        data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
+        this->data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
     }
 
     void addManyDefaults(
@@ -572,7 +574,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        data(place).merge(data(rhs), arena);
+        this->data(place).merge(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t> /* version */) const override
@@ -590,7 +592,7 @@ public:
         auto & array = assert_cast<ColumnArray &>(to);
         auto & str = assert_cast<ColumnString &>(array.getData());
 
-        data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
+        this->data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
 
         array.getOffsets().push_back(str.size());
     }

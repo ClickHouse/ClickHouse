@@ -17,7 +17,7 @@ namespace DB
 class Suggest : public LineReader::Suggest, boost::noncopyable
 {
 public:
-    Suggest() = default;
+    Suggest();
 
     ~Suggest()
     {
@@ -27,7 +27,7 @@ public:
 
     /// Load suggestions for clickhouse-client.
     template <typename ConnectionType>
-    void load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
+    void load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 
     void load(IServerConnection & connection,
               const ConnectionTimeouts & timeouts,

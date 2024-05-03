@@ -50,13 +50,13 @@ protected:
     virtual void writeFieldDelimiter() {}       /// delimiter between values
     virtual void writeRowStartDelimiter() {}    /// delimiter before each row
     virtual void writeRowEndDelimiter() {}      /// delimiter after each row
-    void writePrefix() override {}      /// delimiter before resultset
-    void writeSuffix() override {}      /// delimiter after resultset
+    virtual void writePrefix() override {}      /// delimiter before resultset
+    virtual void writeSuffix() override {}      /// delimiter after resultset
     virtual void writeBeforeTotals() {}
     virtual void writeAfterTotals() {}
     virtual void writeBeforeExtremes() {}
     virtual void writeAfterExtremes() {}
-    void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
+    virtual void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
     bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
 

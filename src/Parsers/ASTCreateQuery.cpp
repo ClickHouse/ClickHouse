@@ -337,7 +337,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << '.';
         }
 
-        chassert(table);
         table->formatImpl(settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
@@ -348,6 +347,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (attach_from_path)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
                           << quoteString(*attach_from_path);
+
+        if (live_view_periodic_refresh)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH" << (settings.hilite ? hilite_none : "")
+                << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
+                << *live_view_periodic_refresh;
+        }
 
         formatOnCluster(settings);
     }
@@ -371,7 +377,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << '.';
         }
 
-        chassert(table);
         table->formatImpl(settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)

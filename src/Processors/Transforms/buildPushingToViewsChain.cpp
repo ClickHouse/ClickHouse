@@ -451,7 +451,7 @@ Chain buildPushingToViewsChain(
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
-    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtualsList())
+    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
                                          : metadata_snapshot->getSampleBlock();
 
     /** TODO This is a very important line. At any insertion into the table one of chains should own lock.
@@ -597,7 +597,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
         std::move(block),
-        *views_data.source_storage->getVirtualsPtr()));
+        views_data.source_storage->getVirtuals()));
 
     QueryPipelineBuilder pipeline;
 

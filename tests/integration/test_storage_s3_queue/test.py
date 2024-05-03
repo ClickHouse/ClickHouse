@@ -108,7 +108,7 @@ def started_cluster():
             tag="23.12",
             stay_alive=True,
             with_installed_binary=True,
-            use_old_analyzer=True,
+            allow_analyzer=False,
         )
 
         logging.info("Starting cluster...")

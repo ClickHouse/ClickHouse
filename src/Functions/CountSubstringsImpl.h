@@ -47,7 +47,7 @@ struct CountSubstringsImpl
         const UInt8 * pos = begin;
 
         /// FIXME: suboptimal
-        memset(&res[0], 0, res.size() * sizeof(res[0])); /// NOLINT(readability-container-data-pointer)
+        memset(&res[0], 0, res.size() * sizeof(res[0]));
 
         if (needle.empty())
             return; // Return all zeros

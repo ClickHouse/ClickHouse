@@ -3,13 +3,11 @@
 #include <memory>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -192,24 +190,20 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         const size_t streams = pipeline.getNumStreams();
 
         auto input_header = pipeline.getHeader();
-
-        if (grouping_sets_size > 1)
+        pipeline.transform([&](OutputPortRawPtrs ports)
         {
-            pipeline.transform([&](OutputPortRawPtrs ports)
+            Processors copiers;
+            copiers.reserve(ports.size());
+
+            for (auto * port : ports)
             {
-                Processors copiers;
-                copiers.reserve(ports.size());
+                auto copier = std::make_shared<CopyTransform>(input_header, grouping_sets_size);
+                connect(*port, copier->getInputPort());
+                copiers.push_back(copier);
+            }
 
-                for (auto * port : ports)
-                {
-                    auto copier = std::make_shared<CopyTransform>(input_header, grouping_sets_size);
-                    connect(*port, copier->getInputPort());
-                    copiers.push_back(copier);
-                }
-
-                return copiers;
-            });
-        }
+            return copiers;
+        });
 
         pipeline.transform([&](OutputPortRawPtrs ports)
         {

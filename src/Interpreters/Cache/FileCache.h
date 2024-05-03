@@ -18,7 +18,6 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 
@@ -47,14 +46,14 @@ struct FileCacheReserveStat
         }
     };
 
-    Stat total_stat;
+    Stat stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     void update(size_t size, FileSegmentKind kind, bool releasable);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
-        total_stat += other.total_stat;
+        stat += other.stat;
         for (const auto & [name, stat_] : other.stat_by_kind)
             stat_by_kind[name] += stat_;
         return *this;
@@ -79,8 +78,6 @@ public:
     ~FileCache();
 
     void initialize();
-
-    bool isInitialized() const;
 
     const String & getBasePath() const;
 
@@ -164,8 +161,7 @@ public:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const UserInfo & user,
-        size_t lock_wait_timeout_milliseconds);
+        const UserInfo & user);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
@@ -176,8 +172,7 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::Lock lockCache() const;
-    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
+    CacheGuard::Lock lockCache() const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -189,8 +184,6 @@ public:
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
-    void freeSpaceRatioKeepingThreadFunc();
-
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -200,11 +193,6 @@ private:
     size_t load_metadata_threads;
     const bool write_cache_per_user_directory;
 
-    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
-    const double keep_current_size_to_max_ratio;
-    const double keep_current_elements_to_max_ratio;
-    const size_t keep_up_free_space_remove_batch;
-
     LoggerPtr log;
 
     std::exception_ptr init_exception;
@@ -212,14 +200,13 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
-    std::atomic<bool> cache_is_being_resized = false;
 
     std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
 
     FileCachePriorityPtr main_priority;
-    mutable CachePriorityGuard cache_guard;
+    mutable CacheGuard cache_guard;
 
     struct HitsCountStash
     {
@@ -291,7 +278,7 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        const CachePriorityGuard::Lock *);
+        const CacheGuard::Lock *);
 };
 
 }
