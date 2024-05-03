@@ -1052,7 +1052,7 @@ toStartOfWeek(t[, mode[, timezone]])
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `mode` - determines the first day of the week as described in the [toWeek()](date-time-functions#toweek) function. Default: 0
+- `mode` - determines the first day of the week as described in the [toWeek()](date-time-functions#toweek) function
 - `timezone` - Optional parameter, it behaves like any other conversion function
 
 **Returned value**
@@ -1415,7 +1415,8 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 ## toStartOfInterval
 
-This function generalizes other `toStartOf*()` functions. For example,
+This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
+For example,
 - `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
 - `toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,
 - `toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
@@ -1440,7 +1441,7 @@ The calculation is performed relative to specific points in time:
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
     hour values between 1 and 23 are useful.
 
-If unit `week` was specified, `toStartOfInterval` assumes by default that weeks start on Monday. You can change this behavior with setting [`first_day_of_week`](../../operations/settings/settings.md/#first-day-of-week)
+If unit `week` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
 **See Also**
 
@@ -1744,7 +1745,7 @@ Result:
 ```
 
 
-## date\_diff
+## date_diff
 
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for unit `day` (see [toRelativeDayNum](#torelativedaynum)), 1 month for unit `month` (see [toRelativeMonthNum](#torelativemonthnum)) and 1 year for unit `year` (see [toRelativeYearNum](#torelativeyearnum)).
@@ -1893,7 +1894,7 @@ Result:
 
 **See Also**
 
-- [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
+- [toStartOfInterval](#tostartofintervaldate_or_date_with_time-interval-x-unit--time_zone)
 
 ## date\_add
 

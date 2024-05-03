@@ -1573,8 +1573,11 @@ try
 
                 global_context->reloadQueryMaskingRulesIfChanged(config);
 
-                std::lock_guard lock(servers_lock);
-                updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                if (global_context->isServerCompletelyStarted())
+                {
+                    std::lock_guard lock(servers_lock);
+                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                }
             }
 
             global_context->updateStorageConfiguration(*config);

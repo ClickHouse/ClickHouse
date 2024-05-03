@@ -4,7 +4,7 @@ CREATE TABLE t
 (
     key UInt64,
     str String,
-    INDEX inv_idx str TYPE inverted(0) GRANULARITY 1
+    INDEX inv_idx str TYPE full_text(0) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key;
