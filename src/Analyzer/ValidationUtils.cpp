@@ -151,8 +151,8 @@ private:
 
             if (lhs_node->getNodeType() == QueryTreeNodeType::COLUMN)
             {
-                auto * lhs_column_node = lhs_node->as<ColumnNode>();
-                auto * rhs_column_node = rhs_node->as<ColumnNode>();
+                const auto * lhs_column_node = lhs_node->as<ColumnNode>();
+                const auto * rhs_column_node = rhs_node->as<ColumnNode>();
                 if (!lhs_column_node->getColumnSource()->isEqual(*rhs_column_node->getColumnSource()))
                     return false;
             }
