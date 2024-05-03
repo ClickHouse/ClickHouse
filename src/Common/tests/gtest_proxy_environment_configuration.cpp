@@ -15,8 +15,8 @@ namespace
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTP)
 {
-    std::vector<std::string> no_proxy_hosts = {"localhost", "127.0.0.1", "some_other_domain", "last_domain"};
-    EnvironmentProxySetter setter(http_proxy_server, {}, "localhost,,127.0.0.1,some_other_domain,,,, last_domain,");
+    std::string no_proxy_string = "localhost,,127.0.0.1,some_other_domain,,,, last_domain,";
+    EnvironmentProxySetter setter(http_proxy_server, {}, no_proxy_string);
 
     EnvironmentProxyConfigurationResolver resolver(ProxyConfiguration::Protocol::HTTP);
 
@@ -25,7 +25,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTP)
     ASSERT_EQ(configuration.host, http_proxy_server.getHost());
     ASSERT_EQ(configuration.port, http_proxy_server.getPort());
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-    ASSERT_EQ(configuration.no_proxy_hosts, no_proxy_hosts);
+    ASSERT_EQ(configuration.no_proxy_hosts, no_proxy_string);
 }
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPNoEnv)

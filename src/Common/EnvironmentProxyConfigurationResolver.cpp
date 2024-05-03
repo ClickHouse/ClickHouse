@@ -39,30 +39,16 @@ namespace
         }
     }
 
-    std::vector<std::string> getNoProxyHosts()
+    std::string getNoProxyHostsString()
     {
-        std::vector<std::string> result;
-
         const char * no_proxy = std::getenv(NO_PROXY_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
 
         if (!no_proxy)
         {
-            return result;
+            return "";
         }
 
-        std::istringstream no_proxy_stream(no_proxy);
-        std::string host;
-        while (std::getline(no_proxy_stream, host, ','))
-        {
-            trim(host);
-
-            if (!host.empty())
-            {
-                result.emplace_back(host);
-            }
-        }
-
-        return result;
+        return no_proxy;
     }
 }
 
@@ -88,7 +74,7 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
         port,
         useTunneling(request_protocol, ProxyConfiguration::protocolFromString(scheme), disable_tunneling_for_https_requests_over_http_proxy),
         request_protocol,
-        getNoProxyHosts()
+        getNoProxyHostsString()
     };
 }
 
