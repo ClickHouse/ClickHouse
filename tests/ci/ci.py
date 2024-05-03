@@ -1811,7 +1811,7 @@ def _add_build_to_version_history(
     ch_helper.insert_event_into(db="default", table="version_history", event=data)
 
 
-def _run_test(job_name: str, run_command: str) -> int:
+def _run_test(job_name: str, run_command: str, jobs_to_do: str) -> int:
     assert (
         run_command or CI_CONFIG.get_job_config(job_name).run_command
     ), "Run command must be provided as input argument or be configured in job config"
@@ -1830,6 +1830,7 @@ def _run_test(job_name: str, run_command: str) -> int:
     else:
         print("Use run command from the workflow")
     env["CHECK_NAME"] = job_name
+    env["JOBS_TO_DO"] = jobs_to_do
     print(f"Going to start run command [{run_command}]")
     process = subprocess.run(
         run_command,
@@ -1991,6 +1992,7 @@ def main() -> int:
     ### RUN action: start
     elif args.run:
         assert indata
+        jobs_to_do = ""
         ci_options = CiOptions.create_from_run_config(indata)
         check_name = args.job_name
         check_name_with_group = _get_ext_check_name(check_name)
@@ -2038,6 +2040,9 @@ def main() -> int:
                     print("::group::Commit Status")
                     print(status)
                     print("::endgroup::")
+            else:
+                # For build reports we pass indata.jobs_data.jobs_to_do as a json str
+                jobs_to_do = json.dumps(indata["jobs_data"]["jobs_to_do"])
 
             # ci cache check
             if not previous_status and not ci_options.no_ci_cache:
@@ -2072,7 +2077,7 @@ def main() -> int:
             else:
                 exit_code = 1
         else:
-            exit_code = _run_test(check_name, args.run_command)
+            exit_code = _run_test(check_name, args.run_command, jobs_to_do)
     ### RUN action: end
 
     ### POST action: start

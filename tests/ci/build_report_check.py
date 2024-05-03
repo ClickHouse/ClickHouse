@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import List
@@ -25,11 +24,6 @@ from report import (
     get_worst_status,
 )
 from stopwatch import Stopwatch
-
-# Old way to read the neads_data
-NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")
-# Now it's set here. Two-steps migration for backward compatibility
-NEEDS_DATA = os.getenv("NEEDS_DATA", "")
 
 
 def main():
