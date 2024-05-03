@@ -364,7 +364,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     options.setExplain();
 
     ContextPtr explain_context;
-    if (ast.getKind() == ASTExplainQuery::ParsedAST || ast.getKind() == ASTExplainQuery::AnalyzedSyntax || ast.getKind() == ASTExplainQuery::QueryTree)
+    if (!getContext()->getSettingsRef().allow_experimental_analyzer && (ast.getKind() == ASTExplainQuery::ParsedAST || ast.getKind() == ASTExplainQuery::AnalyzedSyntax))
     {
         auto mutable_context = Context::createCopy(context);
         FutureTablesFromCTE future_tables;

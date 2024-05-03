@@ -26,9 +26,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/GlobalMaterializeCTEVisitor.h>
-#include <Interpreters/MaterializedTableFromCTE.h>
-#include <Interpreters/SelectQueryOptions.h>
 
 namespace DB
 {
@@ -41,17 +38,11 @@ namespace ErrorCodes
 namespace
 {
 
-ASTPtr normalizeAndValidateQuery(const ASTPtr & query, ContextMutablePtr & context, SelectQueryOptions select_options, FutureTablesFromCTE & future_tables)
+ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
 {
     if (query->as<ASTSelectWithUnionQuery>() || query->as<ASTSelectQuery>())
     {
-        ASTPtr normalized_query = query;
-        if (!select_options.is_subquery)
-        {
-            GlobalMaterializeCTEVisitor::Data data(context, future_tables);
-            GlobalMaterializeCTEVisitor(data).visit(normalized_query);
-        }
-        return normalized_query;
+        return query;
     }
     else if (auto * subquery = query->as<ASTSubquery>())
     {
@@ -135,13 +126,12 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
     const SelectQueryOptions & select_query_options_)
-    : context(buildContext(context_, select_query_options_))
+    : query(normalizeAndValidateQuery(query_))
+    , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query(normalizeAndValidateQuery(query_, context, select_query_options, future_tables))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options)
 {
-    planner.getPlannerContext()->getFutureTablesFromCTE() = std::move(future_tables);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -149,22 +139,21 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ContextPtr & context_,
     const StoragePtr & storage_,
     const SelectQueryOptions & select_query_options_)
-    : context(buildContext(context_, select_query_options_))
+    : query(normalizeAndValidateQuery(query_))
+    , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query(normalizeAndValidateQuery(query_, context, select_query_options, future_tables))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
 {
-    planner.getPlannerContext()->getFutureTablesFromCTE() = std::move(future_tables);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const QueryTreeNodePtr & query_tree_,
     const ContextPtr & context_,
     const SelectQueryOptions & select_query_options_)
-    : context(buildContext(context_, select_query_options_))
+    : query(query_tree_->toAST())
+    , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query(query_tree_->toAST())
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
 {

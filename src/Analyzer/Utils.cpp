@@ -556,6 +556,8 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
             [[fallthrough]];
+        case QueryTreeNodeType::CTE:
+            [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
             result.push_back(join_tree_node);

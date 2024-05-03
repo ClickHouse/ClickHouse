@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
+#include "Analyzer/IQueryTreeNode.h"
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 
 #include <Analyzer/Identifier.h>
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/CTENodeExtension.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
@@ -114,30 +115,6 @@ public:
     void setIsSubquery(bool is_subquery_value)
     {
         is_subquery = is_subquery_value;
-    }
-
-    /// Returns true if query node is CTE, false otherwise
-    bool isCTE() const
-    {
-        return is_cte;
-    }
-
-    /// Set query node is CTE
-    void setIsCTE(bool is_cte_value)
-    {
-        is_cte = is_cte_value;
-    }
-
-    /// Get query node CTE name
-    const std::string & getCTEName() const
-    {
-        return cte_name;
-    }
-
-    /// Set query node CTE name
-    void setCTEName(std::string cte_name_value)
-    {
-        cte_name = std::move(cte_name_value);
     }
 
     /// Returns true if query node has RECURSIVE WITH, false otherwise
@@ -629,7 +606,6 @@ protected:
 
 private:
     bool is_subquery = false;
-    bool is_cte = false;
     bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
@@ -640,7 +616,6 @@ private:
     bool is_group_by_all = false;
     bool is_order_by_all = false;
 
-    std::string cte_name;
     NamesAndTypes projection_columns;
     ContextMutablePtr context;
     SettingsChanges settings_changes;

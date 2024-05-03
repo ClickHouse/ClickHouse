@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Common/Exception.h>
+#include "Analyzer/Passes/MaterializeCTEPass.h"
 #include "Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h"
 
 #include <IO/WriteHelpers.h>
@@ -248,7 +249,11 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
+
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
+
+    manager.addPass(std::make_unique<MaterializeCTEPass>());
+
 
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());

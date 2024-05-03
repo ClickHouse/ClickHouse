@@ -5,6 +5,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
+#include "Analyzer/CTENode.h"
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -67,6 +68,7 @@
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/CTENode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
@@ -715,6 +717,9 @@ struct IdentifierResolveScope
         else
             projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
 
+        if (auto * cte_node = scope_node->as<CTENode>())
+            scope_node = cte_node->getQueryNode();
+
         if (auto * union_node = scope_node->as<UnionNode>())
         {
             context = union_node->getContext();
@@ -992,18 +997,16 @@ public:
         }
         else if (auto * query_tree_node = child->as<QueryNode>())
         {
-            if (query_tree_node->isCTE())
-                return false;
-
             updateAliasesIfNeeded(child, false /*is_lambda_node*/);
             return false;
         }
         else if (auto * union_node = child->as<UnionNode>())
         {
-            if (union_node->isCTE())
-                return false;
-
             updateAliasesIfNeeded(child, false /*is_lambda_node*/);
+            return false;
+        }
+        else if (auto * cte_node = child->as<CTENode>())
+        {
             return false;
         }
 
@@ -1135,6 +1138,15 @@ public:
                         "For union analysis table expression must be empty");
 
                 resolveUnion(node, scope);
+                break;
+            }
+            case QueryTreeNodeType::CTE:
+            {
+                if (table_expression)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "For CTE analysis table expression must be empty");
+
+                resolveCTE(node, scope);
                 break;
             }
             case QueryTreeNodeType::IDENTIFIER:
@@ -1461,6 +1473,8 @@ private:
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
+
+    void resolveCTE(const QueryTreeNodePtr & cte_node, IdentifierResolveScope & scope);
 
     /// Lambdas that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> lambdas_in_resolve_process;
@@ -2068,7 +2082,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
-        materializeFutureTablesIfNeeded(context, context->getFutureTables(interpreter->getQueryPlan().getRequiredStorages()));
 
         if (only_analyze)
         {
@@ -2406,9 +2419,8 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (join_node->as<JoinNode &>().getKind() == JoinKind::Paste)
         return;
 
-    auto * query_node = table_expression_node->as<QueryNode>();
-    auto * union_node = table_expression_node->as<UnionNode>();
-    if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
+    auto * cte_node = table_expression_node->as<CTENode>();
+    if (cte_node)
         return;
 
     auto table_expression_node_type = table_expression_node->getNodeType();
@@ -3870,6 +3882,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const Ident
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
             [[fallthrough]];
+        case QueryTreeNodeType::CTE:
+            [[fallthrough]];
         case QueryTreeNodeType::TABLE:
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -3980,13 +3994,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
 
         if (resolved_identifier)
         {
-            auto * subquery_node = resolved_identifier->as<QueryNode>();
-            auto * union_node = resolved_identifier->as<UnionNode>();
+            auto * cte_node = resolved_identifier->as<CTENode>();
 
-            bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
             bool is_table_from_expression_arguments = lookup_result.resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS &&
                 resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
-            bool is_valid_table_expression = is_cte || is_table_from_expression_arguments;
+            bool is_valid_table_expression = cte_node || is_table_from_expression_arguments;
 
             /** From parent scopes we can resolve table identifiers only as CTE.
               * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
@@ -4710,12 +4722,13 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         auto * table_function_node = table_expression->as<TableFunctionNode>();
         auto * query_node = table_expression->as<QueryNode>();
         auto * union_node = table_expression->as<UnionNode>();
+        auto * cte_node = table_expression->as<CTENode>();
 
         NamesAndTypes table_expression_columns;
 
-        if (query_node || union_node)
+        if (query_node || union_node || cte_node)
         {
-            table_expression_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+            table_expression_columns = cte_node ? cte_node->getProjectionColumns() : query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
         }
         else if (table_node || table_function_node)
         {
@@ -6267,22 +6280,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                 if (resolved_identifier_node)
                 {
                     /// If table identifier is resolved as CTE clone it and resolve
-                    auto * subquery_node = resolved_identifier_node->as<QueryNode>();
-                    auto * union_node = resolved_identifier_node->as<UnionNode>();
-                    bool resolved_as_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
+                    auto * cte_node = resolved_identifier_node->as<CTENode>();
 
-                    if (resolved_as_cte)
+                    if (cte_node)
                     {
                         resolved_identifier_node = resolved_identifier_node->clone();
-                        subquery_node = resolved_identifier_node->as<QueryNode>();
-                        union_node = resolved_identifier_node->as<UnionNode>();
+                        cte_node = resolved_identifier_node->as<CTENode>();
 
-                        std::string_view cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
-
-                        if (subquery_node)
-                            subquery_node->setIsCTE(false);
-                        else
-                            union_node->setIsCTE(false);
+                        std::string_view cte_name = cte_node->getCTEName();
 
                         IdentifierResolveScope subquery_scope(resolved_identifier_node, &scope /*parent_scope*/);
                         subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -6296,10 +6301,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
                         ctes_in_resolve_process.insert(cte_name);
 
-                        if (subquery_node)
-                            resolveQuery(resolved_identifier_node, subquery_scope);
+                        auto query_node = cte_node->getQueryNode();
+                        if (query_node->as<QueryNode>())
+                            resolveQuery(query_node, subquery_scope);
                         else
-                            resolveUnion(resolved_identifier_node, subquery_scope);
+                            resolveUnion(query_node, subquery_scope);
 
                         ctes_in_resolve_process.erase(cte_name);
                     }
@@ -6413,20 +6419,26 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             /// Lambda must be resolved by caller
             break;
         }
+        case QueryTreeNodeType::CTE:
+            [[fallthrough]];
         case QueryTreeNodeType::QUERY:
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
         {
+
             IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
-            std::string projection_name = "_subquery_" + std::to_string(subquery_counter);
+            auto * cte_node = node->as<CTENode>();
+            std::string projection_name = cte_node ? cte_node->getCTEName() :  "_subquery_" + std::to_string(subquery_counter);
             ++subquery_counter;
 
             if (node_type == QueryTreeNodeType::QUERY)
                 resolveQuery(node, subquery_scope);
-            else
+            else if (node_type == QueryTreeNodeType::UNION)
                 resolveUnion(node, subquery_scope);
+            else if (node_type == QueryTreeNodeType::CTE)
+                resolveCTE(node, subquery_scope);
 
             if (!allow_table_expression)
                 evaluateScalarSubqueryIfNeeded(node, subquery_scope);
@@ -6874,13 +6886,14 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 
                 auto * resolved_identifier_query_node = resolved_identifier->as<QueryNode>();
                 auto * resolved_identifier_union_node = resolved_identifier->as<UnionNode>();
+                auto * resolved_identifier_cte_node = resolved_identifier->as<CTENode>();
 
-                if (resolved_identifier_query_node || resolved_identifier_union_node)
+                if (resolved_identifier_query_node || resolved_identifier_union_node || resolved_identifier_cte_node)
                 {
                     if (table_expression_modifiers.has_value())
                     {
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                            "Table expression modifiers {} are not supported for subquery {}",
+                            "Table expression modifiers {} are not supported for subquery or CTE {}",
                             table_expression_modifiers->formatForErrorMessage(),
                             resolved_identifier->formatASTForErrorMessage());
                     }
@@ -6911,20 +6924,13 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 break;
             }
             case QueryTreeNodeType::QUERY:
-            {
-                scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
-                break;
-            }
+                [[fallthrough]];
             case QueryTreeNodeType::UNION:
-            {
-                scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
-                break;
-            }
+                [[fallthrough]];
+            case QueryTreeNodeType::CTE:
+                [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
-            {
-                scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
-                break;
-            }
+                [[fallthrough]];
             case QueryTreeNodeType::TABLE:
             {
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
@@ -6965,8 +6971,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     auto * query_node = table_expression_node->as<QueryNode>();
     auto * union_node = table_expression_node->as<UnionNode>();
     auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+    auto * cte_node = table_expression_node->as<CTENode>();
 
-    if (!table_node && !table_function_node && !query_node && !union_node)
+    if (!table_node && !table_function_node && !query_node && !union_node && !cte_node)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
         "Unexpected table expression. Expected table, table function, query or union node. Actual {}. In scope {}",
         table_expression_node->formatASTForErrorMessage(),
@@ -6997,8 +7004,13 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     }
     else if (query_node || union_node)
     {
-        table_expression_data.table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
+        table_expression_data.table_name = query_node ? query_node->getAlias() : union_node->getAlias();
         table_expression_data.table_expression_description = "subquery";
+    }
+    else if (cte_node)
+    {
+        table_expression_data.table_name = cte_node->getCTEName();
+        table_expression_data.table_expression_description = "cte";
     }
     else if (table_function_node)
     {
@@ -7082,9 +7094,11 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
         table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
     }
-    else if (query_node || union_node)
+    else if (query_node || union_node || cte_node)
     {
-        table_expression_data.column_names_and_types = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+        table_expression_data.column_names_and_types = cte_node ? cte_node->getProjectionColumns()
+                                                     : query_node ? query_node->getProjectionColumns()
+                                                     : union_node->computeProjectionColumns();
         table_expression_data.column_name_to_column_node.reserve(table_expression_data.column_names_and_types.size());
 
         for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
@@ -7761,6 +7775,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::QUERY:
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
+            [[fallthrough]];
+        case QueryTreeNodeType::CTE:
         {
             resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
             break;
@@ -7841,6 +7857,25 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
+void QueryAnalyzer::resolveCTE(const QueryTreeNodePtr & cte_node, IdentifierResolveScope & scope)
+{
+    auto & cte_node_typed = cte_node->as<CTENode &>();
+
+    auto cte_name = cte_node_typed.getCTEName();
+
+    ctes_in_resolve_process.insert(cte_name);
+
+    auto type = cte_node_typed.getQueryNode()->getNodeType();
+    if (type == QueryTreeNodeType::QUERY)
+        resolveQuery(cte_node_typed.getQueryNode(), scope);
+    else if (type == QueryTreeNodeType::UNION)
+        resolveUnion(cte_node_typed.getQueryNode(), scope);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal node type in CTE: {}, expected Query or Union", type);
+
+    ctes_in_resolve_process.erase(cte_name);
+}
+
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
   * if it is needed for later use.
@@ -7870,9 +7905,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             max_subquery_depth);
 
     auto & query_node_typed = query_node->as<QueryNode &>();
-
-    if (query_node_typed.isCTE())
-        ctes_in_resolve_process.insert(query_node_typed.getCTEName());
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
@@ -7950,15 +7982,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     for (auto & node : with_nodes)
     {
-        auto * subquery_node = node->as<QueryNode>();
-        auto * union_node = node->as<UnionNode>();
+        auto * cte_node = node->as<CTENode>();
 
-        bool subquery_is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-        if (!subquery_is_cte)
+        if (!cte_node)
             continue;
 
-        const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+        const auto & cte_name = cte_node->getCTEName();
 
+        // auto cte_node = build
         auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
         if (!inserted)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
@@ -8209,23 +8240,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 
-    if (query_node_typed.isCTE())
-        ctes_in_resolve_process.erase(query_node_typed.getCTEName());
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
 {
     auto & union_node_typed = union_node->as<UnionNode &>();
 
-    if (union_node_typed.isCTE())
-        ctes_in_resolve_process.insert(union_node_typed.getCTEName());
-
     auto & queries_nodes = union_node_typed.getQueries().getNodes();
 
     std::optional<RecursiveCTETable> recursive_cte_table;
     TableNodePtr recursive_cte_table_node;
 
-    if (union_node_typed.isCTE() && union_node_typed.isRecursiveCTE())
+    if (union_node_typed.getRecursiveCTEName().empty())
     {
         auto & non_recursive_query = queries_nodes[0];
         bool non_recursive_query_is_query_node = non_recursive_query->getNodeType() == QueryTreeNodeType::QUERY;
@@ -8253,7 +8279,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         auto temporary_table_storage = temporary_table_holder->getTable();
 
         recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
-        recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+        recursive_cte_table_node->setTemporaryTableName(union_node_typed.getRecursiveCTEName());
 
         recursive_cte_table.emplace(std::move(temporary_table_holder), std::move(temporary_table_storage), std::move(temporary_table_columns));
     }
@@ -8266,7 +8292,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         IdentifierResolveScope subquery_scope(query_node, &scope /*parent_scope*/);
 
         if (recursive_cte_table_node)
-            subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
+            subquery_scope.expression_argument_name_to_node[union_node_typed.getRecursiveCTEName()] = recursive_cte_table_node;
 
         auto query_node_type = query_node->getNodeType();
 
@@ -8297,9 +8323,6 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
     }
-
-    if (union_node_typed.isCTE())
-        ctes_in_resolve_process.erase(union_node_typed.getCTEName());
 }
 
 }

@@ -1616,7 +1616,7 @@ void Context::addExternalTableFromCTE(std::shared_ptr<FutureTableFromCTE> future
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
-    future_tables_mapping.emplace(future_table->external_table.get(), std::move(future_table));
+    future_tables_mapping.emplace(future_table->external_table->getStorageID(), std::move(future_table));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
@@ -1627,7 +1627,7 @@ FutureTablesFromCTE Context::getFutureTables(const std::vector<StoragePtr> & sto
         SharedLockGuard lock(mutex);
         for (const auto & storage : storages)
         {
-            auto it = future_tables_mapping.find(storage.get());
+            auto it = future_tables_mapping.find(storage->getStorageID());
             if (it != future_tables_mapping.end())
                 res.emplace_back(it->second->shared_from_this());
         }

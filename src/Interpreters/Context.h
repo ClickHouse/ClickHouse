@@ -301,7 +301,7 @@ protected:
     String insert_format; /// Format, used in insert query.
 
     /// Mapping from storage -> CTE future table created by CTE
-    std::map<IStorage *, std::shared_ptr<FutureTableFromCTE>> future_tables_mapping;
+    std::unordered_map<StorageID, std::shared_ptr<FutureTableFromCTE>, StorageID::DatabaseAndTableNameHash> future_tables_mapping;
     /// Temporary data for query execution accounting
     TemporaryTablesMapping external_tables_mapping;
     /// Query scalars

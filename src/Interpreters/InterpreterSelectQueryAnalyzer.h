@@ -6,7 +6,6 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/MaterializedTableFromCTE.h>
 
 namespace DB
 {
@@ -28,9 +27,7 @@ public:
         const StoragePtr & storage_,
         const SelectQueryOptions & select_query_options_);
 
-    /** Initialize interpreter with query tree.
-      * No query tree passes are applied.
-      */
+    /// Initialize interpreter with query tree
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_);
@@ -75,11 +72,9 @@ public:
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
 private:
-
+    ASTPtr query;
     ContextMutablePtr context;
     SelectQueryOptions select_query_options;
-    FutureTablesFromCTE future_tables;
-    ASTPtr query;
     QueryTreeNodePtr query_tree;
     Planner planner;
 };

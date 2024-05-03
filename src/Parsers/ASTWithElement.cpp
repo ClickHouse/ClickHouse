@@ -10,6 +10,7 @@ ASTPtr ASTWithElement::clone() const
     const auto res = std::make_shared<ASTWithElement>(*this);
     res->children.clear();
     res->subquery = subquery->clone();
+    res->engine = engine ? engine->clone() : nullptr;
     res->children.emplace_back(res->subquery);
     return res;
 }

@@ -155,7 +155,8 @@ TemporaryTableHolder::TemporaryTableHolder(
                     ConstraintsDescription{constraints},
                     /*comment*/ "For materializing CTE",
                     context_);
-                storage->delayRead();
+                if (delay_read)
+                    storage->delayRead();
                 return storage;
             }
 
@@ -168,7 +169,8 @@ TemporaryTableHolder::TemporaryTableHolder(
                     ConstraintsDescription{constraints},
                     /*comments*/ "For materializing CTE",
                     /*persistent*/ false);
-                storage->delayRead();
+                if (delay_read)
+                    storage->delayRead();
                 return storage;
             }
 

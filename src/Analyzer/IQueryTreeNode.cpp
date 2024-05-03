@@ -37,6 +37,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::WINDOW: return "WINDOW";
         case QueryTreeNodeType::TABLE: return "TABLE";
         case QueryTreeNodeType::TABLE_FUNCTION: return "TABLE_FUNCTION";
+        case QueryTreeNodeType::CTE: return "CTE";
         case QueryTreeNodeType::QUERY: return "QUERY";
         case QueryTreeNodeType::ARRAY_JOIN: return "ARRAY_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";

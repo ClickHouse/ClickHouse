@@ -40,10 +40,11 @@ enum class QueryTreeNodeType
     WINDOW,
     TABLE,
     TABLE_FUNCTION,
+    CTE,
     QUERY,
     ARRAY_JOIN,
     JOIN,
-    UNION
+    UNION,
 };
 
 /// Convert query tree node type to string
