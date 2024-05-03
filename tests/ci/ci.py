@@ -1867,8 +1867,9 @@ def _run_test(job_name: str, run_command: str) -> int:
         run_command or CI_CONFIG.get_job_config(job_name).run_command
     ), "Run command must be provided as input argument or be configured in job config"
 
+    env = os.environ.copy()
     if CI_CONFIG.get_job_config(job_name).timeout:
-        os.environ["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
+        env["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
 
     if not run_command:
         run_command = "/".join(
@@ -1879,12 +1880,13 @@ def _run_test(job_name: str, run_command: str) -> int:
         print("Use run command from a job config")
     else:
         print("Use run command from the workflow")
-    os.environ["CHECK_NAME"] = job_name
+    env["CHECK_NAME"] = job_name
     print(f"Going to start run command [{run_command}]")
     process = subprocess.run(
         run_command,
         stdout=sys.stdout,
         stderr=sys.stderr,
+        env=env,
         text=True,
         check=False,
         shell=True,
