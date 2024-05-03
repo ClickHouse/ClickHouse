@@ -150,7 +150,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
         {
             if (!isEscapeSequence)
                 ++width;
-            if (isCSIFinalByte(data[i]) && data[i-1]!='\x1b')
+            else if (isCSIFinalByte(data[i]) && data[i-1]!='\x1b')
                 isEscapeSequence = false; /// end of CSI escape sequence reached
             ++i;
         }
