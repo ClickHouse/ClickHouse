@@ -525,7 +525,8 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
         writeTransferredRow(max_widths, header, new_transferred_row, cut_to_width, space_block);
 }
 
-void PrettyBlockOutputFormat::splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width) {
+void PrettyBlockOutputFormat::splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width)
+{
     if (size_t break_line_pos = value.find_first_of('\n'); break_line_pos != String::npos)
     {
         transferred_value = value.substr(break_line_pos + 1);
