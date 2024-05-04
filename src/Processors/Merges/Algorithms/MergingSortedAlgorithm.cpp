@@ -234,7 +234,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         {
             /// If virtual row is detected, there should be only one row as a single chunk,
             /// and always skip this chunk to pull the next one.
-            assert(initial_batch_size == 1);
+            chassert(initial_batch_size == 1);
             queue.removeTop();
             return Status(current.impl->order);
         }
