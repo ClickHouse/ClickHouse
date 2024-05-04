@@ -131,6 +131,7 @@ create temporary table known_short_messages (s String) as select * from (select 
     'String size is too big ({}), maximum: {}',
     'Substitution {} is not set',
     'Table {} does not exist',
+    'Table {} doesn\'t exist',
     'Table {}.{} doesn\'t exist',
     'Table {} doesn\'t exist',
     'Table {} is not empty',
