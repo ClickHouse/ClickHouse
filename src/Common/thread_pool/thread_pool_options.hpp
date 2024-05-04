@@ -32,9 +32,9 @@ public:
 
     /**
      * @brief setQueueSize Set single worker queue size.
-     * @param count Maximum length of queue of single worker.
+     * @param size Maximum length of queue of single worker.
      */
-    ThreadPoolOptions & setQueueSize(size_t count);
+    ThreadPoolOptions & setQueueSize(size_t size);
 
     /**
      * @brief threadCount Return thread count.
@@ -73,9 +73,9 @@ inline ThreadPoolOptions & ThreadPoolOptions::setQueueSize(size_t size)
     return *this;
 }
 
-inline ThreadPoolOptions & ThreadPoolOptions::setMaxFreeThreads(size_t size)
+inline ThreadPoolOptions & ThreadPoolOptions::setMaxFreeThreads(size_t count)
 {
-    m_max_free_threads = std::max<size_t>(1u, size);
+    m_max_free_threads = std::max<size_t>(1u, count);
     return *this;
 }
 

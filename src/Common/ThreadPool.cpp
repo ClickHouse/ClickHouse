@@ -537,7 +537,7 @@ GlobalThreadPool<tp::ThreadPool>::GlobalThreadPool(
     const bool /* shutdown_on_exception_*/,
     UInt64 global_profiler_real_time_period_ns_,
     UInt64 global_profiler_cpu_time_period_ns_)
-    : tp::ThreadPool(tp::ThreadPoolOptions().setQueueSize(queue_size_).setMaxFreeThreads(max_free_threads_).setMaxThreads(max_threads_))
+  : tp::ThreadPool(CurrentMetrics::GlobalThread, CurrentMetrics::GlobalThreadActive, CurrentMetrics::GlobalThreadScheduled, tp::ThreadPoolOptions().setQueueSize(queue_size_).setMaxFreeThreads(max_free_threads_).setMaxThreads(max_threads_))
         // CurrentMetrics::GlobalThread,
         // CurrentMetrics::GlobalThreadActive,
         // CurrentMetrics::GlobalThreadScheduled,

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "./fixed_function.hpp"
+// #include "./fixed_function.hpp"
 #include "./thread_pool_options.hpp"
 // #include "./worker.hpp"
 #include "./handler.hpp"
@@ -17,6 +17,7 @@
 #include <stack>
 
 #include <Common/noexcept_scope.h>
+#include <Common/CurrentMetrics.h>
 
 namespace tp
 {
@@ -61,19 +62,23 @@ template <typename Task>
 class ThreadPoolImpl : public ActiveWorkers<Task>
 {
 public:
-    using ActiveWorkers<Task>::m_active_tasks;
+    using ActiveWorkers<Task>::m_scheduled_jobs;
     using Job = std::function<void()>;
+    using Metric = CurrentMetrics::Metric;
 
     /**
      * @brief ThreadPool Construct and start new thread pool.
      * @param options Creation options.
      */
-    explicit ThreadPoolImpl(const ThreadPoolOptions & options = ThreadPoolOptions());
+    explicit ThreadPoolImpl(Metric metric_threads_,
+        Metric metric_active_threads_,
+        Metric metric_scheduled_jobs_,
+        const ThreadPoolOptions & options = ThreadPoolOptions());
 
-    /**
-     * @brief Move ctor implementation.
-     */
-    ThreadPoolImpl(ThreadPoolImpl && rhs) noexcept;
+    // /**
+    //  * @brief Move ctor implementation.
+    //  */
+    // ThreadPoolImpl(ThreadPoolImpl && rhs) noexcept;
 
     /**
      * @brief ~ThreadPool Stop all workers and destroy thread pool.
@@ -153,6 +158,8 @@ private:
     std::mutex m_mutex;
     std::atomic<size_t> m_shrink_attempt;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
+
+    Metric metric_threads;
 };
 
 

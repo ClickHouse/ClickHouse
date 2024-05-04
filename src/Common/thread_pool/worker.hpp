@@ -101,7 +101,6 @@ private:
     {
         if (m_cb.empty())
         {
-            // m_busy = false;
             return false;
         }
         else
@@ -119,8 +118,6 @@ private:
     std::thread m_thread;
     std::mutex m_mutex;
     std::condition_variable m_cond_var;
-
-    // bool m_busy;
 
     ActiveWorkers<Task> * m_handler_ptr;
     std::atomic<bool> m_busy;
@@ -145,7 +142,6 @@ inline size_t * thread_id()
 template <typename Task>
 inline Worker<Task>::Worker(size_t queue_size, ActiveWorkers<Task> * handler_ptr)
     : m_cb(queue_size), m_running_flag(true), m_handler_ptr(handler_ptr)
-// , m_busy(false)
 {
 }
 
@@ -162,7 +158,7 @@ inline Worker<Task> & Worker<Task>::operator=(Worker && rhs) noexcept
     {
         m_cb = std::move(rhs.m_cb);
         m_running_flag = rhs.m_running_flag.load();
-        m_handler_ptr->m_active_tasks = rhs.m_handler_ptr->m_active_workers.load();
+        m_handler_ptr = rhs.m_handler_ptr;
         m_thread = std::move(rhs.m_thread);
         m_busy = rhs.m_busy.load();
     }
@@ -210,7 +206,7 @@ inline bool Worker<Task>::post(Handler && handler)
 {
     bool ret = true;
     {
-        ++m_handler_ptr->m_active_tasks;
+        m_handler_ptr->activate();
         m_busy = true;
         // std::cout << (void*)this << " m_busy to true" << std::endl;
         std::unique_lock lock(m_mutex);
@@ -231,10 +227,9 @@ inline bool Worker<Task>::steal(Task & task)
     std::lock_guard lock(m_mutex);
     if (pop(task))
     {
-        --m_handler_ptr->m_active_tasks;
+        m_handler_ptr->deactivate();
         return true;
     }
-    // m_busy ??
     return false;
 }
 
@@ -266,6 +261,8 @@ inline void Worker<Task>::threadFunc(size_t id)
                 }
 
                 // m_active = true;
+                CurrentMetrics::Increment metric_pool_threads(m_handler_ptr->metric_active_threads);
+
                 handler();
             }
             catch (...)
@@ -274,32 +271,13 @@ inline void Worker<Task>::threadFunc(size_t id)
             }
             // m_active = false;
         }
-        // else if (steal_donor->steal(handler))
-        // {
-        //     lock.unlock();  // too late in case of steal
-        //     try
-        //     {
-        //         if (!m_busy)
-        //         {
-        //             m_busy = true;
-        //             ++m_handler_ptr->m_active_tasks;
-        //         }
-
-        //         // m_active = true;
-        //         handler();
-        //     }
-        //     catch(...)
-        //     {
-        //         // suppress all exceptions
-        //     }
-        // }
         else
         {
             if (m_busy)
             {
                 // std::cout << (void*)this << " m_busy to false" << std::endl;
                 m_busy = false;
-                --m_handler_ptr->m_active_tasks;
+                m_handler_ptr->deactivate();
             }
             m_idle_since = std::chrono::steady_clock::now();
 

@@ -1,18 +1,33 @@
 #include "./thread_pool.hpp"
 #include "./worker.hpp"
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+
+namespace ProfileEvents
+{
+    extern const Event GlobalThreadPoolExpansions;
+    extern const Event GlobalThreadPoolShrinks;
+    extern const Event GlobalThreadPoolJobScheduleMicroseconds;
+}
+
 
 namespace tp
 {
 
 template <typename Task>
-inline ThreadPoolImpl<Task>::ThreadPoolImpl(const ThreadPoolOptions & options)
-    : m_options(options)
+inline ThreadPoolImpl<Task>::ThreadPoolImpl(Metric metric_threads_,
+    Metric metric_active_threads_,
+    Metric metric_scheduled_jobs_,
+    const ThreadPoolOptions & options)
+    : ActiveWorkers<Task>(metric_active_threads_, metric_scheduled_jobs_)
+    , m_options(options)
     // , m_num_workers(options.threadCount() - options.maxFreeThreads())
     , m_num_workers(std::max(2UL, options.maxFreeThreads()))
     , m_workers(options.threadCount())
     , m_raw_workers(options.threadCount())
     , m_orphaned_workers(options.threadCount())
     , m_next_worker(0)
+    , metric_threads(metric_threads_)
 {
     m_free_workers.reserve(options.threadCount());
     for (size_t i = 0; i < m_num_workers; ++i)
@@ -29,12 +44,12 @@ inline ThreadPoolImpl<Task>::ThreadPoolImpl(const ThreadPoolOptions & options)
         m_workers[i]->start(i, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
 }
 
-template <typename Task>
-inline ThreadPoolImpl<Task>::ThreadPoolImpl(ThreadPoolImpl<Task> && rhs) noexcept
-{
-    std::unique_lock lock(m_mutex);
-    *this = std::move(rhs);
-}
+// template <typename Task>
+// inline ThreadPoolImpl<Task>::ThreadPoolImpl(ThreadPoolImpl<Task> && rhs) noexcept
+// {
+//     std::unique_lock lock(m_mutex);
+//     *this = std::move(rhs);
+// }
 
 template <typename Task>
 inline ThreadPoolImpl<Task>::~ThreadPoolImpl()
@@ -89,7 +104,7 @@ inline void ThreadPoolImpl<Task>::finalize()
 template <typename Task>
 inline void ThreadPoolImpl<Task>::wait()
 {
-    while (m_active_tasks)
+    while (m_scheduled_jobs)
     {
         using namespace std::chrono_literals;
         std::this_thread::sleep_for(1s);
@@ -118,6 +133,8 @@ template <typename Task>
 // template <typename Handler>
 inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
 {
+    Stopwatch watch;
+
     auto worker = getWorker();
     bool try_shrink = false;
 
@@ -145,8 +162,7 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
                     size_t new_worker_num = 0;
 
                     new_worker_num = m_workers.size();
-                    // std::cout << "m_active_tasks " << m_active_tasks << " < new_worker_num " <<  new_worker_num << ", m_options.threadCount() " << m_options.threadCount() << std::endl;
-                    if (m_active_tasks < new_worker_num * 1 || new_worker_num >= m_options.threadCount())
+                    if (m_scheduled_jobs < new_worker_num * 1 || new_worker_num >= m_options.threadCount())
                     {
                         // no courage to create new workers
                         break;
@@ -162,6 +178,8 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
                     worker = m_workers[new_worker_num].get();
 
                     worker->start(new_worker_num, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
+                    ProfileEvents::increment(ProfileEvents::GlobalThreadPoolExpansions);
+
                     break;
                 }
             }
@@ -171,6 +189,8 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
     {
         try_shrink = true;
     }
+
+    ProfileEvents::increment(ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds, watch.elapsedMicroseconds());
 
     const auto & post_ret = worker->post(std::forward<Job>(handler));
     if (try_shrink)
@@ -215,6 +235,7 @@ inline void ThreadPoolImpl<Task>::tryShrink(Worker<Task> * /* worker */)
                         m_orphaned_workers[num] = std::move(m_workers[num]);
                         m_free_workers.push_back(num);
                         m_num_workers--;
+                        ProfileEvents::increment(ProfileEvents::GlobalThreadPoolShrinks);
                     }
                 }
             }
