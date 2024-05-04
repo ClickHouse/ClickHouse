@@ -46,4 +46,24 @@ AND query not like '%system.query_log%'
 ORDER BY query_start_time DESC, read_rows DESC
 LIMIT 1;
 
+-- SELECT x
+-- FROM t
+-- ORDER BY x ASC
+-- LIMIT 4
+-- SETTINGS max_block_size = 8192,
+-- read_in_order_two_level_merge_threshold = 5, --avoid preliminary merge
+-- max_threads = 1,
+-- optimize_read_in_order = 1;
+
+-- SYSTEM FLUSH LOGS;
+
+-- -- without virtual row 16.38k, but with virtual row 24.58k, becasue read again (why?) in the non-target part after reading its virtual row and before sending the virtual row to the priority queue
+-- SELECT read_rows
+-- FROM system.query_log
+-- WHERE current_database = currentDatabase()
+-- AND query like '%SELECT x%'
+-- AND query not like '%system.query_log%'
+-- ORDER BY query_start_time DESC, read_rows DESC
+-- LIMIT 1;
+
 DROP TABLE t;

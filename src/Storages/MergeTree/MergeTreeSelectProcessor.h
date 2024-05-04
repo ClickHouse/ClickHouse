@@ -65,7 +65,7 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
-    void addVirtualRowToChunk(bool add_virtual_row_, const Columns& index_, size_t mark_range_begin_)
+    void addVirtualRowToChunk(bool add_virtual_row_, const Columns & index_, size_t mark_range_begin_)
     {
         add_virtual_row = add_virtual_row_;
         index = index_;
