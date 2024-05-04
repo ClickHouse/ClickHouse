@@ -67,8 +67,8 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
 template <typename ReferenceType>
 void SquashingTransform::append(ReferenceType input_block)
 {
-    if (!input_block.info.cursors.empty())
-        cursor_merger.add(std::move(input_block.info.cursors));
+    if (input_block.info.cursors.has_value())
+        cursor_merger.add(std::move(input_block.info.cursors.value()));
 
     if (!accumulated_block)
     {
@@ -111,8 +111,8 @@ Block SquashingTransform::finalizeBlock(Block new_data)
     if (cursor_merger.hasSome())
         to_return.info.cursors = cursor_merger.finalize();
 
-    if (!new_cursors.empty())
-        cursor_merger.add(new_cursors);
+    if (new_cursors.has_value())
+        cursor_merger.add(new_cursors.value());
 
     return to_return;
 }

@@ -27,8 +27,8 @@ void completeChunk(Chunk & chunk, Block block)
 {
     chunk.setColumns(block.getColumns(), block.rows());
 
-    if (!block.info.cursors.empty())
-        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors)), CursorInfo::INFO_SLOT);
+    if (block.info.cursors.has_value())
+        chunk.setChunkInfo(std::make_shared<CursorInfo>(std::move(block.info.cursors.value())), CursorInfo::INFO_SLOT);
 }
 
 }

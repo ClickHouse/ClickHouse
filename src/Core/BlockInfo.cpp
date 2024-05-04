@@ -16,14 +16,65 @@ namespace ErrorCodes
     extern const int UNKNOWN_BLOCK_INFO_FIELD;
 }
 
+namespace
+{
+
+template <size_t field_num, class Field>
+void writePersistent(const Field & field, WriteBuffer & out)
+{
+    writeVarUInt(field_num, out);
+    writeBinary(field, out);
+}
+
+template <size_t field_num, class Field>
+void writeStaging(const std::optional<Field> & field, WriteBuffer & out)
+{
+    if (!field.has_value())
+        return;
+
+    writeVarUInt(field_num, out);
+    writeBinary(field.value(), out);
+}
+
+template <size_t field_num, class Field>
+void writeField(const Field & field, WriteBuffer & out)
+{
+    if constexpr (field_num <= BlockInfo::PERSISTENT_FIELDS_COUNT)
+        writePersistent<field_num>(field, out);
+    else
+        writeStaging<field_num>(field, out);
+}
+
+template <size_t field_num, class Field>
+void readPersistent(Field & field, ReadBuffer & in)
+{
+    readBinary(field, in);
+}
+
+template <size_t field_num, class Field>
+void readStaging(std::optional<Field> & field, ReadBuffer & in)
+{
+    field = Field{};
+    readBinary(field.value(), in);
+}
+
+template <size_t field_num, class Field>
+void readField(Field & field, ReadBuffer & in)
+{
+    if constexpr (field_num <= BlockInfo::PERSISTENT_FIELDS_COUNT)
+        readPersistent<field_num>(field, in);
+    else
+        readStaging<field_num>(field, in);
+}
+
+}
 
 /// Write values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
 void BlockInfo::write(WriteBuffer & out) const
 {
 /// Set of pairs `FIELD_NUM`, value in binary form. Then 0.
 #define WRITE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
-    writeVarUInt(FIELD_NUM, out); \
-    writeBinary(NAME, out);
+    writeField<FIELD_NUM>(NAME, out);
 
     APPLY_FOR_BLOCK_INFO_FIELDS(WRITE_FIELD)
 
@@ -46,7 +97,7 @@ void BlockInfo::read(ReadBuffer & in)
         {
         #define READ_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
             case FIELD_NUM: \
-                readBinary(NAME, in); \
+                readField<FIELD_NUM>(NAME, in); \
                 break;
 
             APPLY_FOR_BLOCK_INFO_FIELDS(READ_FIELD)

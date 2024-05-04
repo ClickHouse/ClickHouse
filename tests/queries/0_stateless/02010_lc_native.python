@@ -187,9 +187,7 @@ def readHeader(s):
     assertPacket(readUInt8(s), 0)  # is_overflows
     assertPacket(readVarUInt(s), 2)  # 2
     assertPacket(readUInt32(s), 4294967295)  # bucket_num
-    assertPacket(readVarUInt(s), 3)  # 3
-    readStringBinary(s)  # cursors
-    assertPacket(readVarUInt(s), 0)  # 4
+    assertPacket(readVarUInt(s), 0)  # 0
     columns = readVarUInt(s)  # rows
     rows = readVarUInt(s)  # columns
     print("Rows {} Columns {}".format(rows, columns))

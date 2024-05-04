@@ -30,15 +30,17 @@ struct BlockInfo
       * Otherwise -1.
       */
 
-    /** cursor:
+    /** cursors:
       * Filled only when using Streaming queries. Stores cursor data and keeper keys for each of the tables that were used
       * to create this block. In non-Streaming queries case there will be empty map.
     */
 
+    static constexpr size_t PERSISTENT_FIELDS_COUNT = 2;
+
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M) \
-    M(bool,               is_overflows,     false,     1) \
-    M(Int32,              bucket_num,       -1,        2) \
-    M(CursorDataMap,      cursors,          {},        3) \
+    M(bool,                              is_overflows,     false,     1) \
+    M(Int32,                             bucket_num,       -1,        2) \
+    M(std::optional<CursorDataMap>,      cursors,          {},        3) \
 
 #define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
     TYPE NAME = DEFAULT;

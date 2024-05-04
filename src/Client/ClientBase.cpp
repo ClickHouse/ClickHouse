@@ -445,7 +445,8 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    cursors.add(block.info.cursors);
+    if (block.info.cursors.has_value())
+        cursors.add(block.info.cursors.value());
 
     if (!block)
         return;
