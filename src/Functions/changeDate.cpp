@@ -12,20 +12,27 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
 #include "Common/DateLUTImpl.h"
+#include "Common/Exception.h"
 #include <Common/DateLUT.h>
 #include <Common/typeid_cast.h>
 #include "Columns/IColumn.h"
 #include "DataTypes/IDataType.h"
- 
+
 #include <array>
 #include <memory>
- 
+
 namespace DB
 {
- 
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
- 
+
 enum class ChangeDateFunctionsNames
 {
     CHANGE_YEAR = 0,
@@ -35,50 +42,50 @@ enum class ChangeDateFunctionsNames
     CHANGE_MINUTE = 4,
     CHANGE_SECOND = 5
 };
- 
+
 constexpr bool isTimeChange(const ChangeDateFunctionsNames & type)
 {
     return type == ChangeDateFunctionsNames::CHANGE_HOUR ||
            type == ChangeDateFunctionsNames::CHANGE_MINUTE ||
            type == ChangeDateFunctionsNames::CHANGE_SECOND;
 }
- 
+
 template <typename DataType>
 constexpr bool isDate32()
 {
     return DataType::type_id == TypeIndex::Date32;
 }
- 
+
 template <typename DataType>
 constexpr bool isDateTime64()
 {
     return DataType::type_id == TypeIndex::DateTime64;
 }
- 
+
 template <typename Traits>
 class FunctionChangeDate : public IFunction
 {
 public:
     static constexpr auto name = Traits::Name;
- 
+
     static constexpr std::array mandatory_argument_names = {"date", "new_value"};
- 
+
     String getName() const override { return name; }
- 
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
- 
+
     size_t getNumberOfArguments() const override { return mandatory_argument_names.size(); }
- 
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionChangeDate>(); }
- 
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-                {mandatory_argument_names[0], &isDateOrDate32OrDateTimeOrDateTime64<IDataType>, nullptr, "Date(32) or DateTime(64)"},
-                {mandatory_argument_names[1], &isNumber<IDataType>, nullptr, "Number"}
-            };
-        validateFunctionArgumentTypes(*this, arguments, args);
- 
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 2 parameters: date, new_value. Passed {}.", getName(), arguments.size());
+
+        if (!isDateOrDate32OrDateTimeOrDateTime64(*arguments[0].type) || !isNumber(*arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Date(32) or DateTime(64), second - numeric", getName());
+
         if (isTimeChange(Traits::EnumName))
         {
             if (isDate(arguments[0].type))
@@ -86,10 +93,10 @@ public:
             if (isDate32(arguments[0].type))
                 return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
         }
- 
+
         return arguments[0].type;
     }
- 
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & input_type = arguments[0].type;
@@ -109,8 +116,7 @@ public:
             return execute<DataTypeDateTime, DataTypeDateTime>(arguments, input_type, result_type, input_rows_count);
         return execute<DataTypeDateTime64, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
     }
- 
- 
+
     template <typename DataType, typename ResultDataType>
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & input_type, const DataTypePtr & result_type, size_t input_rows_count) const
     {
@@ -127,16 +133,16 @@ public:
         }
         else
             result_column = ResultDataType::ColumnType::create(result_rows_count);
-  
+
         auto & result_data = result_column->getData();
- 
+
         auto input_column = arguments[0].column->convertToFullIfNeeded();
         const auto & input_column_data = typeid_cast<const typename DataType::ColumnType &>(*input_column).getData();
- 
+
         auto new_value_column = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
         new_value_column = new_value_column->convertToFullIfNeeded();
-        const auto & new_value_column_data = typeid_cast<const ColumnFloat64 &>(*new_value_column).getData(); 
- 
+        const auto & new_value_column_data = typeid_cast<const ColumnFloat64 &>(*new_value_column).getData();
+
         for (size_t i = 0; i < result_rows_count; ++i)
         {
             if constexpr (isDateTime64<DataType>())
@@ -146,17 +152,17 @@ public:
                 Int64 deg = 1;
                 for (size_t j = 0; j < scale; ++j)
                     deg *= 10;
- 
+
                 Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i] / deg);
                 Int64 fraction = input_column_data[i] % deg;
- 
+
                 result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, deg, fraction);
             }
             else if constexpr (isDate32<DataType>() && isDateTime64<ResultDataType>())
             {
                 const auto & date_lut = DateLUT::instance();
                 Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(input_column_data[i]))) * 1'000'000;
- 
+
                 result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 1'000, 0);
             }
             else
@@ -167,7 +173,7 @@ public:
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(input_column_data[i]))) * 1'000'000;
                 else
                     time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
- 
+
                 if (isDateOrDate32(result_type))
                     result_data[i] = static_cast<Int32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
                 else
@@ -177,10 +183,10 @@ public:
 
         if (is_const)
             return ColumnConst::create(std::move(result_column), input_rows_count);
- 
+
         return result_column;
     }
- 
+
     Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 deg = 0, Int64 fraction = 0) const
     {
         auto year = time / 10'000'000'000;
@@ -189,7 +195,7 @@ public:
         auto hours = (time % 1'000'000) / 10'000;
         auto minutes = (time % 10'000) / 100;
         auto seconds = time % 100;
- 
+
         Int64 min_date, max_date;
         Int16 min_year, max_year;
         if (isDate(result_type))
@@ -220,7 +226,7 @@ public:
             min_year = 1900;
             max_year = 2299;
         }
- 
+
         switch (Traits::EnumName)
         {
             case ChangeDateFunctionsNames::CHANGE_YEAR:
@@ -256,60 +262,60 @@ public:
                 seconds = static_cast<UInt8>(new_value);
                 break;
         }
- 
+
         Int64 result;
         if (isDateOrDate32(result_type))
             result = date_lut.makeDayNum(year, month, day);
         else
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds) * deg + fraction;
- 
+
         if (result > max_date)
             return max_date;
- 
+
         return result;
     }
 };
- 
- 
+
+
 struct ChangeYearTraits
 {
     static constexpr auto Name = "changeYear";
     static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_YEAR;
 };
- 
+
 struct ChangeMonthTraits
 {
     static constexpr auto Name = "changeMonth";
     static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_MONTH;
 };
- 
+
 struct ChangeDayTraits
 {
     static constexpr auto Name = "changeDay";
     static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_DAY;
 };
- 
+
 struct ChangeHourTraits
 {
     static constexpr auto Name = "changeHour";
     static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_HOUR;
 };
- 
+
 struct ChangeMinuteTraits
 {
     static constexpr auto Name = "changeMinute";
     static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_MINUTE;
 };
- 
+
 struct ChangeSecondTraits
 {
     static constexpr auto Name = "changeSecond";
     static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_SECOND;
 };
- 
- 
+
+
 }
- 
+
 REGISTER_FUNCTION(ChangeDate)
 {
     factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>();
@@ -319,5 +325,5 @@ REGISTER_FUNCTION(ChangeDate)
     factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>();
     factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>();
 }
- 
+
 }
