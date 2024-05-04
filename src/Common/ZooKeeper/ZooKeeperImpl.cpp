@@ -1,7 +1,8 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/ZooKeeperImpl.h>
 
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -10,17 +11,17 @@
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
+#include <Common/thread_local_rng.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"

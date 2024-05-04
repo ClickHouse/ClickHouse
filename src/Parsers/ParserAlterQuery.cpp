@@ -41,6 +41,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_modify_query(Keyword::MODIFY_QUERY);
     ParserKeyword s_modify_sql_security(Keyword::MODIFY_SQL_SECURITY);
+    ParserKeyword s_modify_definer(Keyword::MODIFY_DEFINER);
     ParserKeyword s_modify_refresh(Keyword::MODIFY_REFRESH);
 
     ParserKeyword s_add_index(Keyword::ADD_INDEX);
@@ -494,11 +495,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 command->type = ASTAlterCommand::MOVE_PARTITION;
                 command->part = true;
 
-                if (s_to_disk.ignore(pos))
+                if (s_to_disk.ignore(pos, expected))
                     command->move_destination_type = DataDestinationType::DISK;
-                else if (s_to_volume.ignore(pos))
+                else if (s_to_volume.ignore(pos, expected))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_shard.ignore(pos))
+                else if (s_to_shard.ignore(pos, expected))
                 {
                     command->move_destination_type = DataDestinationType::SHARD;
                 }
@@ -518,11 +519,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::MOVE_PARTITION;
 
-                if (s_to_disk.ignore(pos))
+                if (s_to_disk.ignore(pos, expected))
                     command->move_destination_type = DataDestinationType::DISK;
-                else if (s_to_volume.ignore(pos))
+                else if (s_to_volume.ignore(pos, expected))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_table.ignore(pos))
+                else if (s_to_table.ignore(pos, expected))
                 {
                     if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                         return false;
@@ -583,7 +584,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
-                if (s_from.ignore(pos))
+                if (s_from.ignore(pos, expected))
                 {
                     if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
                         return false;
@@ -862,11 +863,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
-            else if (s_modify_sql_security.ignore(pos, expected))
+            else if (s_modify_sql_security.checkWithoutMoving(pos, expected))
             {
-                /// This is a hack so we can reuse parser from create and don't have to write `MODIFY SQL SECURITY SQL SECURITY INVOKER`
-                --pos;
-                --pos;
+                s_modify.ignore(pos, expected);
+                if (!sql_security_p.parse(pos, command_sql_security, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
+            }
+            else if (s_modify_definer.checkWithoutMoving(pos, expected))
+            {
+                s_modify.ignore(pos, expected);
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;

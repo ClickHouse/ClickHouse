@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 
@@ -648,6 +648,12 @@ Enabled by default.
 
 Insert default values for missing elements in JSON object while parsing named tuple.
 This setting works only when setting `input_format_json_named_tuples_as_objects` is enabled.
+
+Enabled by default.
+
+## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
+
+Throw an exception if JSON string contains bad escape sequence in JSON input formats. If disabled, bad escape sequences will remain as is in the data.
 
 Enabled by default.
 
@@ -1367,7 +1373,7 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Disabled by default.
+Enabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
@@ -1636,7 +1642,7 @@ Possible values:
 - 0 — Output without row numbers.
 - 1 — Output with row numbers.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
