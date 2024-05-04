@@ -86,8 +86,8 @@ namespace SettingsChangesHistory
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.5", {{"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
-              {"cross_join_min_rows_to_compress", 1000, 1000, "A new setting."},
-              {"cross_join_min_bytes_to_compress", 10000, 10000, "A new setting."},
+              {"cross_join_min_rows_to_compress", 10000000, 10000000, "A new setting."},
+              {"cross_join_min_bytes_to_compress", 1_GiB, 1_GiB, "A new setting."},
               }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"max_parsing_threads", 0, 0, "Add a separate setting to control number of threads in parallel parsing from files"},
