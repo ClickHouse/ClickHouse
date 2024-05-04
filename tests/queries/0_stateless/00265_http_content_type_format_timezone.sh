@@ -13,3 +13,6 @@ ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMA
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT Vertical"     2>&1 | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT Native"       2>&1 | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMAT RowBinary"    2>&1 | grep -e '< Content-Type' -e '< X-ClickHouse-Format' -e '< X-ClickHouse-Timezone' | sed "s|$CLICKHOUSE_TIMEZONE_ESCAPED|CLICKHOUSE_TIMEZONE|" | sed 's/\r$//' | sort;
+
+${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT timezone() SETTINGS session_timezone='Europe/Berlin'" 2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
+${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT timezone() SETTINGS session_timezone='Africa/Cairo'"  2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
