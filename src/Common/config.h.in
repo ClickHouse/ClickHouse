@@ -43,6 +43,7 @@
 #cmakedefine01 USE_ICU
 #cmakedefine01 USE_MYSQL
 #cmakedefine01 USE_RDKAFKA
+#cmakedefine01 USE_PULSAR
 #cmakedefine01 USE_AMQPCPP
 #cmakedefine01 USE_NATSIO
 #cmakedefine01 USE_EMBEDDED_COMPILER
