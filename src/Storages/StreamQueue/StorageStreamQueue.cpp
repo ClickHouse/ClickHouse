@@ -17,16 +17,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int BAD_ARGUMENTS;
 }
+
 namespace
 {
-
-
 StorageID getSourceStorage(ContextPtr context, const ASTIdentifier & arg)
 {
     std::string database_name;
@@ -105,16 +103,56 @@ void StorageStreamQueue::shutdown(bool)
     LOG_TRACE(log, "Shut down storage");
 }
 
-std::string StorageStreamQueue::createZooKeeperPath() {
+std::string StorageStreamQueue::createZooKeeperPath()
+{
     return "/storage/stream/queue/test/path";
 }
 
-bool StorageStreamQueue::createZooKeeperNode() {
+std::string StorageStreamQueue::createZooKeeperNodeWithKeysPath()
+{
+    return "/storage/stream/queue/test/keys_path";
+}
+
+std::unordered_set<int64_t> StorageStreamQueue::readSetOfKeys()
+{
+    std::string zooKeeperNodeWithKeysPath = createZooKeeperNodeWithKeysPath();
+    auto zooKeeper = getZooKeeper();
+    zooKeeper->createIfNotExists(zooKeeperNodeWithKeysPath, "");
+
+    std::stringstream ss;
+    ss << zooKeeper->get(zooKeeperNodeWithKeysPath);
+
+    std::unordered_set<int64_t> result;
+    std::string key;
+    while (ss >> key)
+    {
+        int64_t parsedKey = std::stoll(key);
+        result.insert(parsedKey);
+    }
+    return result;
+}
+
+void StorageStreamQueue::writeSetOfKeys(std::unordered_set<int64_t> keys)
+{
+    std::string zooKeeperNodeWithKeysPath = createZooKeeperNodeWithKeysPath();
+    auto zooKeeper = getZooKeeper();
+    std::stringstream ss;
+    for (const auto key : keys)
+    {
+        ss << key << " ";
+    }
+
+    zooKeeper->set(zooKeeperNodeWithKeysPath, ss.str());
+}
+
+bool StorageStreamQueue::createZooKeeperNode()
+{
     auto zookeeper = getZooKeeper();
     auto path = createZooKeeperPath();
     zookeeper->createAncestors(path);
     auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
-    if (code == Coordination::Error::ZNODEEXISTS) {
+    if (code == Coordination::Error::ZNODEEXISTS)
+    {
         return false;
     }
 
@@ -127,7 +165,8 @@ void StorageStreamQueue::threadFunc()
     if (shutdown_called)
         return;
 
-    if (!(downloading || createZooKeeperNode())) {
+    if (!(downloading || createZooKeeperNode()))
+    {
         return;
     }
 
@@ -160,10 +199,23 @@ void StorageStreamQueue::move_data()
         select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
-    auto gt_function = makeASTFunction("greaterOrEquals");
-    gt_function->arguments->children.push_back(key_column);
-    gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(10));
-    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(gt_function));
+
+    auto oldKeys = readSetOfKeys();
+    std::unordered_set<int64_t> newKeys;
+    if (!oldKeys.empty())
+    {
+        auto maxOldId = std::numeric_limits<int64_t>::min();
+        for (const auto oldID : oldKeys)
+        {
+            maxOldId = std::max(maxOldId, oldID);
+        }
+        newKeys.insert(maxOldId);
+
+        auto gt_function = makeASTFunction("greater");
+        gt_function->arguments->children.push_back(key_column);
+        gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(maxOldId - 10));
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(gt_function));
+    }
 
     auto order_by = std::make_shared<ASTExpressionList>();
     auto order_by_elem = std::make_shared<ASTOrderByElement>();
@@ -192,9 +244,33 @@ void StorageStreamQueue::move_data()
     {
         if (!block)
             continue;
-        pushing_executor.push(block);
+
+        auto column = block.findByName(key_column->full_name)->column;
+        std::vector<size_t> unique;
+        for (size_t i = 0; i < column->size(); i++)
+        {
+            newKeys.insert(column->get64(i));
+            if (oldKeys.contains(column->get64(i)))
+            {
+                continue;
+            }
+            unique.push_back(i);
+        }
+
+        Block withoutDuplicates;
+        for (const auto & srcColumn : block)
+        {
+            auto distColumn = srcColumn.column->cloneEmpty();
+            for (const auto & uniqueIdx : unique)
+            {
+                distColumn->insertFrom(*srcColumn.column, uniqueIdx);
+            }
+            withoutDuplicates.insert(ColumnWithTypeAndName(std::move(distColumn), srcColumn.type, srcColumn.name));
+        }
+        pushing_executor.push(withoutDuplicates);
     }
     pushing_executor.finish();
+    writeSetOfKeys(newKeys);
 }
 
 StoragePtr createStorage(const StorageFactory::Arguments & args)
@@ -203,7 +279,9 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
 
     if (engine_args.size() != 2)
         throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage StreamQueue requires exactly 2 arguments: {}, <key column name>", StreamQueueArgumentName);
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage StreamQueue requires exactly 2 arguments: {}, <key column name>",
+            StreamQueueArgumentName);
 
     const auto arg = engine_args[0];
 

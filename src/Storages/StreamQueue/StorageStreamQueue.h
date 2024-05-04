@@ -36,6 +36,10 @@ private:
     void shutdown(bool is_drop) override;
 
     std::string createZooKeeperPath();
+    std::string createZooKeeperNodeWithKeysPath();
+    std::unordered_set<int64_t> readSetOfKeys();
+    void writeSetOfKeys(std::unordered_set<int64_t>);
+
     bool createZooKeeperNode();
 
     void threadFunc();
