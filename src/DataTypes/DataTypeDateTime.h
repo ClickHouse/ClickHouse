@@ -36,6 +36,7 @@ public:
     explicit DataTypeDateTime(const TimezoneMixin & time_zone);
 
     static constexpr auto family_name = "DateTime";
+    static constexpr auto type_id = TypeIndex::DateTime;
 
     const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
