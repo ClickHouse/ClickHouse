@@ -76,6 +76,8 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatFlatbuffers(FormatFactory & factory);
+void registerOutputFormatFlatbuffers(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -221,6 +223,8 @@ void registerFormats()
     registerOutputFormatAvro(factory);
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
+    // registerInputFormatFlatbuffers(factory);
+    registerOutputFormatFlatbuffers(factory);
 
     registerOutputFormatPretty(factory);
     registerOutputFormatPrettyCompact(factory);

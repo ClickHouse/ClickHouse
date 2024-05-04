@@ -86,7 +86,7 @@ set(FLATBUFFERS_SRCS
 add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
 target_include_directories(_flatbuffers PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
 target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
-
+add_library (ch_contrib::flatbuffers ALIAS _flatbuffers)
 
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
