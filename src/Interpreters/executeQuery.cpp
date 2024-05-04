@@ -1525,6 +1525,8 @@ void executeQuery(
         throw;
     }
 
+    result_details.timezone = DateLUT::instance().getTimeZone();
+
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
