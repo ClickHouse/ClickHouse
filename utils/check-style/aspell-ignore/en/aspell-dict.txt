@@ -1949,6 +1949,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeTreeIndex
 mergeable
 mergetree
