@@ -85,7 +85,9 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.5", {{"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
+    {"24.5", {{"allow_deprecated_functions", true, false, "Allow usage of deprecated functions"},
+              {"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
+              {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
               {"cross_join_min_rows_to_compress", 10000000, 10000000, "A new setting."},
               {"cross_join_min_bytes_to_compress", 1_GiB, 1_GiB, "A new setting."},
               }},

@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -175,6 +176,12 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
             config.getString(config_prefix + ".account_key")
         );
         return std::make_unique<T>(url, storage_shared_key_credential, client_options);
+    }
+
+    if (config.getBool(config_prefix + ".use_workload_identity", false))
+    {
+        auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+        return std::make_unique<T>(url, workload_identity_credential);
     }
 
     auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
