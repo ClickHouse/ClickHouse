@@ -170,6 +170,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 }
             }
 
+            if (mut_command->type == MutationCommand::MATERIALIZE_TTL && mut_command->ttl_delta != 0)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Cannot MATERIALIZE TTL as ttl_delta {} is specified", mut_command->ttl_delta);
+
             mutation_commands.emplace_back(std::move(*mut_command));
         }
         else

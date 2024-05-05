@@ -439,6 +439,9 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE TTL" << (settings.hilite ? hilite_none : "");
+        if (ttl_delta)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " " << ttl_delta << (settings.hilite ? hilite_none : "");
+
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
