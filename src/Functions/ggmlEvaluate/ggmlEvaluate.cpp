@@ -1,29 +1,19 @@
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
-
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
-#include <BridgeHelper/IBridgeHelper.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include "Common/Exception.h"
-#include <Common/assert_cast.h>
 #include "gpt_common.h"
 #include "gptj.h"
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
+
+#include <Functions/FunctionFactory.h>
+
+#include <Columns/ColumnString.h>
+
+#include <Common/Exception.h>
+#include <Common/re2.h>
 
 #include <DataTypes/DataTypeString.h>
 
-#include <fstream>
-#include <memory>
-#include <string>
-#include <Common/re2.h>
+#include <Functions/IFunction.h>
+
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
