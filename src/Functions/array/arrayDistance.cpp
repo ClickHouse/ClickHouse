@@ -128,7 +128,7 @@ struct L2Distance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return sqrt(state.sum);
+        return sqrt(L2SquaredDistance::finalize(state, ConstParams{}));
     }
 };
 
