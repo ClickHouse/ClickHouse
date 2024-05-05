@@ -2409,6 +2409,8 @@ simpleaggregatefunction
 simplelinearregression
 simpod
 singlepart
+singleValueOrNull
+singlevalueornull
 sinh
 sipHash
 siphash
