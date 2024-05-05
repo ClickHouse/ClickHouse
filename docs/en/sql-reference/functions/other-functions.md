@@ -3301,3 +3301,13 @@ The setting is not enabled by default for security reasons, because some headers
 HTTP headers are case sensitive for this function.
 
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
+
+## showCertificate
+
+Shows the current server's SSL certificate if it has been configured.
+
+**Syntax**
+
+```sql
+showCertificate()
+```
