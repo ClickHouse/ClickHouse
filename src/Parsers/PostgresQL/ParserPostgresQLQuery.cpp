@@ -1,34 +1,43 @@
-#include <Parsers/PostgreSQL/ParserPostgreSQLQuery.h>
-#include <string>
-
 #include "Parsers/Lexer.h"
-#include "config.h"
-
-#if USE_PostgreSQL
-#    include <PostgreSQL.h>
-#endif
-
+#include <Parsers/PostgreSQL/ParserPostgreSQLQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
+
+#include <Poco/Logger.h>
+
+#include <string>
+
+#include <pg_query.h>
+
+#include "config.h"
+
+#include <PostgreSQL.h>
+
 #include <base/scope_guard.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 bool ParserPostgreSQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-#if !USE_PostgreSQL
-    throw Exception(
-        ErrorCodes::SUPPORT_IS_DISABLED, "PostgreSQL is not available. PostgreSQL may be disabled. Use another dialect!");
-#else
+    const auto * begin = pos->begin;
+    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+        ++pos;
+    const auto * end = pos->begin;
+    
+    const auto * begin_char_ptr = reinterpret_cast<char *>(begin);
+    const auto * end_char_ptr = reinterpret_cast<char *>(end);
+    String res = "";
+    for (auto it = begin_char_ptr; it != end_char_ptr; it++) {
+        res += *it;
+    }
+    
+    Poco::Logger * log = &Poco::Logger::get("registerCompressionCodecWithType");
+
+    LOG_DEBUG(log, "POSTGRESQL RES: {}", res);
+    
+
     return true;
-#endif
 }
 }
