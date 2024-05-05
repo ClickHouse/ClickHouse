@@ -212,7 +212,17 @@ void StorageStreamQueue::move_data()
 
         auto gt_function = makeASTFunction("greater");
         gt_function->arguments->children.push_back(key_column);
-        gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(max_old_id - 10));
+        if (settings->streamqueue_min_key + settings->streamqueue_max_shift_back_per_iter >= max_old_id)
+            gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(settings->streamqueue_min_key.value));
+        else
+            gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(max_old_id - settings->streamqueue_max_shift_back_per_iter));
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(gt_function));
+    }
+    else
+    {
+        auto gt_function = makeASTFunction("greater");
+        gt_function->arguments->children.push_back(key_column);
+        gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(settings->streamqueue_min_key.value));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(gt_function));
     }
 
