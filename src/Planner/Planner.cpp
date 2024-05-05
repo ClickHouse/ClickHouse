@@ -67,7 +67,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
-#include <Planner/findQueryForParallelReplicas.h>
+#include <Planner/ParallelReplicas.h>
 #include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -1195,7 +1195,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_)
+    const SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
@@ -1207,7 +1207,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_,
+    const SelectQueryOptions & select_query_options_,
     GlobalPlannerContextPtr global_planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
@@ -1216,7 +1216,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_,
+    const SelectQueryOptions & select_query_options_,
     PlannerContextPtr planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
@@ -1424,7 +1424,7 @@ void Planner::buildPlanForQueryNode()
     checkStoragesSupportTransactions(planner_context);
 
     const auto & table_filters = planner_context->getGlobalPlannerContext()->filters_for_table_expressions;
-    if (!select_query_options.only_analyze && !table_filters.empty()) // && top_level)
+    if (!select_query_options.only_analyze && !table_filters.empty())
     {
         for (auto & [table_node, table_expression_data] : planner_context->getTableExpressionNodeToData())
         {

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class InterpreterSelectQueryAnalyzer : public IInterpreter
+class InterpreterSelectQueryAnalyzer final : public IInterpreter
 {
 public:
     /// Initialize interpreter with query AST
@@ -51,6 +51,8 @@ public:
 
     BlockIO execute() override;
 
+    void buildQueryPlanIfNeeded();
+
     QueryPlan & getQueryPlan();
 
     QueryPlan && extractQueryPlan() &&;
@@ -76,8 +78,8 @@ public:
 private:
     ASTPtr query;
     ContextMutablePtr context;
-    SelectQueryOptions select_query_options;
     QueryTreeNodePtr query_tree;
+    SelectQueryOptions select_query_options;
     Planner planner;
 };
 
