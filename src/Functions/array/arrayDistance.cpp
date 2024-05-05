@@ -56,6 +56,8 @@ struct L1Distance
     }
 };
 
+struct L2SquaredDistance;
+
 struct L2Distance
 {
     static constexpr auto name = "L2";
