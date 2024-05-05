@@ -56,6 +56,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitInRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -494,6 +495,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , metadata_snapshot(metadata_snapshot_)
     , prepared_sets(prepared_sets_)
 {
+    std::cerr << "InterpreterSelectQuery::InterpreterSelectQuery(_starts\n";
     checkStackSize();
 
     if (!prepared_sets)
@@ -894,7 +896,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         /// Calculate structure of the result.
+        std::cerr << "result_header = getSampleBlockImpl()_1";
         result_header = getSampleBlockImpl();
+        std::cerr << "result_header = getSampleBlockImpl()_2";
     };
 
 
@@ -993,6 +997,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
+    std::cerr << "here0\n";
     sanitizeBlock(result_header, true);
 }
 
@@ -1108,16 +1113,16 @@ BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
     QueryPlan query_plan;
-
+    std::cerr << "InterpreterSelectQuery::execute()_1\n";
     buildQueryPlan(query_plan);
-
+    std::cerr << "InterpreterSelectQuery::execute()_2\n";
     auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-
+    std::cerr << "InterpreterSelectQuery::execute()_3\n";
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-
+    std::cerr << "InterpreterSelectQuery::execute()_4\n";
     setQuota(res.pipeline);
-
+    std::cerr << "InterpreterSelectQuery::execute()_5\n";
     return res;
 }
 
@@ -1161,8 +1166,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, source_header);
 
     std::cerr << "after ExpressionAnalysisResult\n";
-    std::cerr << analysis_result.dump() << '\n';
-    std::cerr << "after dump\n";
+    // std::cerr << analysis_result.dump() << '\n';
+    // std::cerr << "after dump\n";
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
         auto header = source_header;
@@ -2079,10 +2084,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             if (expressions.hasLimitInrangeFrom() || expressions.hasLimitInrangeTo()) {
-                if (expressions.before_limit_inrange_from)
-                    executeExpression(query_plan, expressions.before_limit_inrange_from, "Before LIMIT INRANGE FROM");
-                if (expressions.before_limit_inrange_to)
-                    executeExpression(query_plan, expressions.before_limit_inrange_to, "Before LIMIT INRANGE TO");
+                // if (expressions.before_limit_inrange_from)
+                //     executeExpression(query_plan, expressions.before_limit_inrange_from, "Before LIMIT INRANGE FROM");
+                // if (expressions.before_limit_inrange_to)
+                //     executeExpression(query_plan, expressions.before_limit_inrange_to, "Before LIMIT INRANGE TO");
 
                 executeLimitInrange(query_plan, expressions.before_limit_inrange_from, expressions.before_limit_inrange_to, expressions.remove_inrange_filter);
             }
@@ -2742,6 +2747,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsA
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
+    std::cerr << "InterpreterSelectQuery::executeWhere ends\n";
 }
 
 static Aggregator::Params getAggregatorParams(
@@ -3188,12 +3194,25 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     }
 }
 
-void InterpreterSelectQuery::executeLimitInrange(QueryPlan & query_plan, const ActionsDAGPtr & from_expression, const ActionsDAGPtr & to_expression, bool remove_filter_column) {
-    if (!from_expr && !to_expr)
+void InterpreterSelectQuery::executeLimitInrange(
+    QueryPlan & query_plan, const ActionsDAGPtr & from_expression, const ActionsDAGPtr & to_expression, bool remove_filter_column)
+{
+    std::cerr << "IN executeLimitInrange\n";
+    if (!from_expression && !to_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT INRANGE expressions are not defined properly");
 
+    // executeExpression(query_plan, from_expression, "Executing From expression");
+    // executeExpression(query_plan, to_expression, "Executing To expression");
+    
+    remove_filter_column = true;
     auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
-        query_plan.getCurrentDataStream(), from_expr, to_expr, getSelectQuery().limitInRangeFrom()->getColumnName(), getSelectQuery().limitInRangeFrom()->getColumnName(), remove_filter_column);
+        query_plan.getCurrentDataStream(),
+        from_expression,
+        to_expression,
+        getSelectQuery().limitInRangeFrom() ? getSelectQuery().limitInRangeFrom()->getColumnName() : "",
+        getSelectQuery().limitInRangeTo() ? getSelectQuery().limitInRangeTo()->getColumnName() : "",
+        remove_filter_column);
+
     limit_inrange_step->setStepDescription("LIMIT INRANGE");
     query_plan.addStep(std::move(limit_inrange_step));
 }

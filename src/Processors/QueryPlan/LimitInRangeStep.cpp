@@ -51,13 +51,13 @@ LimitInRangeStep::LimitInRangeStep(
 void LimitInRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
 
-    auto from_expression = std::make_shared<ExpressionActions>(from_actions_dag, settings.getActionsSettings());
-    auto to_expression = std::make_shared<ExpressionActions>(to_actions_dag, settings.getActionsSettings());
+    auto from_expression = from_actions_dag ? std::make_shared<ExpressionActions>(from_actions_dag, settings.getActionsSettings()) : nullptr;
+    auto to_expression = to_actions_dag ? std::make_shared<ExpressionActions>(to_actions_dag, settings.getActionsSettings()) : nullptr;
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<LimitInRangeTransform>(header, from_expression, to_expression, from_filter_column_name, to_filter_column_name, remove_filter_column);
+        return std::make_shared<LimitInRangeTransform>(header, from_expression, to_expression, from_filter_column_name, to_filter_column_name, remove_filter_column, on_totals);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
@@ -108,7 +108,7 @@ void LimitInRangeStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        FilterTransform::transformHeader(input_streams.front().header, from_actions_dag.get(), to_actions_dag.get(), from_filter_column_name, to_filter_column_name, remove_filter_column),
+        LimitInRangeTransform::transformHeader(input_streams.front().header, from_actions_dag.get(), to_actions_dag.get(), from_filter_column_name, to_filter_column_name, remove_filter_column),
         getDataStreamTraits());
 }
 
