@@ -115,34 +115,33 @@ std::string StorageStreamQueue::createZooKeeperNodeWithKeysPath()
 
 std::unordered_set<int64_t> StorageStreamQueue::readSetOfKeys()
 {
-    std::string zooKeeperNodeWithKeysPath = createZooKeeperNodeWithKeysPath();
-    auto zooKeeper = getZooKeeper();
-    zooKeeper->createIfNotExists(zooKeeperNodeWithKeysPath, "");
+    std::string zoo_keeper_node_with_keys_path = createZooKeeperNodeWithKeysPath();
+    auto zoo_keeper = getZooKeeper();
+    zoo_keeper->createIfNotExists(zoo_keeper_node_with_keys_path, "");
 
     std::stringstream ss;
-    ss << zooKeeper->get(zooKeeperNodeWithKeysPath);
+    ss << zoo_keeper->get(zoo_keeper_node_with_keys_path);
 
     std::unordered_set<int64_t> result;
     std::string key;
     while (ss >> key)
     {
-        int64_t parsedKey = std::stoll(key);
-        result.insert(parsedKey);
+        result.insert(std::stoll(key));
     }
     return result;
 }
 
 void StorageStreamQueue::writeSetOfKeys(std::unordered_set<int64_t> keys)
 {
-    std::string zooKeeperNodeWithKeysPath = createZooKeeperNodeWithKeysPath();
-    auto zooKeeper = getZooKeeper();
+    std::string zoo_keeper_node_with_keys_path = createZooKeeperNodeWithKeysPath();
+    auto zoo_keeper = getZooKeeper();
     std::stringstream ss;
     for (const auto key : keys)
     {
         ss << key << " ";
     }
 
-    zooKeeper->set(zooKeeperNodeWithKeysPath, ss.str());
+    zoo_keeper->set(zoo_keeper_node_with_keys_path, ss.str());
 }
 
 bool StorageStreamQueue::createZooKeeperNode()
@@ -200,20 +199,20 @@ void StorageStreamQueue::move_data()
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
 
-    auto oldKeys = readSetOfKeys();
-    std::unordered_set<int64_t> newKeys;
-    if (!oldKeys.empty())
+    auto old_keys = readSetOfKeys();
+    std::unordered_set<int64_t> new_keys;
+    if (!old_keys.empty())
     {
-        auto maxOldId = std::numeric_limits<int64_t>::min();
-        for (const auto oldID : oldKeys)
+        auto max_old_id = std::numeric_limits<int64_t>::min();
+        for (const auto old_id : old_keys)
         {
-            maxOldId = std::max(maxOldId, oldID);
+            max_old_id = std::max(max_old_id, old_id);
         }
-        newKeys.insert(maxOldId);
+        new_keys.insert(max_old_id);
 
         auto gt_function = makeASTFunction("greater");
         gt_function->arguments->children.push_back(key_column);
-        gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(maxOldId - 10));
+        gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(max_old_id - 10));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(gt_function));
     }
 
@@ -249,28 +248,28 @@ void StorageStreamQueue::move_data()
         std::vector<size_t> unique;
         for (size_t i = 0; i < column->size(); i++)
         {
-            newKeys.insert(column->get64(i));
-            if (oldKeys.contains(column->get64(i)))
+            new_keys.insert(column->get64(i));
+            if (old_keys.contains(column->get64(i)))
             {
                 continue;
             }
             unique.push_back(i);
         }
 
-        Block withoutDuplicates;
-        for (const auto & srcColumn : block)
+        Block without_duplicates;
+        for (const auto & src_column : block)
         {
-            auto distColumn = srcColumn.column->cloneEmpty();
-            for (const auto & uniqueIdx : unique)
+            auto dist_column = src_column.column->cloneEmpty();
+            for (const auto & unique_idx : unique)
             {
-                distColumn->insertFrom(*srcColumn.column, uniqueIdx);
+                dist_column->insertFrom(*src_column.column, unique_idx);
             }
-            withoutDuplicates.insert(ColumnWithTypeAndName(std::move(distColumn), srcColumn.type, srcColumn.name));
+            without_duplicates.insert(ColumnWithTypeAndName(std::move(dist_column), src_column.type, src_column.name));
         }
-        pushing_executor.push(withoutDuplicates);
+        pushing_executor.push(without_duplicates);
     }
     pushing_executor.finish();
-    writeSetOfKeys(newKeys);
+    writeSetOfKeys(new_keys);
 }
 
 StoragePtr createStorage(const StorageFactory::Arguments & args)
