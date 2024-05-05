@@ -9,6 +9,7 @@ test_shard_localhost: OK
 default_path_test: OK
 default: OK
 uniqCombined64ForEach: OK
+CHANGEABLE_IN_READONLY: OK
 system: OK
 aggregate_function_combinators: OK
 primary_key_bytes_in_memory_allocated: OK

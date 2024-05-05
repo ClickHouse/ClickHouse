@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
 
 import argparse
-from pathlib import Path
-from typing import Tuple
-import subprocess
 import logging
+import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import Tuple
 
-from ci_config import CI_CONFIG, BuildConfig
-
-from env_helper import (
-    REPO_COPY,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
-)
-from git_helper import Git
-from pr_info import PRInfo
-from report import FAILURE, JobReport, StatusType, SUCCESS
-from tee_popen import TeePopen
 import docker_images_helper
+from ci_config import CI_CONFIG, BuildConfig
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from git_helper import Git
+from lambda_shared_package.lambda_shared.pr import Labels
+from pr_info import PRInfo
+from report import FAILURE, SUCCESS, JobReport, StatusType
+from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
     update_version_local,
 )
-from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
@@ -111,6 +107,10 @@ def build_clickhouse(
     return build_log_path, SUCCESS if success else FAILURE
 
 
+def is_release_pr(pr_info: PRInfo) -> bool:
+    return Labels.RELEASE in pr_info.labels or Labels.RELEASE_LTS in pr_info.labels
+
+
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
     "Return prefixes for S3 artifacts paths"
     # FIXME performance
@@ -119,7 +119,7 @@ def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str,
     # It should be fixed in performance-comparison image eventually
     # For performance tests we always set PRs prefix
     performance_pr = "PRs/0"
-    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
+    if is_release_pr(pr_info):
         # for release pull requests we use branch names prefixes, not pr numbers
         return pr_info.head_ref, performance_pr
     if pr_info.number == 0:
@@ -163,7 +163,7 @@ def main():
     official_flag = pr_info.number == 0
 
     version_type = "testing"
-    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
+    if is_release_pr(pr_info):
         version_type = "stable"
         official_flag = True
 
