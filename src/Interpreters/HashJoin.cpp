@@ -835,9 +835,15 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
         assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "joined block");
 
-        if (kind == JoinKind::Cross && getTotalByteCount() >= table_join->crossJoinMinBytesToCompress()
-            && getTotalRowCount() >= table_join->crossJoinMinRowsToCompress())
+        size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
+        size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
+
+        if (kind == JoinKind::Cross
+            && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
+                || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
+        {
             block_to_save = block_to_save.compress();
+        }
 
         data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
