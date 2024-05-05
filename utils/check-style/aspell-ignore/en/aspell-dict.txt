@@ -563,6 +563,7 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+Monotonicity
 MsgPack
 multiSearchAllPositionsCaseInsensitive
 multiSearchAllPositionsCaseInsensitiveUTF
@@ -614,6 +615,7 @@ NetworkSendErrors
 NetworkSendPackets
 Noaa
 NodeJs
+NonMonotonic
 NuRaft
 NumHexagons
 NumPy
@@ -922,6 +924,7 @@ TAVG
 TCPConnection
 TCPThreads
 TDigest
+ThreadMonotonic
 TINYINT
 TLSv
 TMAX
@@ -1007,7 +1010,9 @@ URLPathHierarchy
 USearch
 UUIDNumToString
 UUIDStringToNum
+UUIDToNum
 UUIDs
+UUIDv
 UUid
 Uber
 Uint
@@ -1042,6 +1047,8 @@ Wether
 WikiStat
 WindowView
 Winkler
+WithCounter
+WithFastCounter
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1943,6 +1950,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeTreeIndex
 mergeable
 mergetree
@@ -1970,6 +1979,7 @@ modularization
 moduloOrZero
 moduli
 mongodb
+monotonicity
 monthName
 mortonDecode
 mortonEncode
@@ -2322,6 +2332,7 @@ retentions
 rethrow
 retransmit
 retriable
+rewritable
 reverseUTF
 rightPad
 rightPadUTF
@@ -2443,6 +2454,10 @@ stddevPop
 stddevSamp
 stddevpop
 stddevsamp
+stddevpopstable
+stddevPopStable
+stddevsampstable
+stddevSampStable
 stderr
 stdin
 stdout
@@ -2524,6 +2539,9 @@ sumWithOverflow
 sumcount
 sumkahan
 summap
+summapwithoverflow
+sumMapWithOverflow
+sumMapFilteredWithOverflow
 summingmergetree
 sumwithoverflow
 superaggregates
@@ -2752,6 +2770,7 @@ userspace
 userver
 utils
 uuid
+uuidv
 varPop
 varPopStable
 varSamp

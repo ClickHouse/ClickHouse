@@ -22,7 +22,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
@@ -516,12 +515,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeSumIfFunctions(ASTPtr & query)
-{
-    RewriteSumIfFunctionVisitor::Data data = {};
-    RewriteSumIfFunctionVisitor(data).visit(query);
-}
-
 void optimizeArrayExistsFunctions(ASTPtr & query)
 {
     RewriteArrayExistsFunctionVisitor::Data data = {};
@@ -681,9 +674,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query, context);
-
-    if (settings.optimize_rewrite_sum_if_to_count_if)
-        optimizeSumIfFunctions(query);
 
     if (settings.optimize_rewrite_array_exists_to_has)
         optimizeArrayExistsFunctions(query);
