@@ -1,1 +1,1 @@
-#include <Parsers/PostgresQL/ParserPostgresQLQuery.h>
+#include <Parsers/PostgreSQL/ParserPostgreSQLQuery.h>
