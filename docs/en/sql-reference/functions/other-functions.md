@@ -3311,3 +3311,11 @@ Shows the current server's SSL certificate if it has been configured.
 ```sql
 showCertificate()
 ```
+
+**Parameters**
+
+- None.
+
+**Returned value**
+
+- SSL certificate. [String](../../sql-reference/data-types/string.md).
