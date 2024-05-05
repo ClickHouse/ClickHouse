@@ -1002,6 +1002,7 @@ UMTS
 UNDROP
 UPDATEs
 URIs
+URL
 URL's
 URLHash
 URLHierarchy
@@ -2761,6 +2762,7 @@ uptime
 uptrace
 uring
 url
+urlencoded
 urlCluster
 urls
 usearch
