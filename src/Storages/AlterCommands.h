@@ -234,6 +234,9 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
+    /// Try to optimize MODIFY TTL, and return the delta of the modified TTL.
+    time_t tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const;
+
     /// Check if commands have any inverted index
     static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata);
 };
