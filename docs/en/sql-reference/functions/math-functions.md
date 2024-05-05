@@ -931,9 +931,7 @@ sigmoid(x)
 
 **Returned value**
 
-- Corresponding value along the sigmoid curve between 0 and 1. [Float64](../../sql-reference/data-types/float.md)
-
-Type: [Float*](../../sql-reference/data-types/float.md#float32-float64).
+- Corresponding value along the sigmoid curve between 0 and 1. [Float64](../../sql-reference/data-types/float.md).
 
 **Example**
 
