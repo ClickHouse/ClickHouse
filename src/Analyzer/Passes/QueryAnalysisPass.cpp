@@ -5725,6 +5725,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             checkFunctionNodeHasEmptyNullsAction(function_node);
 
             const auto & untuple_argument = function_arguments[0];
+            /// Handle this special case first as `getResultType()` might return nullptr
+            if (untuple_argument->as<LambdaNode>())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function untuple can't have lambda-expressions as arguments");
+
             auto result_type = untuple_argument->getResultType();
             const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
             if (!tuple_data_type)
