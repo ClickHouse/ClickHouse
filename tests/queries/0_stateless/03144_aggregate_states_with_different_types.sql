@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer = 1;
+
 select * APPLY hex
 from (
   select (
