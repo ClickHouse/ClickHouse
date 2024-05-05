@@ -938,7 +938,7 @@ sigmoid(x)
 Query:
 
 ``` sql
-SELECT Round(sigmoid(x),5) FROM (SELECT arrayJoin([-1, 0, 1]) AS x);
+SELECT round(sigmoid(x), 5) FROM (SELECT arrayJoin([-1, 0, 1]) AS x);
 ```
 
 Result:
