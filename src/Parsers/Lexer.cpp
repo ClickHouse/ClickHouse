@@ -56,8 +56,11 @@ Token quotedStringWithUnicodeQuotes(const char *& pos, const char * const token_
 
     while (true)
     {
-        pos = find_first_symbols<'\xE2', '\\'>(pos, end);
+        pos = find_first_symbols<'\xE2'>(pos, end);
         if (pos + 2 >= end)
+            return Token(error_token, token_begin, end);
+        /// Empty identifiers are not allowed, while empty strings are.
+        if (success_token == TokenType::QuotedIdentifier && pos + 3 >= end)
             return Token(error_token, token_begin, end);
 
         if (pos[0] == '\xE2' && pos[1] == '\x80' && pos[2] == expected_end_byte)
@@ -66,14 +69,7 @@ Token quotedStringWithUnicodeQuotes(const char *& pos, const char * const token_
             return Token(success_token, token_begin, pos);
         }
 
-        if (*pos == '\\')
-        {
-            ++pos;
-            if (pos >= end)
-                return Token(error_token, token_begin, end);
-            ++pos;
-            continue;
-        }
+        ++pos;
     }
 }
 
@@ -470,10 +466,9 @@ Token Lexer::nextTokenImpl()
             if (pos + 5 < end && pos[0] == '\xE2' && pos[1] == '\x80' && (pos[2] == '\x98' || pos[2] == '\x9C'))
             {
                 const char expected_end_byte = pos[2] + 1;
-                pos += 3;
-
                 TokenType success_token = pos[2] == '\x98' ? TokenType::StringLiteral : TokenType::QuotedIdentifier;
                 TokenType error_token = pos[2] == '\x98' ? TokenType::ErrorSingleQuoteIsNotClosed : TokenType::ErrorDoubleQuoteIsNotClosed;
+                pos += 3;
                 return quotedStringWithUnicodeQuotes(pos, token_begin, end, expected_end_byte, success_token, error_token);
             }
             /// Other characters starting at E2 can be parsed, see skipWhitespacesUTF8
