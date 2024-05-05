@@ -327,6 +327,7 @@ enum class Dialect
     clickhouse,
     kusto,
     prql,
+    postgresql,
 };
 
 DECLARE_SETTING_ENUM(Dialect)

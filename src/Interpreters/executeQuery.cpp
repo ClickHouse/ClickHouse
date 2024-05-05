@@ -38,6 +38,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PostgreSQL/ParserPostgreSQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
@@ -755,6 +756,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else if (settings.dialect == Dialect::prql && !internal)
         {
             ParserPRQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        }
+        else if (settings.dialect == Dialect::postgresql && !internal)
+        {
+            ParserPostgreSQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else
