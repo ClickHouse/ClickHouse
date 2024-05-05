@@ -914,3 +914,39 @@ Result:
 │                               11 │
 └──────────────────────────────────┘
 ```
+
+## sigmoid
+
+Returns the [sigmoid function](https://en.wikipedia.org/wiki/Sigmoid_function).
+
+**Syntax**
+
+```sql
+sigmoid(x)
+```
+
+**Parameters**
+
+- `x` — input value. Values from the interval: `-∞ < x < +∞`. [(U)Int*](../../sql-reference/data-types/int-uint.md), [Float*](../../sql-reference/data-types/float.md) or [Decimal*](../../sql-reference/data-types/decimal.md).
+
+**Returned value**
+
+- Corresponding value along the sigmoid curve between 0 and 1. [Float64](../../sql-reference/data-types/float.md)
+
+Type: [Float*](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT Round(sigmoid(x),5) FROM (SELECT arrayJoin([-1, 0, 1]) AS x);
+```
+
+Result:
+
+```result
+0.26894
+0.5
+0.73106
+```
