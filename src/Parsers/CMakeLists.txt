@@ -13,9 +13,6 @@ if (TARGET ch_rust::prql)
     target_link_libraries(clickhouse_parsers PRIVATE ch_rust::prql)
 endif ()
 
-if (TARGET ch_contrib::libpg_query)
-    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::libpg_query)
-endif()
 
 if (USE_DEBUG_HELPERS)
     # CMake generator expression will do insane quoting when it encounters special character like quotes, spaces, etc.
