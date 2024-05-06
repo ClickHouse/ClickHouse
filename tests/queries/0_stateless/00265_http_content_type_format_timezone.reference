@@ -21,3 +21,5 @@
 < X-ClickHouse-Timezone: CLICKHOUSE_TIMEZONE
 < X-ClickHouse-Timezone: Europe/Berlin
 < X-ClickHouse-Timezone: Africa/Cairo
+< X-ClickHouse-Timezone: Europe/Berlin
+< X-ClickHouse-Timezone: America/Denver

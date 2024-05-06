@@ -16,3 +16,9 @@ ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT 1 FORMA
 
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT timezone() SETTINGS session_timezone='Europe/Berlin'" 2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" --data-binary @- <<< "SELECT timezone() SETTINGS session_timezone='Africa/Cairo'"  2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
+
+# Not pretty but working way of removing randomized session_timezone for this part of test
+CLICKHOUSE_URL_WO_SESSION_TZ=$(echo "${CLICKHOUSE_URL}" |sed 's/\&session_timezone\=\([A-Za-z]*\(\%2F\|\/\)[A-Za-z]*\|[A-Za-z0-9\+\-]*\)//g' | sed 's/\?session_timezone\=\([A-Za-z]*\(\%2F\|\/\)[A-Za-z]*\|[A-Za-z0-9\+\-]*\)\&/\?/g');
+
+${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL_WO_SESSION_TZ}&session_timezone=Europe/Berlin&query=SELECT+timezone()" 2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
+${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL_WO_SESSION_TZ}&session_timezone=America/Denver&query=SELECT+timezone()" 2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
