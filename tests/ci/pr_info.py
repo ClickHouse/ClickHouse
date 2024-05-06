@@ -15,8 +15,8 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
 )
+from lambda_shared_package.lambda_shared.pr import Labels
 
-SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
 DIFF_IN_DOCUMENTATION_EXT = [
@@ -158,7 +158,7 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
@@ -213,7 +213,7 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
@@ -227,7 +227,7 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
@@ -252,7 +252,7 @@ class PRInfo:
                 self.head_ref = pull_request["head"]["ref"]
                 self.head_name = pull_request["head"]["repo"]["full_name"]
                 self.pr_html_url = pull_request["html_url"]
-                if "pr-backport" in self.labels:
+                if Labels.PR_BACKPORT in self.labels:
                     # head1...head2 gives changes in head2 since merge base
                     # Thag's why we need {self.head_ref}...master to get
                     # files changed in upstream AND master...{self.head_ref}
@@ -275,7 +275,7 @@ class PRInfo:
                     ]
                 else:
                     self.diff_urls.append(self.compare_pr_url(pull_request))
-                if "release" in self.labels:
+                if Labels.RELEASE in self.labels:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
@@ -296,7 +296,7 @@ class PRInfo:
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name
@@ -318,7 +318,7 @@ class PRInfo:
 
     @property
     def is_release_branch(self) -> bool:
-        return self.number == 0
+        return self.number == 0 and not self.is_merge_queue
 
     @property
     def is_pr(self):

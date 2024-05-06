@@ -37,17 +37,8 @@ from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from lambda_shared_package.lambda_shared.pr import Labels
 from ssh import SSHKey
-
-
-class Labels:
-    MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
-    BACKPORT = "pr-backport"
-    BACKPORTS_CREATED = "pr-backports-created"
-    BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
-    CHERRYPICK = "pr-cherrypick"
-    DO_NOT_TEST = "do not test"
 
 
 class ReleaseBranch:
@@ -99,7 +90,7 @@ close it.
         name: str,
         pr: PullRequest,
         repo: Repository,
-        backport_created_label: str = Labels.BACKPORTS_CREATED,
+        backport_created_label: str = Labels.PR_BACKPORTS_CREATED,
     ):
         self.name = name
         self.pr = pr
@@ -247,12 +238,12 @@ close it.
                 pr_number=self.pr.number,
                 pr_url=self.pr.html_url,
                 backport_created_label=self.backport_created_label,
-                label_cherrypick=Labels.CHERRYPICK,
+                label_cherrypick=Labels.PR_CHERRYPICK,
             ),
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
-        self.cherrypick_pr.add_to_labels(Labels.CHERRYPICK)
+        self.cherrypick_pr.add_to_labels(Labels.PR_CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
         self._assign_new_pr(self.cherrypick_pr)
         # update cherrypick PR to get the state for PR.mergable
@@ -288,7 +279,7 @@ close it.
             base=self.name,
             head=self.backport_branch,
         )
-        self.backport_pr.add_to_labels(Labels.BACKPORT)
+        self.backport_pr.add_to_labels(Labels.PR_BACKPORT)
         self._assign_new_pr(self.backport_pr)
 
     def ping_cherry_pick_assignees(self, dry_run: bool) -> None:
@@ -357,7 +348,7 @@ class Backport:
         repo: str,
         fetch_from: Optional[str],
         dry_run: bool,
-        must_create_backport_label: str,
+        must_create_backport_labels: List[str],
         backport_created_label: str,
     ):
         self.gh = gh
@@ -365,7 +356,7 @@ class Backport:
         self._fetch_from = fetch_from
         self.dry_run = dry_run
 
-        self.must_create_backport_label = must_create_backport_label
+        self.must_create_backport_labels = must_create_backport_labels
         self.backport_created_label = backport_created_label
 
         self._remote = ""
@@ -411,11 +402,18 @@ class Backport:
         logging.info("Getting release PRs")
         self.release_prs = self.gh.get_release_pulls(self._repo_name)
         self.release_branches = [pr.head.ref for pr in self.release_prs]
-        self.labels_to_backport = [
-            f"v{branch}-must-backport" for branch in self.release_branches
-        ]
 
-        if self._fetch_from:
+        if not self._fetch_from:
+            self.labels_to_backport = [
+                f"v{branch}-must-backport" for branch in self.release_branches
+            ]
+        else:
+            fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
+            fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
+            self.labels_to_backport = [
+                f"v{branch}-must-backport" for branch in fetch_release_branches
+            ]
+
             logging.info("Fetching from %s", self._fetch_from)
             fetch_from_repo = self.gh.get_repo(self._fetch_from)
             git_runner(
@@ -454,12 +452,12 @@ class Backport:
         ) - timedelta(days=reserve_search_days)
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
-        logging.info("Receive PRs suppose to be backported")
+        logging.info("Receive PRs supposed to be backported")
 
         query_args = {
             "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
             "label": ",".join(
-                self.labels_to_backport + [self.must_create_backport_label]
+                self.labels_to_backport + self.must_create_backport_labels
             ),
             "merged": [since_date, tomorrow],
         }
@@ -482,12 +480,17 @@ class Backport:
 
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
-        if self.must_create_backport_label in pr_labels:
-            branches = [
-                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
-                for br in self.release_branches
-            ]  # type: List[ReleaseBranch]
-        else:
+
+        for label in self.must_create_backport_labels:
+            # We backport any vXXX-must-backport to all branches of the fetch repo (better than no backport)
+            if label in pr_labels or self._fetch_from:
+                branches = [
+                    ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                    for br in self.release_branches
+                ]  # type: List[ReleaseBranch]
+                break
+
+        if not branches:
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in [
@@ -496,16 +499,16 @@ class Backport:
                     if label in self.labels_to_backport
                 ]
             ]
-        if not branches:
-            # This is definitely some error. There must be at least one branch
-            # It also make the whole program exit code non-zero
-            self.error = Exception(
-                f"There are no branches to backport PR #{pr.number}, logical error"
-            )
-            raise self.error
+            if not branches:
+                # This is definitely some error. There must be at least one branch
+                # It also make the whole program exit code non-zero
+                self.error = Exception(
+                    f"There are no branches to backport PR #{pr.number}, logical error"
+                )
+                raise self.error
 
         logging.info(
-            "  PR #%s is suppose to be backported to %s",
+            "  PR #%s is supposed to be backported to %s",
             pr.number,
             ", ".join(map(str, branches)),
         )
@@ -518,7 +521,7 @@ class Backport:
         )
         bp_cp_prs = self.gh.get_pulls_from_search(
             query=f"type:pr repo:{self._repo_name} {query_suffix}",
-            label=f"{Labels.BACKPORT},{Labels.CHERRYPICK}",
+            label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
         )
         for br in branches:
             br.pop_prs(bp_cp_prs)
@@ -585,11 +588,12 @@ def parse_args():
         default=Labels.MUST_BACKPORT,
         choices=(Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD),
         help="label to filter PRs to backport",
+        nargs="+",
     )
     parser.add_argument(
         "--backport-created-label",
-        default=Labels.BACKPORTS_CREATED,
-        choices=(Labels.BACKPORTS_CREATED, Labels.BACKPORTS_CREATED_CLOUD),
+        default=Labels.PR_BACKPORTS_CREATED,
+        choices=(Labels.PR_BACKPORTS_CREATED, Labels.PR_BACKPORTS_CREATED_CLOUD),
         help="label to mark PRs as backported",
     )
     parser.add_argument(
@@ -656,7 +660,9 @@ def main():
         args.repo,
         args.from_repo,
         args.dry_run,
-        args.must_create_backport_label,
+        args.must_create_backport_label
+        if isinstance(args.must_create_backport_label, list)
+        else [args.must_create_backport_label],
         args.backport_created_label,
     )
     # https://github.com/python/mypy/issues/3004
@@ -666,7 +672,7 @@ def main():
     bp.receive_prs_for_backport(args.reserve_search_days)
     bp.process_backports()
     if bp.error is not None:
-        logging.error("Finished successfully, but errors occured!")
+        logging.error("Finished successfully, but errors occurred!")
         raise bp.error
 
 
