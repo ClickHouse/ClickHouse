@@ -22,6 +22,9 @@ GITHUB_JOB = os.getenv("GITHUB_JOB_OVERRIDDEN", "") or os.getenv("GITHUB_JOB", "
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
 GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
 GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
+GITHUB_UPSTREAM_REPOSITORY = os.getenv(
+    "GITHUB_UPSTREAM_REPOSITORY", "ClickHouse/ClickHouse"
+)
 GITHUB_WORKSPACE = os.getenv("GITHUB_WORKSPACE", git_root)
 GITHUB_RUN_URL = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
 IMAGES_PATH = os.getenv("IMAGES_PATH", TEMP_PATH)

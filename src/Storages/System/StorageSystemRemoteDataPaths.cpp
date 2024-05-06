@@ -62,6 +62,9 @@ private:
     /// Moves to the next disk in the list, if no more disks returns false
     bool nextDisk();
 
+    /// Check if the path is a table path like "store/364/3643ff83-0996-4a4a-a90b-a96e66a10c74"
+    static bool isTablePath(const fs::path & path);
+
     /// Returns full local path of the current file
     fs::path getCurrentPath() const
     {
@@ -223,6 +226,19 @@ bool SystemRemoteDataPathsSource::nextDisk()
     return false;
 }
 
+/// Check if the path is a table path like "store/364/3643ff83-0996-4a4a-a90b-a96e66a10c74"
+bool SystemRemoteDataPathsSource::isTablePath(const fs::path & path)
+{
+    std::vector<std::string> components;
+    for (auto it = path.begin(); it != path.end(); ++it)
+        components.push_back(it->string());
+
+    return components.size() == 3
+        && components[0] == "store"
+        && components[1].size() == 3      /// "364"
+        && components[2].size() == 36;    /// "3643ff83-0996-4a4a-a90b-a96e66a10c74"
+}
+
 bool SystemRemoteDataPathsSource::nextFile()
 {
     while (true)
@@ -242,11 +258,11 @@ bool SystemRemoteDataPathsSource::nextFile()
         if (paths_stack.empty())
             return false;
 
+        const auto current_path = getCurrentPath();
+
         try
         {
             const auto & disk = disks[current_disk].second;
-
-            const auto current_path = getCurrentPath();
 
             /// Files or directories can disappear due to concurrent operations
             if (!disk->exists(current_path))
@@ -282,6 +298,11 @@ bool SystemRemoteDataPathsSource::nextFile()
         {
             /// Files or directories can disappear due to concurrent operations
             if (e.code() == std::errc::no_such_file_or_directory)
+                continue;
+
+            /// Skip path if it's table path and we don't have permissions to read it
+            /// This can happen if the table is being dropped by first chmoding the directory to 000
+            if (e.code() == std::errc::permission_denied && isTablePath(current_path))
                 continue;
 
             throw;

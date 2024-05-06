@@ -3,6 +3,7 @@
 #include <sys/resource.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
@@ -35,7 +36,6 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -48,7 +48,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
@@ -211,7 +210,7 @@ void LocalServer::tryInitPath()
     else
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
-        // (or in the current dir if temporary don't exist)
+        // (or in the current dir if a temporary doesn't exist)
         LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
@@ -237,39 +236,30 @@ void LocalServer::tryInitPath()
         /// as we can't accurately distinguish those situations we don't touch any existent folders
         /// we just try to pick some free name for our working folder
 
-        default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
+        default_path = parent_folder / fmt::format("clickhouse-local-{}", UUIDHelpers::generateV4());
 
-        if (exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} already exists.", default_path.string());
+        if (fs::exists(default_path))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to set up the working directory: {} already exists.", default_path.string());
 
-        create_directory(default_path);
+        /// The directory can be created lazily during the runtime.
         temporary_directory_to_delete = default_path;
 
         path = default_path.string();
         LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    if (path.back() != '/')
-        path += '/';
+    global_context->setPath(fs::path(path) / "");
 
-    fs::create_directories(fs::path(path) / "user_defined/");
-    fs::create_directories(fs::path(path) / "data/");
-    fs::create_directories(fs::path(path) / "metadata/");
-    fs::create_directories(fs::path(path) / "metadata_dropped/");
+    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
+    global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
-    global_context->setPath(path);
-
-    global_context->setTemporaryStoragePath(path + "tmp/", 0);
-    global_context->setFlagsPath(path + "flags");
-
-    global_context->setUserFilesPath(""); // user's files are everywhere
+    global_context->setUserFilesPath(""); /// user's files are everywhere
 
     std::string user_scripts_path = config().getString("user_scripts_path", fs::path(path) / "user_scripts/");
     global_context->setUserScriptsPath(user_scripts_path);
-    fs::create_directories(user_scripts_path);
 
     /// top_level_domains_lists
-    const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
+    const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
     if (!top_level_domains_path.empty())
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
 }
@@ -299,10 +289,9 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
-            const auto dir = *temporary_directory_to_delete;
+            LOG_DEBUG(&logger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
+            fs::remove_all(*temporary_directory_to_delete);
             temporary_directory_to_delete.reset();
-            LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
-            remove_all(dir);
         }
     }
     catch (...)
@@ -481,6 +470,9 @@ try
     registerFormats();
 
     processConfig();
+
+    SCOPE_EXIT({ cleanup(); });
+
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
@@ -530,16 +522,12 @@ try
 }
 catch (const DB::Exception & e)
 {
-    cleanup();
-
     bool need_print_stack_trace = config().getBool("stacktrace", false);
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
     return e.code() ? e.code() : -1;
 }
 catch (...)
 {
-    cleanup();
-
     std::cerr << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
 }
@@ -705,6 +693,7 @@ void LocalServer::processConfig()
     if (config().has("path"))
     {
         String path = global_context->getPath();
+        fs::create_directories(fs::path(path));
 
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);

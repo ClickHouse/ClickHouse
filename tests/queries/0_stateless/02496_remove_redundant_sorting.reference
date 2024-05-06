@@ -478,6 +478,7 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC
+SETTINGS allow_deprecated_functions = 1
 -- explain
 Expression (Projection)
   Sorting (Sorting for ORDER BY)

@@ -491,9 +491,13 @@ int main(int argc_, char ** argv_)
     ///     clickhouse -q 'select 1' # use local
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
+    ///     clickhouse "select ..." # spawn local
     ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
+    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
+        || std::string_view(argv[1]).contains(' ')))
+    {
         main_func = mainEntryClickHouseLocal;
+    }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
 

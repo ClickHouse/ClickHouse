@@ -37,8 +37,10 @@ Standard aggregate functions:
 
 ClickHouse-specific aggregate functions:
 
+- [any](/docs/en/sql-reference/aggregate-functions/reference/any_respect_nulls.md)
 - [anyHeavy](/docs/en/sql-reference/aggregate-functions/reference/anyheavy.md)
 - [anyLast](/docs/en/sql-reference/aggregate-functions/reference/anylast.md)
+- [anyLast](/docs/en/sql-reference/aggregate-functions/reference/anylast_respect_nulls.md)
 - [boundingRatio](/docs/en/sql-reference/aggregate-functions/reference/boundrat.md)
 - [first_value](/docs/en/sql-reference/aggregate-functions/reference/first_value.md)
 - [last_value](/docs/en/sql-reference/aggregate-functions/reference/last_value.md)
@@ -97,6 +99,7 @@ ClickHouse-specific aggregate functions:
 - [quantileBFloat16Weighted](/docs/en/sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 - [quantileDD](/docs/en/sql-reference/aggregate-functions/reference/quantileddsketch.md#quantileddsketch)
 - [simpleLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression.md)
+- [singleValueOrNull](/docs/en/sql-reference/aggregate-functions/reference/singlevalueornull.md)
 - [stochasticLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 - [stochasticLogisticRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 - [categoricalInformationValue](/docs/en/sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)

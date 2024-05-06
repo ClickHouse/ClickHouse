@@ -243,6 +243,18 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
     readStringUntilWhitespaceInto(s, buf);
 }
 
+void readStringUntilAmpersand(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'&'>(s, buf);
+}
+
+void readStringUntilEquals(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<'='>(s, buf);
+}
+
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
 template void readNullTerminated<String>(String & s, ReadBuffer & buf);
 

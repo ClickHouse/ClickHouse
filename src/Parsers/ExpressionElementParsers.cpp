@@ -170,9 +170,17 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Identifier in backquotes or in double quotes
+    /// Identifier in backquotes or in double quotes or in English-style Unicode double quotes
     if (pos->type == TokenType::QuotedIdentifier)
     {
+        /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
+        if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
+        {
+            node = std::make_shared<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
+            ++pos;
+            return true;
+        }
+
         ReadBufferFromMemory buf(pos->begin, pos->size());
         String s;
 
@@ -1140,16 +1148,24 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     if (pos->type == TokenType::StringLiteral)
     {
-        if (*pos->begin == 'x' || *pos->begin == 'X')
+        char first_char = *pos->begin;
+
+        if (first_char == 'x' || first_char == 'X')
         {
             constexpr size_t word_size = 2;
             return makeHexOrBinStringLiteral(pos, node, true, word_size);
         }
 
-        if (*pos->begin == 'b' || *pos->begin == 'B')
+        if (first_char == 'b' || first_char == 'B')
         {
             constexpr size_t word_size = 8;
             return makeHexOrBinStringLiteral(pos, node, false, word_size);
+        }
+
+        /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
+        if (first_char == '\xE2' && pos->size() >= 6)
+        {
+            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3));
         }
 
         ReadBufferFromMemory in(pos->begin, pos->size());
