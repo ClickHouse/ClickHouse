@@ -382,10 +382,24 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
-            ExplainAnalyzedSyntaxVisitor::Data data(getContext());
-            ExplainAnalyzedSyntaxVisitor(data).visit(query);
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            {
+                auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
 
-            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
+                auto query_tree_pass_manager = QueryTreePassManager(getContext());
+                addQueryTreePasses(query_tree_pass_manager);
+                query_tree_pass_manager.run(query_tree);
+
+                query_tree->toAST()->format(IAST::FormatSettings(buf, settings.oneline));
+            }
+            else
+            {
+                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+                ExplainAnalyzedSyntaxVisitor(data).visit(query);
+
+                ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
+            }
+
             break;
         }
         case ASTExplainQuery::QueryTree:
