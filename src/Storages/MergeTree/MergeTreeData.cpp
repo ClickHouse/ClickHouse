@@ -7167,7 +7167,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }
 
-/// Used only when attach partition
+/// Used only when attach partition; Both for same disk and different disk.
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPart(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
