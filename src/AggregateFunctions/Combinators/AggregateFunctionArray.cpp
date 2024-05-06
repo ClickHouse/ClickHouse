@@ -26,7 +26,7 @@ public:
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "-Array aggregate functions require at least one argument");
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Array aggregate functions require at least one argument");
 
         DataTypes nested_arguments;
         for (const auto & type : arguments)
