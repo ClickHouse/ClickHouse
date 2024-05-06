@@ -90,5 +90,6 @@ set (SRCS
 )
 
 add_library(_libpg_query ${SRCS})
-target_include_directories(_libpg_query SYSTEM PUBLIC "${LIBRARY_DIR}/include")
+target_include_directories(_libpg_query SYSTEM PUBLIC "${LIBRARY_DIR}/src/include")
+target_include_directories(_libpg_query SYSTEM PUBLIC "${LIBRARY_DIR}/src/postgres/include")
 add_library(ch_contrib::libpg_query ALIAS _libpg_query)
