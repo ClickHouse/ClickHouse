@@ -5,7 +5,7 @@ Arrow
 a	UInt64					
 a_nullable	Nullable(UInt64)					
 Parquet
-b	Array(Nullable(UInt64))					
+b	Array(UInt64)					
 b_nullable	Array(Nullable(UInt64))					
 Arrow
 b	Array(Nullable(UInt64))					
@@ -21,13 +21,13 @@ d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n  
 Arrow
 d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
 Parquet
-e	Map(UInt64, Nullable(String))					
+e	Map(UInt64, String)					
 e_nullable	Map(UInt64, Nullable(String))					
 Arrow
 e	Map(UInt64, Nullable(String))					
 e_nullable	Map(UInt64, Nullable(String))					
 Parquet
-f	Map(UInt64, Map(UInt64, Nullable(String)))					
+f	Map(UInt64, Map(UInt64, String))					
 f_nullables	Map(UInt64, Map(UInt64, Nullable(String)))					
 Arrow
 f	Map(UInt64, Map(UInt64, Nullable(String)))					
