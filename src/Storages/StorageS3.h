@@ -83,7 +83,6 @@ public:
 
         KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
         size_t estimatedKeysCount() override;
-        bool hasMore();
 
     private:
         class Impl;
