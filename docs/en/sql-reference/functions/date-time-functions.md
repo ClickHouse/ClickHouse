@@ -1417,31 +1417,31 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
 For example,
-- `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
-- `toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,
-- `toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
-- `toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)`.
+- `toStartOfInterval(t, INTERVAL 1 YEAR)` returns the same as `toStartOfYear(t)`,
+- `toStartOfInterval(t, INTERVAL 1 MONTH)` returns the same as `toStartOfMonth(t)`,
+- `toStartOfInterval(t, INTERVAL 1 DAY)` returns the same as `toStartOfDay(t)`,
+- `toStartOfInterval(t, INTERVAL 15 MINUTE)` returns the same as `toStartOfFifteenMinutes(t)`.
 
 The calculation is performed relative to specific points in time:
 
 | Interval    | Start                  |
 |-------------|------------------------|
-| year        | year 0                 |
-| quarter     | 1900 Q1                |
-| month       | 1900 January           |
-| week        | 1970, 1st week (01-05) |
-| day         | 1970-01-01             |
-| hour        | (*)                    |
-| minute      | 1970-01-01 00:00:00    |
-| second      | 1970-01-01 00:00:00    |
-| millisecond | 1970-01-01 00:00:00    |
-| microsecond | 1970-01-01 00:00:00    |
-| nanosecond  | 1970-01-01 00:00:00    |
+| YEAR        | year 0                 |
+| QUARTER     | 1900 Q1                |
+| MONTH       | 1900 January           |
+| WEEK        | 1970, 1st week (01-05) |
+| DAY         | 1970-01-01             |
+| HOUR        | (*)                    |
+| MINUTE      | 1970-01-01 00:00:00    |
+| SECOND      | 1970-01-01 00:00:00    |
+| MILLISECOND | 1970-01-01 00:00:00    |
+| MICROSECOND | 1970-01-01 00:00:00    |
+| NANOSECOND  | 1970-01-01 00:00:00    |
 
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
     hour values between 1 and 23 are useful.
 
-If unit `week` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
+If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
 **See Also**
 

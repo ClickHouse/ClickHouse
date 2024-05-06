@@ -53,6 +53,10 @@ ENGINE = MergeTree
 ORDER BY key
 ```
 
+:::note
+In earlier versions of ClickHouse, the corresponding index type name was `inverted`.
+:::
+
 where `N` specifies the tokenizer:
 
 - `full_text(0)` (or shorter: `full_text()`) set the tokenizer to "tokens", i.e. split strings along spaces,
