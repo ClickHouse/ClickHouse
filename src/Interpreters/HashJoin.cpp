@@ -2309,6 +2309,12 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             }
         };
 
+        for (const Block & compressed_block_right : data->blocks)
+        {
+            auto block_right = compressed_block_right.decompress();
+            process_right_block(block_right);
+        }
+
         if (tmp_stream)
         {
             tmp_stream->finishWritingAsyncSafe();
@@ -2317,12 +2323,6 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             {
                 process_right_block(block_right);
             }
-        }
-
-        for (const Block & compressed_block_right : data->blocks)
-        {
-            auto block_right = compressed_block_right.decompress();
-            process_right_block(block_right);
         }
 
         start_right_block = 0;

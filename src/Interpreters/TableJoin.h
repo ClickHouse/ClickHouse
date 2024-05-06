@@ -145,7 +145,6 @@ private:
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     std::vector<JoinAlgorithm> join_algorithm;
-    const UInt64 cross_join_max_bytes_inmemory = 1000000;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -280,8 +279,6 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-
-    UInt64 crossJoinMaxBytesInmemory() const { return cross_join_max_bytes_inmemory; }
 
     bool joinUseNulls() const { return join_use_nulls; }
 
