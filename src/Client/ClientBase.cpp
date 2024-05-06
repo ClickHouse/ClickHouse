@@ -910,7 +910,7 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
     return !settings.async_insert;
 }
 
-bool ClientBase::processTextAsSingleQuery(const String & full_query)
+void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
@@ -922,7 +922,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         ignore_error);
 
     if (!parsed_query)
-        return true;
+        return;
 
     String query_to_execute;
 
@@ -946,10 +946,9 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     else
         query_to_execute = full_query;
 
-    bool continue_repl = true;
     try
     {
-        continue_repl = processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
+        processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {
@@ -960,8 +959,6 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
     if (have_error)
         processError(full_query);
-
-    return continue_repl;
 }
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
@@ -1856,7 +1853,7 @@ void ClientBase::cancelQuery()
     cancelled = true;
 }
 
-bool ClientBase::processParsedSingleQuery(const String & full_query, const String & query_to_execute,
+void ClientBase::processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
 {
     resetOutput();
@@ -2018,15 +2015,6 @@ bool ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             connection->setDefaultDatabase(new_database);
         }
     }
-    else
-    {
-        if (server_exception && server_exception->code() == ErrorCodes::USER_EXPIRED)
-        {
-            if (report_error)
-                processError(full_query);
-            return false;
-        }
-    }
 
     /// Always print last block (if it was not printed already)
     if (profile_events.last_block)
@@ -2061,8 +2049,6 @@ bool ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (have_error && report_error)
         processError(full_query);
-
-    return true;
 }
 
 
@@ -2262,10 +2248,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);
 
-                bool continue_repl;
                 try
                 {
-                    continue_repl = processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
+                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
                 }
                 catch (...)
                 {
@@ -2273,7 +2258,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     // have been reported without throwing (see onReceiveExceptionFromServer()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
-                    continue_repl = is_interactive;
                 }
 
                 // Check whether the error (or its absence) matches the test hints
@@ -2371,7 +2355,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Stop processing queries if needed.
                 if (have_error && !ignore_error)
-                    return continue_repl;
+                    return is_interactive;
 
                 this_query_begin = this_query_end;
                 break;
@@ -2401,7 +2385,9 @@ bool ClientBase::processQueryText(const String & text)
     if (!is_multiquery)
     {
         assert(!query_fuzzer_runs);
-        return processTextAsSingleQuery(text);
+        processTextAsSingleQuery(text);
+
+        return true;
     }
 
     if (query_fuzzer_runs)
@@ -2642,9 +2628,16 @@ void ClientBase::runInteractive()
         }
         catch (const Exception & e)
         {
-            /// We don't need to handle the test hints in the interactive mode.
-            std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            client_exception.reset(e.clone());
+            if (e.code() == ErrorCodes::USER_EXPIRED)
+            {
+                break;
+            }
+            else
+            {
+                /// We don't need to handle the test hints in the interactive mode.
+                std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+            }
         }
 
         if (client_exception)

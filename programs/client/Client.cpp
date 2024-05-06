@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int USER_EXPIRED;
 }
 
 
@@ -74,6 +75,12 @@ void Client::processError(const String & query) const
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
+
+        if (server_exception->code() == ErrorCodes::USER_EXPIRED)
+        {
+            server_exception->rethrow();
+        }
+
         if (is_interactive)
         {
             fmt::print(stderr, "\n");
