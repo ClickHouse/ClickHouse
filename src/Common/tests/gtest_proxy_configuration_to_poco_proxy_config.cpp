@@ -10,7 +10,7 @@ TEST(ProxyConfigurationToPocoProxyConfiguration, TestNoProxyHostRegexBuild)
 
     auto poco_proxy_configuration = DB::proxyConfigurationToPocoProxyConfig(proxy_configuration);
 
-    ASSERT_EQ(poco_proxy_configuration.nonProxyHosts, "localhost|127\\.0\\.0\\.1|some_other_domain\\:8080|sub\\-domain\\.domain\\.com");
+    ASSERT_EQ(poco_proxy_configuration.nonProxyHosts, R"((?:.*\.)?localhost|(?:.*\.)?127\.0\.0\.1|(?:.*\.)?some_other_domain\:8080|(?:.*\.)?sub\-domain\.domain\.com)");
 }
 
 TEST(ProxyConfigurationToPocoProxyConfiguration, TestNoProxyHostRegexBuildMatchAnything)

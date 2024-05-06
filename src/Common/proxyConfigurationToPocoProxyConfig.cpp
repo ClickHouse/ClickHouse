@@ -17,6 +17,25 @@
 namespace DB
 {
 
+namespace
+{
+
+/*
+ * Copy `curl` behavior instead of `wget` as it seems to be more flexible.
+ * `curl` strips leading dot and accepts url gitlab.com as a match for no_proxy .gitlab.com,
+ * while `wget` does an exact match.
+ * */
+std::string buildPocoRegexpEntryWithoutLeadingDot(const std::string & host)
+{
+    std::string_view view_without_leading_dot = host;
+    if (host[0] == '.')
+    {
+        view_without_leading_dot = std::string_view {host.begin() + 1u, host.end()};
+    }
+
+    return RE2::QuoteMeta(view_without_leading_dot);
+}
+
 /*
  * Even though there is not an RFC that defines NO_PROXY, it is usually a comma-separated list of domains.
  * Different tools implement their own versions of `NO_PROXY` support. Some support CIDR blocks, some support wildcard etc.
@@ -31,11 +50,15 @@ namespace DB
  * */
 std::string buildPocoNonProxyHosts(const std::string & no_proxy_hosts)
 {
+    static constexpr auto OR_SEPARATOR = "|";
+    static constexpr auto MATCH_ANYTHING = R"((.*?))";
+    static constexpr auto MATCH_SUBDOMAINS_REGEX = R"((?:.*\.)?)";
+
     bool match_any_host = no_proxy_hosts.size() == 1 && no_proxy_hosts[0] == '*';
 
     if (match_any_host)
     {
-        return "(.*?)";
+        return MATCH_ANYTHING;
     }
 
     std::string host;
@@ -52,15 +75,21 @@ std::string buildPocoNonProxyHosts(const std::string & no_proxy_hosts)
         {
             if (!first)
             {
-                result.append("|");
+                result.append(OR_SEPARATOR);
             }
 
-            result.append(RE2::QuoteMeta(host));
+            auto escaped_host_without_leading_dot = buildPocoRegexpEntryWithoutLeadingDot(host);
+
+            result.append(MATCH_SUBDOMAINS_REGEX);
+            result.append(escaped_host_without_leading_dot);
+
             first = false;
         }
     }
 
     return result;
+}
+
 }
 
 Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const DB::ProxyConfiguration & proxy_configuration)
