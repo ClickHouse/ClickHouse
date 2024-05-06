@@ -149,14 +149,14 @@ bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
 {
     if (state != State::OK)
     {
-        LOG_TEST(log, "State is {}, will not ack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
+        LOG_TEST(log, "State is {}, will not nack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
         return false;
     }
 
     /// Nothing to nack.
     if (!commit_info.delivery_tag || commit_info.delivery_tag <= last_commited_delivery_tag)
     {
-        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, Will not ack messages",
+        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, Will not nack messages",
                  commit_info.delivery_tag, last_commited_delivery_tag);
         return false;
     }

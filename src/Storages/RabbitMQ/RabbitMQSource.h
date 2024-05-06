@@ -21,7 +21,8 @@ public:
             UInt64 max_execution_time_,
             StreamingHandleErrorMode handle_error_mode_,
             bool nack_broken_messages_,
-            bool ack_in_suffix = false);
+            bool ack_in_suffix,
+            LoggerPtr log_);
 
     ~RabbitMQSource() override;
 
@@ -69,7 +70,8 @@ private:
         UInt64 max_execution_time_,
         StreamingHandleErrorMode handle_error_mode_,
         bool nack_broken_messages_,
-        bool ack_in_suffix);
+        bool ack_in_suffix,
+        LoggerPtr log_);
 
     Chunk generateImpl();
 };

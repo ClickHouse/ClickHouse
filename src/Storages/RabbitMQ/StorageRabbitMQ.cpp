@@ -74,7 +74,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         LoadingStrictnessLevel mode)
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
-        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name))
         , format_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_format))
@@ -86,6 +85,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base))
         , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list)))
         , max_rows_per_message(rabbitmq_settings->rabbitmq_max_rows_per_message)
+        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
@@ -747,7 +747,7 @@ void StorageRabbitMQ::read(
         auto rabbit_source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, modified_context, column_names, /* max_block_size */1,
             max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, reject_unhandled_messages,
-            rabbitmq_settings->rabbitmq_commit_on_select);
+            /* ack_in_suffix */rabbitmq_settings->rabbitmq_commit_on_select, log);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -1083,7 +1083,8 @@ bool StorageRabbitMQ::tryStreamToViews()
     {
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, rabbitmq_context, Names{}, block_size,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, reject_unhandled_messages);
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode,
+            reject_unhandled_messages, /* ack_in_suffix */false, log);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);

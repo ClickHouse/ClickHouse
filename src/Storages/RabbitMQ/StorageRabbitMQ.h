@@ -77,8 +77,6 @@ public:
     void incrementReader();
     void decrementReader();
 
-    LoggerPtr log;
-
 private:
     ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
@@ -94,6 +92,8 @@ private:
     Names queue_settings_list;
     size_t max_rows_per_message;
     bool reject_unhandled_messages = false;
+
+    LoggerPtr log;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
