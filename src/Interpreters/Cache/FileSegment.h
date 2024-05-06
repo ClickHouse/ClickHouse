@@ -244,7 +244,7 @@ private:
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
 
     void assertWriteAllowed(size_t size, size_t offset);
-    void writeImpl(size_t size, size_t offset, std::function<void()> do_write, WriteBuffer * external_wb = nullptr);
+    void writeImpl(size_t size, size_t offset, std::function<void()> do_write);
 
     String tryGetPath() const;
 
