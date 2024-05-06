@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Common/PODArray_fwd.h>
 

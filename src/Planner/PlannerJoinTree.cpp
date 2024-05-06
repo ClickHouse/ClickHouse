@@ -814,7 +814,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     bool optimize_move_to_prewhere
                         = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
-                    if (storage->supportsPrewhere() && optimize_move_to_prewhere)
+                    auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
                             prewhere_info = std::make_shared<PrewhereInfo>();
@@ -1088,18 +1089,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
-    // }
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
-    // }
-
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
     JoinStrictness join_strictness = join_node.getStrictness();
@@ -1315,6 +1304,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 std::swap(table_join_clause.key_names_left.at(asof_condition.key_index), table_join_clause.key_names_left.back());
                 std::swap(table_join_clause.key_names_right.at(asof_condition.key_index), table_join_clause.key_names_right.back());
             }
+        }
+
+        if (join_clauses_and_actions.mixed_join_expressions_actions)
+        {
+            ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
+            mixed_join_expression = std::make_shared<ExpressionActions>(
+                join_clauses_and_actions.mixed_join_expressions_actions,
+                ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
         }
     }
     else if (join_node.isUsingJoinExpression())

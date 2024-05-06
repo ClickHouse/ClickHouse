@@ -1169,7 +1169,10 @@ struct ToStartOfHourImpl
 struct ToYearImpl
 {
     static constexpr auto name = "toYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYear(t);
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toYear(t);
@@ -1217,7 +1220,10 @@ struct ToWeekYearImpl
     static constexpr auto name = "toWeekYear";
 
     static constexpr Int8 week_mode = 3;
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearWeek(t, week_mode).first;
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toYearWeek(t, week_mode).first;
@@ -1241,7 +1247,10 @@ struct ToWeekYearImpl
 struct ToWeekOfWeekYearImpl
 {
     static constexpr auto name = "toWeekOfWeekYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(t);
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOWeek(t);
@@ -1265,7 +1274,10 @@ struct ToWeekOfWeekYearImpl
 struct ToQuarterImpl
 {
     static constexpr auto name = "toQuarter";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toQuarter(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toQuarter(t);
@@ -1290,7 +1302,10 @@ struct ToQuarterImpl
 struct ToMonthImpl
 {
     static constexpr auto name = "toMonth";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMonth(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toMonth(t);
@@ -1315,7 +1330,10 @@ struct ToMonthImpl
 struct ToDayOfMonthImpl
 {
     static constexpr auto name = "toDayOfMonth";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfMonth(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfMonth(t);
@@ -1341,7 +1359,10 @@ struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
     static constexpr bool value_may_be_string = true;
-
+    static UInt8 execute(UInt64 t, UInt8 mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfWeek(t, mode);
+    }
     static UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfWeek(t, mode);
@@ -1365,7 +1386,10 @@ struct ToDayOfWeekImpl
 struct ToDayOfYearImpl
 {
     static constexpr auto name = "toDayOfYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfYear(t);
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfYear(t);
@@ -1421,7 +1445,10 @@ public:
 struct ToHourImpl
 {
     static constexpr auto name = "toHour";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toHour(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toHour(t);
@@ -1446,7 +1473,10 @@ struct ToHourImpl
 struct TimezoneOffsetImpl
 {
     static constexpr auto name = "timezoneOffset";
-
+    static time_t execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.timezoneOffset(t);
+    }
     static time_t execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.timezoneOffset(t);
@@ -1474,7 +1504,10 @@ struct TimezoneOffsetImpl
 struct ToMinuteImpl
 {
     static constexpr auto name = "toMinute";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMinute(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toMinute(t);
@@ -1499,7 +1532,10 @@ struct ToMinuteImpl
 struct ToSecondImpl
 {
     static constexpr auto name = "toSecond";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toSecond(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toSecond(t);
@@ -1550,7 +1586,10 @@ struct ToMillisecondImpl
 struct ToISOYearImpl
 {
     static constexpr auto name = "toISOYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOYear(time_zone.toDayNum(t));
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOYear(time_zone.toDayNum(t));
@@ -1607,7 +1646,10 @@ struct ToStartOfISOYearImpl
 struct ToISOWeekImpl
 {
     static constexpr auto name = "toISOWeek";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(time_zone.toDayNum(t));
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOWeek(time_zone.toDayNum(t));

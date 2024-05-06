@@ -9,7 +9,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.313.0
+export RUNNER_VERSION=2.315.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
