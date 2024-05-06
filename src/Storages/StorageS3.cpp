@@ -1239,8 +1239,8 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
         /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
         num_streams = 1;
 
-    const size_t max_threads = context->getSettingsRef().max_threads;
-    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
+    const auto & settings = context->getSettingsRef();
+    const size_t max_parsing_threads = num_streams >= settings.max_parsing_threads ? 1 : (settings.max_parsing_threads / std::max(num_streams, 1ul));
     LOG_DEBUG(getLogger("StorageS3"), "Reading in {} streams, {} threads per stream", num_streams, max_parsing_threads);
 
     Pipes pipes;
@@ -1866,7 +1866,6 @@ namespace
                              configuration.url.version_id,
                              configuration.request_settings,
                              /*with_metadata=*/ false,
-                             /*for_disk_s3=*/ false,
                              /*throw_on_error= */ false).last_modification_time;
                     }
 

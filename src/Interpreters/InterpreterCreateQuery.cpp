@@ -140,7 +140,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_path = fs::canonical(getContext()->getPath());
+    fs::path metadata_path = fs::weakly_canonical(getContext()->getPath());
+    fs::create_directories(metadata_path / "metadata");
     fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
 
@@ -1077,7 +1078,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
-    if (!create.sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)

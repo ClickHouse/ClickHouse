@@ -28,7 +28,7 @@ Starting from 24.1 clickhouse version, it is possible to use a new configuration
 It requires to specify:
 1. `type` equal to `object_storage`
 2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs`, `local_blob_storage` (or just `local` from `24.3`), `web`.
-Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web`.
+Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web` and, starting from `24.4`, `plain_rewritable`.
 Usage of `plain` metadata type is described in [plain storage section](/docs/en/operations/storing-data.md/#storing-data-on-webserver), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them).
 
 E.g. configuration option
@@ -339,6 +339,36 @@ Configuration:
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
 </s3_plain>
+```
+
+### Using S3 Plain Rewritable Storage {#s3-plain-rewritable-storage}
+A new disk type `s3_plain_rewritable` was introduced in `24.4`.
+Similar to the `s3_plain` disk type, it does not require additional storage for metadata files; instead, metadata is stored in S3.
+Unlike `s3_plain` disk type, `s3_plain_rewritable` allows executing merges and supports INSERT operations.
+[Mutations](/docs/en/sql-reference/statements/alter#mutations) and replication of tables are not supported.
+
+A use case for this disk type are non-replicated `MergeTree` tables. Although the `s3` disk type is suitable for non-replicated
+MergeTree tables, you may opt for the `s3_plain_rewritable` disk type if you do not require local metadata for the table and are
+willing to accept a limited set of operations. This could be useful, for example, for system tables.
+
+Configuration:
+``` xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+is equal to
+``` xml
+<s3_plain_rewritable>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain_rewritable</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
 ```
 
 ### Using Azure Blob Storage {#azure-blob-storage}

@@ -301,10 +301,8 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     ASTDropQuery * drop1 = ast1->as<ASTDropQuery>();
 
     EXPECT_TRUE(drop1->is_dictionary);
-    auto & database_and_tables1 = drop1->database_and_tables->as<ASTExpressionList &>();
-    auto identifier1 = dynamic_pointer_cast<ASTTableIdentifier>(database_and_tables1.children[0]);
-    EXPECT_EQ(identifier1->getDatabaseName(), "test");
-    EXPECT_EQ(identifier1->shortName(), "dict1");
+    EXPECT_EQ(drop1->getDatabase(), "test");
+    EXPECT_EQ(drop1->getTable(), "dict1");
     auto str1 = serializeAST(*drop1);
     EXPECT_EQ(input1, str1);
 
@@ -314,10 +312,8 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     ASTDropQuery * drop2 = ast2->as<ASTDropQuery>();
 
     EXPECT_TRUE(drop2->is_dictionary);
-    auto & database_and_tables2 = drop2->database_and_tables->as<ASTExpressionList &>();
-    auto identifier2 = dynamic_pointer_cast<ASTTableIdentifier>(database_and_tables2.children[0]);
-    EXPECT_EQ(identifier2->getDatabaseName(), "");
-    EXPECT_EQ(identifier2->shortName(), "dict2");
+    EXPECT_EQ(drop2->getDatabase(), "");
+    EXPECT_EQ(drop2->getTable(), "dict2");
     auto str2 = serializeAST(*drop2);
     EXPECT_EQ(input2, str2);
 }

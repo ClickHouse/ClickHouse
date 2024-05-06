@@ -90,7 +90,7 @@ public:
 
             auto subquery_to_execute = in_second_argument;
             if (in_second_argument->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context.getQueryContext());
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
             sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
         }
