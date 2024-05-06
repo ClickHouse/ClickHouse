@@ -9,14 +9,20 @@ namespace DB
 
 class FileSegment;
 
-class WriteBufferToFileSegment : public WriteBufferFromFileDecorator, public IReadableWriteBuffer
+class WriteBufferToFileSegment : public WriteBufferFromFileBase, public IReadableWriteBuffer
 {
 public:
     explicit WriteBufferToFileSegment(FileSegment * file_segment_);
     explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder);
 
     void nextImpl() override;
-    ~WriteBufferToFileSegment() override;
+
+    std::string getFileName() const override { return file_segment->getPath(); }
+
+    void sync() override;
+
+protected:
+    void finalizeImpl() override;
 
 private:
 

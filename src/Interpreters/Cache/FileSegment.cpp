@@ -304,6 +304,11 @@ FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
     return remote_file_reader;
 }
 
+FileSegment::LocalCacheWriterPtr FileSegment::getLocalCacheWriter()
+{
+    return cache_writer;
+}
+
 void FileSegment::resetRemoteFileReader()
 {
     auto lk = lock();
@@ -333,38 +338,22 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     remote_file_reader = remote_file_reader_;
 }
 
-void FileSegment::write(const char * from, size_t size, size_t offset)
+void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
-    assertWriteAllowed(size, offset);
-    writeImpl(size, offset, [&]()
+    assertWriteAllowed(size, offset_in_file);
+    writeImpl(size, offset_in_file, [&]()
     {
         if (!cache_writer)
-            cache_writer = std::make_unique<WriteBufferFromFile>(getPath());
+            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0);
 
-        cache_writer->write(from, size);
+        /// Size is equal to offset as offset for write buffer points to data end.
+        cache_writer->set(from, /* size */size, /* offset */size);
+        /// Reset the buffer when finished.
+        SCOPE_EXIT({ cache_writer->set(nullptr, 0); });
+        /// Flush the buffer.
         cache_writer->next();
     });
-}
-
-void FileSegment::write(WriteBufferFromFile & wb, size_t offset)
-{
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
-
-    const size_t size = wb.offset();
-    assertWriteAllowed(size, offset);
-
-    const auto & current_filename = wb.getFileName();
-    const auto & expected_filename = getPath();
-    if (current_filename != expected_filename)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Write buffer has unexpected file path: {}, expected: {}",
-                        current_filename, expected_filename);
-    }
-
-    /// Data should already be in buffer, so we only call `next`
-    writeImpl(size, offset, [&]() { wb.next(); }, &wb);
 }
 
 void FileSegment::assertWriteAllowed(size_t size, size_t offset)
@@ -409,7 +398,7 @@ void FileSegment::assertWriteAllowed(size_t size, size_t offset)
             current_downloaded_size, stateToString(download_state));
 }
 
-void FileSegment::writeImpl(size_t size, [[maybe_unused]] size_t offset, std::function<void()> do_write, WriteBuffer * external_wb)
+void FileSegment::writeImpl(size_t size, [[maybe_unused]] size_t offset, std::function<void()> do_write)
 {
     auto file_segment_path = getPath();
     try
@@ -434,18 +423,6 @@ void FileSegment::writeImpl(size_t size, [[maybe_unused]] size_t offset, std::fu
 
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
-
-        if (external_wb)
-        {
-            try
-            {
-                external_wb->finalize();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
 
         if (downloaded_size == 0 && fs::exists(file_segment_path))
         {

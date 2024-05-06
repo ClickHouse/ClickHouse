@@ -48,7 +48,7 @@ friend class FileCache; /// Because of reserved_size in tryReserve().
 public:
     using Key = FileCacheKey;
     using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
-    using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
+    using LocalCacheWriterPtr = std::shared_ptr<WriteBufferFromFile>;
     using Downloader = std::string;
     using DownloaderId = std::string;
     using Priority = IFileCachePriority;
@@ -204,14 +204,7 @@ public:
     bool reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
-    void write(const char * from, size_t size, size_t offset);
-
-    /** Use this overload if you need to handle file writing externally.
-      * It writes data already stored in the `wb` buffer, ensuring the file segment's invariants.
-      * The write buffer should refer to the same path that `FileSegment::getPath` returns.
-      * For each file segment instance, only one overload of `write` can be used.
-      */
-    void write(WriteBufferFromFile & wb, size_t offset);
+    void write(char * from, size_t size, size_t offset_in_file);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
@@ -219,6 +212,7 @@ public:
     // The reader typically requires its internal_buffer to be assigned from the outside before
     // calling next().
     RemoteFileReaderPtr getRemoteFileReader();
+    LocalCacheWriterPtr getLocalCacheWriter();
 
     RemoteFileReaderPtr extractRemoteFileReader();
 
