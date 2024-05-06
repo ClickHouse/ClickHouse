@@ -78,7 +78,8 @@ function configure()
         randomize_config_boolean_value use_compression zookeeper
     fi
 
-    randomize_config_boolean_value allow_experimental_block_number_column block_number
+    randomize_config_boolean_value enable_block_number_column block_number
+    randomize_config_boolean_value enable_block_offset_column block_number
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
