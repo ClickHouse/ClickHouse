@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 template <typename Name, typename Impl>
@@ -37,7 +37,7 @@ struct MultiSearchImpl
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
                 name, needles_arr.size(), std::to_string(std::numeric_limits<UInt8>::max()));
 
