@@ -56,6 +56,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/TimeoutAndCancellationTaskChecker.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -863,6 +864,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
+    [[maybe_unused]]auto& checker = TimeoutAndCancellationTaskChecker::getInstance();
     BlockIO res;
     auto implicit_txn_control = std::make_shared<bool>(false);
     String query_database;
