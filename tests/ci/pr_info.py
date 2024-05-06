@@ -140,7 +140,7 @@ class PRInfo:
             self.task_url = GITHUB_RUN_URL
 
             self.repo_full_name = GITHUB_REPOSITORY
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
@@ -186,7 +186,7 @@ class PRInfo:
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
             self.task_url = GITHUB_RUN_URL
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
@@ -251,7 +251,7 @@ class PRInfo:
             self.labels = set()
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
             self.task_url = GITHUB_RUN_URL
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
