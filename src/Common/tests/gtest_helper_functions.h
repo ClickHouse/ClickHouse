@@ -101,5 +101,6 @@ struct EnvironmentProxySetter
     {
         unsetenv("http_proxy"); // NOLINT(concurrency-mt-unsafe)
         unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("no_proxy"); // NOLINT(concurrency-mt-unsafe)
     }
 };
