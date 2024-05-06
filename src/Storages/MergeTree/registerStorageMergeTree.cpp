@@ -296,9 +296,6 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
 
-        if (replica_name.empty())
-            throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
-
         expand_macro(ast_zk_path, ast_replica_name);
     }
     else if (is_extended_storage_def
@@ -332,38 +329,45 @@ static void extractZooKeeperPathAndReplicaNameFromEngineArgs(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
 }
 
-/// Extracts a zookeeper path from a specified CREATE TABLE query. Returns std::nullopt if fails.
+/// Extracts a zookeeper path from a specified CREATE TABLE query.
 std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreateQuery & query, const ContextPtr & context)
 {
+    if (!query.storage || !query.storage->engine)
+        return {};
+
+    const String & engine_name = query.storage->engine->name;
+    if (!isReplicated(engine_name))
+        return {};
+
+    StorageID table_id{query.getDatabase(), query.getTable(), query.uuid};
+
+    ASTs engine_args;
+    if (query.storage->engine->arguments)
+        engine_args = query.storage->engine->arguments->children;
+    for (auto & engine_arg : engine_args)
+        engine_arg = engine_arg->clone();
+
+    LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
+    String zookeeper_path;
+    String replica_name;
+    RenamingRestrictions renaming_restrictions;
+
     try
     {
-        if (!query.storage || !query.storage->engine)
-            return {};
-
-        const String & engine_name = query.storage->engine->name;
-        if (!isReplicated(engine_name))
-            return {};
-
-        StorageID table_id{query.getDatabase(), query.getTable(), query.uuid};
-        ASTs engine_args;
-        if (query.storage->engine->arguments)
-            engine_args = query.storage->engine->arguments->children;
-        for (auto & engine_arg : engine_args)
-            engine_arg = engine_arg->clone();
-        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
-        String zookeeper_path;
-        String replica_name;
-        RenamingRestrictions renaming_restrictions;
-
         extractZooKeeperPathAndReplicaNameFromEngineArgs(query, table_id, engine_name, engine_args, mode, context,
                                                          zookeeper_path, replica_name, renaming_restrictions);
-
-        return zookeeper_path;
     }
-    catch (...)
+    catch (Exception & e)
     {
-        return {};
+        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Couldn't evaluate engine arguments");
+            return {};
+        }
+        throw;
     }
+
+    return zookeeper_path;
 }
 
 static StoragePtr create(const StorageFactory::Arguments & args)
@@ -539,6 +543,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         extractZooKeeperPathAndReplicaNameFromEngineArgs(args.query, args.table_id, args.engine_name, args.engine_args, args.mode,
                                                          args.getLocalContext(), zookeeper_path, replica_name, renaming_restrictions);
+
+        if (replica_name.empty())
+            throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
+
         arg_cnt = engine_args.size(); /// Update `arg_cnt` here because extractZooKeeperPathAndReplicaNameFromEngineArgs() could add arguments.
         arg_num = 2;                  /// zookeeper_path and replica_name together are always two arguments.
     }
