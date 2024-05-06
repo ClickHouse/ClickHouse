@@ -79,7 +79,7 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 void SimpleSquashingChunksTransform::transform(Chunk & chunk)
 {
     LOG_DEBUG(getLogger("SimpleSquashingChunksTransform"),
-              "transform {}", chunk.getNumRows());
+              "transform {}, finished {}", chunk.getNumRows(), finished);
 
     if (!finished)
     {

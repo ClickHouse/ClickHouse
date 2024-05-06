@@ -294,17 +294,21 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     }
 
     String block_dedup_token;
-    std::shared_ptr<DedupTokenInfo> dedub_token_info_for_children = nullptr;
+    auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
     if constexpr (!async_insert)
     {
-        auto token_info = chunk.getChunkInfos().get<DedupTokenInfo>();
-        if (!token_info && !context->getSettingsRef().insert_deduplication_token.value.empty())
+        if (!token_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DedupTokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
+                "DedupTokenBuilder is expected for consumed chunk in ReplicatedMergeTreeSink for table: {}",
+                storage.getStorageID().getNameForLogs());
+
+        if (!token_info->tokenInitialized() && !context->getSettingsRef().insert_deduplication_token.value.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "DedupTokenBuilder has to be initialized with user token for table: {}",
                 storage.getStorageID().getNameForLogs());
 
 
-        if (token_info)
+        if (token_info->tokenInitialized())
         {
             /// multiple blocks can be inserted within the same insert query
             /// an ordinal number is added to dedup token to generate a distinctive block id for each block
@@ -316,8 +320,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
         }
         else
         {
-            dedub_token_info_for_children = std::make_shared<DedupTokenInfo>();
-            chunk.getChunkInfos().add(dedub_token_info_for_children);
             LOG_DEBUG(storage.log,
                 "dedup token from hash is calculated");
         }
@@ -386,10 +388,10 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
                 LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
             }
 
-            if (dedub_token_info_for_children)
+            if (!token_info->tokenInitialized())
             {
                 chassert(temp_part.part);
-                dedub_token_info_for_children->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
+                token_info->setInitialToken(temp_part.part->getPartBlockIDHash());
             }
         }
 
@@ -444,8 +446,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
     /// TODO: we can also delay commit if there is no MVs.
-    if (!settings.deduplicate_blocks_in_dependent_materialized_views)
-        finishDelayedChunk(zookeeper);
+    // if (!settings.deduplicate_blocks_in_dependent_materialized_views)
+    //     finishDelayedChunk(zookeeper);
 
     ++num_blocks_processed;
 }
@@ -455,8 +457,6 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 {
     if (!delayed_chunk)
         return;
-
-    last_block_is_duplicate = false;
 
     for (auto & partition : delayed_chunk->partitions)
     {
@@ -469,8 +469,6 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
         try
         {
             bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num).second;
-
-            last_block_is_duplicate = last_block_is_duplicate || deduplicated;
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;

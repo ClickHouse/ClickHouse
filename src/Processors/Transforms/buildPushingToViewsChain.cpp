@@ -108,7 +108,7 @@ private:
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
-    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_, ViewsDataPtr views_data_);
+    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_, ViewsDataPtr views_data_, bool disable_deduplication_for_children_);
 
     String getName() const override { return "ExecutingInnerQueryFromView"; }
 
@@ -119,6 +119,7 @@ protected:
 private:
     ViewsDataPtr views_data;
     ViewRuntimeData & view;
+    bool disable_deduplication_for_children;
 
     struct State
     {
@@ -218,6 +219,11 @@ std::optional<Chain> generateViewChain(
     auto insert_context = Context::createCopy(select_context);
 
     const auto & insert_settings = insert_context->getSettingsRef();
+
+    if (disable_deduplication_for_children)
+    {
+        insert_context->setSetting("insert_deduplicate", Field{false});
+    }
 
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
@@ -330,16 +336,6 @@ std::optional<Chain> generateViewChain(
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
         out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
-        out.addSource(std::make_shared<CheckInsertDeduplicationTokenTransform>("Before inner chain", !disable_deduplication_for_children, out.getInputHeader()));
-
-        if (!disable_deduplication_for_children)
-        {
-            String addition_part = view_id.hasUUID() ? toString(view_id.uuid) : view_id.getFullNameNotQuoted();
-            out.addSource(std::make_shared<ExtendDeduplicationWithTokenPartTransform>(fmt::format(":mv-{}", addition_part), out.getInputHeader()));
-        }
-
-        out.addSource(std::make_shared<CheckInsertDeduplicationTokenTransform>("Before extend token", !disable_deduplication_for_children, out.getInputHeader()));
-
         if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
@@ -351,7 +347,7 @@ std::optional<Chain> generateViewChain(
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
         }
 
-        out.addSource(std::make_shared<CheckInsertDeduplicationTokenTransform>("Before squashing", !disable_deduplication_for_children, out.getInputHeader()));
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Before squashing", !disable_deduplication_for_children, out.getInputHeader()));
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
         counting->setProcessListElement(insert_context->getProcessListElement());
@@ -394,23 +390,15 @@ std::optional<Chain> generateViewChain(
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
-        out.addSource(std::make_shared<CheckInsertDeduplicationTokenTransform>("Right after Inner query", !disable_deduplication_for_children, out.getInputHeader()));
-
-        // if (!disable_deduplication_for_children)
-        // {
-        //     // out.addSource(std::make_shared<ExtendDeduplicationWithBlockNumberFromInfoTokenTransform>(out.getInputHeader()));
-        //     // out.addSource(std::make_shared<NumberBlocksTransform>(out.getInputHeader()));
-
-        //     out.addSource(std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(out.getInputHeader()));
-        // }
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", !disable_deduplication_for_children, out.getInputHeader()));
 
         auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
-            storage_header, views_data->views.back(), views_data);
+            storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
         executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
         out.addSource(std::move(executing_inner_query));
 
-        out.addSource(std::make_shared<CheckInsertDeduplicationTokenTransform>("Right before Inner query", !disable_deduplication_for_children, out.getInputHeader()));
+        out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", !disable_deduplication_for_children, out.getInputHeader()));
     }
 
     return out;
@@ -451,8 +439,6 @@ Chain buildPushingToViewsChain(
       */
     result_chain.addTableLock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
-    /// If the "root" table deduplicates blocks, there are no need to make deduplication for children
-    /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
     bool disable_deduplication_for_children = false;
     if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
@@ -563,6 +549,10 @@ Chain buildPushingToViewsChain(
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
+    else
+    {
+        result_chain.addSource(std::make_shared<DeduplicationToken::SetInitialTokenTransform>(result_chain.getInputHeader()));
+    }
 
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
@@ -578,7 +568,7 @@ Chain buildPushingToViewsChain(
     return result_chain;
 }
 
-static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data, Chunk::ChunkInfoCollection chunk_infos)
+static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data, Chunk::ChunkInfoCollection chunk_infos, bool disable_deduplication_for_children)
 {
     const auto & context = views_data.context;
 
@@ -625,9 +615,18 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    //pipeline.addTransform(std::make_shared<NumberBlocksTransform>(pipeline.getHeader()));
     pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getHeader()));
-    pipeline.addTransform(std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(pipeline.getHeader()));
+
+    if (!disable_deduplication_for_children)
+    {
+        String materialize_view_id = view.table_id.hasUUID() ? toString(view.table_id.uuid) : view.table_id.getFullNameNotQuoted();
+        pipeline.addTransform(std::make_shared<DeduplicationToken::SetMaterializeViewIDTransform>(std::move(materialize_view_id), pipeline.getHeader()));
+        pipeline.addTransform(std::make_shared<DeduplicationToken::SetMaterializeViewBlockNumberTransform>(pipeline.getHeader()));
+    }
+    else
+    {
+        pipeline.addTransform(std::make_shared<DeduplicationToken::ResetTokenTransform>(pipeline.getHeader()));
+    }
 
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
@@ -720,17 +719,19 @@ IProcessor::Status CopyingDataToViewsTransform::prepare()
 ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
     const Block & header,
     ViewRuntimeData & view_,
-    std::shared_ptr<ViewsData> views_data_)
+    std::shared_ptr<ViewsData> views_data_,
+    bool disable_deduplication_for_children_)
     : ExceptionKeepingTransform(header, view_.sample_block)
     , views_data(std::move(views_data_))
     , view(view_)
+    , disable_deduplication_for_children(disable_deduplication_for_children_)
 {
 }
 
 void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    state.emplace(process(block, view, *views_data, chunk.getChunkInfos()));
+    state.emplace(process(block, view, *views_data, chunk.getChunkInfos(), disable_deduplication_for_children));
 }
 
 

@@ -90,16 +90,20 @@ void MergeTreeSink::consume(Chunk & chunk)
     bool support_parallel_write = false;
 
     String block_dedup_token;
-    std::shared_ptr<DedupTokenInfo> dedub_token_info_for_children = nullptr;
+    auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
     if (storage.getDeduplicationLog())
     {
-        auto token_info = chunk.getChunkInfos().get<DedupTokenInfo>();
-        if (!token_info && !context->getSettingsRef().insert_deduplication_token.value.empty())
+        if (!token_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DedupTokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
+                "DedupTokenBuilder is expected for consumed chunk in MergeTreeSink for table: {}",
                 storage.getStorageID().getNameForLogs());
 
-        if (token_info)
+        if (!token_info->tokenInitialized() && !context->getSettingsRef().insert_deduplication_token.value.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "DedupTokenBuilder has to be initialized with user token for table: {}",
+                storage.getStorageID().getNameForLogs());
+
+        if (token_info->tokenInitialized())
         {
             block_dedup_token = token_info->getToken();
 
@@ -109,9 +113,6 @@ void MergeTreeSink::consume(Chunk & chunk)
         }
         else
         {
-            dedub_token_info_for_children = std::make_shared<DedupTokenInfo>();
-            chunk.getChunkInfos().add(dedub_token_info_for_children);
-
             LOG_DEBUG(storage.log,
                 "dedup token from hash is calculated");
         }
@@ -141,10 +142,10 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!temp_part.part)
             continue;
 
-        if (dedub_token_info_for_children)
+        if (!token_info->tokenInitialized())
         {
             chassert(temp_part.part);
-            dedub_token_info_for_children->addTokenPart(":block_hash-" + temp_part.part->getPartBlockIDHash());
+            token_info->setInitialToken(temp_part.part->getPartBlockIDHash());
         }
 
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())

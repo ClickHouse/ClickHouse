@@ -56,6 +56,7 @@ SELECT '-- Original issue with deduplicate_blocks_in_dependent_materialized_view
     - 2nd insert gets first block 20220901 deduplicated and second one inserted in landing table
     - 2nd insert is not inserting anything in mv table due to a bug computing blocks to be discarded
 
+    Now it is fixed.
 */
 SET deduplicate_blocks_in_dependent_materialized_views = 0, max_insert_delayed_streams_for_parallel_write = 1000;
 
