@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
         help="if set, the directory `docker/official` will be staged and committed "
         "after generating",
     )
+    dockerfile_glob = "Dockerfile.*"
+    global_args.add_argument(
+        "--dockerfile-glob",
+        default=dockerfile_glob,
+        help="a glob to collect Dockerfiles in the server of keeper directory",
+    )
     subparsers = parser.add_subparsers(
         title="commands", dest="command", required=True, help="the command to run"
     )
@@ -88,23 +94,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="if not set, only currently supported versions will be used",
     )
-    docker_branch = "origin/master"
-    parser_tree.add_argument(
-        "--use-docker-from-branch",
-        action="store_true",
-        help="by default, the `docker/server` from each branch is used to generate the "
-        "directory; if this flag is set, then the `docker/server` from the "
-        "`--docker-branch` value is used",
-    )
     parser_tree.add_argument(
         "--docker-branch",
-        default=docker_branch,
-        help="the branch to get the content of `docker/server` directory",
+        default="",
+        help="if set, the branch to get the content of `docker/server` directory. When "
+        "unset, the content of directories is taken from release tags",
     )
     parser_tree.add_argument(
         "--build-images",
         action="store_true",
-        help="if set, the image will be built for each Dockerfile.* in the result dirs",
+        help="if set, the image will be built for each Dockerfile '--dockerfile-glob' "
+        "in the result dirs",
     )
     parser_tree.add_argument("--clean", default=True, help=argparse.SUPPRESS)
     parser_tree.add_argument(
@@ -168,8 +168,8 @@ def create_versions_dirs(
 
 def generate_docker_directories(
     version_dirs: Dict[ClickHouseVersion, Path],
-    use_docker_from_branch: bool,
     docker_branch: str,
+    dockerfile_glob: str,
     build_images: bool = False,
     image_type: str = "server",
 ) -> None:
@@ -177,7 +177,7 @@ def generate_docker_directories(
     start_filter = "#docker-official-library:off"
     stop_filter = "#docker-official-library:on"
     for version, directory in version_dirs.items():
-        branch = docker_branch if use_docker_from_branch else version.describe
+        branch = docker_branch or version.describe
         logging.debug(
             "Checkout directory content from '%s:docker/%s' to %s",
             branch,
@@ -188,7 +188,7 @@ def generate_docker_directories(
             f"git archive {branch}:docker/{image_type} | " f"tar x -C {directory}"
         )
         (directory / "README.md").unlink(missing_ok=True)
-        for df in directory.glob("Dockerfile.*"):
+        for df in directory.glob(dockerfile_glob):
             original_content = df.read_text().splitlines()
             content = []
             filtering = False
@@ -270,8 +270,8 @@ def generate_tree(args: argparse.Namespace) -> None:
     version_dirs = create_versions_dirs(versions, directory)
     generate_docker_directories(
         version_dirs,
-        args.use_docker_from_branch,
         args.docker_branch,
+        args.dockerfile_glob,
         args.build_images,
         args.image_type,
     )
@@ -368,7 +368,7 @@ def generate_ldf(args: argparse.Namespace) -> None:
     tag_attrs = TagAttrs(versions[-1], {}, None)
     for version in reversed(versions):
         tag_dir = directory / str(version)
-        for file in tag_dir.glob("Dockerfile.*"):
+        for file in tag_dir.glob(args.dockerfile_glob):
             lines.append("")
             distro = file.suffix[1:]
             if distro == "ubuntu":
