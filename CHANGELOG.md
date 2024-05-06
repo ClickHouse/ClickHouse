@@ -7,7 +7,7 @@
 
 # 2024 Changelog
 
-### <a id="244"></a> ClickHouse release 24.4 LTS, 2024-04-30
+### <a id="244"></a> ClickHouse release 24.4, 2024-04-30
 
 #### Upgrade Notes
 * `clickhouse-odbc-bridge` and `clickhouse-library-bridge` are now separate packages. This closes [#61677](https://github.com/ClickHouse/ClickHouse/issues/61677). [#62114](https://github.com/ClickHouse/ClickHouse/pull/62114) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

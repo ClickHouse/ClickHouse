@@ -563,6 +563,7 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+Monotonicity
 MsgPack
 multiSearchAllPositionsCaseInsensitive
 multiSearchAllPositionsCaseInsensitiveUTF
@@ -614,6 +615,7 @@ NetworkSendErrors
 NetworkSendPackets
 Noaa
 NodeJs
+NonMonotonic
 NuRaft
 NumHexagons
 NumPy
@@ -877,6 +879,7 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
+sigmoid
 Smirnov's
 Smirnov'test
 Soundex
@@ -922,6 +925,7 @@ TAVG
 TCPConnection
 TCPThreads
 TDigest
+ThreadMonotonic
 TINYINT
 TLSv
 TMAX
@@ -999,6 +1003,7 @@ UMTS
 UNDROP
 UPDATEs
 URIs
+URL
 URL's
 URLHash
 URLHierarchy
@@ -1006,7 +1011,9 @@ URLPathHierarchy
 USearch
 UUIDNumToString
 UUIDStringToNum
+UUIDToNum
 UUIDs
+UUIDv
 UUid
 Uber
 Uint
@@ -1041,6 +1048,8 @@ Wether
 WikiStat
 WindowView
 Winkler
+WithCounter
+WithFastCounter
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1942,6 +1951,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeTreeIndex
 mergeable
 mergetree
@@ -1969,6 +1980,7 @@ modularization
 moduloOrZero
 moduli
 mongodb
+monotonicity
 monthName
 mortonDecode
 mortonEncode
@@ -2397,6 +2409,8 @@ simpleaggregatefunction
 simplelinearregression
 simpod
 singlepart
+singleValueOrNull
+singlevalueornull
 sinh
 sipHash
 siphash
@@ -2751,6 +2765,7 @@ uptime
 uptrace
 uring
 url
+urlencoded
 urlCluster
 urls
 usearch
@@ -2758,6 +2773,7 @@ userspace
 userver
 utils
 uuid
+uuidv
 varPop
 varPopStable
 varSamp
