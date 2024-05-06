@@ -2564,16 +2564,16 @@ Adds a specified number of years to a date, a date with time or a string-encoded
 **Syntax**
 
 ```sql
-addYears(date, x)
+addYears(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of years to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of years to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of years to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of years to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` years. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` years. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2601,16 +2601,16 @@ Adds a specified number of quarters to a date, a date with time or a string-enco
 **Syntax**
 
 ```sql
-addQuarters(date, x)
+addQuarters(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of quarters to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of quarters to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of quarters to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of quarters to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` quarters. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` quarters. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2638,16 +2638,16 @@ Adds a specified number of months to a date, a date with time or a string-encode
 **Syntax**
 
 ```sql
-addMonths(date, x)
+addMonths(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of months to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of months to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of months to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of months to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` months. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` months. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2675,16 +2675,16 @@ Adds a specified number of weeks to a date, a date with time or a string-encoded
 **Syntax**
 
 ```sql
-addWeeks(date, x)
+addWeeks(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of weeks to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of weeks to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of weeks to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of weeks to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` weeks. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` weeks. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2712,16 +2712,16 @@ Adds a specified number of days to a date, a date with time or a string-encoded 
 **Syntax**
 
 ```sql
-addDays(date, x)
+addDays(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of days to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of days to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of days to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of days to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` days. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` days. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2749,16 +2749,16 @@ Adds a specified number of days to a date, a date with time or a string-encoded 
 **Syntax**
 
 ```sql
-addHours(date, x)
+addHours(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of hours to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of hours to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of hours to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of hours to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` hours. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` hours. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2786,16 +2786,16 @@ Adds a specified number of minutes to a date, a date with time or a string-encod
 **Syntax**
 
 ```sql
-addMinutes(date, x)
+addMinutes(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of minutes to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of minutes to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of minutes to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of minutes to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` minutes. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` minutes. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2823,16 +2823,16 @@ Adds a specified number of seconds to a date, a date with time or a string-encod
 **Syntax**
 
 ```sql
-addSeconds(date, x)
+addSeconds(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to add specified number of seconds to. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of seconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to add specified number of seconds to. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of seconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` plus `x` seconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` plus `num` seconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2860,16 +2860,16 @@ Adds a specified number of milliseconds to a date with time or a string-encoded 
 **Syntax**
 
 ```sql
-addMilliseconds(date_time, x)
+addMilliseconds(date_time, num)
 ```
 
 **Parameters**
 
-- `date_time`: Date with time to add specified number of milliseconds to. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of milliseconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date_time`: Date with time to add specified number of milliseconds to. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of milliseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` plus `x` milliseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date_time` plus `num` milliseconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2895,16 +2895,16 @@ Adds a specified number of microseconds to a date with time or a string-encoded 
 **Syntax**
 
 ```sql
-addMicroseconds(date_time, x)
+addMicroseconds(date_time, num)
 ```
 
 **Parameters**
 
-- `date_time`: Date with time to add specified number of microseconds to. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of microseconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date_time`: Date with time to add specified number of microseconds to. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of microseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` plus `x` microseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date_time` plus `num` microseconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2930,16 +2930,16 @@ Adds a specified number of microseconds to a date with time or a string-encoded 
 **Syntax**
 
 ```sql
-addNanoseconds(date_time, x)
+addNanoseconds(date_time, num)
 ```
 
 **Parameters**
 
-- `date_time`: Date with time to add specified number of nanoseconds to. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of nanoseconds to add. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date_time`: Date with time to add specified number of nanoseconds to. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of nanoseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` plus `x` nanoseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date_time` plus `num` nanoseconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
