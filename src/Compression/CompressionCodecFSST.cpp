@@ -18,6 +18,8 @@
 
 #include <fsst.h>
 
+#include <iostream>
+
 namespace DB
 {
 
@@ -35,11 +37,13 @@ public:
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override
     {
+        char* saved_dest{dest};
         std::vector<size_t> len_in;
         std::vector<const unsigned char *> str_in;
 
         splitDataByRows(reinterpret_cast<const unsigned char *>(source), str_in, len_in, source_size);
         size_t rows_count{len_in.size()};
+        UInt32 compressed_size{0};
 
         fsst_encoder_t * encoder = fsst_create(rows_count, len_in.data(), str_in.data(), 0);
 
@@ -47,8 +51,8 @@ protected:
 
         size_t len_out[rows_count];
         unsigned char * str_out[rows_count];
-        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(len_out) + (sizeof(size_t) * len_in.size())};
-        /* codec_header |(dest*) fsst_header(encoder) rows_count len_out len_in data */
+        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(compressed_size)};
+        /* codec_header |(dest*) fsst_header(encoder) rows_count compressed_size data compressed_lens */
 
         if (fsst_compress(
                 encoder,
@@ -65,14 +69,19 @@ protected:
 
         /* Copy prerequisites to dest */
         memcpy(dest + fsst_header_size, &rows_count, sizeof(rows_count));
-        memcpy(dest + fsst_header_size + sizeof(rows_count), len_out, sizeof(len_out));
-        memcpy(dest + fsst_header_size + sizeof(rows_count) + sizeof(len_out), len_in.data(), len_in.size() * sizeof(size_t));
 
         /* Count data total compressed size without header */
-        UInt32 compressed_size{0};
-        for (size_t i = 0; i < rows_count; ++i)
+        for (size_t i = 0; i < rows_count; ++i) {
             compressed_size += len_out[i];
-        return static_cast<UInt32>(header_size) + compressed_size;
+        }
+        memcpy(dest + fsst_header_size + sizeof(rows_count), &compressed_size, sizeof(compressed_size));
+
+        dest += header_size + compressed_size;
+        for (size_t i = 0; i < rows_count; ++i) {
+            dest = writeVarUInt(len_out[i], dest);
+        }
+
+        return static_cast<UInt32>(dest - saved_dest);
     }
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override
@@ -82,27 +91,31 @@ protected:
         size_t fsst_header_size = fsst_import(&decoder, reinterpret_cast<unsigned char *>(const_cast<char *>(source)));
 
         size_t rows_count;
+        UInt32 compressed_size;
         memcpy(&rows_count, source + fsst_header_size, sizeof(rows_count));
+        memcpy(&compressed_size, source + fsst_header_size + sizeof(rows_count), sizeof(compressed_size));
 
-        size_t lens[rows_count];
-        std::vector<size_t> len_in(rows_count);
-        memcpy(lens, source + fsst_header_size + sizeof(rows_count), sizeof(lens));
-        memcpy(len_in.data(), source + fsst_header_size + sizeof(rows_count) + sizeof(lens), sizeof(size_t) * len_in.size());
-        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(lens) + sizeof(size_t) * len_in.size()};
+        size_t header_size{fsst_header_size + sizeof(rows_count) + sizeof(compressed_size)};
 
         const char * str{source + header_size};
+        const char * lens{source + header_size + compressed_size};
         for (size_t i = 0; i < rows_count; ++i)
         {
-            dest = writeVarUInt(len_in[i], dest);
+            UInt64 len;
+            lens = readVarUInt(len, lens, sizeof(len));
+            unsigned char decoded_str[10 * len];
 
             auto decompressed_size = fsst_decompress(
                 &decoder,
-                lens[i],
+                len,
                 reinterpret_cast<const unsigned char *>(str),
-                out_size,
-                reinterpret_cast<unsigned char *>(dest));
+                OUT_SIZE,
+                decoded_str);
 
-            str += lens[i];
+            dest = writeVarUInt(decompressed_size, dest);
+            memcpy(dest, decoded_str, decompressed_size);
+
+            str += len;
             dest += decompressed_size;
         }
     }
