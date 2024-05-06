@@ -2588,16 +2588,16 @@ Subtracts a specified number of years from a date, a date with time or a string-
 **Syntax**
 
 ```sql
-subtractYears(date, x)
+subtractYears(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of years from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of years to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of years from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of years to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` years. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` years. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2625,16 +2625,16 @@ Subtracts a specified number of quarters from a date, a date with time or a stri
 **Syntax**
 
 ```sql
-subtractQuarters(date, x)
+subtractQuarters(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of quarters from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of quarters to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of quarters from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of quarters to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` quarters. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` quarters. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2662,16 +2662,16 @@ Subtracts a specified number of months from a date, a date with time or a string
 **Syntax**
 
 ```sql
-subtractMonths(date, x)
+subtractMonths(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of months from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of months to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of months from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of months to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` months. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` months. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2699,16 +2699,16 @@ Subtracts a specified number of weeks from a date, a date with time or a string-
 **Syntax**
 
 ```sql
-subtractWeeks(date, x)
+subtractWeeks(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of weeks from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of weeks to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of weeks from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of weeks to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` weeks. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` weeks. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2736,16 +2736,16 @@ Subtracts a specified number of days from a date, a date with time or a string-e
 **Syntax**
 
 ```sql
-subtractDays(date, x)
+subtractDays(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of days from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of days to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of days from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of days to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` days. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` days. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2773,16 +2773,16 @@ Subtracts a specified number of hours from a date, a date with time or a string-
 **Syntax**
 
 ```sql
-subtractHours(date, x)
+subtractHours(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of hours from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of hours to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of hours from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[Datetime](../data-types/datetime.md)/[Datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of hours to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` hours. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` hours. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[Datetime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2810,16 +2810,16 @@ Subtracts a specified number of minutes from a date, a date with time or a strin
 **Syntax**
 
 ```sql
-subtractMinutes(date, x)
+subtractMinutes(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of minutes from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of minutes to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of minutes from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of minutes to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` minutes. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` minutes. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2847,16 +2847,16 @@ Subtracts a specified number of seconds from a date, a date with time or a strin
 **Syntax**
 
 ```sql
-subtractSeconds(date, x)
+subtractSeconds(date, num)
 ```
 
 **Parameters**
 
-- `date`: Date / date with time to subtract specified number of seconds from. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of seconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date`: Date / date with time to subtract specified number of seconds from. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of seconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date` minus `x` seconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` minus `num` seconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2884,16 +2884,16 @@ Subtracts a specified number of milliseconds from a date with time or a string-e
 **Syntax**
 
 ```sql
-subtractMilliseconds(date_time, x)
+subtractMilliseconds(date_time, num)
 ```
 
 **Parameters**
 
-- `date_time`: Date with time to subtract specified number of milliseconds from. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of milliseconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date_time`: Date with time to subtract specified number of milliseconds from. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of milliseconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` minus `x` milliseconds. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date_time` minus `num` milliseconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2919,16 +2919,16 @@ Subtracts a specified number of microseconds from a date with time or a string-e
 **Syntax**
 
 ```sql
-subtractMicroseconds(date_time, x)
+subtractMicroseconds(date_time, num)
 ```
 
 **Parameters**
 
-- `date_time`: Date with time to subtract specified number of microseconds from. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of microseconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date_time`: Date with time to subtract specified number of microseconds from. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of microseconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` minus `x` microseconds. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date_time` minus `num` microseconds. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2954,16 +2954,16 @@ Subtracts a specified number of nanoseconds from a date with time or a string-en
 **Syntax**
 
 ```sql
-subtractNanoseconds(date_time, x)
+subtractNanoseconds(date_time, num)
 ```
 
 **Parameters**
 
-- `date_time`: Date with time to subtract specified number of nanoseconds from. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md), [String](../data-types/string.md).
-- `x`: Number of nanoseconds to subtract. [(U)Int*](../data-types/int-uint.md), [float*](../data-types/float.md).
+- `date_time`: Date with time to subtract specified number of nanoseconds from. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md), [String](../data-types/string.md).
+- `num`: Number of nanoseconds to subtract. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` minus `x` nanoseconds. [datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date_time` minus `num` nanoseconds. [DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -3040,11 +3040,11 @@ subtractTupleOfIntervals(interval_1, interval_2)
 
 **Parameters**
 
-- `date`: First interval or interval of tuples. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- `date`: First interval or interval of tuples. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 - `intervals`: Tuple of intervals to subtract from `date`. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 
 **Returned value**
-- Returns `date` with subtracted `intervals`. [date](../data-types/date.md)/[date32](../data-types/date32.md)/[datetime](../data-types/datetime.md)/[datetime64](../data-types/datetime64.md).
+- Returns `date` with subtracted `intervals`. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
 
