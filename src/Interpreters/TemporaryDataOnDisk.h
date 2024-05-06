@@ -149,7 +149,7 @@ struct InputReader
 
 /*
  * Data can be written into this stream and then read.
- * After finish writing, call `finishWriting` and then `read` to read the data.
+ * After finish writing, call `finishWriting` and then either call `read` or 'getReadStream'(only one of the two) to read the data.
  * Account amount of data written to disk in parent scope.
  */
 class TemporaryFileStream : boost::noncopyable
@@ -203,9 +203,6 @@ private:
     FileSegmentsHolderPtr segment_holder;
 
     Stat stat;
-
-    /// 0 - means that we haven't requested any read, 1 - read from function TemporaryFileStream::read, 2 - 
-    std::atomic_char read_type{0};
 
     mutable std::mutex finish_writing;
     std::atomic_bool writing_finished{false};

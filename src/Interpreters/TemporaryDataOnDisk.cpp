@@ -331,12 +331,6 @@ Block TemporaryFileStream::read()
     if (isEof())
         return {};
 
-    if (auto type = read_type.exchange(1); type == 2)
-    {
-        read_type.store(2);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Different type of reading was requested earlier");
-    }
-
     if (!in_reader)
     {
         in_reader = std::make_unique<InputReader>(getPath(), header, getSize());
@@ -359,12 +353,6 @@ std::unique_ptr<InputReader> TemporaryFileStream::getReadStream()
 
     if (isEof())
         return nullptr;
-
-    if (auto type = read_type.exchange(2); type == 1)
-    {
-        read_type.store(1);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Different type of reading was requested earlier");
-    }
 
     return std::make_unique<InputReader>(getPath(), header, getSize());
 }
