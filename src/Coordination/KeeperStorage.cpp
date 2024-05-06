@@ -1745,63 +1745,53 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
 
-            if constexpr (Storage::use_rocksdb)
+            const auto & get_children = [&]()
             {
-                const auto & children = container.getChildren(request.path);
-                response.names.reserve(children.size());
-                const auto add_child = [&](const auto & child)
+                if constexpr (Storage::use_rocksdb)
+                    return container.getChildren(request.path);
+                else
+                    return node_it->value.getChildren();
+            };
+            const auto & children = get_children();
+            response.names.reserve(children.size());
+
+            const auto add_child = [&](const auto & child)
+            {
+                using enum Coordination::ListRequestType;
+
+                auto list_request_type = ALL;
+                if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
                 {
-                    using enum Coordination::ListRequestType;
-
-                    auto list_request_type = ALL;
-                    if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
-                    {
-                        list_request_type = filtered_list->list_request_type;
-                    }
-
-                    if (list_request_type == ALL)
-                        return true;
-
-                    const auto is_ephemeral = child.second.isEphemeral();
-                    return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
-                };
-
-                for (const auto & child : children)
-                {
-                    if (add_child(child))
-                        response.names.push_back(child.first);
+                    list_request_type = filtered_list->list_request_type;
                 }
-            }
-            else
-            {
-                const auto & children = node_it->value.getChildren();
-                response.names.reserve(children.size());
 
-                const auto add_child = [&](const auto child)
+                if (list_request_type == ALL)
+                    return true;
+
+                bool is_ephemeral;
+                if constexpr (!Storage::use_rocksdb)
                 {
-                    using enum Coordination::ListRequestType;
-
-                    auto list_request_type = ALL;
-                    if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
-                    {
-                        list_request_type = filtered_list->list_request_type;
-                    }
-
-                    if (list_request_type == ALL)
-                        return true;
-
                     auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
                     auto child_it = container.find(child_path);
                     if (child_it == container.end())
                         onStorageInconsistency();
-
-                    const auto is_ephemeral = child_it->value.isEphemeral();
-                    return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
-                };
-
-                for (const auto child : children)
+                    is_ephemeral = child_it->value.isEphemeral();
+                }
+                else
                 {
-                    if (add_child(child))
+                    is_ephemeral = child.second.isEphemeral();
+                }
+
+                return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
+            };
+
+            for (const auto & child : children)
+            {
+                if (add_child(child))
+                {
+                    if constexpr (Storage::use_rocksdb)
+                        response.names.push_back(child.first);
+                    else
                         response.names.push_back(child.toString());
                 }
             }

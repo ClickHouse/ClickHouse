@@ -31,6 +31,20 @@ struct RocksDBContainer
     using Node = Node_;
 
 private:
+    /// MockNode is only use in test to mock `getChildren()` and `getData()`
+    struct MockNode
+    {
+        std::vector<int> children;
+        std::string data;
+        MockNode(size_t children_num, std::string_view data_)
+            : children(std::vector<int>(children_num)),
+              data(data_)
+        {
+        }
+
+        std::vector<int> getChildren() { return children; }
+        std::string getData() { return data; }
+    };
 
     UInt16 getKeyDepth(const std::string & key)
     {
@@ -260,6 +274,13 @@ public:
             buffer.readStrict(kv->value.data.get(), kv->value.data_size);
         }
         return const_iterator(kv);
+    }
+
+    MockNode getValue(StringRef key)
+    {
+        auto it = find(key);
+        chassert(it != end());
+        return MockNode(it->value.numChildren(), it->value.getData());
     }
 
     const_iterator updateValue(StringRef key_, ValueUpdater updater)

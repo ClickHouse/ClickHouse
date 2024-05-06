@@ -93,6 +93,13 @@ struct KeeperRocksNodeInfo
         ephemeral_or_children_data.children_info.num_children = num_children;
     }
 
+    /// dummy interface for test
+    void addChild(StringRef) {}
+    auto getChildren() const
+    {
+        return std::vector<int>(numChildren());
+    }
+
     void increaseNumChildren()
     {
         chassert(!isEphemeral());
