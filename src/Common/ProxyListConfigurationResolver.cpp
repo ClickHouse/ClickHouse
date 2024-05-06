@@ -10,8 +10,8 @@ namespace DB
 ProxyListConfigurationResolver::ProxyListConfigurationResolver(
     std::vector<Poco::URI> proxies_,
     Protocol request_protocol_,
-    bool disable_tunneling_for_https_requests_over_http_proxy_,
-    const std::string & no_proxy_hosts_)
+    const std::string & no_proxy_hosts_,
+    bool disable_tunneling_for_https_requests_over_http_proxy_)
     : ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_),
     proxies(std::move(proxies_)), no_proxy_hosts(no_proxy_hosts_)
 {

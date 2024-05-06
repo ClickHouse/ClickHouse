@@ -28,8 +28,8 @@ public:
     RemoteProxyConfigurationResolver(
         const RemoteServerConfiguration & remote_server_configuration_,
         Protocol request_protocol_,
-        bool disable_tunneling_for_https_requests_over_http_proxy_ = true,
-        const std::string & no_proxy_hosts_ = "");
+        const std::string & no_proxy_hosts_,
+        bool disable_tunneling_for_https_requests_over_http_proxy_ = true);
 
     ProxyConfiguration resolve() override;
 

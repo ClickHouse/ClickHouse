@@ -31,7 +31,7 @@ Poco::URI https_env_proxy_server = Poco::URI("http://https_environment_proxy:312
 Poco::URI http_list_proxy_server = Poco::URI("http://http_list_proxy:3128");
 Poco::URI https_list_proxy_server = Poco::URI("http://https_list_proxy:3128");
 
-static std::string no_proxy_hosts = "localhost,,127.0.0.1,some_other_domain,,,, last_domain,";
+static std::string no_proxy_hosts = "localhost,,127.0.0.1,some_other_domain,,,, sub-domain.domain.com,";
 
 TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {

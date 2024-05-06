@@ -54,8 +54,8 @@ namespace
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
-            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration),
-            getNoProxyHosts(configuration));
+            getNoProxyHosts(configuration),
+            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     auto extractURIList(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -96,8 +96,8 @@ namespace
             : std::make_shared<ProxyListConfigurationResolver>(
                   uris,
                   request_protocol,
-                  isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration),
-                  getNoProxyHosts(configuration));
+                  getNoProxyHosts(configuration),
+                  isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     bool hasRemoteResolver(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
