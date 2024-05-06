@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Helper class to define same ISerialization text (de)serialization for all the variants (escaped, quoted, JSON, CSV).
 /// You need to define serializeText() and deserializeText() in derived class.
 class SimpleTextSerialization : public ISerialization
