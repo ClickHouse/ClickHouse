@@ -174,6 +174,8 @@ def generate_docker_directories(
     image_type: str = "server",
 ) -> None:
     arg_version = "ARG VERSION="
+    start_filter = "#docker-official-library:off"
+    stop_filter = "#docker-official-library:on"
     for version, directory in version_dirs.items():
         branch = docker_branch if use_docker_from_branch else version.describe
         logging.debug(
@@ -187,17 +189,31 @@ def generate_docker_directories(
         )
         (directory / "README.md").unlink(missing_ok=True)
         for df in directory.glob("Dockerfile.*"):
-            content = df.read_text().splitlines()
-            for idx, line in enumerate(content):
+            original_content = df.read_text().splitlines()
+            content = []
+            filtering = False
+            for line in original_content:
+                # Change the ARG VERSION= to a proper version
                 if line.startswith(arg_version):
                     logging.debug(
                         "Found '%s' in line %s:%s, setting to version %s",
                         arg_version,
                         df.name,
-                        idx,
+                        original_content.index(line),
                         version,
                     )
-                    content[idx] = f'{arg_version}"{version}"'
+                    content.append(f'{arg_version}"{version}"')
+                    continue
+                # Filter out CI-related part from official docker
+                if line == start_filter:
+                    filtering = True
+                    continue
+                if line == stop_filter:
+                    filtering = False
+                    continue
+                if not filtering:
+                    content.append(line)
+
             df.write_text("\n".join(content) + "\n")
             if build_images:
                 git_runner(
