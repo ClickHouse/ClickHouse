@@ -143,7 +143,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 }
 
 UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config,
-                                               std::string connection_host)
+                                               std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
     return config.getInt("port",
