@@ -22,3 +22,5 @@ CLICKHOUSE_URL_WO_SESSION_TZ=$(echo "${CLICKHOUSE_URL}" |sed 's/\&session_timezo
 
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL_WO_SESSION_TZ}&session_timezone=Europe/Berlin&query=SELECT+timezone()" 2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL_WO_SESSION_TZ}&session_timezone=America/Denver&query=SELECT+timezone()" 2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
+# check that proper X-ClickHouse-Timezone returned on query fail
+${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL_WO_SESSION_TZ}&session_timezone=UTC&query=SELECT+intDiv(1,+(3600-timeZoneOffset(now())))+SETTINGS+session_timezone+=+'Europe/Lisbon'" 2>&1 | grep '< X-ClickHouse-Timezone' | grep -v 'GET' | tr -d '\r';
