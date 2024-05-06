@@ -17,6 +17,8 @@ public:
 
     void nextImpl() override;
 
+    ~WriteBufferToFileSegment() override = default;
+
 private:
 
     std::unique_ptr<ReadBuffer> getReadBufferImpl() override;
