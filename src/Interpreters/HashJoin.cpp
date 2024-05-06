@@ -1880,7 +1880,6 @@ Block HashJoin::joinBlockImpl(
         added_columns.buildOutputIfDataSorted();
     else
         added_columns.buildOutput();
-    
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
 
