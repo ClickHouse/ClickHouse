@@ -415,15 +415,6 @@ public:
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
-    TemporaryFileStream* getStreamForCrossJoin()
-    {
-        auto streams = tmp_data->getStreams();
-        assert(streams.size() <= 1);
-        if (streams.empty())
-            return nullptr;
-        return streams[0];
-    }
-
 private:
     friend class NotJoinedHash;
 
