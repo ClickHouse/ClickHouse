@@ -39,6 +39,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTimeSeries.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -760,6 +761,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.storage && create.storage->engine)
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
+    /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
+    if (create.is_time_series_table && (mode < LoadingStrictnessLevel::ATTACH))
+        StorageTimeSeries::normalizeTableDefinition(create, getContext());
+
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
@@ -1068,6 +1073,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         else if (as_create.storage)
         {
             storage_def = typeid_cast<std::shared_ptr<ASTStorage>>(as_create.storage->ptr());
+            create.is_time_series_table = as_create.is_time_series_table;
         }
         else
         {
