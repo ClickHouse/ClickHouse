@@ -3425,8 +3425,21 @@ def mysql_create_database_without_connection(clickhouse_node, mysql_node, servic
 
     clickhouse_node.cluster.pause_container(service_name)
 
+    assert "ConnectionFailed:" in clickhouse_node.query_and_get_error(
+        """
+        CREATE DATABASE create_without_connection
+        ENGINE = MaterializedMySQL('{}:3306', 'create_without_connection', 'root', 'clickhouse')
+        """.format(
+            service_name
+        )
+    )
+
     clickhouse_node.query(
-        "CREATE DATABASE create_without_connection ENGINE = MaterializedMySQL('{}:3306', 'create_without_connection', 'root', 'clickhouse') SETTINGS max_wait_time_when_mysql_unavailable=-1".format(
+        """
+        CREATE DATABASE create_without_connection
+        ENGINE = MaterializedMySQL('{}:3306', 'create_without_connection', 'root', 'clickhouse')
+        SETTINGS allow_startup_database_without_connection_to_mysql=1
+        """.format(
             service_name
         )
     )
