@@ -587,6 +587,8 @@ endif()
 
 if (TARGET ch_contrib::libpg_query)
     dbms_target_link_libraries (PUBLIC ch_contrib::libpg_query)
+else()
+    message(WARNING "ch_contrib::libpg_query not found")
 endif()
 
 if (TARGET ch_contrib::bzip2)
