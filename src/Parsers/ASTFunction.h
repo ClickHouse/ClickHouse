@@ -116,4 +116,20 @@ inline bool tryGetFunctionNameInto(const ASTPtr & ast, String & name) { return t
 /// Checks if function is a lambda function definition `lambda((x, y), x + y)`
 bool isASTLambdaFunction(const ASTFunction & function);
 
+/// Makes an ASTFunction to represent a data type.
+template <typename... Args>
+std::shared_ptr<ASTFunction> makeASTDataType(const String & type_name, Args &&... args)
+{
+    auto function = std::make_shared<ASTFunction>();
+    function->name = type_name;
+    function->no_empty_args = true;
+    if (sizeof...(args))
+    {
+        function->arguments = std::make_shared<ASTExpressionList>();
+        function->children.push_back(function->arguments);
+        function->arguments->children = { std::forward<Args>(args)... };
+    }
+    return function;
+}
+
 }
