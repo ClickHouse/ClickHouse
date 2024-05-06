@@ -206,7 +206,7 @@ SELECT * FROM nestedt FORMAT TSV
 Differs from `TabSeparated` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the name `TSVRaw`.
+This format is also available under the name `TSVRaw`, `Raw`.
 
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
@@ -241,14 +241,14 @@ This format is also available under the name `TSVWithNamesAndTypes`.
 Differs from `TabSeparatedWithNames` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the name `TSVRawWithNames`.
+This format is also available under the name `TSVRawWithNames`, `RawWithNames`.
 
 ## TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
 Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the name `TSVRawWithNamesAndNames`.
+This format is also available under the name `TSVRawWithNamesAndNames`, `RawWithNamesAndNames`.
 
 ## Template {#format-template}
 
