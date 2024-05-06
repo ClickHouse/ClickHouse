@@ -102,6 +102,8 @@ public:
 
     ASTColumns * columns_list = nullptr;
 
+    ASTPtr to_database;
+    ASTPtr to_table;
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
     ASTStorage * inner_storage = nullptr;      /// For window view with inner table
