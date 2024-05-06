@@ -1,4 +1,5 @@
 SET enable_fast_materialize_ttl = true;
+SET alter_sync = 2;
 
 SELECT 'Test MergeTree to modify TTL.';
 DROP TABLE IF EXISTS test_fast_ttl;
@@ -45,7 +46,6 @@ CREATE TABLE test_fast_ttl_replica2 (`id` UInt32, `name` String, `create_time` D
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_fast_ttl_replica', '2')
 TTL create_time + toIntervalDay(300)
 ORDER BY id;
-
 
 INSERT INTO test_fast_ttl_replica1 SELECT number, 'AAA', date_sub(day, 100, now()) from numbers(2000);
 INSERT INTO test_fast_ttl_replica1 SELECT number, 'BBB', if(number >= 1000, date_sub(day, 50, now()), now()) from numbers(2000);
