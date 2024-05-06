@@ -93,7 +93,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.allow_variable_number_of_columns = settings.input_format_csv_allow_variable_number_of_columns;
     format_settings.csv.use_default_on_bad_values = settings.input_format_csv_use_default_on_bad_values;
     format_settings.csv.try_infer_numbers_from_strings = settings.input_format_csv_try_infer_numbers_from_strings;
-    format_settings.hive_text.fields_delimiter = settings.format_hive_text_fields_delimiter;
+    format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
     format_settings.hive_text.allow_variable_number_of_columns = settings.input_format_hive_text_allow_variable_number_of_columns;
