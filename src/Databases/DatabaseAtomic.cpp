@@ -137,6 +137,9 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+
+        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
+
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database

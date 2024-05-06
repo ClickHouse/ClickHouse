@@ -154,6 +154,7 @@ void IDisk::copyThroughBuffers(
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
     write_settings.s3_allow_parallel_part_upload = false;
+    write_settings.azure_allow_parallel_part_upload = false;
 
     asyncCopy(*this, from_path, *to_disk, to_path, copying_thread_pool, results, copy_root_dir, read_settings, write_settings, cancellation_hook);
 

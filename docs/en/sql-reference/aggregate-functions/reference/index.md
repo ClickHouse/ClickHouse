@@ -16,7 +16,9 @@ Standard aggregate functions:
 - [avg](/docs/en/sql-reference/aggregate-functions/reference/avg.md)
 - [any](/docs/en/sql-reference/aggregate-functions/reference/any.md)
 - [stddevPop](/docs/en/sql-reference/aggregate-functions/reference/stddevpop.md)
+- [stddevPopStable](/docs/en/sql-reference/aggregate-functions/reference/stddevpopstable.md)
 - [stddevSamp](/docs/en/sql-reference/aggregate-functions/reference/stddevsamp.md)
+- [stddevSampStable](/docs/en/sql-reference/aggregate-functions/reference/stddevsampstable.md)
 - [varPop](/docs/en/sql-reference/aggregate-functions/reference/varpop.md)
 - [varSamp](/docs/en/sql-reference/aggregate-functions/reference/varsamp.md)
 - [corr](./corr.md)
@@ -35,8 +37,10 @@ Standard aggregate functions:
 
 ClickHouse-specific aggregate functions:
 
+- [any](/docs/en/sql-reference/aggregate-functions/reference/any_respect_nulls.md)
 - [anyHeavy](/docs/en/sql-reference/aggregate-functions/reference/anyheavy.md)
 - [anyLast](/docs/en/sql-reference/aggregate-functions/reference/anylast.md)
+- [anyLast](/docs/en/sql-reference/aggregate-functions/reference/anylast_respect_nulls.md)
 - [boundingRatio](/docs/en/sql-reference/aggregate-functions/reference/boundrat.md)
 - [first_value](/docs/en/sql-reference/aggregate-functions/reference/first_value.md)
 - [last_value](/docs/en/sql-reference/aggregate-functions/reference/last_value.md)
@@ -65,6 +69,9 @@ ClickHouse-specific aggregate functions:
 - [groupBitmapXor](/docs/en/sql-reference/aggregate-functions/reference/groupbitmapxor.md)
 - [sumWithOverflow](/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow.md)
 - [sumMap](/docs/en/sql-reference/aggregate-functions/reference/summap.md)
+- [sumMapWithOverflow](/docs/en/sql-reference/aggregate-functions/reference/summapwithoverflow.md)
+- [sumMapFiltered](/docs/en/sql-reference/aggregate-functions/parametric-functions.md/#summapfiltered)
+- [sumMapFilteredWithOverflow](/docs/en/sql-reference/aggregate-functions/parametric-functions.md/#summapfilteredwithoverflow)
 - [minMap](/docs/en/sql-reference/aggregate-functions/reference/minmap.md)
 - [maxMap](/docs/en/sql-reference/aggregate-functions/reference/maxmap.md)
 - [skewSamp](/docs/en/sql-reference/aggregate-functions/reference/skewsamp.md)
@@ -92,6 +99,7 @@ ClickHouse-specific aggregate functions:
 - [quantileBFloat16Weighted](/docs/en/sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 - [quantileDD](/docs/en/sql-reference/aggregate-functions/reference/quantileddsketch.md#quantileddsketch)
 - [simpleLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression.md)
+- [singleValueOrNull](/docs/en/sql-reference/aggregate-functions/reference/singlevalueornull.md)
 - [stochasticLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 - [stochasticLogisticRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 - [categoricalInformationValue](/docs/en/sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)

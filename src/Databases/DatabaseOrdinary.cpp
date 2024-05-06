@@ -95,16 +95,21 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     create_query->storage->set(create_query->storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, const StoragePolicyPtr storage_policy, bool tableStarted)
 {
     fs::path data_path;
+    if (storage_policy->getDisks().empty())
+        data_path = getContext()->getPath();
+    else
+        data_path = storage_policy->getDisks()[0]->getPath();
+
     if (!tableStarted)
     {
         auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = fs::path(getContext()->getPath()) / getTableDataPath(create_query->as<ASTCreateQuery &>());
+        data_path = data_path / getTableDataPath(create_query->as<ASTCreateQuery &>());
     }
     else
-        data_path = fs::path(getContext()->getPath()) / getTableDataPath(name);
+        data_path = data_path / getTableDataPath(name);
 
     return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME).string();
 }
@@ -120,7 +125,14 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated") || create_query->storage->engine->name.starts_with("Shared"))
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
+    /// Get table's storage policy
+    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
+    auto policy = getContext()->getStoragePolicy(default_settings.storage_policy);
+    if (auto * query_settings = create_query->storage->settings)
+        if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
+            policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
+
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, policy, false);
 
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
@@ -288,7 +300,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
 
