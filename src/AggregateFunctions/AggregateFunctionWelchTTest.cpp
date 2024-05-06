@@ -4,15 +4,15 @@
 #include <AggregateFunctions/Moments.h>
 
 
+namespace DB
+{
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
-
-namespace DB
-{
-struct Settings;
 
 namespace
 {
