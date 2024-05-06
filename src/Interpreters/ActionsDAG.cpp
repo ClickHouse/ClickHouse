@@ -708,27 +708,28 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
     return res_column;
 }
 
-Block ActionsDAG::updateHeader(Block header) const
+Block ActionsDAG::updateHeader(const Block & header) const
 {
     IntermediateExecutionResult node_to_column;
     std::set<size_t> pos_to_remove;
 
     {
-        std::unordered_map<std::string_view, std::list<size_t>> input_positions;
+        size_t out = inputs.size(); /// Always out of range
+        std::unordered_map<std::string_view, size_t> input_positions;
+        input_positions.reserve(inputs.size());
 
         for (size_t pos = 0; pos < inputs.size(); ++pos)
-            input_positions[inputs[pos]->result_name].emplace_back(pos);
+            input_positions[inputs[pos]->result_name] = pos;
 
         for (size_t pos = 0; pos < header.columns(); ++pos)
         {
             const auto & col = header.getByPosition(pos);
             auto it = input_positions.find(col.name);
-            if (it != input_positions.end() && !it->second.empty())
+            if (it != input_positions.end() && it->second != out)
             {
-                auto & list = it->second;
                 pos_to_remove.insert(pos);
-                node_to_column[inputs[list.front()]] = col;
-                list.pop_front();
+                node_to_column[inputs[it->second]] = col;
+                it->second = out;
             }
         }
     }
@@ -746,18 +747,21 @@ Block ActionsDAG::updateHeader(Block header) const
         throw;
     }
 
-    if (isInputProjected())
-        header.clear();
-    else
-        header.erase(pos_to_remove);
 
     Block res;
-
+    res.reserve(result_columns.size());
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    for (auto && item : header)
-        res.insert(std::move(item));
+    if (isInputProjected())
+        return res;
+
+    res.reserve(header.columns() - pos_to_remove.size());
+    for (size_t i = 0; i < header.columns(); i++)
+    {
+        if (!pos_to_remove.contains(i))
+            res.insert(header.data[i]);
+    }
 
     return res;
 }
