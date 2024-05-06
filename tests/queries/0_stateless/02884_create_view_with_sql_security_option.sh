@@ -222,4 +222,43 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_row_2"
 
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE $db.session_events(
+    clientId UUID,
+    sessionId UUID,
+    pageId UUID,
+    timestamp DateTime,
+    type String
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+
+CREATE TABLE $db.materialized_events(
+    clientId UUID,
+    sessionId UUID,
+    pageId UUID,
+    timestamp DateTime,
+    type String
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+
+CREATE MATERIALIZED VIEW $db.events_mv TO $db.materialized_events AS
+SELECT
+    clientId,
+    sessionId,
+    pageId,
+    timestamp,
+    type
+FROM
+    $db.session_events;
+
+GRANT INSERT ON $db.session_events TO $user3;
+GRANT SELECT ON $db.session_events TO $user3;
+EOF
+
+${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000"
+${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM session_events"
+${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM materialized_events"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";
