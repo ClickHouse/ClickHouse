@@ -39,6 +39,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
+#include "base/defines.h"
 
 
 namespace ProfileEvents
@@ -398,6 +399,9 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
 
 std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSyncChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block)
 {
+    chassert(presink_streams > 0);
+    chassert(sink_streams > 0);
+
     ThreadGroupPtr running_group;
     if (current_thread)
         running_group = current_thread->getThreadGroup();
@@ -410,8 +414,8 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
     for (size_t i = 0; i < sink_streams; ++i)
     {
         LOG_DEBUG(getLogger("InsertQuery"),
-                    "call buildSink table name {}.{}, stream {}/{}",
-                    table->getStorageID().database_name, table->getStorageID().table_name, i, presink_streams);
+                    "call buildSink sink_streams table name {}.{}, stream {}/{}",
+                    table->getStorageID().database_name, table->getStorageID().table_name, i, sink_streams);
 
         auto out = buildSink(table, metadata_snapshot, /* thread_status_holder= */ nullptr,
             running_group, /* elapsed_counter_ms= */ nullptr);
@@ -421,6 +425,10 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
 
     for (size_t i = 0; i < presink_streams; ++i)
     {
+        LOG_DEBUG(getLogger("InsertQuery"),
+                    "call buildSink presink_streams table name {}.{}, stream {}/{}",
+                    table->getStorageID().database_name, table->getStorageID().table_name, i, presink_streams);
+
         auto out = buildPreSinkChain(sink_chains[0].getInputHeader(), table, metadata_snapshot, query_sample_block);
         presink_chains.emplace_back(std::move(out));
     }
@@ -454,6 +462,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     ContextPtr select_context = getContext();
 
+    LOG_DEBUG(getLogger("InsertQuery"),
+                    "execute() is_trivial_insert_select {} prefersLargeBlocks={} max_insert_threads {}", is_trivial_insert_select, table->prefersLargeBlocks(), settings.max_insert_threads);
+
     if (is_trivial_insert_select)
     {
         /** When doing trivial INSERT INTO ... SELECT ... FROM table,
@@ -461,9 +472,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             * and it's reasonable to set block size for SELECT to the desired block size for INSERT
             * to avoid unnecessary squashing.
             */
-
-        LOG_DEBUG(getLogger("InsertQuery"),
-                    "execute() is_trivial_insert_select=true prefersLargeBlocks={}", table->prefersLargeBlocks());
 
         Settings new_settings = select_context->getSettings();
 
@@ -503,6 +511,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     pipeline.dropTotalsAndExtremes();
 
+    LOG_DEBUG(getLogger("InsertQuery"),
+        "adding transforms, pipline size {}, threads {}, max_insert_threads {}",
+        pipeline.getNumStreams(), pipeline.getNumThreads(), settings.max_insert_threads);
+
+
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
     if (getContext()->getSettingsRef().insert_null_as_default)
     {
@@ -532,6 +545,56 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         }
     }
 
+    pipeline.resize(1);
+
+    if (shouldAddSquashingFroStorage(table))
+    {
+        bool table_prefers_large_blocks = table->prefersLargeBlocks();
+
+        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<SimpleSquashingChunksTransform>(
+                in_header,
+                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+        });
+    }
+
+    pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+    {
+        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(in_header);
+    });
+
+    if (!settings.insert_deduplication_token.value.empty())
+    {
+        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+        {
+            return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings.insert_deduplication_token.value, in_header);
+        });
+
+        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+        {
+            return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
+        });
+    }
+
+    /// Number of streams works like this:
+    ///  * For the SELECT, use `max_threads`, or `max_insert_threads`, or whatever
+    ///    InterpreterSelectQuery ends up with.
+    ///  * Use `max_insert_threads` streams for various insert-preparation steps, e.g.
+    ///    materializing and squashing (too slow to do in one thread). That's `presink_chains`.
+    ///  * If the table supports parallel inserts, use max_insert_threads for writing to IStorage.
+    ///    Otherwise ResizeProcessor them down to 1 stream.
+
+    size_t presink_streams_size = std::max<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
+    size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings.max_insert_threads) : 1;
+
+    auto [presink_chains, sink_chains] = buildPreAndSyncChains(
+        presink_streams_size, sink_streams_size,
+        table, metadata_snapshot, query_sample_block);
+
+    pipeline.resize(presink_chains.size());
+
     auto actions_dag = ActionsDAG::makeConvertingActions(
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
@@ -560,54 +623,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         return counting;
     });
 
-    if (shouldAddSquashingFroStorage(table))
-    {
-        bool table_prefers_large_blocks = table->prefersLargeBlocks();
-
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<SimpleSquashingChunksTransform>(
-                in_header,
-                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
-        });
-    }
-
-    /// Number of streams works like this:
-    ///  * For the SELECT, use `max_threads`, or `max_insert_threads`, or whatever
-    ///    InterpreterSelectQuery ends up with.
-    ///  * Use `max_insert_threads` streams for various insert-preparation steps, e.g.
-    ///    materializing and squashing (too slow to do in one thread). That's `presink_chains`.
-    ///  * If the table supports parallel inserts, use the same streams for writing to IStorage.
-    ///    Otherwise ResizeProcessor them down to 1 stream.
-
-    size_t presink_streams_size = std::max<size_t>(1, std::max<size_t>(settings.max_insert_threads, pipeline.getNumStreams()));
-    size_t sink_streams_size = table->supportsParallelInsert() ? presink_streams_size : 1;
-
-    auto [presink_chains, sink_chains] = buildPreAndSyncChains(
-        presink_streams_size, sink_streams_size,
-        table, metadata_snapshot, query_sample_block);
-
-    if (!settings.insert_deduplication_token.value.empty())
-    {
-        pipeline.resize(1);
-
-        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
-        {
-            return std::make_shared<AddUserDeduplicationTokenTransform>(settings.insert_deduplication_token.value, in_header);
-        });
-        pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
-        {
-            return std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(in_header);
-        });
-    }
-
-    pipeline.resize(presink_chains.size());
     for (auto & chain : presink_chains)
         pipeline.addResources(chain.detachResources());
     pipeline.addChains(std::move(presink_chains));
 
     pipeline.resize(sink_streams_size);
+
     for (auto & chain : sink_chains)
         pipeline.addResources(chain.detachResources());
     pipeline.addChains(std::move(sink_chains));
@@ -655,12 +676,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         chain.appendChain(std::move(sink_chains.front()));
     }
 
-    if (!settings.insert_deduplication_token.value.empty())
-    {
-        chain.addSource(std::make_shared<ExtendDeduplicationWithBlockNumberTokenTransform>(chain.getInputHeader()));
-        chain.addSource(std::make_shared<AddUserDeduplicationTokenTransform>(settings.insert_deduplication_token.value, chain.getInputHeader()));
-    }
-
     if (shouldAddSquashingFroStorage(table))
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
@@ -672,6 +687,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
         chain.addSource(std::move(squashing));
     }
+
+    if (!settings.insert_deduplication_token.value.empty())
+    {
+        chain.addSource(std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(chain.getInputHeader()));
+        chain.addSource(std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings.insert_deduplication_token.value, chain.getInputHeader()));
+    }
+
+    chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputHeader()));
 
     auto context_ptr = getContext();
     auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), nullptr, context_ptr->getQuota());
