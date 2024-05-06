@@ -1175,6 +1175,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!create.temporary && !create.database)
         create.setDatabase(current_database);
+    if (!create.to_table_id && create.to_table)
+        create.to_table_id = create.to_table->as<ASTTableIdentifier>()->getTableId();
     if (create.to_table_id && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = current_database;
 
@@ -1826,8 +1828,23 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         }
     }
 
-    if (create.to_table_id)
-        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, create.to_table_id.database_name, create.to_table_id.table_name);
+    if (create.to_table_id || create.to_table)
+    {
+        String database_name;
+        String table_name;
+        if (!create.to_table_id)
+        {
+            StorageID tmp_to_table_id = create.to_table->as<ASTTableIdentifier>()->getTableId();
+            database_name = tmp_to_table_id.database_name;
+            table_name = tmp_to_table_id.table_name;
+        }
+        else
+        {
+            database_name = create.to_table_id.database_name;
+            table_name = create.to_table_id.table_name;
+        }
+        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, database_name, table_name);
+    }
 
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);

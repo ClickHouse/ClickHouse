@@ -8,6 +8,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include "ASTIdentifier.h"
+
 
 namespace DB
 {
@@ -386,13 +388,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         refresh_strategy->formatImpl(settings, state, frame);
     }
 
-    if (to_table_id)
+    if (to_table_id || to_table)
     {
         assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
         settings.ostr
-            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
-            << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
-            << backQuoteIfNeed(to_table_id.table_name);
+            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+        if (to_database)
+        {
+            to_database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
+        }
+        chassert(to_table);
+        to_table->formatImpl(settings, state, frame);
     }
 
     if (to_inner_uuid != UUIDHelpers::Nil)
