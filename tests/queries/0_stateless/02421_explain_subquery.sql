@@ -51,7 +51,7 @@ SELECT * FROM (
     )
 ) FORMAT Null;
 
-SELECT (EXPLAIN SYNTAX oneline = 1 SELECT 1) == 'SELECT 1 FROM system.one';
+SELECT (EXPLAIN SYNTAX oneline = 1 SELECT 1) == 'SELECT 1';
 
 SELECT * FROM viewExplain('', ''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', ''); -- { serverError BAD_ARGUMENTS }
