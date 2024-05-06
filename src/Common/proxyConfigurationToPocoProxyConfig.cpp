@@ -41,9 +41,10 @@ std::string buildPocoRegexpEntryWithoutLeadingDot(const std::string & host)
  * Different tools implement their own versions of `NO_PROXY` support. Some support CIDR blocks, some support wildcard etc.
  * Opting for a simple implementation that covers most use cases:
  * * Support only single wildcard * (match anything)
+ * * Match subdomains
+ * * Strip leading dots
  * * No regex
  * * No CIDR blocks
- * * No leading dot strip
  * * No fancy stuff about loopback IPs
  * https://about.gitlab.com/blog/2021/01/27/we-need-to-talk-no-proxy/
  * Open for discussions
@@ -71,20 +72,22 @@ std::string buildPocoNonProxyHosts(const std::string & no_proxy_hosts)
     {
         trim(host);
 
-        if (!host.empty())
+        if (host.empty())
         {
-            if (!first)
-            {
-                result.append(OR_SEPARATOR);
-            }
-
-            auto escaped_host_without_leading_dot = buildPocoRegexpEntryWithoutLeadingDot(host);
-
-            result.append(MATCH_SUBDOMAINS_REGEX);
-            result.append(escaped_host_without_leading_dot);
-
-            first = false;
+            continue;
         }
+
+        if (!first)
+        {
+            result.append(OR_SEPARATOR);
+        }
+
+        auto escaped_host_without_leading_dot = buildPocoRegexpEntryWithoutLeadingDot(host);
+
+        result.append(MATCH_SUBDOMAINS_REGEX);
+        result.append(escaped_host_without_leading_dot);
+
+        first = false;
     }
 
     return result;
