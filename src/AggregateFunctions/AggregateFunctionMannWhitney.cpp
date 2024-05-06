@@ -17,6 +17,11 @@
 #include <boost/math/distributions/normal.hpp>
 
 
+namespace DB
+{
+
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -24,11 +29,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
 }
-
-namespace DB
-{
-
-struct Settings;
 
 namespace
 {
