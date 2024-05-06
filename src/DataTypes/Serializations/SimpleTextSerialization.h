@@ -88,7 +88,7 @@ protected:
 
     void serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const override
     {
-        // Only implement the data types supportted in Hive.
+        // Only implement the data types supported in Hive.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for this type.");
     }
 

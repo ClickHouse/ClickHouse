@@ -2878,7 +2878,7 @@ rt.bmr:   390,11,10
 
 You can use this format to generate output same as [Hive](https://cwiki.apache.org/confluence/display/Hive/UserGuide).
 
-When formatting, all fields are onput in a row without any quote. Fields are seperated by a delimiter charactor, which is '\001' by default. Rows are separated using the Unix line feed (LF). Values in complex types such as Array, Map and Tuple are seperated by delimiter charactor calculated by their loop level based on fields delimiter.
+When formatting, all fields are output in a row without any quote. Fields are separated by a delimiter charactor, which is '\001' by default. Rows are separated using the Unix line feed (LF). Values in complex types such as Array, Map and Tuple are separated by delimiter charactor calculated by their loop level based on fields delimiter.
 
 ``` bash
 $ clickhouse-client --query="INSERT INTO function file('test.hivetext') select '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555));"
