@@ -184,6 +184,15 @@ enum class QueryCacheNondeterministicFunctionHandling
 
 DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
 
+/// How the query cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
+enum class QueryCacheSystemTableHandling
+{
+    Throw,
+    Save,
+    Ignore
+};
+
+DECLARE_SETTING_ENUM(QueryCacheSystemTableHandling)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 

@@ -21,6 +21,7 @@ public:
 
     DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_,
               const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
     DiskLocal(
         const String & name_,
         const String & path_,
