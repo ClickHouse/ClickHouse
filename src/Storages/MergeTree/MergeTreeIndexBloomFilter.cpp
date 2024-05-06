@@ -865,8 +865,8 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
         const auto & column_and_type = block.getByName(index_columns_name[column]);
         auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
-        const auto & index_col = checkAndGetColumn<ColumnUInt64>(index_column.get());
-        const auto & index_data = index_col->getData();
+        const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
+        const auto & index_data = index_col.getData();
         for (const auto & hash: index_data)
             column_hashes[column].insert(hash);
     }
