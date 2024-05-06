@@ -72,6 +72,12 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 configuration.container =  config.getString(config_prefix + ".container");
                 configuration.account_name = config.getString(config_prefix + ".account_name");
                 configuration.account_key =  config.getString(config_prefix + ".account_key");
+
+                if (config.has(config_prefix + ".account_name") && config.has(config_prefix + ".account_key"))
+                {
+                    configuration.account_name = config.getString(config_prefix + ".account_name");
+                    configuration.account_key = config.getString(config_prefix + ".account_key");
+                }
             }
 
             if (args.size() > 1)

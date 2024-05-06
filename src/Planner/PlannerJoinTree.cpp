@@ -492,7 +492,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
         throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Parallel replicas processing with custom_key has been requested "
-                "(setting 'max_parallel_replcias'), but the table does not have custom_key defined for it "
+                "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
                 " or it's invalid (setting 'parallel_replicas_custom_key')");
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
@@ -1089,18 +1089,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
-    // }
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
-    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
-    // }
-
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
     JoinStrictness join_strictness = join_node.getStrictness();
@@ -1316,6 +1304,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 std::swap(table_join_clause.key_names_left.at(asof_condition.key_index), table_join_clause.key_names_left.back());
                 std::swap(table_join_clause.key_names_right.at(asof_condition.key_index), table_join_clause.key_names_right.back());
             }
+        }
+
+        if (join_clauses_and_actions.mixed_join_expressions_actions)
+        {
+            ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
+            mixed_join_expression = std::make_shared<ExpressionActions>(
+                join_clauses_and_actions.mixed_join_expressions_actions,
+                ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
         }
     }
     else if (join_node.isUsingJoinExpression())

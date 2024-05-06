@@ -131,7 +131,7 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     NumpyDataType::Endianness endianness;
     if (type[0] == '<')
         endianness = NumpyDataType::Endianness::LITTLE;
-    else if (type[1] == '>')
+    else if (type[0] == '>')
         endianness = NumpyDataType::Endianness::BIG;
     else if (type[0] == '|')
         endianness = NumpyDataType::Endianness::NONE;

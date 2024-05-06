@@ -416,13 +416,13 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         ParserToken open(TokenType::OpeningRoundBracket);
         ParserToken close(TokenType::ClosingRoundBracket);
 
-        if (!open.ignore(pos))
+        if (!open.ignore(pos, expected))
             return false;
 
         if (!kv_pairs_list.parse(pos, value, expected))
             return false;
 
-        if (!close.ignore(pos))
+        if (!close.ignore(pos, expected))
             return false;
 
         with_brackets = true;
