@@ -5454,7 +5454,7 @@ void StorageReplicatedMergeTree::read(
         return readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
 
     if (local_context->canUseParallelReplicasOnInitiator())
-        return readParallelReplicasImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage);
+        return readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
 
     readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
 }
@@ -5481,13 +5481,13 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
 void StorageReplicatedMergeTree::readParallelReplicasImpl(
     QueryPlan & query_plan,
     const Names & /*column_names*/,
-    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage)
 {
     ASTPtr modified_query_ast;
     Block header;
+    const auto table_id = getStorageID();
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
@@ -5501,22 +5501,17 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
     }
     else
     {
-        const auto table_id = getStorageID();
         modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
         header
             = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
 
-    ClusterProxy::SelectStreamFactory select_stream_factory = ClusterProxy::SelectStreamFactory(
-        header,
-        {},
-        storage_snapshot,
-        processed_stage);
-
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        select_stream_factory,
+        table_id,
+        header,
+        processed_stage,
         modified_query_ast,
         local_context,
         query_info.storage_limits);
