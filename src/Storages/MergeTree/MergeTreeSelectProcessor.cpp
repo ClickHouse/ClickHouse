@@ -152,10 +152,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 const ColumnWithTypeAndName & type_and_name = result_header.getByPosition(i);
                 ColumnPtr current_column = type_and_name.type->createColumn();
 
-                if (j < index.size() && type_and_name.name == primary_key.column_names[j] && type_and_name.type == primary_key.data_types[j])
+                if (j < index->size() && type_and_name.name == primary_key.column_names[j] && type_and_name.type == primary_key.data_types[j])
                 {
                     auto column = current_column->cloneEmpty();
-                    column->insert((*index[j])[mark_range_begin]);
+                    column->insert((*(*index)[j])[mark_range_begin]);
                     ordered_columns.push_back(std::move(column));
                     ++j;
                 }

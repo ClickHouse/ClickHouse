@@ -597,10 +597,8 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings, block_size, reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
-
-        auto primary_key_index = part_with_ranges.data_part->getIndex();
-        chassert(primary_key_index);
-        processor->addVirtualRowToChunk(need_virtual_row, *primary_key_index, part_with_ranges.ranges.front().begin);
+        processor->addVirtualRowToChunk(need_virtual_row, part_with_ranges.data_part->getIndex(),
+            part_with_ranges.ranges.front().begin);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
         if (set_rows_approx)
@@ -1037,7 +1035,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             /// need_virtual_row = true means a MergingSortedTransform should occur.
             /// If so, adding a virtual row might speedup in the case of multiple parts.
-            bool need_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
+            bool need_virtual_row = item.size() > 1;
             pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit, need_virtual_row));
         }
     }

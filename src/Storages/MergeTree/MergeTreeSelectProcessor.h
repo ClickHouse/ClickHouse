@@ -65,7 +65,7 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
-    void addVirtualRowToChunk(bool add_virtual_row_, const Columns & index_, size_t mark_range_begin_)
+    void addVirtualRowToChunk(bool add_virtual_row_, const IMergeTreeDataPart::Index & index_, size_t mark_range_begin_)
     {
         add_virtual_row = add_virtual_row_;
         index = index_;
@@ -101,7 +101,7 @@ private:
     /// Virtual row is useful for read-in-order optimization when multiple parts exist.
     bool add_virtual_row = false;
     /// PK index used in virtual row.
-    Columns index;
+    IMergeTreeDataPart::Index index;
     /// The first range that might contain the candidate, used in virtual row.
     size_t mark_range_begin;
 
