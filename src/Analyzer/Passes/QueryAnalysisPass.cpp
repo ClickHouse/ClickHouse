@@ -4815,6 +4815,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
+    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    {
+        for (auto & [node, _] : matched_expression_nodes_with_names)
+        {
+            auto it = scope.nullable_group_by_keys.find(node);
+            if (it != scope.nullable_group_by_keys.end())
+            {
+                node = it->node->clone();
+                node->convertToNullable();
+            }
+        }
+    }
+
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
