@@ -5361,20 +5361,50 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             &temp_dirs,
             false, false);
 
-        auto projection_parts = part->getProjectionParts();
-        for (const auto & [projection_name, projection_part] : projection_parts)
+        auto backup_projection = [&](IDataPartStorage & storage, IMergeTreeDataPart & projection_part)
         {
-            projection_part->getDataPartStorage().backup(
-                projection_part->checksums,
-                projection_part->getFileNamesWithoutChecksums(),
+            storage.backup(
+                projection_part.checksums,
+                projection_part.getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
                 backup_settings,
                 read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
                 &temp_dirs,
-                projection_part->is_broken,
+                projection_part.is_broken,
                 backup_settings.allow_backup_broken_projections);
+        };
+
+        auto projection_parts = part->getProjectionParts();
+        std::string proj_suffix = ".proj";
+        std::unordered_set<String> defined_projections;
+
+        for (const auto & [projection_name, projection_part] : projection_parts)
+        {
+            defined_projections.emplace(projection_name);
+            backup_projection(projection_part->getDataPartStorage(), *projection_part);
+        }
+
+        /// It is possible that the part has a written but not loaded projection,
+        /// e.g. it is written to parent part's checksums.txt and exists on disk,
+        /// but does not exist in table's projections definition.
+        /// Such a part can appear server was restarted after DROP PROJECTION but before old part was removed.
+        /// In this case, the old part will load only projections from metadata.
+        /// See 031145_non_loaded_projection_backup.sh.
+        for (const auto & [name, _] : part->checksums.files)
+        {
+            auto projection_name = fs::path(name).stem().string();
+            if (endsWith(name, proj_suffix) && !defined_projections.contains(projection_name))
+            {
+                auto projection_storage = part->getDataPartStorage().getProjection(projection_name + proj_suffix);
+                if (projection_storage->exists("checksums.txt"))
+                {
+                    auto projection_part = const_cast<IMergeTreeDataPart &>(*part).getProjectionPartBuilder(
+                        projection_name, /* is_temp_projection */false).withPartFormatFromDisk().build();
+                    backup_projection(projection_part->getDataPartStorage(), *projection_part);
+                }
+            }
         }
 
         if (hold_storage_and_part_ptrs)
