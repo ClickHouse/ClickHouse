@@ -196,9 +196,6 @@ BalanceTransform::BalanceTransform(Block header_, size_t min_block_size_rows_, s
     , min_block_size_bytes(min_block_size_bytes_)
     , header(std::move(header_))
 {
-    // Use query-level memory tracker
-    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
-        memory_tracker = memory_tracker_child->getParent();
 }
 
 Chunk BalanceTransform::add(Block && input_block)
@@ -255,22 +252,7 @@ bool BalanceTransform::isEnoughSize(const std::vector<Chunk> & chunks)
         bytes += chunk.bytes();
     }
 
-    if (!isEnoughSize(rows, bytes))
-        return false;
-
-    checkAndWaitMemoryAvailability(bytes);
-
-    return true;
-}
-
-void BalanceTransform::checkAndWaitMemoryAvailability(size_t bytes)
-{
-    if (const auto hard_limit = memory_tracker->getHardLimit() != 0)
-    {
-        auto free_memory = hard_limit - memory_tracker->get();
-        while (Int64(bytes) >= free_memory)
-            free_memory = hard_limit - memory_tracker->get();
-    }
+    return isEnoughSize(rows, bytes);
 }
 
 bool BalanceTransform::isEnoughSize(size_t rows, size_t bytes) const

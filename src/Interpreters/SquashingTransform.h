@@ -5,7 +5,6 @@
 #include <vector>
 #include <Core/Block.h>
 #include <Processors/Chunk.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -102,9 +101,6 @@ private:
 
     bool isEnoughSize(const std::vector<Chunk> & chunks);
     bool isEnoughSize(size_t rows, size_t bytes) const;
-    void checkAndWaitMemoryAvailability(size_t bytes);
-
-    MemoryTracker * memory_tracker;
 
     Chunk convertToChunk(std::vector<Chunk> &chunks);
 };

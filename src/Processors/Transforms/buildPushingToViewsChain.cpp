@@ -378,7 +378,7 @@ std::optional<Chain> generateViewChain(
                 out.getInputHeader(),
                 table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                 table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                out.getNumThreads()));
+                1)); // Chain requires a single input
         }
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
