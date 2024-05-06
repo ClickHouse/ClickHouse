@@ -1,7 +1,7 @@
-option (ENABLE_LIBPG_QUERY "Enable LIBPG_QUERY" ${ENABLE_LIBRARIES})
+option (ENABLE_LIBPG_QUERY "Enable libpg_query" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_LIBPG_QUERY)
-    message(STATUS "Not using LIBPG_QUERY")
+    message(STATUS "Not using libpg_query")
     return()
 endif()
 
@@ -89,6 +89,6 @@ set (SRCS
     "${LIBRARY_DIR}/src/pg_query_outfuncs_protobuf_cpp.cc"
 )
 
-add_library(_LIBPG_QUERY ${SRCS})
-target_include_directories(_LIBPG_QUERY SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-add_library(ch_contrib::LIBPG_QUERY ALIAS _LIBPG_QUERY)
+add_library(_libpg_query ${SRCS})
+target_include_directories(_libpg_query SYSTEM PUBLIC "${LIBRARY_DIR}/include")
+add_library(ch_contrib::libpg_query ALIAS _libpg_query)

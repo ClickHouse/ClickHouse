@@ -585,6 +585,10 @@ if (TARGET ch_contrib::ulid)
     dbms_target_link_libraries (PUBLIC ch_contrib::ulid)
 endif()
 
+if (TARGET ch_contrib::libpg_query)
+    dbms_target_link_libraries (PUBLIC ch_contrib::libpg_query)
+endif()
+
 if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
