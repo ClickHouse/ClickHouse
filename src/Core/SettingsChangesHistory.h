@@ -98,6 +98,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"azure_allow_parallel_part_upload", "true", "true", "Use multiple threads for azure multipart upload."},
               {"max_recursive_cte_evaluation_depth", DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, "Maximum limit on recursive CTE evaluation depth"},
               {"query_plan_convert_outer_join_to_inner_join", false, true, "Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values"},
+              {"use_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
               }},
     {"24.3", {{"s3_connect_timeout_ms", 1000, 1000, "Introduce new dedicated setting for s3 connection timeout"},
               {"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
