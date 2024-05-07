@@ -36,6 +36,7 @@ backup table tp_1 to Disk('backups', '$backup_id');
 " | grep -o "BACKUP_CREATED"
 
 $CLICKHOUSE_CLIENT -nm -q "
+set send_logs_level='fatal';
 drop table tp_1;
 restore table tp_1 from Disk('backups', '$backup_id');
 " | grep -o "RESTORED"
@@ -47,4 +48,6 @@ check table tp_1 settings check_query_single_value_result = 0;" | grep -o "Found
 $CLICKHOUSE_CLIENT -nm -q "
 set send_logs_level='fatal';
 check table tp_1"
-$CLICKHOUSE_CLIENT -q "drop table tp_1"
+$CLICKHOUSE_CLIENT -nm -q "
+set send_logs_level='fatal';
+drop table tp_1"
