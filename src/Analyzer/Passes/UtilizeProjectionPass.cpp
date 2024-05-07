@@ -86,7 +86,6 @@ public:
 
             auto new_node = pkOptimization(projections, node, primary_keys);
             query_node->getWhere() = std::move(new_node);
-            const auto ast = query_node->toAST();
         }
 
     }
@@ -140,7 +139,7 @@ public:
             auto arg_size = function_node->getArguments().getNodes().size();
 
             // Simple predicate looks like (key = '123')
-            if (function_node->getFunctionName() == "equals" && arg_size == 2)
+            if ((function_node->getFunctionName() == "equals" || function_node->getFunctionName() == "notEquals") && arg_size == 2)
             {
                 auto lhs_argument = function_node->getArguments().getNodes().at(0);
                 auto rhs_argument = function_node->getArguments().getNodes().at(1);
@@ -161,7 +160,7 @@ public:
                 }
             }
             // "IN" predicates, such as (key in ('A', 'B', 'C'))
-            else if (function_node->getFunctionName() == "in")
+            else if (function_node->getFunctionName() == "in" || function_node->getFunctionName() == "notIn")
             {
                 QueryTreeNodePtr rewrite_ast;
                 auto subquery = function_node->getArguments().getNodes().at(1)->as<QueryNode>();
