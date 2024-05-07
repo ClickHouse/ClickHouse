@@ -652,7 +652,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
-        // Skip all inverted index files, for they will be rebuilt
+        // Skip all full-text index files, for they will be rebuilt
         if (dynamic_cast<const MergeTreeIndexFullText *>(index.get()))
         {
             auto index_filename = index->getFileName();
@@ -731,7 +731,7 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* is inverted index
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index (aka. full-text-index)
 
             for (const auto & suffix : suffixes)
             {

@@ -182,11 +182,37 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
 
 /// Adapter that extracts array with keys or values from Map columns.
 template <typename Name, size_t position>
-struct MapToSubcolumnAdapter : public MapAdapterBase<MapToSubcolumnAdapter<Name, position>, Name>
+struct MapToSubcolumnAdapter
 {
     static_assert(position <= 1);
-    using MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypes;
-    using MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypesAndColumns;
+
+    static void extractNestedTypes(DataTypes & types)
+    {
+        if (types.empty())
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
+                Name::name,
+                types.size());
+
+        DataTypes new_types = {types[0]};
+        MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypes(new_types);
+        types[0] = new_types[0];
+    }
+
+    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.empty())
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
+                Name::name,
+                arguments.size());
+
+        ColumnsWithTypeAndName new_arguments = {arguments[0]};
+        MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypesAndColumns(new_arguments);
+        arguments[0] = new_arguments[0];
+    }
 
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {

@@ -468,7 +468,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         if (!skip_indices_aggregators[i]->empty())
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
 
-        /// Register additional files written only by the inverted index. Required because otherwise DROP TABLE complains about unknown
+        /// Register additional files written only by the full-text index. Required because otherwise DROP TABLE complains about unknown
         /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
         /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
         if (typeid_cast<const MergeTreeIndexFullText *>(&*skip_indices[i]) != nullptr)

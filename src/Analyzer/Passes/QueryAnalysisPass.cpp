@@ -4093,6 +4093,21 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     {
         bool prefer_column_name_to_alias = scope.context->getSettingsRef().prefer_column_name_to_alias;
 
+        if (identifier_lookup.isExpressionLookup())
+        {
+            /* For aliases from ARRAY JOIN we prefer column from join tree:
+             * SELECT id FROM ( SELECT ... ) AS subquery ARRAY JOIN [0] AS id INNER JOIN second_table USING (id)
+             * In the example, identifier `id` should be resolved into one from USING (id) column.
+             */
+            auto alias_it = scope.alias_name_to_expression_node.find(identifier_lookup.identifier.getFullName());
+            if (alias_it != scope.alias_name_to_expression_node.end() && alias_it->second->getNodeType() == QueryTreeNodeType::COLUMN)
+            {
+                const auto & column_node = alias_it->second->as<ColumnNode &>();
+                if (column_node.getColumnSource()->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                    prefer_column_name_to_alias = true;
+            }
+        }
+
         if (unlikely(prefer_column_name_to_alias))
         {
             if (identifier_resolve_settings.allow_to_check_join_tree)
