@@ -1270,8 +1270,9 @@ using FunctionLpDistance = FunctionLDistance<LpLabel>;
 class FunctionL2Distance : public IFunction {
 public:
     static inline auto name = std::string("L2Distance");
+    ContextPtr context;
 
-    explicit FunctionL2Distance(ContextPtr context_) : IFunction(context_) {}
+    explicit FunctionL2Distance(ContextPtr context_) : IFunction(context_), context(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL2Distance>(context_); }
 
     String getName() const override { return name; }
@@ -1281,7 +1282,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &arguments) const override {
-        auto func = FunctionFactory::instance().get("L2SquaredDistance", this->getContext());
+        auto func = FunctionFactory::instance().get("L2SquaredDistance", getContext());
         auto squared_result_type = func->getReturnTypeImpl(arguments);
         // Get the element type from the returned tuple type
         auto element_type = squared_result_type->getTupleElementTypes()[0];
@@ -1290,11 +1291,11 @@ public:
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &arguments, const DataTypePtr &result_type, size_t input_rows_count) const override {
-        auto func = FunctionFactory::instance().get("L2SquaredDistance", this->getContext());
+        auto func = FunctionFactory::instance().get("L2SquaredDistance", getContext());
         auto squared_result = func->executeImpl(arguments, result_type, input_rows_count);
 
         // Take square root of each element in the result column
-        auto sqrt_function = FunctionFactory::instance().get("sqrt", this->getContext());
+        auto sqrt_function = FunctionFactory::instance().get("sqrt", getContext());
         return sqrt_function->executeImpl({squared_result}, result_type, input_rows_count);
     }
 
@@ -1302,7 +1303,10 @@ public:
         // Implement your logic here
         return true;
     }
+
+    ContextPtr getContext() const { return context; }
 };
+
 
 
 template <class FuncLabel>
