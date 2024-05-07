@@ -21,7 +21,8 @@ namespace ErrorCodes
 }
 namespace
 {
-class TableFunctionLoop : public ITableFunction{
+class TableFunctionLoop : public ITableFunction
+{
 public:
     static constexpr auto name = "loop";
     std::string getName() const override { return name; }
