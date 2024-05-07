@@ -16,7 +16,6 @@ public:
     explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder);
 
     void nextImpl() override;
-    ~WriteBufferToFileSegment() override;
 
 private:
 
@@ -28,6 +27,8 @@ private:
 
     /// Empty if file_segment is not owned by this WriteBufferToFileSegment
     FileSegmentsHolderPtr segment_holder;
+
+    const size_t reserve_space_lock_wait_timeout_milliseconds;
 };
 
 

@@ -17,6 +17,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -112,17 +113,17 @@ private:
 public:
     explicit LoadFromSQL(ContextPtr context_)
         : WithContext(context_)
-        , metadata_path(
-            fs::canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
+        , metadata_path(fs::weakly_canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
     {
         if (fs::exists(metadata_path))
-            cleanUp();
-        else
-            fs::create_directories(metadata_path);
+            cleanup();
     }
 
     std::vector<std::string> listCollections() const
     {
+        if (!fs::exists(metadata_path))
+            return {};
+
         std::vector<std::string> collection_names;
         fs::directory_iterator it{metadata_path};
         for (; it != fs::directory_iterator{}; ++it)
@@ -279,7 +280,7 @@ private:
 
     /// Delete .tmp files. They could be left undeleted in case of
     /// some exception or abrupt server restart.
-    void cleanUp()
+    void cleanup()
     {
         fs::directory_iterator it{metadata_path};
         std::vector<std::string> files_to_remove;
@@ -302,16 +303,16 @@ private:
         readStringUntilEOF(query, in);
 
         ParserCreateNamedCollectionQuery parser;
-        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth);
+        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth, settings.max_parser_backtracks);
         const auto & create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
         return create_query;
     }
 
-    static void writeCreateQueryToMetadata(
+    void writeCreateQueryToMetadata(
         const ASTCreateNamedCollectionQuery & query,
         const std::string & path,
         const Settings & settings,
-        bool replace = false)
+        bool replace = false) const
     {
         if (!replace && fs::exists(path))
         {
@@ -320,6 +321,8 @@ private:
                 "Metadata file {} for named collection already exists",
                 path);
         }
+
+        fs::create_directories(metadata_path);
 
         auto tmp_path = path + ".tmp";
         String formatted_query = serializeAST(query);

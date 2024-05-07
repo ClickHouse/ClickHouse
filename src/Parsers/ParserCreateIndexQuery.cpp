@@ -15,11 +15,12 @@ namespace DB
 
 bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_type("TYPE");
-    ParserKeyword s_granularity("GRANULARITY");
+    ParserKeyword s_type(Keyword::TYPE);
+    ParserKeyword s_granularity(Keyword::GRANULARITY);
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list;
+
     ParserDataType data_type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
@@ -53,19 +54,18 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
             return false;
     }
 
-    auto index = std::make_shared<ASTIndexDeclaration>();
+    /// name is set below in ParserCreateIndexQuery
+    auto index = std::make_shared<ASTIndexDeclaration>(expr, type, "");
     index->part_of_create_index_query = true;
-    index->set(index->expr, expr);
-    if (type)
-        index->set(index->type, type);
 
     if (granularity)
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     else
     {
-        if (index->type && index->type->name == "annoy")
+        auto index_type = index->getType();
+        if (index_type && index_type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index->type && index->type->name == "usearch")
+        else if (index_type && index_type->name == "usearch")
             index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
@@ -79,11 +79,12 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     auto query = std::make_shared<ASTCreateIndexQuery>();
     node = query;
 
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_unique("UNIQUE");
-    ParserKeyword s_index("INDEX");
-    ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_unique(Keyword::UNIQUE);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
+
     ParserIdentifier index_name_p;
     ParserCreateIndexDeclaration parser_create_idx_decl;
 

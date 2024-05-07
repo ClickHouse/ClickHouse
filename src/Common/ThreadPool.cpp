@@ -183,6 +183,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     {
         std::unique_lock lock(mutex);
 
+        if (CannotAllocateThreadFaultInjector::injectFault())
+            return on_error("fault injected");
+
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
@@ -490,8 +493,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 
 template class ThreadPoolImpl<std::thread>;
-template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
-template class ThreadFromGlobalPoolImpl<true>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
+template class ThreadFromGlobalPoolImpl<true, true>;
+template class ThreadFromGlobalPoolImpl<true, false>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
@@ -500,7 +504,9 @@ GlobalThreadPool::GlobalThreadPool(
     size_t max_threads_,
     size_t max_free_threads_,
     size_t queue_size_,
-    const bool shutdown_on_exception_)
+    const bool shutdown_on_exception_,
+    UInt64 global_profiler_real_time_period_ns_,
+    UInt64 global_profiler_cpu_time_period_ns_)
     : FreeThreadPool(
         CurrentMetrics::GlobalThread,
         CurrentMetrics::GlobalThreadActive,
@@ -509,10 +515,12 @@ GlobalThreadPool::GlobalThreadPool(
         max_free_threads_,
         queue_size_,
         shutdown_on_exception_)
+    , global_profiler_real_time_period_ns(global_profiler_real_time_period_ns_)
+    , global_profiler_cpu_time_period_ns(global_profiler_cpu_time_period_ns_)
 {
 }
 
-void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
+void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
 {
     if (the_instance)
     {
@@ -520,7 +528,7 @@ void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/, global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()
@@ -540,4 +548,43 @@ void GlobalThreadPool::shutdown()
     {
         the_instance->finalize();
     }
+}
+
+CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()
+{
+    static CannotAllocateThreadFaultInjector ins;
+    return ins;
+}
+
+void CannotAllocateThreadFaultInjector::setFaultProbability(double probability)
+{
+    auto & ins = instance();
+    std::lock_guard lock(ins.mutex);
+    ins.enabled = 0 < probability && probability <= 1;
+    if (ins.enabled)
+        ins.random.emplace(probability);
+    else
+        ins.random.reset();
+}
+
+bool CannotAllocateThreadFaultInjector::injectFault()
+{
+    auto & ins = instance();
+    if (!ins.enabled.load(std::memory_order_relaxed))
+        return false;
+
+    if (ins.block_fault_injections)
+        return false;
+
+    std::lock_guard lock(ins.mutex);
+    return ins.random && (*ins.random)(ins.rndgen);
+}
+
+thread_local bool CannotAllocateThreadFaultInjector::block_fault_injections = false;
+
+scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
+{
+    auto & ins = instance();
+    ins.block_fault_injections = true;
+    return [&ins](){ ins.block_fault_injections = false; };
 }

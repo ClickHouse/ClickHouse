@@ -1,4 +1,5 @@
 #include <Access/User.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/Protocol.h>
 #include <base/insertAtEnd.h>
 
@@ -30,7 +31,7 @@ void User::setName(const String & name_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name is empty");
     if (name_ == EncodedUserInfo::USER_INTERSERVER_MARKER)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name '{}' is reserved", name_);
-    if (startsWith(name_, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER))
+    if (name_.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name '{}' is reserved", name_);
     name = name_;
 }

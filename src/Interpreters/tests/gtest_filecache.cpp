@@ -245,7 +245,7 @@ void download(FileSegment & file_segment)
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
-    ASSERT_TRUE(file_segment.reserve(file_segment.range().size()));
+    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000));
     download(cache_base_path, file_segment);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
 
@@ -257,7 +257,7 @@ void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
-    ASSERT_FALSE(file_segment.reserve(file_segment.range().size()));
+    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000));
     file_segment.complete();
 }
 
@@ -364,7 +364,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
         cache.initialize();
-        auto key = cache.createKeyForPath("key1");
+        auto key = DB::FileCache::createKeyForPath("key1");
 
         auto get_or_set = [&](size_t offset, size_t size)
         {
@@ -728,7 +728,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache2 = DB::FileCache("2", settings);
         cache2.initialize();
-        auto key = cache2.createKeyForPath("key1");
+        auto key = DB::FileCache::createKeyForPath("key1");
 
         /// Get [2, 29]
         assertEqual(
@@ -747,7 +747,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         fs::create_directories(settings2.base_path);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
-        auto key = cache2.createKeyForPath("key1");
+        auto key = DB::FileCache::createKeyForPath("key1");
 
         /// Get [0, 24]
         assertEqual(
@@ -762,7 +762,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache = FileCache("4", settings);
         cache.initialize();
-        const auto key = cache.createKeyForPath("key10");
+        const auto key = FileCache::createKeyForPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
         cache.removeAllReleasable(user.user_id);
@@ -786,7 +786,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache = DB::FileCache("5", settings);
         cache.initialize();
-        const auto key = cache.createKeyForPath("key10");
+        const auto key = FileCache::createKeyForPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
         cache.removeAllReleasable(user.user_id);
@@ -823,7 +823,7 @@ TEST_F(FileCacheTest, writeBuffer)
         segment_settings.kind = FileSegmentKind::Temporary;
         segment_settings.unbounded = true;
 
-        auto cache_key = cache.createKeyForPath(key);
+        auto cache_key = FileCache::createKeyForPath(key);
         auto holder = cache.set(cache_key, 0, 3, segment_settings, user);
         /// The same is done in TemporaryDataOnDisk::createStreamToCacheFile.
         std::filesystem::create_directories(cache.getKeyPath(cache_key, user));
@@ -947,16 +947,16 @@ TEST_F(FileCacheTest, temporaryData)
     file_cache.initialize();
 
     const auto user = FileCache::getCommonUser();
-    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
+    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, TemporaryDataOnDiskSettings{});
 
-    auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
+    auto some_data_holder = file_cache.getOrSet(FileCache::createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
 
     {
         ASSERT_EQ(some_data_holder->size(), 5);
         for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            ASSERT_TRUE(segment->reserve(segment->range().size()));
+            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000));
             download(*segment);
             segment->complete();
         }
@@ -1130,7 +1130,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*limit=*/0);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*settings=*/TemporaryDataOnDiskSettings{});
 
         auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
 
@@ -1152,7 +1152,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         disk = createDisk("temporary_data_read_buffer_size_test_dir");
         VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*limit=*/0);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*settings=*/TemporaryDataOnDiskSettings{});
 
         auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
 
@@ -1199,7 +1199,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
         cache.initialize();
-        auto key = cache.createKeyForPath("key1");
+        auto key = FileCache::createKeyForPath("key1");
 
         auto add_range = [&](size_t offset, size_t size)
         {

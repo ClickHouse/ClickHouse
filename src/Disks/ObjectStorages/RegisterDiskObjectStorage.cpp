@@ -10,25 +10,6 @@ namespace DB
 void registerObjectStorages();
 void registerMetadataStorages();
 
-static std::string getCompatibilityMetadataTypeHint(const ObjectStorageType & type)
-{
-    switch (type)
-    {
-        case ObjectStorageType::S3:
-        case ObjectStorageType::HDFS:
-        case ObjectStorageType::Local:
-        case ObjectStorageType::Azure:
-            return "local";
-        case ObjectStorageType::S3_Plain:
-            return "plain";
-        case ObjectStorageType::Web:
-            return "web";
-        case ObjectStorageType::None:
-            return "";
-    }
-    UNREACHABLE();
-}
-
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check)
 {
     registerObjectStorages();
@@ -47,7 +28,13 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         std::string compatibility_metadata_type_hint;
         if (!config.has(config_prefix + ".metadata_type"))
         {
-            compatibility_metadata_type_hint = getCompatibilityMetadataTypeHint(object_storage->getType());
+            if (object_storage->isPlain())
+                if (object_storage->isWriteOnce())
+                    compatibility_metadata_type_hint = "plain";
+                else
+                    compatibility_metadata_type_hint = "plain_rewritable";
+            else
+                compatibility_metadata_type_hint = MetadataStorageFactory::getCompatibilityMetadataTypeHint(object_storage->getType());
         }
 
         auto metadata_storage = MetadataStorageFactory::instance().create(
@@ -69,6 +56,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 #if USE_AWS_S3
     factory.registerDiskType("s3", creator); /// For compatibility
     factory.registerDiskType("s3_plain", creator); /// For compatibility
+    factory.registerDiskType("s3_plain_rewritable", creator); // For compatibility
 #endif
 #if USE_HDFS
     factory.registerDiskType("hdfs", creator); /// For compatibility

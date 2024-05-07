@@ -96,6 +96,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
+    format_settings.hive_text.allow_variable_number_of_columns = settings.input_format_hive_text_allow_variable_number_of_columns;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
@@ -122,6 +123,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.skip_null_value_in_named_tuples = settings.output_format_json_skip_null_value_in_named_tuples;
     format_settings.json.read_named_tuples_as_objects = settings.input_format_json_named_tuples_as_objects;
+    format_settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = settings.input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects;
     format_settings.json.defaults_for_missing_elements_in_named_tuple = settings.input_format_json_defaults_for_missing_elements_in_named_tuple;
     format_settings.json.ignore_unknown_keys_in_named_tuple = settings.input_format_json_ignore_unknown_keys_in_named_tuple;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
@@ -141,6 +143,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
+    format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
+    format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
@@ -166,6 +170,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
+    format_settings.pretty.max_value_width_apply_for_single_value = settings.output_format_pretty_max_value_width_apply_for_single_value;
+    format_settings.pretty.highlight_digit_groups = settings.output_format_pretty_highlight_digit_groups;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings.output_format_pretty_single_large_number_tip_threshold;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
@@ -299,7 +305,7 @@ InputFormatPtr FormatFactory::getInput(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
-    size_t max_parsing_threads = _max_parsing_threads.value_or(settings.max_threads);
+    size_t max_parsing_threads = _max_parsing_threads.value_or(settings.max_parsing_threads);
     size_t max_download_threads = _max_download_threads.value_or(settings.max_download_threads);
 
     RowInputFormatParams row_input_format_params;
@@ -433,7 +439,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             settings.max_download_buffer_size);
 
         res = wrapInParallelReadBufferIfSupported(
-            buf, threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
+            buf, threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
             max_download_threads, settings.max_download_buffer_size, file_size);
     }
 

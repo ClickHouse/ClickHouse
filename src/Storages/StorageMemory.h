@@ -7,6 +7,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/MemorySettings.h>
 
 #include <Common/MultiVersion.h>
 
@@ -30,7 +31,7 @@ public:
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
         const String & comment,
-        bool compress_ = false);
+        const MemorySettings & memory_settings_ = MemorySettings());
 
     String getName() const override { return "Memory"; }
 
@@ -44,6 +45,8 @@ public:
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
+    const MemorySettings & getMemorySettingsRef() const { return memory_settings; }
 
     void read(
         QueryPlan & query_plan,
@@ -77,6 +80,7 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -133,7 +137,7 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
-    bool compress;
+    MemorySettings memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };
