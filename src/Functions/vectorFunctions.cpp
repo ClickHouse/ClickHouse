@@ -1269,6 +1269,37 @@ using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
 
 using FunctionLpDistance = FunctionLDistance<LpLabel>;
 
+// Адаптер для L2Distance
+struct FunctionL2DistanceAdapter : public IFunction
+{
+    static constexpr auto name = "L2Distance";
+
+    explicit FunctionL2DistanceAdapter(ContextPtr context_) : IFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL2DistanceAdapter>(context_); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto func = FunctionFactory::instance().get("L2SquaredDistance", context);
+        return func->getReturnTypeImpl(arguments);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto func = FunctionFactory::instance().get("L2SquaredDistance", context);
+        auto column = func->executeImpl(arguments, nullptr, input_rows_count);
+        return applyFunctionUnary<sqrt>(column);
+    }
+};
+
+// Регистрируем адаптер в фабрике
+factory.registerFunction<FunctionL2DistanceAdapter>();
+factory.registerAlias("L2Distance", FunctionL2DistanceAdapter::name, FunctionFactory::CaseInsensitive);
+
+
 template <class FuncLabel>
 class FunctionLNormalize : public ITupleFunction
 {

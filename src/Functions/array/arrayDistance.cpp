@@ -56,8 +56,6 @@ struct L1Distance
     }
 };
 
-struct L2SquaredDistance;
-
 struct L2Distance
 {
     static constexpr auto name = "L2";
@@ -130,7 +128,7 @@ struct L2Distance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return sqrt(L2SquaredDistance::finalize(state, ConstParams{}));
+        return sqrt(state.sum);
     }
 };
 
