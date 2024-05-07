@@ -1,11 +1,10 @@
 #include "DiskOverlay.h"
-#include "DiskFactory.h"
-#include "Disks/DirectoryIterator.h"
-#include "Disks/IDisk.h"
-#include "Disks/ObjectStorages/IObjectStorage_fwd.h"
-#include "loadLocalDiskConfig.h"
 
-#include <iostream>
+#include <Disks/DiskFactory.h>
+#include <Disks/DirectoryIterator.h>
+#include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/ObjectStorages/MetadataStorageFactory.h>
 
 namespace DB {
 
@@ -44,8 +43,8 @@ disk_base(disk_base_), disk_overlay(disk_overlay_), metadata(metadata_), tracked
 DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_) : IDisk(name_) {
     String disk_base_name = config_.getString(config_prefix_ + ".disk_base");
     String disk_overlay_name = config_.getString(config_prefix_ + ".disk_overlay");
-    String metadata_pref = config_.getString(config_prefix_ + ".metadata");
-    String tracked_metadata_pref = config_.getString(config_prefix_ + ".tracked_metadata");
+    String metadata_name = config_.getString(config_prefix_ + ".metadata");
+    String tracked_metadata_name = config_.getString(config_prefix_ + ".tracked_metadata");
 
     disk_base = map_.at(disk_base_name);
     disk_overlay = map_.at(disk_overlay_name);
@@ -54,7 +53,8 @@ DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfigu
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overlay disk has to be writable");
     }
 
-    // TODO finish this constructor for registration
+    metadata = MetadataStorageFactory::instance().create(metadata_name, config_, config_prefix_, nullptr, "");
+    tracked_metadata = MetadataStorageFactory::instance().create(tracked_metadata_name, config_, config_prefix_, nullptr, "");
 }
 
 
@@ -168,7 +168,6 @@ std::optional<String> DiskOverlay::basePath(const String& path) const {
 }
 
 void DiskOverlay::moveDirectory(const String & from_path, const String & to_path) {
-    std::cout << "trying to move directory: " << from_path << " -> " << to_path << std::endl;
     if (!exists(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move directory: from_path doesn't exist");
     }
@@ -195,9 +194,7 @@ void DiskOverlay::moveDirectory(const String & from_path, const String & to_path
         }
     }
 
-    std::cout << "start removing" << std::endl;
     removeDirectory(from_path);
-    std::cout << "done removing" << std::endl;
 }
 
 class DiskOverlayDirectoryIterator final : public IDirectoryIterator
@@ -262,7 +259,6 @@ void DiskOverlay::createFile(const String & path) {
 }
 
 void DiskOverlay::moveFile(const String & from_path, const String & to_path) {
-    std::cout << "Trying to move file: " << from_path << " -> " << to_path << std::endl;
     if (!exists(from_path)) {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot move file: from_path doesn't exist");
     }
@@ -346,11 +342,22 @@ std::unique_ptr<ReadBufferFromFileBase> DiskOverlay::readFile(
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const {
 
-    if (disk_base->exists(path)) {
-        return disk_base->readFile(path, settings, read_hint, file_size);
+    if (!exists(path)) {
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot read file as it doesn't exist");
     }
-    return disk_overlay->readFile(path, settings, read_hint, file_size);
-    // TODO: write a version of read buffer from file base
+
+    if (disk_overlay->exists(path)) {
+        if (auto base_path = basePath(path); base_path) {
+            return std::make_unique<ReadBufferFromOverlayDisk>(settings.local_fs_buffer_size,
+                                disk_base->readFile(*base_path, settings, read_hint, file_size),
+                                disk_overlay->readFile(path, settings, read_hint, file_size)
+                    );
+        } else {
+            return disk_overlay->readFile(path, settings, read_hint, file_size);
+        }
+    }
+
+    return disk_base->readFile(path, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
@@ -367,11 +374,19 @@ std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
     auto transaction = metadata->createTransaction();
     if (mode == WriteMode::Rewrite) {
         // This means that we don't need to look for this file on disk_base
-        transaction->writeInlineDataToFile(dataPath(path), "r");
+        if (metadata->exists(dataPath(path))) {
+            transaction->writeInlineDataToFile(dataPath(path), "r");
+        } else {
+            if (disk_base->exists(path)) {
+                setTracked(path);
+            }
+        }
     } else {
         if (!disk_overlay->exists(path)) {
-            // This means that the beginning of the file is on disk_base at the same path
-            transaction->writeInlineDataToFile(dataPath(path), path);
+            if (disk_base->exists(path) && !isTracked(path)) {
+                // This means that the beginning of the file is on disk_base at the same path
+                transaction->writeInlineDataToFile(dataPath(path), path);
+            }
         }
     }
     if (disk_base->exists(path)) {
@@ -433,6 +448,57 @@ void DiskOverlay::removeRecursive(const String & dirpath) {
     }
     removeDirectory(dirpath);
 }
+
+ReadBufferFromOverlayDisk::ReadBufferFromOverlayDisk(
+        size_t buffer_size_,
+        std::unique_ptr<ReadBufferFromFileBase> base_,
+        std::unique_ptr<ReadBufferFromFileBase> diff_) : ReadBufferFromFileBase(buffer_size_, nullptr, 0),
+                    base(std::move(base_)), diff(std::move(diff_)), base_size(base->getFileSize()), diff_size(diff->getFileSize()) {
+    working_buffer = base->buffer();
+    pos = base->position();
+    // TODO check what happens if base file is empty?
+}
+
+off_t ReadBufferFromOverlayDisk::getPosition() {
+    size_t current_pos = done ? base_size + diff_size : (done_base ? base_size : 0);
+    if (!done) {
+        current_pos += done_base ? diff->getPosition() : base->getPosition();
+    }
+    return current_pos;
+}
+
+off_t ReadBufferFromOverlayDisk::seek([[maybe_unused]] off_t off, [[maybe_unused]] int whence) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "seek hasn't been implemented yet");
+}
+
+bool ReadBufferFromOverlayDisk::nextImpl() {
+    if (!done) {
+        if (!done_base) {
+            base->position() = pos;
+        } else {
+            diff->position() = pos;
+        }
+
+        if (!done_base && base->eof()) {
+            done_base = true;
+            diff->seek(0, SEEK_SET);
+        }
+
+        if (done_base && !done && diff->eof()) {
+            done = true;
+        }
+    }
+
+    if (done) {
+        set(nullptr, 0);
+        return false;
+    }
+
+    working_buffer = done_base ? diff->buffer() : base->buffer();
+    pos = done_base ? diff->position() : base->position();
+    return true;
+}
+
 
 void registerDiskOverlay(DiskFactory & factory, bool global_skip_access_check)
 {
