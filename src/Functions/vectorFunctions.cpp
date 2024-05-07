@@ -1283,20 +1283,20 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &arguments) const override {
         auto func = FunctionFactory::instance().get("L2SquaredDistance", getContext());
-        auto squared_result_type = func->getReturnTypeImpl(arguments);
+        auto squared_result_type = std::static_pointer_cast<IFunctionOverloadResolver>(func)->getReturnTypeImpl(arguments);
         // Get the element type from the returned tuple type
-        auto element_type = squared_result_type->getTupleElementTypes()[0];
+        auto element_type = squared_result_type->getArrayElementTypes()[0];
         // Create a new DataTypeArray with the element type
         return std::make_shared<DataTypeArray>(element_type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &arguments, const DataTypePtr &result_type, size_t input_rows_count) const override {
         auto func = FunctionFactory::instance().get("L2SquaredDistance", getContext());
-        auto squared_result = func->executeImpl(arguments, result_type, input_rows_count);
+        auto squared_result = std::static_pointer_cast<IFunctionOverloadResolver>(func)->executeImpl(arguments, result_type, input_rows_count);
 
         // Take square root of each element in the result column
         auto sqrt_function = FunctionFactory::instance().get("sqrt", getContext());
-        return sqrt_function->executeImpl({squared_result}, result_type, input_rows_count);
+        return std::static_pointer_cast<IFunctionOverloadResolver>(sqrt_function)->executeImpl({squared_result}, result_type, input_rows_count);
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override {
