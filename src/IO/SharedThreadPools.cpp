@@ -151,6 +151,12 @@ StaticThreadPool & getOutdatedPartsLoadingThreadPool()
     return instance;
 }
 
+StaticThreadPool & getUnexpectedPartsLoadingThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeUnexpectedPartsLoaderThreadPool", CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreads, CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreadsActive, CurrentMetrics::MergeTreeUnexpectedPartsLoaderThreadsScheduled);
+    return instance;
+}
+
 StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool()
 {
     static StaticThreadPool instance("CreateTablesThreadPool", CurrentMetrics::DatabaseReplicatedCreateTablesThreads, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsActive, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsScheduled);

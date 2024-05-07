@@ -1142,14 +1142,7 @@ Int64 MergeTreeData::getMaxBlockNumber() const
     return max_block_num;
 }
 
-inline bool isSuspectedDroppedRage(std::optional<std::unordered_set<std::string>> expected_parts, const MergeTreePartInfo & info, const MergeTreePartInfo & prev_info)
-{
-    if (expected_parts == std::nullopt || expected_parts->contains(info.getPartNameV1()))
-        return false;
-    return info.min_block > prev_info.min_block && info.max_block < prev_info.max_block;
-}
-
-void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk, std::optional<std::unordered_set<std::string>> expected_parts)
+void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk)
 {
     auto & current_ptr = root_by_partition[info.partition_id];
     if (!current_ptr)
@@ -1171,13 +1164,6 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             else if (!prev_info.isDisjoint(info))
             {
-                if (isSuspectedDroppedRage(expected_parts, info, prev_info))
-                {
-                    LOG_INFO(getLogger("PartLoadingTree"), "Found part {} is covered by {} but it's level is higher. It's possible to be dropped before restart.",
-                                       info.getPartNameV1(), prev_info.getPartNameV1());
-                    current = prev->second.get();
-                    continue;
-                }
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, prev->second->name);
@@ -1223,19 +1209,16 @@ void MergeTreeData::PartLoadingTree::traverse(bool recursive, Func && func)
 }
 
 MergeTreeData::PartLoadingTree
-MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes, std::optional<std::unordered_set<std::string>> expected_parts)
+MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes)
 {
     std::sort(nodes.begin(), nodes.end(), [](const auto & lhs, const auto & rhs)
     {
-        /// If a part is dropped by drop-range, it's possible to be covered by a smaller level part.
-        /// So we compare max_block - min_block first, for equal block range, we compare the level in case of ttl.
-        return std::make_tuple(lhs.info.max_block-lhs.info.min_block, lhs.info.level, lhs.info.mutation) >
-            std::make_tuple(rhs.info.max_block-rhs.info.min_block, rhs.info.level, rhs.info.mutation);
+        return std::tie(lhs.info.level, lhs.info.mutation) > std::tie(rhs.info.level, rhs.info.mutation);
     });
 
     PartLoadingTree tree;
     for (const auto & [info, name, disk] : nodes)
-        tree.add(info, name, disk, expected_parts);
+        tree.add(info, name, disk);
     return tree;
 }
 
@@ -1280,6 +1263,50 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 static constexpr size_t loading_parts_initial_backoff_ms = 100;
 static constexpr size_t loading_parts_max_backoff_ms = 5000;
 static constexpr size_t loading_parts_max_tries = 3;
+
+void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
+{
+    const MergeTreePartInfo & part_info = state.loading_info->info;
+    const String & part_name = state.loading_info->name;
+    const DiskPtr & part_disk_ptr = state.loading_info->disk;
+    LOG_TRACE(log, "Loading {} unexpected part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
+
+    LoadPartResult res;
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
+    auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
+    String part_path = fs::path(relative_data_path) / part_name;
+
+    try
+    {
+        state.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
+            .withPartInfo(part_info)
+            .withPartFormatFromDisk()
+            .build();
+
+        state.part->loadRowsCountFileForUnexpectedPart();
+
+        state.is_empty = part->isEmpty();
+    }
+    catch (...)
+    {
+        LOG_DEBUG(log, "Failed to load data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
+        if (!state.part)
+        {
+            /// Build a fake part and mark it as broken in case of filesystem error.
+            /// If the error impacts part directory instead of single files,
+            /// an exception will be thrown during detach and silently ignored.
+            state.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
+                .withPartStorageType(MergeTreeDataPartStorageType::Full)
+                .withPartType(MergeTreeDataPartType::Wide)
+                .build();
+        }
+
+        state.is_broken = true;
+        tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part_name, part_path));
+
+        state.is_empty = calculatePartSizeSafe(res.part, log.load()) == 0;
+    }
+}
 
 MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const MergeTreePartInfo & part_info,
@@ -1673,6 +1700,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
+    std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
 
     ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
 
@@ -1683,6 +1711,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             continue;
 
         auto & disk_parts = parts_to_load_by_disk[i];
+        auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
 
         runner([&, disk_ptr]()
         {
@@ -1694,7 +1723,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                     continue;
 
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
-                    disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
+                {
+                    if (expected_parts && !expected_parts->contains(it->name()))
+                        unexpected_disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
+                    else
+                        disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
+                }
             }
         }, Priority{0});
     }
@@ -1705,8 +1739,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
+    PartLoadingTree::PartLoadingInfos unexpected_parts_to_load;
+    for (auto & disk_parts : unexpected_parts_to_load_by_disk)
+        std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(unexpected_parts_to_load));
 
-    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), expected_parts);
+    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
 
     size_t num_parts = 0;
     PartLoadingTreeNodes active_parts;
@@ -1833,6 +1870,36 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     calculateColumnAndSecondaryIndexSizesImpl();
 
     PartLoadingTreeNodes unloaded_parts;
+
+    std::vector<UnexpectedPartLoadState> unexpected_unloaded_data_parts;
+    for (const auto & [info, name, disk] : unexpected_parts_to_load)
+    {
+        bool uncovered = true;
+        for (const auto & part : unexpected_parts_to_load)
+        {
+            if (name != part.name && !info.contains(part.info) && !info.isDisjoint(part.info))
+            {
+                uncovered = false;
+                break;
+            }
+        }
+        unexpected_unloaded_data_parts.push_back({std::make_shared<PartLoadingTree::Node>(info, name, disk), uncovered});
+    }
+
+    if (!unexpected_unloaded_data_parts.empty())
+    {
+        LOG_DEBUG(log, "Found {} unexpected data parts. They will be loaded asynchronously", unexpected_data_parts.size());
+        {
+            std::lock_guard lock(unexpected_data_parts_mutex);
+            unexpected_data_parts = std::move(unexpected_unloaded_data_parts);
+            unexpected_data_parts_loading_finished = false;
+        }
+
+        unexpected_data_parts_loading_task = getContext()->getSchedulePool().createTask(
+            "MergeTreeData::loadUnexpectedDataParts",
+            [this] { loadUnexpectedDataParts(); });
+    }
+
     loading_tree.traverse(/*recursive=*/ true, [&](const auto & node)
     {
         if (!node->is_loaded)
@@ -1856,6 +1923,59 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
     data_parts_loading_finished = true;
+}
+
+void MergeTreeData::loadUnexpectedDataParts()
+{
+    {
+        std::lock_guard lock(unexpected_data_parts_mutex);
+        if (unexpected_unloaded_data_parts.empty())
+        {
+            unexpected_data_parts_loading_finished = true;
+            unexpected_data_parts_cv.notify_all();
+            return;
+        }
+
+        LOG_DEBUG(log, "Loading {} unexpected data parts {}",
+            unexpected_unloaded_data_parts.size(),
+            is_async ? "asynchronously" : "synchronously");
+    }
+
+    ThreadFuzzer::maybeInjectSleep();
+    ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
+
+    for (auto & load_state : unexpected_data_parts)
+    {
+        std::lock_guard lock(unexpected_data_parts_mutex);
+        chassert(!load_state.part);
+        if (unexpected_data_parts_loading_canceled)
+        {
+            runner.waitForAllToFinishAndRethrowFirstError();
+            return;
+        }
+        runner([&]()
+        {
+            loadUnexpectedDataPart(load_state);
+
+            chassert(load_state.part);
+            if (load_state.is_broken)
+            {
+                load_state.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+            }
+            else
+            {
+                load_state.part->renameToDetached("ignore"); /// detached parts must not have '_' in prefixes
+            }
+        }, Priority{});
+    }
+    runner.waitForAllToFinishAndRethrowFirstError();
+    LOG_DEBUG(log, "Loaded {} unexpected data parts {}", num_loaded_parts);
+
+    {
+        std::lock_guard lock(unexpected_data_parts_mutex);
+        unexpected_data_parts_loading_finished = true;
+        unexpected_data_parts_cv.notify_all();
+    }
 }
 
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
@@ -1993,24 +2113,74 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
     LOG_TRACE(log, "Finished waiting for outdated data parts to be loaded");
 }
 
-void MergeTreeData::startOutdatedDataPartsLoadingTask()
+void MergeTreeData::waitForUnexpectedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    /// Background tasks are not run if storage is static.
+    if (isStaticStorage())
+        return;
+
+    /// If waiting is not required, do NOT log and do NOT enable/disable turbo mode to make `waitForUnexpectedPartsToBeLoaded` a lightweight check
+    {
+        std::unique_lock lock(unexpected_data_parts_mutex);
+        if (unexpected_data_parts_loading_canceled)
+            throw Exception(ErrorCodes::NOT_INITIALIZED, "Loading of unexpected data parts was already canceled");
+        if (unexpected_data_parts_loading_finished)
+            return;
+    }
+
+    /// We need to load parts as fast as possible
+    getUnexpectedPartsLoadingThreadPool().enableTurboMode();
+    SCOPE_EXIT({
+        /// Let's lower the number of threads e.g. for later ATTACH queries to behave as usual
+        getUnexpectedPartsLoadingThreadPool().disableTurboMode();
+    });
+
+    LOG_TRACE(log, "Will wait for unexpected data parts to be loaded");
+
+    std::unique_lock lock(unexpected_data_parts_mutex);
+
+    unexpected_data_parts_cv.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        return unexpected_data_parts_loading_finished || unexpected_data_parts_loading_canceled;
+    });
+
+    if (unexpected_data_parts_loading_canceled)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Loading of unexpected data parts was canceled");
+
+    LOG_TRACE(log, "Finished waiting for unexpected data parts to be loaded");
+}
+
+void MergeTreeData::startOutdatedAndUnexpectedDataPartsLoadingTask()
 {
     if (outdated_data_parts_loading_task)
         outdated_data_parts_loading_task->activateAndSchedule();
+    if (unexpected_data_parts_load_task)
+        unexpected_data_parts_load_task->activateAndSchedule();
 }
 
-void MergeTreeData::stopOutdatedDataPartsLoadingTask()
+void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
 {
-    if (!outdated_data_parts_loading_task)
-        return;
-
+    if (outdated_data_parts_loading_task)
     {
-        std::lock_guard lock(outdated_data_parts_mutex);
-        outdated_data_parts_loading_canceled = true;
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            outdated_data_parts_loading_canceled = true;
+        }
+
+        outdated_data_parts_loading_task->deactivate();
+        outdated_data_parts_cv.notify_all();
     }
 
-    outdated_data_parts_loading_task->deactivate();
-    outdated_data_parts_cv.notify_all();
+    if (unexpected_data_parts_load_task)
+    {
+        {
+            std::lock_guard lock(unexpected_data_parts_mutex);
+            unexpected_data_parts_loading_canceled = true;
+        }
+
+        unexpected_data_parts_loading_task->deactivate();
+        unexpected_data_parts_cv.notify_all();
+    }
 }
 
 /// Is the part directory old.

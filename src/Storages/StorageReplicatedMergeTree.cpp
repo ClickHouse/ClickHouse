@@ -1576,7 +1576,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
       * But actually we can't precisely determine that ALL missing parts
       * covered by this unexpected part. So missing parts will be downloaded.
       */
-    DataParts unexpected_parts;
+    waitForUnexpectedPartsToBeLoaded();
 
     /// Intersection of local parts and expected parts
     ActiveDataPartSet local_expected_parts_set(format_version);
@@ -1584,10 +1584,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     /// Collect unexpected parts
     for (const auto & part : parts)
     {
-        if (expected_parts.contains(part->name))
-            local_expected_parts_set.add(part->name);
-        else
-            unexpected_parts.insert(part); /// this parts we will place to detached with ignored_ prefix
+        local_expected_parts_set.add(part->name);
     }
 
     /// Which parts should be taken from other replicas.
@@ -1600,16 +1597,11 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
     ActiveDataPartSet set_of_empty_unexpected_parts(format_version);
-    for (const auto & part : parts)
+    for (const auto & load_state : unexpected_data_parts)
     {
-        if (part->rows_count || part->getState() != MergeTreeDataPartState::Active || expected_parts.contains(part->name))
+        if (load_state.is_broken || load_state.part->rows_count || !load_state.uncovered)
             continue;
 
-        if (incomplete_list_of_outdated_parts)
-        {
-            LOG_INFO(log, "Outdated parts are not loaded yet, but we may need them to handle dropped parts. Need retry.");
-            return false;
-        }
         set_of_empty_unexpected_parts.add(part->name);
     }
     if (auto empty_count = set_of_empty_unexpected_parts.size())
@@ -1629,9 +1621,9 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     std::unordered_set<String> restorable_unexpected_parts;
     UInt64 uncovered_unexpected_parts_rows = 0;
 
-    for (const auto & part : unexpected_parts)
+    for (const auto & load_state : unexpected_data_parts)
     {
-        unexpected_parts_rows += part->rows_count;
+        unexpected_parts_rows += load_state.part->rows_count;
 
         /// This part may be covered by some expected part that is active and present locally
         /// Probably we just did not remove this part from disk before restart (but removed from ZooKeeper)
@@ -1743,12 +1735,12 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     queue.setBrokenPartsToEnqueueFetchesOnLoading(std::move(parts_to_fetch));
 
     /// Remove extra local parts.
-    for (const DataPartPtr & part : unexpected_parts)
-    {
-        bool restore_covered = restorable_unexpected_parts.contains(part->name) || uncovered_unexpected_parts.contains(part->name);
-        LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
-        forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
-    }
+    /// for (const DataPartPtr & part : unexpected_parts)
+    /// {
+    ///     bool restore_covered = restorable_unexpected_parts.contains(part->name) || uncovered_unexpected_parts.contains(part->name);
+    ///     LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
+    ///     forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
+    /// }
 
     return true;
 }
@@ -5138,7 +5130,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
 void StorageReplicatedMergeTree::startup()
 {
     LOG_TRACE(log, "Starting up table");
-    startOutdatedDataPartsLoadingTask();
+    startOutdatedAndUnexpectedDataPartsLoadingTask();
     if (attach_thread)
     {
         attach_thread->start();
@@ -5341,7 +5333,7 @@ void StorageReplicatedMergeTree::shutdown(bool)
     }
 
     session_expired_callback_handler.reset();
-    stopOutdatedDataPartsLoadingTask();
+    stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     partialShutdown();
 
