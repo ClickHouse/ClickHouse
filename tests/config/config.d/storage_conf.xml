@@ -24,6 +24,8 @@
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <cache_policy>LRU</cache_policy>
                 <slru_size_ratio>0.3</slru_size_ratio>
+                <keep_free_space_size_ratio>0.15</keep_free_space_size_ratio>
+                <keep_free_space_elements_ratio>0.15</keep_free_space_elements_ratio>
             </s3_cache>
             <s3_cache_02933>
                 <type>cache</type>

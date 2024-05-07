@@ -85,8 +85,14 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.5", {{"optimize_project_query", false, false, "Use to utilize projection feature for certain query matching requirements"},
-             }},
+    {"24.5", {{"allow_deprecated_functions", true, false, "Allow usage of deprecated functions"},
+              {"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
+              {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
+              {"cross_join_min_rows_to_compress", 0, 10000000, "A new setting."},
+              {"cross_join_min_bytes_to_compress", 0, 1_GiB, "A new setting."},
+              {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
+              {"optimize_project_query", false, false, "Use to utilize projection feature for certain query matching requirements"},
+              }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"max_parsing_threads", 0, 0, "Add a separate setting to control number of threads in parallel parsing from files"},
               {"ignore_drop_queries_probability", 0, 0, "Allow to ignore drop queries in server with specified probability for testing purposes"},
@@ -94,7 +100,6 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"query_cache_system_table_handling", "save", "throw", "The query cache no longer caches results of queries against system tables"},
               {"input_format_json_ignore_unnecessary_fields", false, true, "Ignore unnecessary fields and not parse them. Enabling this may not throw exceptions on json strings of invalid format or with duplicated fields"},
               {"input_format_hive_text_allow_variable_number_of_columns", false, true, "Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values."},
-              {"first_day_of_week", "Monday", "Monday", "Added a setting for the first day of the week for date/time functions"},
               {"allow_experimental_database_replicated", false, true, "Database engine Replicated is now in Beta stage"},
               {"temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", (10 * 60 * 1000), (10 * 60 * 1000), "Wait time to lock cache for sapce reservation in temporary data in filesystem cache"},
               {"optimize_rewrite_sum_if_to_count_if", false, true, "Only available for the analyzer, where it works correctly"},

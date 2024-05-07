@@ -33,8 +33,6 @@ public:
 
         bool update(const ContextPtr & context);
 
-        void connect(const ContextPtr & context);
-
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
         bool withWildcard() const

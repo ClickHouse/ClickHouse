@@ -28,6 +28,7 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryJoinAdapter;
+class ExpressionActions;
 class StorageJoin;
 class StorageDictionary;
 class IKeyValueEntity;
@@ -139,6 +140,8 @@ private:
     SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
+    const UInt64 cross_join_min_rows_to_compress = 1000;
+    const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
@@ -153,6 +156,8 @@ private:
     ASTs key_asts_right;
 
     Clauses clauses;
+    /// Originally used for inequal join. If there is no any inequal join condition, it will be nullptr.
+    std::shared_ptr<ExpressionActions> mixed_join_expression = nullptr;
 
     ASTTableJoin table_join;
 
@@ -272,6 +277,10 @@ public:
 
     bool joinUseNulls() const { return join_use_nulls; }
 
+    UInt64 crossJoinMinRowsToCompress() const { return cross_join_min_rows_to_compress; }
+
+    UInt64 crossJoinMinBytesToCompress() const { return cross_join_min_bytes_to_compress; }
+
     bool forceNullableRight() const
     {
         return join_use_nulls && isLeftOrFull(kind());
@@ -300,6 +309,9 @@ public:
 
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
+
+    const std::shared_ptr<ExpressionActions> & getMixedJoinExpression() const { return mixed_join_expression; }
+    std::shared_ptr<ExpressionActions> & getMixedJoinExpression() { return mixed_join_expression; }
 
     Names getAllNames(JoinTableSide side) const;
 

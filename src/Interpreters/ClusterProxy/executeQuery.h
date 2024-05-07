@@ -68,7 +68,9 @@ void executeQuery(
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
-    SelectStreamFactory & stream_factory,
+    const StorageID & storage_id,
+    const Block & header,
+    QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);

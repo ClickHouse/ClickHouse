@@ -148,7 +148,7 @@ def parse_env_variables(
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
     RISCV_SUFFIX = "-riscv64"
-    # S390X_SUFFIX = "-s390x"  # disabled because s390x refused to build in the migration to OpenSSL
+    S390X_SUFFIX = "-s390x"
     AMD64_COMPAT_SUFFIX = "-amd64-compat"
     AMD64_MUSL_SUFFIX = "-amd64-musl"
 
@@ -166,7 +166,7 @@ def parse_env_variables(
     is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_riscv = compiler.endswith(RISCV_SUFFIX)
-    # is_cross_s390x = compiler.endswith(S390X_SUFFIX)  # disabled because s390x refused to build in the migration to OpenSSL
+    is_cross_s390x = compiler.endswith(S390X_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
     is_amd64_musl = compiler.endswith(AMD64_MUSL_SUFFIX)
@@ -230,12 +230,11 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-riscv64.cmake"
         )
-    # disabled because s390x refused to build in the migration to OpenSSL
-    # elif is_cross_s390x:
-    #     cc = compiler[: -len(S390X_SUFFIX)]
-    #     cmake_flags.append(
-    #         "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake"
-    #     )
+    elif is_cross_s390x:
+        cc = compiler[: -len(S390X_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake"
+        )
     elif is_amd64_compat:
         cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
         result.append("DEB_ARCH=amd64")
@@ -411,7 +410,7 @@ def parse_args() -> argparse.Namespace:
             "clang-17-aarch64-v80compat",
             "clang-17-ppc64le",
             "clang-17-riscv64",
-            # "clang-17-s390x",  # disabled because s390x refused to build in the migration to OpenSSL
+            "clang-17-s390x",
             "clang-17-amd64-compat",
             "clang-17-amd64-musl",
             "clang-17-freebsd",
