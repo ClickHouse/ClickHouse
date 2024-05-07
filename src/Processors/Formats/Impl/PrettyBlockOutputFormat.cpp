@@ -38,6 +38,8 @@ void PrettyBlockOutputFormat::calculateWidths(
     max_padded_widths.resize_fill(num_columns);
     name_widths.resize(num_columns);
 
+    const bool need_cut_to_width = format_settings.pretty.max_value_width_apply_for_single_value || num_rows != 1 || num_columns != 1 || total_rows != 0;
+
     /// Calculate widths of all values.
     String serialized_value;
     size_t prefix = 2; // Tab character adjustment
@@ -68,6 +70,20 @@ void PrettyBlockOutputFormat::calculateWidths(
             }
 
             widths[i][j] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
+            if (need_cut_to_width && serialized_value.contains('\n'))
+            {
+                size_t row_width = 0;
+                size_t row_start = 0;
+                for (size_t k = 0; k < serialized_value.size(); ++k)
+                {
+                    if (serialized_value[k] == '\n')
+                    {
+                        row_width = std::max(row_width, UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data() + row_start), k - row_start, prefix));
+                        row_start = k + 1;
+                    }
+                }
+                widths[i][j] = std::max(row_width, UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data() + row_start), serialized_value.size() - row_start, prefix));
+            }
             max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i],
                 std::min<UInt64>(format_settings.pretty.max_column_pad_width,
                     std::min<UInt64>(format_settings.pretty.max_value_width, widths[i][j])));
@@ -303,19 +319,34 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
         writeCString(grid_symbols.bar, out);
 
+        std::vector<String> transferred_row(num_columns);
+        bool has_transferred_row = false;
+
         for (size_t j = 0; j < num_columns; ++j)
         {
             if (j != 0)
                 writeCString(grid_symbols.bar, out);
             const auto & type = *header.getByPosition(j).type;
-            writeValueWithPadding(*columns[j], *serializations[j], i,
-                widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+            size_t cur_width = widths[j].empty() ? max_widths[j] : widths[j][i];
+            String serialized_value;
+            {
+                WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+                serializations[j]->serializeText(*columns[j], i, out_serialize, format_settings);
+            }
+            if (cut_to_width)
+                splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width);
+            has_transferred_row |= !transferred_row[j].empty() && cur_width <= cut_to_width;
+
+            writeValueWithPadding(serialized_value, cur_width, max_widths[j], cut_to_width,
+                type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[j].empty(), false);
         }
 
         writeCString(grid_symbols.bar, out);
         writeReadableNumberTip(chunk);
         writeCString("\n", out);
+
+        if (has_transferred_row)
+            writeTransferredRow(max_widths, header, transferred_row, cut_to_width, false);
     }
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
@@ -396,34 +427,34 @@ static String highlightDigitGroups(String source)
 
 
 void PrettyBlockOutputFormat::writeValueWithPadding(
-    const IColumn & column, const ISerialization & serialization, size_t row_num,
-    size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number)
+    String & value, size_t value_width, size_t pad_to_width, size_t cut_to_width,
+    bool align_right, bool is_number, bool has_break_line, bool is_transferred_value)
 {
-    String serialized_value = " ";
-    {
-        WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
-        serialization.serializeText(column, row_num, out_serialize, format_settings);
-    }
+    if (is_transferred_value)
+        writeString("…", out);
+    else
+        writeChar(' ', out);
 
     if (cut_to_width && value_width > cut_to_width)
     {
-        serialized_value.resize(UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
+        value.resize(UTF8::computeBytesBeforeWidth(
+            reinterpret_cast<const UInt8 *>(value.data()), value.size(), 0, format_settings.pretty.max_value_width));
 
         const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
         if (color)
         {
-            serialized_value += "\033[31;1m";
-            serialized_value += ellipsis;
-            serialized_value += "\033[0m";
+            value += "\033[31;1m";
+            value += ellipsis;
+            value += "\033[0m";
         }
         else
-            serialized_value += ellipsis;
+            value += ellipsis;
 
         value_width = format_settings.pretty.max_value_width;
+        has_break_line = false;
     }
-    else
-        serialized_value += ' ';
+    else if (!has_break_line)
+        value += ' ';
 
     auto write_padding = [&]()
     {
@@ -434,17 +465,73 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
     /// Highlight groups of thousands.
     if (color && is_number && format_settings.pretty.highlight_digit_groups)
-        serialized_value = highlightDigitGroups(serialized_value);
+        value = highlightDigitGroups(value);
 
     if (align_right)
     {
         write_padding();
-        out.write(serialized_value.data(), serialized_value.size());
+        out.write(value.data(), value.size());
     }
     else
     {
-        out.write(serialized_value.data(), serialized_value.size());
+        out.write(value.data(), value.size());
         write_padding();
+    }
+
+    if (has_break_line)
+        writeString("…", out);
+}
+
+void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, const Block & header, std::vector<String> & transferred_row, size_t cut_to_width, bool space_block)
+{
+    const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
+                                        utf8_grid_symbols :
+                                        ascii_grid_symbols;
+
+    size_t num_columns = max_widths.size();
+
+    if (format_settings.pretty.output_format_pretty_row_numbers)
+        for (size_t i = 0; i < row_number_width; ++i)
+            writeChar(' ', out);
+
+    if (!space_block)
+        writeCString(grid_symbols.bar, out);
+
+    std::vector<String> new_transferred_row(num_columns);
+    bool has_transferred_row = false;
+
+    for (size_t j = 0; j < num_columns; ++j)
+    {
+        if (j != 0 && !space_block)
+            writeCString(grid_symbols.bar, out);
+        else if (j != 0)
+            writeCString(" ", out);
+
+        const auto & type = *header.getByPosition(j).type;
+        size_t cur_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(transferred_row[j].data()), transferred_row[j].size());
+        if (cut_to_width)
+            splitValueAtBreakLine(transferred_row[j], new_transferred_row[j], cur_width);
+        has_transferred_row |= !new_transferred_row[j].empty() && cur_width <= cut_to_width;
+
+        writeValueWithPadding(transferred_row[j], cur_width, max_widths[j], cut_to_width,
+            type.shouldAlignRightInPrettyFormats(), isNumber(type), !new_transferred_row[j].empty(), !transferred_row[j].empty());
+    }
+
+    if (!space_block)
+        writeCString(grid_symbols.bar, out);
+    writeCString("\n", out);
+
+    if (has_transferred_row)
+        writeTransferredRow(max_widths, header, new_transferred_row, cut_to_width, space_block);
+}
+
+void PrettyBlockOutputFormat::splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width)
+{
+    if (size_t break_line_pos = value.find_first_of('\n'); break_line_pos != String::npos)
+    {
+        transferred_value = value.substr(break_line_pos + 1);
+        value = value.substr(0, break_line_pos);
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(value.data()), value.size());
     }
 }
 

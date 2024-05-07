@@ -34,6 +34,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
+#include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -50,6 +51,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char receive_timeout_on_table_status_response[];
+}
 
 namespace ErrorCodes
 {
@@ -606,6 +612,11 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 {
     if (!connected)
         connect(timeouts);
+
+    fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
+        sleepForSeconds(5);
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
+    });
 
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 

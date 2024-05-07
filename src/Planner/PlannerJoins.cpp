@@ -888,6 +888,14 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
+    /** We have only one way to execute a CROSS JOIN - with a hash join.
+      * Therefore, for a query with an explicit CROSS JOIN, it should not fail because of the `join_algorithm` setting.
+      * If the user expects CROSS JOIN + WHERE to be rewritten to INNER join and to be executed with a specific algorithm,
+      * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
+      */
+    if (table_join->kind() == JoinKind::Cross)
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 

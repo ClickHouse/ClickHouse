@@ -37,6 +37,7 @@ SortingStep::Settings::Settings(const Context & context)
     max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
+    max_block_bytes = settings.prefer_external_sort_block_bytes;
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -284,6 +285,7 @@ void SortingStep::mergeSorting(
                 header,
                 result_sort_desc,
                 sort_settings.max_block_size,
+                sort_settings.max_block_bytes,
                 limit_,
                 increase_sort_description_compile_attempts_current,
                 sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
