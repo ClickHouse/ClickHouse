@@ -1487,8 +1487,15 @@ void executeQuery(
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
+        /// The timezone was already set before query was processed,
+        /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+        result_details.timezone = DateLUT::instance().getTimeZone();
         throw;
     }
+
+    /// The timezone was already set before query was processed,
+    /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+    result_details.timezone = DateLUT::instance().getTimeZone();
 
     auto & pipeline = streams.pipeline;
 
