@@ -544,7 +544,7 @@ public:
         }
         else
         {
-            if (!WhichDataType(arguments[0].type).isDateTime()
+            if (!(WhichDataType(arguments[0].type).isDateTime() || WhichDataType(arguments[0].type).isDateTime64())
                 || !WhichDataType(arguments[2].type).isString())
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} supports 2 or 3 arguments. "
