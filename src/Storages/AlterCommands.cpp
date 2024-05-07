@@ -1100,11 +1100,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == INVERTED_INDEX_NAME)
+        if (index.type == FULL_TEXT_INDEX_NAME)
             return true;
     }
     return false;

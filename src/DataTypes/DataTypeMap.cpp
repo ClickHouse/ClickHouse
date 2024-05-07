@@ -118,22 +118,7 @@ bool DataTypeMap::equals(const IDataType & rhs) const
 
 bool DataTypeMap::checkKeyType(DataTypePtr key_type)
 {
-    if (key_type->getTypeId() == TypeIndex::LowCardinality)
-    {
-        const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*key_type);
-        if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
-            return false;
-    }
-    else if (!key_type->isValueRepresentedByInteger()
-             && !isStringOrFixedString(*key_type)
-             && !WhichDataType(key_type).isNothing()
-             && !WhichDataType(key_type).isIPv6()
-             && !WhichDataType(key_type).isUUID())
-    {
-        return false;
-    }
-
-    return true;
+    return !isNullableOrLowCardinalityNullable(key_type);
 }
 
 DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const

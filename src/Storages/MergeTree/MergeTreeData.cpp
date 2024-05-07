@@ -3008,9 +3008,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
-    if (AlterCommands::hasInvertedIndex(new_metadata) && !settings.allow_experimental_inverted_index)
+    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_inverted_index)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
 
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
@@ -7300,10 +7300,19 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
-    else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
     else
-        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    {
+        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
+        {
+            auto lock = lockParts();
+            state = data_part->getState();
+        }
+
+        if (state == MergeTreeDataPartState::Active)
+            broken_part_callback(data_part->name);
+        else
+            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    }
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const

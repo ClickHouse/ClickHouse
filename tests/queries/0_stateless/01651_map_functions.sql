@@ -28,6 +28,17 @@ drop table if exists table_map;
 select map( 'aa', 4, 'bb' , 5) as m, mapKeys(m), mapValues(m);
 select map( 'aa', 4, 'bb' , 5) as m, mapContains(m, 'aa'), mapContains(m, 'k');
 
+select map(0.1::Float32, 4, 0.2::Float32, 5) as m, mapKeys(m), mapValues(m);
+select map(0.1::Float32, 4, 0.2::Float32, 5) as m, mapContains(m, 0.1::Float32), mapContains(m, 0.3::Float32);
+select map(0.1::Float64, 4, 0.2::Float64, 5) as m, mapKeys(m), mapValues(m);
+select map(0.1::Float64, 4, 0.2::Float64, 5) as m, mapContains(m, 0.1::Float64), mapContains(m, 0.3::Float64);
+select map(array(1,2), 4, array(3,4), 5) as m, mapKeys(m), mapValues(m);
+select map(array(1,2), 4, array(3,4), 5) as m, mapContains(m, array(1,2)), mapContains(m, array(1,3));
+select map(map(1,2), 4, map(3,4), 5) as m, mapKeys(m), mapValues(m);
+select map(map(1,2), 4, map(3,4), 5) as m, mapContains(m, map(1,2)), mapContains(m, map(1,3));
+select map(tuple(1,2), 4, tuple(3,4), 5) as m, mapKeys(m), mapValues(m);
+select map(tuple(1,2), 4, tuple(3,4), 5) as m, mapContains(m, tuple(1,2)), mapContains(m, tuple(1,3));
+
 select map(0, 0) as m, mapContains(m, number % 2) from numbers(2);
 
 select mapFromArrays(['aa', 'bb'], [4, 5]);
@@ -38,7 +49,7 @@ select mapFromArrays('aa', [4, 5]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select mapFromArrays(['aa', 'bb'], 5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select mapFromArrays(['aa', 'bb'], [4, 5], [6, 7]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select mapFromArrays(['aa', 'bb'], [4, 5, 6]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
-select mapFromArrays([[1,2], [3,4]], [4, 5, 6]); -- { serverError BAD_ARGUMENTS }
+select mapFromArrays([[1,2], [3,4]], [4, 5, 6]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 select mapFromArrays(['aa', 'bb'], map('a', 4, 'b', 5));
 select mapFromArrays(['aa', 'bb'], materialize(map('a', 4, 'b', 5))) from numbers(2);

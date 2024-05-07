@@ -70,6 +70,9 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     }
     writeCString("\n\n", out);
 
+    std::vector<String> transferred_row(num_columns);
+    bool has_transferred_row = false;
+
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
         if (format_settings.pretty.output_format_pretty_row_numbers)
@@ -91,13 +94,25 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
                 writeCString(" ", out);
 
             const auto & type = *header.getByPosition(column).type;
-            auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(
-                *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+            size_t cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
+            String serialized_value;
+            {
+                WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+                serializations[column]->serializeText(*columns[column], row, out_serialize, format_settings);
+            }
+            if (cut_to_width)
+                splitValueAtBreakLine(serialized_value, transferred_row[column], cur_width);
+            has_transferred_row |= !transferred_row[column].empty() && cur_width <= cut_to_width;
+
+            writeValueWithPadding(serialized_value, cur_width, max_widths[column], cut_to_width,
+                type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[column].empty(), false);
         }
 
         writeReadableNumberTip(chunk);
         writeChar('\n', out);
+
+        if (has_transferred_row)
+            writeTransferredRow(max_widths, header, transferred_row, cut_to_width, true);
     }
 
     total_rows += num_rows;
