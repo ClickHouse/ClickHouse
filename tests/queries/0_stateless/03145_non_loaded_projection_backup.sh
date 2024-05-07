@@ -10,6 +10,7 @@ create table tp_1 (x Int32, y Int32, projection p (select x, y order by x)) engi
 insert into tp_1 select number, number from numbers(3);
 
 set mutations_sync = 2;
+system stop merges;
 
 alter table tp_1 add projection pp (select x, count() group by x);
 insert into tp_1 select number, number from numbers(4);
@@ -46,4 +47,4 @@ check table tp_1 settings check_query_single_value_result = 0;" | grep -o "Found
 $CLICKHOUSE_CLIENT -nm -q "
 set send_logs_level='fatal';
 check table tp_1"
-$CLICKHOUSE_CLIENT -q "drop table tp_1 sync"
+$CLICKHOUSE_CLIENT -q "drop table tp_1"
