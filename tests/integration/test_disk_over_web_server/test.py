@@ -44,7 +44,7 @@ def cluster():
             "node5",
             main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
-            allow_analyzer=False,
+            use_old_analyzer=True,
         )
 
         cluster.start()
