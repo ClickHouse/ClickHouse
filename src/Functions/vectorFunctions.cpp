@@ -1261,43 +1261,43 @@ public:
 
 using FunctionL1Distance = FunctionLDistance<L1Label>;
 
-using FunctionL2Distance = FunctionLDistance<L2Label>;
-
 using FunctionL2SquaredDistance = FunctionLDistance<L2SquaredLabel>;
 
 using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
 
 using FunctionLpDistance = FunctionLDistance<LpLabel>;
 
-// Адаптер для L2Distance
-struct FunctionL2DistanceAdapter : public IFunction
-{
-    static constexpr auto name = "L2Distance";
+class FunctionL2Distance : public IFunction {
+public:
+    static inline auto name = std::string("L2Distance");
 
-    explicit FunctionL2DistanceAdapter(ContextPtr context_) : IFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL2DistanceAdapter>(context_); }
+    explicit FunctionL2Distance(ContextPtr context_) : IFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL2Distance>(context_); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &arguments) const override {
         auto func = FunctionFactory::instance().get("L2SquaredDistance", context);
-        return func->getReturnTypeImpl(arguments);
+        auto squared_result_type = func->getReturnTypeImpl(arguments);
+        // Get the element type from the returned tuple type
+        auto element_type = squared_result_type->getTupleElementTypes()[0];
+        // Create a new DataTypeArray with the element type
+        return std::make_shared<DataTypeArray>(element_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &arguments, const DataTypePtr &result_type, size_t input_rows_count) const override {
         auto func = FunctionFactory::instance().get("L2SquaredDistance", context);
-        auto column = func->executeImpl(arguments, nullptr, input_rows_count);
-        return applyFunctionUnary<sqrt>(column);
+        auto squared_result = func->executeImpl(arguments, result_type, input_rows_count);
+
+        // Take square root of each element in the result column
+        auto sqrt_function = FunctionFactory::instance().get("sqrt", context);
+        return sqrt_function->executeImpl({squared_result}, result_type, input_rows_count);
     }
 };
-
-// Регистрируем адаптер в фабрике
-factory.registerFunction<FunctionL2DistanceAdapter>();
-factory.registerAlias("L2Distance", FunctionL2DistanceAdapter::name, FunctionFactory::CaseInsensitive);
 
 
 template <class FuncLabel>
