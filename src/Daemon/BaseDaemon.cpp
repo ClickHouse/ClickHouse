@@ -846,6 +846,13 @@ void BaseDaemon::initialize(Application & self)
         DateLUT::setDefaultTimezone(config_timezone);
     }
 
+    if (config().has("prefer_system_tzdata"))
+    {
+        const bool prefer_system_tzdata = config().getBool("prefer_system_tzdata");
+        if (0 != setenv("PREFER_SYSTEM_TZDATA", prefer_system_tzdata ? "1" : "0", 1)) // NOLINT(concurrency-mt-unsafe) // ok if not called concurrently with other setenv/getenv
+            throw Poco::Exception("Cannot setenv PREFER_SYSTEM_TZDATA variable");
+    }
+
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
         log_path = fs::path(log_path).replace_filename("");

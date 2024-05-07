@@ -2,6 +2,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -284,6 +285,13 @@ namespace cctz_extension
             const std::string & name,
             const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
         {
+            const char * prefer_system_tzdata_env = std::getenv("PREFER_SYSTEM_TZDATA"); // NOLINT(concurrency-mt-unsafe)
+            if (prefer_system_tzdata_env && 0 != strcmp(prefer_system_tzdata_env, "0"))
+            {
+                if (auto tz_source = fallback(name))
+                    return tz_source;
+            }
+
             std::string_view tz_file = getTimeZone(name.data());
 
             if (!tz_file.empty())
