@@ -1,5 +1,6 @@
 #include <chrono>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 
 #include <gtest/gtest.h>
@@ -12,6 +13,17 @@ extern const Metric LocalThreadScheduled;
 }
 
 using namespace std::chrono_literals;
+
+namespace ProfileEvents
+{
+extern const Event GlobalThreadPoolExpansions;
+extern const Event GlobalThreadPoolShrinks;
+extern const Event GlobalThreadPoolJobScheduleMicroseconds;
+extern const Event LocalThreadPoolExpansions;
+extern const Event LocalThreadPoolShrinks;
+extern const Event LocalThreadPoolJobScheduleMicroseconds;
+}
+
 
 void worker()
 {
@@ -70,7 +82,7 @@ TEST_P(ThreadPoolTest, Warm)
     if (GetParam().experimental)
     {
         auto t_start = std::chrono::high_resolution_clock::now();
-        GlobalThreadPool<tp::ThreadPool>::initialize(1000, 1000, 10000);
+        GlobalThreadPool<tp::ThreadPool>::initialize(5000, 100, 10000);
         auto t_end = std::chrono::high_resolution_clock::now();
         double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
         std::cout << "elapsed_time_ms=" << elapsed_time_ms << std::endl;
@@ -82,7 +94,7 @@ TEST_P(ThreadPoolTest, Warm)
     else
     {
         auto t_start = std::chrono::high_resolution_clock::now();
-        GlobalThreadPool<FreeThreadPool>::initialize(1000, 1000, 10000);
+        GlobalThreadPool<FreeThreadPool>::initialize(5000, 100, 10000);
         auto t_end = std::chrono::high_resolution_clock::now();
         double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
         std::cout << "elapsed_time_ms=" << elapsed_time_ms << std::endl;
@@ -103,6 +115,26 @@ TEST_P(ThreadPoolTest, Warm)
     }
 
     warm_pool.wait();
+
+    std::cout << std::boolalpha << DB::CurrentThread::isInitialized()
+              << " GlobalThreadPoolExpansions: "
+              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolExpansions]
+              <<  std::endl
+              << "GlobalThreadPoolShrinks: "
+              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolShrinks]
+              <<  std::endl
+              << "GlobalThreadPoolJobScheduleMicroseconds: "
+              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds]
+              <<  std::endl
+              << "LocalThreadPoolExpansions: "
+              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolExpansions]
+              <<  std::endl
+              << "LocalThreadPoolShrinks: "
+              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolShrinks]
+              <<  std::endl
+              << "LocalThreadPoolJobScheduleMicroseconds: "
+              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolJobScheduleMicroseconds]
+              << std::endl;
 }
 
 

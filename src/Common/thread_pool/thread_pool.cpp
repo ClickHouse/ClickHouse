@@ -145,7 +145,7 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
         size_t worker_id = 0;
         for (; worker_id < m_workers.size(); ++worker_id)
         {
-            if (m_workers[worker_id] && !m_workers[worker_id]->is_busy())
+            if (m_workers[worker_id] && !m_workers[worker_id]->is_busy())  // max_active_worker for optimization ?
             {
                 // Worker<Task>::setWorkerIdForCurrentThread(worker_id);
                 worker = m_workers[worker_id].get();
@@ -157,12 +157,12 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
             std::unique_lock lock(m_mutex, std::defer_lock);
             if (lock.try_lock())
             {
-                while (m_num_workers < m_options.threadCount()) /// empty slots?
+                while (m_num_workers < m_options.threadCount() /*m_workers.size() */) /// empty slots?
                 {
                     size_t new_worker_num = 0;
 
                     new_worker_num = m_workers.size();
-                    if (m_scheduled_jobs < new_worker_num * 1 || new_worker_num >= m_options.threadCount())
+                    if (m_scheduled_jobs < m_num_workers * 1 || m_num_workers >= m_options.threadCount())
                     {
                         // no courage to create new workers
                         break;
@@ -175,9 +175,13 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
                     m_workers[new_worker_num] = std::move(std::make_unique<Worker<Task>>(m_options.queueSize(), this));
                     lock.unlock();
 
+
+
                     worker = m_workers[new_worker_num].get();
+                    m_num_workers++;
 
                     worker->start(new_worker_num, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
+                    m_raw_workers[new_worker_num].store(worker);
                     ProfileEvents::increment(ProfileEvents::GlobalThreadPoolExpansions);
 
                     break;
@@ -190,7 +194,13 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
         try_shrink = true;
     }
 
-    ProfileEvents::increment(ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds, watch.elapsedNanoseconds());
+
+    // ProfileEvents::global_counters.increment(ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds, watch.elapsedMicroseconds());
+
+
+    // std::cout << ProfileEvents::global_counters[ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds] << " ";
+
 
     const auto & post_ret = worker->post(std::forward<Job>(handler));
     if (try_shrink)
