@@ -33,6 +33,7 @@
 * A mode for `topK`/`topkWeighed` support mode, which return count of values and its error. [#54508](https://github.com/ClickHouse/ClickHouse/pull/54508) ([UnamedRus](https://github.com/UnamedRus)).
 * Added function `toMillisecond` which returns the millisecond component for values of type`DateTime` or `DateTime64`. [#60281](https://github.com/ClickHouse/ClickHouse/pull/60281) ([Shaun Struwig](https://github.com/Blargian)).
 * Allow configuring HTTP redirect handlers for clickhouse-server. For example, you can make `/` redirect to the Play UI. [#60390](https://github.com/ClickHouse/ClickHouse/pull/60390) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Allow Raw as a synonym for TSVRaw. [#63394](https://github.com/ClickHouse/ClickHouse/pull/63394) ([Unalian](https://github.com/Unalian))
 
 #### Performance Improvement
 * Optimized function `dotProduct` to omit unnecessary and expensive memory copies. [#60928](https://github.com/ClickHouse/ClickHouse/pull/60928) ([Robert Schulze](https://github.com/rschu1ze)).
