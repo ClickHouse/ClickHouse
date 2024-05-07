@@ -2392,6 +2392,7 @@ sharded
 sharding
 shortcircuit
 shortkeys
+showCertificate
 shoutout
 simdjson
 simpleJSON
