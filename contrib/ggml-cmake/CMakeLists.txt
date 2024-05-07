@@ -1,0 +1,109 @@
+set(GGML_CPP_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/ggml/src")
+set(GGML_CPP_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/ggml/include")
+
+set(GGML_SRCS
+    "${GGML_CPP_SOURCE_DIR}/ggml.c"
+    "${GGML_CPP_SOURCE_DIR}/ggml-alloc.c"
+    "${GGML_CPP_SOURCE_DIR}/ggml-backend.c"
+    "${GGML_CPP_SOURCE_DIR}/ggml-quants.c"
+)
+set (GGML_PUBLIC_HDRS
+    ${GGML_CPP_INCLUDE_DIR}/ggml/ggml.h
+    ${GGML_CPP_INCLUDE_DIR}/ggml/ggml-alloc.h
+    ${GGML_CPP_INCLUDE_DIR}/ggml/ggml-backend.h
+)
+set(GGML_HDRS
+    "${GGML_CPP_SOURCE_DIR}/ggml-backend-impl.h"
+    "${GGML_CPP_SOURCE_DIR}/ggml-impl.h"
+    ${GGML_PUBLIC_HDRS}
+)
+
+#
+# Architecture-related optimization flags
+#
+
+set(GGML_ARCH_FLAGS "")
+
+if ((${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") OR (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64"))
+    # ARM architecture
+
+    check_cxx_compiler_flag(-mfp16-format=ieee COMPILER_SUPPORTS_FP16_FORMAT_I3E)
+    if (NOT "${COMPILER_SUPPORTS_FP16_FORMAT_I3E}" STREQUAL "")
+        list(APPEND GGML_ARCH_FLAGS -mfp16-format=ieee)
+    endif()
+    if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv6")
+        list(APPEND GGML_ARCH_FLAGS -mfpu=neon-fp-armv8 -mno-unaligned-access)
+    endif()
+    if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv7")
+        list(APPEND GGML_ARCH_FLAGS -mfpu=neon-fp-armv8 -mno-unaligned-access -funsafe-math-optimizations)
+    endif()
+    if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv8")
+        list(APPEND GGML_ARCH_FLAGS -mno-unaligned-access)
+    endif()
+
+elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "^(x86_64|i686|AMD64)$")
+    # x86 architecture
+
+    list(APPEND GGML_ARCH_FLAGS -march=native)
+    # TODO: Add GGML avx and fma optimizations
+
+elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "ppc64le")
+    # PowerPC64LE CPU architecture (ClickHouse supports little-endian ppc64 only)
+
+    list(APPEND GGML_ARCH_FLAGS -mcpu=powerpc64le)
+endif()
+
+#
+# Posix conformance -- data types, macros and functions related to
+# controlling CPU affinity and memory allocation
+#
+
+set(GGML_COMPILE_DEFENITIONS "")
+list(APPEND GGML_COMPILE_DEFENITIONS _XOPEN_SOURCE=600)
+
+if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+    list(APPEND GGML_COMPILE_DEFENITIONS _GNU_SOURCE)
+endif()
+
+if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+    list(APPEND GGML_COMPILE_DEFENITIONS __BSD_VISIBLE)
+endif()
+
+if (
+    CMAKE_SYSTEM_NAME MATCHES "Darwin" OR
+    CMAKE_SYSTEM_NAME MATCHES "iOS" OR
+    CMAKE_SYSTEM_NAME MATCHES "DragonFly"
+)
+    list(APPEND GGML_COMPILE_DEFENITIONS _DARWIN_C_SOURCE)
+endif()
+
+#
+# GGML library
+#
+
+add_library(_ggml
+    ${GGML_SRCS} ${GGML_HDRS}
+)
+target_include_directories(_ggml PUBLIC ${GGML_CPP_INCLUDE_DIR} ${GGML_CPP_INCLUDE_DIR}/ggml)
+
+target_compile_options(_ggml PRIVATE ${GGML_ARCH_FLAGS})
+target_compile_definitions(_ggml PRIVATE ${GGML_COMPILE_DEFENITIONS})
+set_target_properties(_ggml PROPERTIES PUBLIC_HEADER ${GGML_PUBLIC_HDRS})
+
+#
+# Dependencies
+#
+
+find_library(MATH_LIB m)        # -lm
+find_package(Threads REQUIRED)  # Threads::Threads
+
+target_link_libraries(_ggml PUBLIC ${CMAKE_THREAD_LIBS_INIT})
+if (MATH_LIB)
+    target_link_libraries(_ggml PUBLIC ${MATH_LIB})
+endif()
+
+#
+# ClickHouse alias
+#
+
+add_library(ch_contrib::ggml ALIAS _ggml)

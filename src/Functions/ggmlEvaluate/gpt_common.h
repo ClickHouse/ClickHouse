@@ -62,45 +62,4 @@ GptVocab::id gpt_sample_top_k_top_p(
     double temp,
     std::mt19937 & rng);
 
-class IGptModel {
-public:
-    virtual ~IGptModel() = default;
-
-    virtual bool load(const std::string & fname)
-    {
-        /* Returns true if the model was successfully loaded before. Even if a different fname is provided */
-        if (loaded.load()) {
-            return true;
-        }
-        std::lock_guard lock{load_mutex};
-        if (loaded.load()) {
-            return true;
-        }
-        std::cout << "Start load\n";
-        bool res = doLoad(fname);
-        loaded.store(res);
-        return res;
-    }
-    virtual bool eval(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token)
-    {
-        return doEval(n_threads, n_past, embd_inp, embd_w, mem_per_token);
-    }
-
-    std::vector<GptVocab::id> predict(const std::vector<GptVocab::id> & embd_inp);
-
-    GptParams params;
-    GptVocab vocab;
-
-private:
-    virtual bool doLoad(const std::string & fname) = 0;
-    virtual bool doEval(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token) = 0;
-
-    std::atomic<bool> loaded{false};
-    std::mutex load_mutex;
-};
-
-class GptStorage : public GgmlModelStorage<IGptModel> {
-    using GgmlModelStorage::GgmlModelStorage;
-};
-
 }

@@ -228,7 +228,7 @@ add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
 
-add_contrib (llama-cpp-cmake llama-cpp)
+add_contrib (ggml-cmake ggml)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
