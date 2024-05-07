@@ -44,7 +44,7 @@ protected:
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, size_t table_border_width);
 
     void writeValueWithPadding(
         String & value, size_t value_width, size_t pad_to_width, size_t cut_to_width,
@@ -52,7 +52,7 @@ protected:
 
     void writeTransferredRow(const Widths & max_widths, const Block & header, std::vector<String> & transferred_row, size_t cut_to_width, bool space_block);
 
-    void splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width);
+    void splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width, size_t cut_to_width, size_t prefix);
 
     void resetFormatterImpl() override
     {
