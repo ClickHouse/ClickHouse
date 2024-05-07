@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <azure/storage/common/storage_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -383,6 +384,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
         }
 
         std::unique_ptr<BlobServiceClient> blob_service_client;
+        size_t pos = configuration.connection_url.find('?');
         std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential;
         if (storage_shared_key_credential)
         {
@@ -390,12 +392,20 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
         }
         else
         {
-            managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
+            /// If conneciton_url does not have '?', then its not SAS
+            if (pos == std::string::npos)
+            {
+                auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, workload_identity_credential);
+            }
+            else
+            {
+                managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
+            }
         }
 
         std::string final_url;
-        size_t pos = configuration.connection_url.find('?');
         if (pos != std::string::npos)
         {
             auto url_without_sas = configuration.connection_url.substr(0, pos);
@@ -420,7 +430,16 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             if (storage_shared_key_credential)
                 result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
             else
-                result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+            {
+                /// If conneciton_url does not have '?', then its not SAS
+                if (pos == std::string::npos)
+                {
+                    auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+                    result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
+                }
+                else
+                    result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+            }
         }
         else
         {
@@ -441,7 +460,16 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                     if (storage_shared_key_credential)
                         result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
                     else
-                        result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+                    {
+                        /// If conneciton_url does not have '?', then its not SAS
+                        if (pos == std::string::npos)
+                        {
+                            auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+                            result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
+                        }
+                        else
+                            result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+                    }
                 }
                 else
                 {

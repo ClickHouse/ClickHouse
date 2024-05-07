@@ -860,6 +860,42 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
     }
 }
 
+namespace
+{
+template <typename TMustHaveDataType>
+void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command)
+{
+    if (command.type == AlterCommand::MODIFY_COLUMN)
+    {
+        if (!typeid_cast<const TMustHaveDataType *>(command.data_type.get()))
+        {
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot alter {} column ({}) to type {}, because it must have type {}",
+                column_meta_name,
+                command.column_name,
+                command.data_type->getName(),
+                TypeName<TMustHaveDataType>);
+        }
+    }
+    else if (command.type == AlterCommand::DROP_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER DROP {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
+    else if (command.type == AlterCommand::RENAME_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER RENAME {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
+};
+}
 
 void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const
 {
@@ -985,6 +1021,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Summing)
     {
+        auto columns_to_sum_copy = columns_to_sum;
+        std::sort(columns_to_sum_copy.begin(), columns_to_sum_copy.end());
+        if (const auto it = std::adjacent_find(columns_to_sum_copy.begin(), columns_to_sum_copy.end()); it != columns_to_sum_copy.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} is listed multiple times in the list of columns to sum", *it);
+
         /// If columns_to_sum are set, then check that such columns exist.
         for (const auto & column_to_sum : columns_to_sum)
         {
@@ -993,9 +1034,10 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                 return column_to_sum == Nested::extractTableName(name_and_type.name);
             };
             if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                                "Column {} listed in columns to sum does not exist in table declaration.",
-                                column_to_sum);
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "Column {} listed in columns to sum does not exist in table declaration.",
+                    column_to_sum);
         }
 
         /// Check that summing columns are not in partition key.
@@ -1016,12 +1058,18 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Replacing)
     {
+        if (!version_column.empty() && version_column == is_deleted_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and is_deleted column cannot be the same column ({})", version_column);
+
         check_is_deleted_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
 
     if (mode == MergingParams::VersionedCollapsing)
     {
+        if (!version_column.empty() && version_column == sign_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and sign column cannot be the same column ({})", version_column);
+
         check_sign_column(false, "VersionedCollapsingMergeTree");
         check_version_column(false, "VersionedCollapsingMergeTree");
     }
@@ -2960,9 +3008,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
-    if (AlterCommands::hasInvertedIndex(new_metadata) && !settings.allow_experimental_inverted_index)
+    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_inverted_index)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
 
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
@@ -3073,6 +3121,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
             }
+        }
+        else if (command.column_name == merging_params.is_deleted_column)
+        {
+            checkSpecialColumn<DataTypeUInt8>("is_deleted", command);
+        }
+        else if (command.column_name == merging_params.sign_column)
+        {
+            checkSpecialColumn<DataTypeUInt8>("sign", command);
         }
 
         if (command.type == AlterCommand::MODIFY_QUERY)

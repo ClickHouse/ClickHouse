@@ -43,10 +43,10 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }
 
-    size_t new_consumprion = stat.compressed_size + compressed_delta;
-    if (compressed_delta > 0 && settings.max_size_on_disk && new_consumprion > settings.max_size_on_disk)
+    size_t new_consumption = stat.compressed_size + compressed_delta;
+    if (compressed_delta > 0 && settings.max_size_on_disk && new_consumption > settings.max_size_on_disk)
         throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
-            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumprion, settings.max_size_on_disk);
+            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;

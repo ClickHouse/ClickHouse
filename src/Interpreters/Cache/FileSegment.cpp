@@ -340,7 +340,7 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     remote_file_reader = remote_file_reader_;
 }
 
-void FileSegment::write(const char * from, size_t size, size_t offset)
+void FileSegment::write(char * from, size_t size, size_t offset)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
 
@@ -389,16 +389,20 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
     try
     {
-        if (!cache_writer)
-            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path);
-
 #ifdef ABORT_ON_LOGICAL_ERROR
         /// This mutex is only needed to have a valid assertion in assertCacheCorrectness(),
         /// which is only executed in debug/sanitizer builds (under ABORT_ON_LOGICAL_ERROR).
         std::lock_guard lock(write_mutex);
 #endif
 
-        cache_writer->write(from, size);
+        if (!cache_writer)
+            cache_writer = std::make_unique<WriteBufferFromFile>(file_segment_path, /* buf_size */0);
+
+        /// Size is equal to offset as offset for write buffer points to data end.
+        cache_writer->set(from, size, /* offset */size);
+        /// Reset the buffer when finished.
+        SCOPE_EXIT({ cache_writer->set(nullptr, 0); });
+        /// Flush the buffer.
         cache_writer->next();
 
         downloaded_size += size;

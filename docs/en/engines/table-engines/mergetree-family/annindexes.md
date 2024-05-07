@@ -22,9 +22,8 @@ ORDER BY Distance(vectors, Point)
 LIMIT N
 ```
 
-`vectors` contains N-dimensional values of type [Array](../../../sql-reference/data-types/array.md) or
-[Tuple](../../../sql-reference/data-types/tuple.md), for example embeddings. Function `Distance` computes the distance between two vectors.
-Often, the Euclidean (L2) distance is chosen as distance function but [other
+`vectors` contains N-dimensional values of type [Array(Float32)](../../../sql-reference/data-types/array.md), for example embeddings.
+Function `Distance` computes the distance between two vectors. Often, the Euclidean (L2) distance is chosen as distance function but [other
 distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point, e.g. `(0.17,
 0.33, ...)`, and `N` limits the number of search results.
 
@@ -47,7 +46,7 @@ of the search space (using clustering, search trees, etc.) which allows to compu
 
 # Creating and Using ANN Indexes {#creating_using_ann_indexes}
 
-Syntax to create an ANN index over an [Array](../../../sql-reference/data-types/array.md) column:
+Syntax to create an ANN index over an [Array(Float32)](../../../sql-reference/data-types/array.md) column:
 
 ```sql
 CREATE TABLE table_with_ann_index
@@ -55,19 +54,6 @@ CREATE TABLE table_with_ann_index
   `id` Int64,
   `vectors` Array(Float32),
   INDEX [ann_index_name vectors TYPE [ann_index_type]([ann_index_parameters]) [GRANULARITY [N]]
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
-
-```sql
-CREATE TABLE table_with_ann_index
-(
-  `id` Int64,
-  `vectors` Tuple(Float32[, Float32[, ...]]),
-  INDEX [ann_index_name] vectors TYPE [ann_index_type]([ann_index_parameters]) [GRANULARITY [N]]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -164,26 +150,13 @@ linear surfaces (lines in 2D, planes in 3D etc.).
   </iframe>
 </div>
 
-Syntax to create an Annoy index over an [Array](../../../sql-reference/data-types/array.md) column:
+Syntax to create an Annoy index over an [Array(Float32)](../../../sql-reference/data-types/array.md) column:
 
 ```sql
 CREATE TABLE table_with_annoy_index
 (
   id Int64,
   vectors Array(Float32),
-  INDEX [ann_index_name] vectors TYPE annoy([Distance[, NumTrees]]) [GRANULARITY N]
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
-
-```sql
-CREATE TABLE table_with_annoy_index
-(
-  id Int64,
-  vectors Tuple(Float32[, Float32[, ...]]),
   INDEX [ann_index_name] vectors TYPE annoy([Distance[, NumTrees]]) [GRANULARITY N]
 )
 ENGINE = MergeTree
@@ -203,10 +176,9 @@ Parameter `NumTrees` is the number of trees which the algorithm creates (default
 more accurate search results but slower index creation / query times (approximately linearly) as well as larger index sizes.
 
 :::note
-Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays must have same length. To avoid
-errors, you can use a [CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT
-constraint_name_1 CHECK length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default
-values) are not supported.
+All arrays must have same length. To avoid errors, you can use a
+[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
+length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported.
 :::
 
 The creation of Annoy indexes (whenever a new part is build, e.g. at the end of a merge) is a relatively slow process. You can increase
@@ -258,19 +230,6 @@ CREATE TABLE table_with_usearch_index
 (
   id Int64,
   vectors Array(Float32),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
-
-```sql
-CREATE TABLE table_with_usearch_index
-(
-  id Int64,
-  vectors Tuple(Float32[, Float32[, ...]]),
   INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
 )
 ENGINE = MergeTree

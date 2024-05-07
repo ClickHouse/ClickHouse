@@ -11,6 +11,6 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key;
 
-ALTER TABLE tab ADD INDEX inv_idx(str) TYPE inverted(0); -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE tab ADD INDEX inv_idx(str) TYPE full_text(0); -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE tab;
