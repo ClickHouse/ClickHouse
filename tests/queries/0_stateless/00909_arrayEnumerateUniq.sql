@@ -152,7 +152,7 @@ DROP TABLE arrays_test;
 
 
 select '---------BAD';
-SELECT arrayEnumerateUniqRanked(); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked(); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT arrayEnumerateUniqRanked([]);
 SELECT arrayEnumerateUniqRanked(1); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(2,[]); -- { serverError 36 }
