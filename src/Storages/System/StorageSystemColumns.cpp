@@ -419,7 +419,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         /// Add `table` column.
         MutableColumnPtr table_column_mut = ColumnString::create();
-        size_t num_databases = database_column->size();
+        const auto num_databases = database_column->size();
         IColumn::Offsets offsets(num_databases);
 
         for (size_t i = 0; i < num_databases; ++i)
