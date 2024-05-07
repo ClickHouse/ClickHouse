@@ -1,5 +1,7 @@
 -- Tags: long
 
+-- https://s3.amazonaws.com/clickhouse-test-reports/55051/07f288862c56b0a98379a07101062689b0460788/stateless_tests_flaky_check__asan_.html
+
 DROP TABLE IF EXISTS build;
 DROP TABLE IF EXISTS skewed_probe;
 
