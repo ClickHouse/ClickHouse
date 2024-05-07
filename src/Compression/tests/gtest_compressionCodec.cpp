@@ -1306,13 +1306,14 @@ TEST(LZ4Test, DecompressMalformedInput)
 
 TEST(FSSTTest, CompressDecompress)
 {
-    std::vector<std::string> strs;
-    strs.push_back("a");
-    strs.push_back("aa");
-    strs.push_back("aaa");
-    strs.push_back("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-    strs.push_back("Hello");
-    strs.push_back("World adsasd aboba");
+    std::vector<std::string> strs = {
+        "a",
+        "aa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "Hello, ",
+        "World!",
+        "TEK1219A<>>sd19k~<KO)(*_@!_)\"\'\""
+    };
 
     char in_str[2281337];
     char* iter = in_str;
