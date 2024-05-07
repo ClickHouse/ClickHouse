@@ -489,7 +489,8 @@ size_t StorageS3Source::DisclosedGlobIterator::estimatedKeysCount()
     {
         /// 1000 files were listed, and we cannot make any estimation of _how many more_ there are (because we list bucket lazily);
         /// If there are more objects in the bucket, limiting the number of streams is the last thing we may want to do
-        /// as it would lead to serious (up to <max_threads> times) reading performance degradation.
+        /// as it would lead to serious slow down of the execution, since objects are going
+        /// to be fetched sequentially rather than in-parallel with up to <max_threads> times.
         return std::numeric_limits<size_t>::max();
     }
     else
