@@ -29,7 +29,7 @@ GRANT SELECT (end) ON ${CLICKHOUSE_DATABASE}.test1 TO test_03147;
 # - excessive logging of "access granted" and "access denied"
 
 # The test could succeed even on the previous version, but it will show up as being too slow.
-$CLICKHOUSE_CLIENT --user test_03147 --query "SELECT name FROM system.columns"
+$CLICKHOUSE_CLIENT --user test_03147 --query "SELECT name FROM system.columns WHERE database = currentDatabase()"
 
 $CLICKHOUSE_CLIENT --multiquery "
 DROP USER test_03147;
