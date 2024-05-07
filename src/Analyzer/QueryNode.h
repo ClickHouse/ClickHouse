@@ -140,6 +140,18 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
+    /// Returns true if query node has RECURSIVE WITH, false otherwise
+    bool isRecursiveWith() const
+    {
+        return is_recursive_with;
+    }
+
+    /// Set query node RECURSIVE WITH value
+    void setIsRecursiveWith(bool is_recursive_with_value)
+    {
+        is_recursive_with = is_recursive_with_value;
+    }
+
     /// Returns true if query node has DISTINCT, false otherwise
     bool isDistinct() const
     {
@@ -618,6 +630,7 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
     bool is_group_by_with_totals = false;

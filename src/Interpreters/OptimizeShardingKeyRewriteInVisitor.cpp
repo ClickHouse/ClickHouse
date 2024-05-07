@@ -38,25 +38,27 @@ Field executeFunctionOnField(
     return (*ret.column)[0];
 }
 
-/// @param sharding_column_value - one of values from IN
+/// @param column_value - one of values from IN
 /// @param sharding_column_name - name of that column
 /// @return true if shard may contain such value (or it is unknown), otherwise false.
 bool shardContains(
-    Field sharding_column_value,
+    Field column_value,
     const std::string & sharding_column_name,
     const OptimizeShardingKeyRewriteInMatcher::Data & data)
 {
+    /// Type of column in storage (used for implicit conversion from i.e. String to Int)
+    const DataTypePtr & column_type = data.sharding_key_expr->getSampleBlock().getByName(sharding_column_name).type;
     /// Implicit conversion.
-    sharding_column_value = convertFieldToType(sharding_column_value, *data.sharding_key_type);
+    column_value = convertFieldToType(column_value, *column_type);
 
     /// NULL is not allowed in sharding key,
     /// so it should be safe to assume that shard cannot contain it.
-    if (sharding_column_value.isNull())
+    if (column_value.isNull())
         return false;
 
     Field sharding_value = executeFunctionOnField(
-        sharding_column_value, sharding_column_name,
-        data.sharding_key_expr, data.sharding_key_type,
+        column_value, sharding_column_name,
+        data.sharding_key_expr, column_type,
         data.sharding_key_column_name);
     /// The value from IN can be non-numeric,
     /// but in this case it should be convertible to numeric type, let's try.

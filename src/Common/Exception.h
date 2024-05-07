@@ -13,6 +13,7 @@
 #include <memory>
 #include <vector>
 
+#include <fmt/core.h>
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
@@ -59,6 +60,7 @@ public:
             std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
+        message_format_string_args = msg.format_string_args;
     }
 
     Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
@@ -67,6 +69,7 @@ public:
             std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
+        message_format_string_args = msg.format_string_args;
     }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
@@ -107,12 +110,7 @@ public:
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
-    Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
-    {
-        capture_thread_frame_pointers = thread_frame_pointers;
-        message_format_string = fmt.message_format_string;
-    }
+    Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt.format(std::forward<Args>(args)...), code) {}
 
     struct CreateFromPocoTag {};
     struct CreateFromSTDTag {};
@@ -152,6 +150,8 @@ public:
 
     std::string_view tryGetMessageFormatString() const { return message_format_string; }
 
+    std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
+
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
@@ -162,6 +162,7 @@ private:
 
 protected:
     std::string_view message_format_string;
+    std::vector<std::string> message_format_string_args;
     /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
@@ -193,26 +194,29 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
     ErrnoException(int code, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code), saved_errno(errno)
+        : Exception(fmt.format(std::forward<Args>(args)...), code), saved_errno(errno)
     {
-        capture_thread_frame_pointers = thread_frame_pointers;
-        message_format_string = fmt.message_format_string;
+        addMessage(", {}", errnoToString(saved_errno));
+    }
+
+    template <typename... Args>
+    ErrnoException(int code, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
+        : Exception(fmt.format(std::forward<Args>(args)...), code), saved_errno(with_errno)
+    {
         addMessage(", {}", errnoToString(saved_errno));
     }
 
     template <typename... Args>
     [[noreturn]] static void throwWithErrno(int code, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
     {
-        auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
-        e.message_format_string = fmt.message_format_string;
+        auto e = ErrnoException(code, with_errno, std::move(fmt), std::forward<Args>(args)...);
         throw e; /// NOLINT
     }
 
     template <typename... Args>
     [[noreturn]] static void throwFromPath(int code, const std::string & path, FormatStringHelper<Args...> fmt, Args &&... args)
     {
-        auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, errno);
-        e.message_format_string = fmt.message_format_string;
+        auto e = ErrnoException(code, errno, std::move(fmt), std::forward<Args>(args)...);
         e.path = path;
         throw e; /// NOLINT
     }
@@ -221,8 +225,7 @@ public:
     [[noreturn]] static void
     throwFromPathWithErrno(int code, const std::string & path, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
     {
-        auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
-        e.message_format_string = fmt.message_format_string;
+        auto e = ErrnoException(code, with_errno, std::move(fmt), std::forward<Args>(args)...);
         e.path = path;
         throw e; /// NOLINT
     }

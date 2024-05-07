@@ -355,6 +355,13 @@ public:
     /// The second contains the rest.
     SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
 
+    /** Returns true if filter DAG is always false for inputs with default values.
+      *
+      * @param filter_name - name of filter node in current DAG.
+      * @param input_stream_header - input stream header.
+      */
+    bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header);
+
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.

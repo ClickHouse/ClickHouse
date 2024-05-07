@@ -1,9 +1,11 @@
-#include "config.h"
+#include <utility>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#include "Disks/DiskType.h"
+#include "config.h"
 #if USE_AWS_S3
+#include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 #endif
 #if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
@@ -20,6 +22,7 @@
 #endif
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/PlainObjectStorage.h>
+#include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
@@ -35,36 +38,50 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
-    bool isPlainStorage(
-        ObjectStorageType type,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix)
-    {
-        auto compatibility_hint = MetadataStorageFactory::getCompatibilityMetadataTypeHint(type);
-        auto metadata_type = MetadataStorageFactory::getMetadataType(config, config_prefix, compatibility_hint);
-        return metadataTypeFromString(metadata_type) == MetadataStorageType::Plain;
-    }
 
-    template <typename BaseObjectStorage, class ...Args>
-    ObjectStoragePtr createObjectStorage(
-        ObjectStorageType type,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        Args && ...args)
+bool isCompatibleWithMetadataStorage(
+    ObjectStorageType storage_type,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    MetadataStorageType target_metadata_type)
+{
+    auto compatibility_hint = MetadataStorageFactory::getCompatibilityMetadataTypeHint(storage_type);
+    auto metadata_type = MetadataStorageFactory::getMetadataType(config, config_prefix, compatibility_hint);
+    return metadataTypeFromString(metadata_type) == target_metadata_type;
+}
+
+bool isPlainStorage(ObjectStorageType type, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    return isCompatibleWithMetadataStorage(type, config, config_prefix, MetadataStorageType::Plain);
+}
+
+bool isPlainRewritableStorage(ObjectStorageType type, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    return isCompatibleWithMetadataStorage(type, config, config_prefix, MetadataStorageType::PlainRewritable);
+}
+
+template <typename BaseObjectStorage, class... Args>
+ObjectStoragePtr createObjectStorage(
+    ObjectStorageType type, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Args &&... args)
+{
+    if (isPlainStorage(type, config, config_prefix))
+        return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
+    else if (isPlainRewritableStorage(type, config, config_prefix))
     {
-        if (isPlainStorage(type, config, config_prefix))
-        {
-            return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
-        }
-        else
-        {
-            return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
-        }
+        /// TODO(jkartseva@): Test support for generic disk type
+        if (type != ObjectStorageType::S3)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "plain_rewritable metadata storage support is implemented only for S3");
+
+        return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
     }
+    else
+        return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
+}
 }
 
 ObjectStorageFactory & ObjectStorageFactory::instance()
@@ -76,10 +93,7 @@ ObjectStorageFactory & ObjectStorageFactory::instance()
 void ObjectStorageFactory::registerObjectStorageType(const std::string & type, Creator creator)
 {
     if (!registry.emplace(type, creator).second)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "ObjectStorageFactory: the metadata type '{}' is not unique", type);
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ObjectStorageFactory: the metadata type '{}' is not unique", type);
 }
 
 ObjectStoragePtr ObjectStorageFactory::create(
@@ -91,13 +105,9 @@ ObjectStoragePtr ObjectStorageFactory::create(
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
-    {
         type = config.getString(config_prefix + ".object_storage_type");
-    }
     else if (config.has(config_prefix + ".type")) /// .type -- for compatibility.
-    {
         type = config.getString(config_prefix + ".type");
-    }
     else
     {
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Expected `object_storage_type` in config");
@@ -210,31 +220,66 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         return object_storage;
     });
 }
+
+void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
+{
+    static constexpr auto disk_type = "s3_plain_rewritable";
+
+    factory.registerObjectStorageType(
+        disk_type,
+        [](const std::string & name,
+           const Poco::Util::AbstractConfiguration & config,
+           const std::string & config_prefix,
+           const ContextPtr & context,
+           bool skip_access_check) -> ObjectStoragePtr
+        {
+            /// send_metadata changes the filenames (includes revision), while
+            /// s3_plain_rewritable does not support file renaming.
+            if (config.getBool(config_prefix + ".send_metadata", false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain_rewritable does not supports send_metadata");
+
+            auto uri = getS3URI(config, config_prefix, context);
+            auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
+            auto settings = getSettings(config, config_prefix, context);
+            auto client = getClient(config, config_prefix, context, *settings);
+            auto key_generator = getKeyGenerator(uri, config, config_prefix);
+
+            auto object_storage = std::make_shared<PlainRewritableObjectStorage<S3ObjectStorage>>(
+                std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+
+            /// NOTE: should we still perform this check for clickhouse-disks?
+            if (!skip_access_check)
+                checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
+
+            return object_storage;
+        });
+}
+
 #endif
 
 #if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
-    factory.registerObjectStorageType("hdfs", [](
-        const std::string & /* name */,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
-    {
-        auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-        checkHDFSURL(uri);
-        if (uri.back() != '/')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
+    factory.registerObjectStorageType(
+        "hdfs",
+        [](const std::string & /* name */,
+           const Poco::Util::AbstractConfiguration & config,
+           const std::string & config_prefix,
+           const ContextPtr & context,
+           bool /* skip_access_check */) -> ObjectStoragePtr
+        {
+            auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+            checkHDFSURL(uri);
+            if (uri.back() != '/')
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
-        std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
-            config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-            config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
-            context->getSettingsRef().hdfs_replication
-        );
+            std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
+                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
+                config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
+                context->getSettingsRef().hdfs_replication);
 
-        return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config);
-    });
+            return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config);
+        });
 }
 #endif
 
@@ -317,6 +362,7 @@ void registerObjectStorages()
 #if USE_AWS_S3
     registerS3ObjectStorage(factory);
     registerS3PlainObjectStorage(factory);
+    registerS3PlainRewritableObjectStorage(factory);
 #endif
 
 #if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)

@@ -38,6 +38,7 @@
 
 #define HAVE_ARPA_INET_H
 #define HAVE_ERRNO_H
+#define HAVE_GETSOCKNAME
 #define HAVE_FCNTL_H
 #define HAVE_NETDB_H
 #define HAVE_NETINET_IN_H

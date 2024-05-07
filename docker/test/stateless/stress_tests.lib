@@ -78,7 +78,8 @@ function configure()
         randomize_config_boolean_value use_compression zookeeper
     fi
 
-    randomize_config_boolean_value allow_experimental_block_number_column block_number
+    randomize_config_boolean_value enable_block_number_column block_number
+    randomize_config_boolean_value enable_block_offset_column block_number
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
@@ -279,7 +280,7 @@ function check_logs_for_critical_errors()
 
 function collect_query_and_trace_logs()
 {
-    for table in query_log trace_log
+    for table in query_log trace_log metric_log
     do
         clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     done

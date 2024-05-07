@@ -567,7 +567,6 @@ private:
     void readParallelReplicasImpl(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
         QueryProcessingStage::Enum processed_stage);

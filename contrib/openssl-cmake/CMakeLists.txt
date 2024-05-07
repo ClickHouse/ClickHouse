@@ -93,6 +93,10 @@ enable_language(ASM)
 
 if(COMPILER_CLANG)
     add_definitions(-Wno-unused-command-line-argument)
+    # Note that s390x build uses mold linker
+    if(NOT ARCH_S390X)
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
+    endif()
 endif()
 
 if(ARCH_AMD64)
@@ -190,6 +194,9 @@ elseif(ARCH_S390X)
 
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-s390x.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-s390x.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/s390xcpuid.pl ${OPENSSL_BINARY_DIR}/crypto/s390xcpuid.S)
+    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/chacha/asm/chacha-s390x.pl ${OPENSSL_BINARY_DIR}/crypto/chacha/chacha-s390x.S)
+    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/rc4/asm/rc4-s390x.pl ${OPENSSL_BINARY_DIR}/crypto/rc4/rc4-s390x.S)
+    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/keccak1600-s390x.pl ${OPENSSL_BINARY_DIR}/crypto/sha/keccak1600-s390x.S)
 elseif(ARCH_RISCV64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
@@ -960,11 +967,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_req.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_x509.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509/x_x509a.c
-    ${OPENSSL_SOURCE_DIR}/engines/e_capi.c
-    ${OPENSSL_SOURCE_DIR}/engines/e_dasync.c
-    ${OPENSSL_SOURCE_DIR}/engines/e_loader_attic.c
-    ${OPENSSL_SOURCE_DIR}/engines/e_ossltest.c
-    ${OPENSSL_SOURCE_DIR}/engines/e_padlock.c
     ${OPENSSL_SOURCE_DIR}/providers/baseprov.c
     ${OPENSSL_SOURCE_DIR}/providers/common/bio_prov.c
     ${OPENSSL_SOURCE_DIR}/providers/common/capabilities.c
@@ -985,8 +987,6 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/common/securitycheck.c
     ${OPENSSL_SOURCE_DIR}/providers/common/securitycheck_default.c
     ${OPENSSL_SOURCE_DIR}/providers/defltprov.c
-    ${OPENSSL_SOURCE_DIR}/providers/fips/fips_entry.c
-    ${OPENSSL_SOURCE_DIR}/providers/fips/fipsprov.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/asymciphers/rsa_enc.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/asymciphers/sm2_enc.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes.c
@@ -1145,10 +1145,18 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/implementations/signature/sm2_sig.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/storemgmt/file_store.c
     ${OPENSSL_SOURCE_DIR}/providers/implementations/storemgmt/file_store_any2obj.c
-    ${OPENSSL_SOURCE_DIR}/providers/legacyprov.c
     ${OPENSSL_SOURCE_DIR}/providers/nullprov.c
     ${OPENSSL_SOURCE_DIR}/providers/prov_running.c
+    ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls_pad.c
+    ${OPENSSL_SOURCE_DIR}/ssl/record/methods/ssl3_cbc.c
 )
+
+if(NOT ENABLE_OPENSSL_DYNAMIC)
+    set(CRYPTO_SRC ${CRYPTO_SRC}
+        ${OPENSSL_SOURCE_DIR}/providers/fips/fips_entry.c
+        ${OPENSSL_SOURCE_DIR}/providers/fips/fipsprov.c
+    )
+endif()
 
 if(ARCH_AMD64)
     if (OS_DARWIN)
@@ -1288,6 +1296,15 @@ elseif(ARCH_S390X)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         ${OPENSSL_BINARY_DIR}/crypto/aes/aes-s390x.S
         ${OPENSSL_BINARY_DIR}/crypto/s390xcpuid.S
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/s390x.S
+        ${OPENSSL_SOURCE_DIR}/crypto/s390xcap.c
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_s390x.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
+        ${OPENSSL_BINARY_DIR}/crypto/chacha/chacha-s390x.S
+        ${OPENSSL_BINARY_DIR}/crypto/rc4/rc4-s390x.S
+        ${OPENSSL_BINARY_DIR}/crypto/sha/keccak1600-s390x.S
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
     )
 elseif(ARCH_RISCV64)
     set(CRYPTO_SRC ${CRYPTO_SRC}
@@ -1376,8 +1393,6 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/quic/uint_set.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/rec_layer_d1.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/rec_layer_s3.c
-    ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls_pad.c
-    ${OPENSSL_SOURCE_DIR}/ssl/record/methods/ssl3_cbc.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/dtls_meth.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/ssl3_meth.c
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls13_meth.c
