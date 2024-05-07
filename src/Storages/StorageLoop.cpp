@@ -1,7 +1,5 @@
 #include "StorageLoop.h"
-#include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
 

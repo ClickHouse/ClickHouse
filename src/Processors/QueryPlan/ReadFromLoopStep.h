@@ -1,11 +1,8 @@
 #pragma once
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageSnapshot.h>
 
 namespace DB
 {

@@ -9,7 +9,6 @@
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Common/FieldVisitors.h>
 
 namespace DB
 {
@@ -49,10 +48,11 @@ public:
             if (!loop)
             {
                 QueryPlan plan;
+                auto storage_snapshot_ = inner_storage->getStorageSnapshotForQuery(inner_storage->getInMemoryMetadataPtr(), nullptr, context);
                 inner_storage->read(
                     plan,
                     column_names,
-                    storage_snapshot,
+                    storage_snapshot_,
                     query_info,
                     context,
                     processed_stage,
