@@ -23,7 +23,6 @@
                 <key>1234567812345678</key>
             </disk_s3_encrypted_default_path>
             <s3_cache>
-                <type>cache</type>
                 <disk>disk_s3</disk>
                 <path>s3_cache/</path>
                 <max_size>1Gi</max_size>
@@ -96,7 +95,7 @@
                         <disk>disk_s3_encrypted_default_path</disk>
                     </main>
                 </volumes>
-            </s3_encrypted_default_path>
+            </s3_encrypted_default_path>_
             <s3_encrypted_cache_policy>
                 <volumes>
                     <main>
@@ -106,7 +105,5 @@
             </s3_encrypted_cache_policy>
          </policies>
     </storage_configuration>
-
-    <temporary_data_in_cache>s3_cache</temporary_data_in_cache>
     <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -6,9 +7,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/getMostSubtype.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -84,8 +87,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"array_1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-            {"array_2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"array_1", &isArray<IDataType>, nullptr, "Array"},
+            {"array_2", &isArray<IDataType>, nullptr, "Array"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
         return std::make_shared<DataTypeNumber<ResultType>>();

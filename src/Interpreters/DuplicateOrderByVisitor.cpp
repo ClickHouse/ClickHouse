@@ -31,8 +31,7 @@ public:
     bool & is_stateful;
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
-        auto aggregate_function_properties
-            = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.nulls_action);
+        auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name);
 
         if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
         {

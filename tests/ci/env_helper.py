@@ -5,16 +5,14 @@ import os
 from os import path as p
 from typing import Tuple
 
-from build_download_helper import get_gh_api
+from build_download_helper import APIException, get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
-ROOT_DIR = git_root
+
 CI = bool(os.getenv("CI"))
 TEMP_PATH = os.getenv("TEMP_PATH", p.abspath(p.join(module_dir, "./tmp")))
-REPORT_PATH = f"{TEMP_PATH}/reports"
-# FIXME: latest should not be used in CI, set temporary for transition to "docker with digest as a tag"
-DOCKER_TAG = os.getenv("DOCKER_TAG", "latest")
+
 CACHES_PATH = os.getenv("CACHES_PATH", TEMP_PATH)
 CLOUDFLARE_TOKEN = os.getenv("CLOUDFLARE_TOKEN")
 GITHUB_EVENT_PATH = os.getenv("GITHUB_EVENT_PATH", "")
@@ -25,6 +23,7 @@ GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 GITHUB_WORKSPACE = os.getenv("GITHUB_WORKSPACE", git_root)
 GITHUB_RUN_URL = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
 IMAGES_PATH = os.getenv("IMAGES_PATH", TEMP_PATH)
+REPORTS_PATH = os.getenv("REPORTS_PATH", p.abspath(p.join(module_dir, "./reports")))
 REPO_COPY = os.getenv("REPO_COPY", GITHUB_WORKSPACE)
 RUNNER_TEMP = os.getenv("RUNNER_TEMP", p.abspath(p.join(module_dir, "./tmp")))
 S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
@@ -42,23 +41,37 @@ _GITHUB_JOB_URL = ""
 _GITHUB_JOB_API_URL = ""
 
 
-def GITHUB_JOB_ID() -> str:
+def GITHUB_JOB_ID(safe: bool = True) -> str:
     global _GITHUB_JOB_ID
     global _GITHUB_JOB_URL
     global _GITHUB_JOB_API_URL
     if _GITHUB_JOB_ID:
         return _GITHUB_JOB_ID
-    _GITHUB_JOB_ID, _GITHUB_JOB_URL, _GITHUB_JOB_API_URL = get_job_id_url(GITHUB_JOB)
+    try:
+        _GITHUB_JOB_ID, _GITHUB_JOB_URL, _GITHUB_JOB_API_URL = get_job_id_url(
+            GITHUB_JOB
+        )
+    except APIException as e:
+        logging.warning("Unable to retrieve the job info from GH API: %s", e)
+        if not safe:
+            raise e
     return _GITHUB_JOB_ID
 
 
-def GITHUB_JOB_URL() -> str:
-    GITHUB_JOB_ID()
+def GITHUB_JOB_URL(safe: bool = True) -> str:
+    try:
+        GITHUB_JOB_ID()
+    except APIException:
+        if safe:
+            logging.warning("Using run URL as a fallback to not fail the job")
+            return GITHUB_RUN_URL
+        raise
+
     return _GITHUB_JOB_URL
 
 
-def GITHUB_JOB_API_URL() -> str:
-    GITHUB_JOB_ID()
+def GITHUB_JOB_API_URL(safe: bool = True) -> str:
+    GITHUB_JOB_ID(safe)
     return _GITHUB_JOB_API_URL
 
 
@@ -93,7 +106,6 @@ def get_job_id_url(job_name: str) -> Tuple[str, str, str]:
         ):
             job_id = "0"
 
-    # FIXME: until it's here, we can't move to reusable workflows
     if not job_url:
         # This is a terrible workaround for the case of another broken part of
         # GitHub actions. For nested workflows it doesn't provide a proper job_name

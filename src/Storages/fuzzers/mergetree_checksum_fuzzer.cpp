@@ -5,20 +5,19 @@
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
 {
-    try
-    {
-        DB::ReadBufferFromMemory in(data, size);
-        DB::MergeTreeDataPartChecksums res;
-        DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    DB::ReadBufferFromMemory in(data, size);
+    DB::MergeTreeDataPartChecksums res;
+    DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-        if (!res.read(in))
-            return 0;
-        res.write(out);
-    }
-    catch (...)
-    {
-    }
+    if (!res.read(in))
+        return 1;
+    res.write(out);
 
     return 0;
+}
+catch (...)
+{
+    return 1;
 }

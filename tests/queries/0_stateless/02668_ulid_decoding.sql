@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-SELECT dateDiff('minute', ULIDStringToDateTime(generateULID()), now()) <= 1;
+SELECT dateDiff('minute', ULIDStringToDateTime(generateULID()), now()) = 0;
 SELECT toTimezone(ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9E'), 'America/Costa_Rica');
 SELECT ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9E', 'America/Costa_Rica');
 SELECT ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9', 'America/Costa_Rica'); -- { serverError ILLEGAL_COLUMN }

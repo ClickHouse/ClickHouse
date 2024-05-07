@@ -6,10 +6,10 @@
 
 namespace DB
 {
-class StorageSystemAggregateFunctionCombinators final : public IStorageSystemOneBlock
+class StorageSystemAggregateFunctionCombinators final : public IStorageSystemOneBlock<StorageSystemAggregateFunctionCombinators>
 {
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 public:
@@ -19,6 +19,6 @@ public:
         return "SystemAggregateFunctionCombinators";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

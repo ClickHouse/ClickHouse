@@ -18,11 +18,9 @@ void AlignedBuffer::alloc(size_t size, size_t alignment)
     void * new_buf;
     int res = ::posix_memalign(&new_buf, std::max(alignment, sizeof(void*)), size);
     if (0 != res)
-        throw ErrnoException(
-            ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-            "Cannot allocate memory (posix_memalign), size: {}, alignment: {}.",
-            ReadableSize(size),
-            ReadableSize(alignment));
+        throwFromErrno(fmt::format("Cannot allocate memory (posix_memalign), size: {}, alignment: {}.",
+            ReadableSize(size), ReadableSize(alignment)),
+            ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
     buf = new_buf;
 }
 

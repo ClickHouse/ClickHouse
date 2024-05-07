@@ -13,9 +13,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Columns/ColumnConst.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -62,18 +59,6 @@ size_t DataTypeArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-String DataTypeArray::doGetPrettyName(size_t indent) const
-{
-    WriteBufferFromOwnString s;
-    s << "Array(" << nested->getPrettyName(indent) << ')';
-    return s.str();
-}
-
-void DataTypeArray::forEachChild(const ChildCallback & callback) const
-{
-    callback(*nested);
-    nested->forEachChild(callback);
-}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

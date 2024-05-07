@@ -4,8 +4,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <base/range.h>
-
 namespace DB
 {
 namespace ErrorCodes

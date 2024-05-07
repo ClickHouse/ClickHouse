@@ -34,7 +34,7 @@ FrequencyHolder::FrequencyHolder()
 
 void FrequencyHolder::loadEncodingsFrequency()
 {
-    LoggerPtr log = getLogger("EncodingsFrequency");
+    Poco::Logger * log = &Poco::Logger::get("EncodingsFrequency");
 
     LOG_TRACE(log, "Loading embedded charset frequencies");
 
@@ -92,7 +92,7 @@ void FrequencyHolder::loadEncodingsFrequency()
 
 void FrequencyHolder::loadEmotionalDict()
 {
-    LoggerPtr log = getLogger("EmotionalDict");
+    Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
     LOG_TRACE(log, "Loading embedded emotional dictionary");
 
     std::string_view resource(reinterpret_cast<const char *>(gresource_tonality_ru_zstData), gresource_tonality_ru_zstSize);
@@ -130,7 +130,7 @@ void FrequencyHolder::loadEmotionalDict()
 
 void FrequencyHolder::loadProgrammingFrequency()
 {
-    LoggerPtr log = getLogger("ProgrammingFrequency");
+    Poco::Logger * log = &Poco::Logger::get("ProgrammingFrequency");
 
     LOG_TRACE(log, "Loading embedded programming languages frequencies loading");
 
