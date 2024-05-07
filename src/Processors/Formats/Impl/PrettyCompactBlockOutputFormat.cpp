@@ -182,7 +182,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
             WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
             serializations[j]->serializeText(*columns[j], row_num, out_serialize, format_settings);
         }
-        if (cut_to_width)
+        if (cut_to_width && format_settings.pretty.preserve_border_for_multiline_string)
             splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width);
         has_transferred_row |= !transferred_row[j].empty() && cur_width <= cut_to_width;
 
@@ -194,7 +194,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
     writeReadableNumberTip(chunk);
     writeCString("\n", out);
 
-    if (has_transferred_row)
+    if (has_transferred_row && format_settings.pretty.preserve_border_for_multiline_string)
         writeTransferredRow(max_widths, header, transferred_row, cut_to_width, false);
 }
 
