@@ -1,8 +1,9 @@
 #pragma once
 
+#include "Functions/ggmlEvaluate/IGgmlModel.h"
 #include "gpt_common.h"
 
-#include "ggml.h"  // TODO: replace with absolute path to contrib?
+#include "ggml/ggml.h"  // TODO: replace with absolute path to contrib?
 
 #include <map>
 #include <string>
@@ -66,16 +67,23 @@ struct GptJModelState {
     std::map<std::string, struct ggml_tensor *> tensors;
 };
 
-class GptJModel : public IGptModel, protected GptJModelState {
+class GptJModel : public IGgmlModel, protected GptJModelState {
 public:
     ~GptJModel() override
     {
         ggml_free(ctx);
     }
 
+    std::string eval(const std::string & input) override;
+
 private:
-    bool doEval(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token) override;
-    bool doLoad(const std::string & fname) override;
+    bool LoadImpl(const std::string & fname) override;
+
+    bool EvalImpl(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
+    std::vector<GptVocab::id> predict(const std::vector<GptVocab::id> & embd_inp);
+
+    GptVocab gpt_vocab;
+    GptParams gpt_params;
 };
 
 }

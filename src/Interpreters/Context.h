@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Functions/ggmlEvaluate/model_storage.h"
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
@@ -219,7 +220,7 @@ class SessionTracker;
 
 struct ServerSettings;
 
-class GptStorage;
+class GgmlModelStorage;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -1283,7 +1284,7 @@ public:
 
     const ServerSettings & getServerSettings() const;
 
-    GptStorage & getGptStorage() const;
+    GgmlModelStorage & getGgmlModelStorage() const;
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

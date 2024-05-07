@@ -58,11 +58,9 @@ list (APPEND PRIVATE_LIBS
         divide_impl
         ch_contrib::xxHash
 )
-list (APPEND PRIVATE_LIBS _ggml)
+
 if (TARGET ch_rust::blake3)
-    list (APPEND PUBLIC_LIBS
-        ch_rust::blake3
-    )
+    list (APPEND PUBLIC_LIBS ch_rust::blake3)
 endif()
 
 if (TARGET OpenSSL::Crypto)
@@ -115,6 +113,10 @@ endif()
 
 if (TARGET ch_contrib::pocketfft)
     list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
+endif()
+
+if (TARGET ch_contrib::ggml)
+    list (APPEND PRIVATE_LIBS ch_contrib::ggml)
 endif()
 
 if (TARGET ch_contrib::crc32-vpmsum)

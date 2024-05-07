@@ -1,6 +1,7 @@
 #include "gpt_common.h"
 
 #include <Common/re2.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -171,75 +172,6 @@ GptVocab::id gpt_sample_top_k_top_p(
     int idx = dist(rng);
 
     return logits_id[idx].second;
-}
-
-std::vector<GptVocab::id> IGptModel::predict(const std::vector<GptVocab::id> & embd_inp)
-{
-    std::vector<GptVocab::id> total_embd;
-    std::vector<GptVocab::id> embd;
-
-    std::mt19937 rng(params.seed);
-    int n_past = 0;
-    std::vector<float> logits;
-
-    // TODO: I REPLACED hparams.n_ctx with params.n_ctx. IDK WHAT IS THE DIFFERENCE
-    int n_predict = std::min(params.n_predict, params.n_ctx - static_cast<int>(embd_inp.size()));
-
-    size_t mem_per_token = 0;
-    eval(params.n_threads, 0, { 0, 1, 2, 3 }, logits, mem_per_token);
-
-    std::string result;
-
-    for (size_t i = embd.size(); i < embd_inp.size() + n_predict; i++) {
-        // predict
-        if (!embd.empty()) {
-            if (!eval(params.n_threads, n_past, embd, logits, mem_per_token)) {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to predict");
-            }
-        }
-
-        n_past += embd.size();
-        embd.clear();
-
-        if (i >= embd_inp.size()) {
-            // sample next token
-            const int   top_k = params.top_k;
-            const float top_p = params.top_p;
-            const float temp  = params.temp;
-
-            // const int n_vocab = hparams.n_vocab;
-            // TODO: I GUESS IT IS THE SAME?:
-            const int n_vocab = static_cast<int>(vocab.token_to_id.size());
-
-            GptVocab::id id = 0;
-
-            id = gpt_sample_top_k_top_p(vocab, logits.data() + (logits.size() - n_vocab), top_k, top_p, temp, rng);
-
-            // add it to the context
-            embd.push_back(id);
-        } else {
-            // if here, it means we are still processing the input prompt
-            for (size_t k = i; k < embd_inp.size(); k++) {
-                embd.push_back(embd_inp[k]);
-                if (int32_t(embd.size()) > params.n_batch) {
-                    break;
-                }
-            }
-            i += embd.size() - 1;
-        }
-
-        // store result; TODO: less copies maybe
-        for (auto id : embd) {
-            total_embd.push_back(id);
-        }
-
-        // end of text token
-        if (embd.back() == 50256) {
-            break;
-        }
-    }
-
-    return total_embd;
 }
 
 }

@@ -67,7 +67,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Functions/ggmlEvaluate/gpt_common.h>
+#include <Functions/ggmlEvaluate/model_storage.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -424,7 +424,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 #endif
 
-    GptStorage gpt_storage;
+    GgmlModelStorage ggml_model_storage;
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
@@ -5396,9 +5396,9 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
-GptStorage & Context::getGptStorage() const
+GgmlModelStorage & Context::getGgmlModelStorage() const
 {
-    return shared->gpt_storage;
+    return shared->ggml_model_storage;
 }
 
 }

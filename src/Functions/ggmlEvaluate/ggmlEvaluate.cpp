@@ -1,3 +1,4 @@
+#include "Functions/ggmlEvaluate/IGgmlModel.h"
 #include "gpt_common.h"
 #include "gptj.h"
 
@@ -69,12 +70,8 @@ public:
             return res;
         }
 
-        std::string model_path = "/home/m0r0zk01/ggml-model.bin";
-        IGptModel* model = getModel(model_path);
-
-        if (!model->load(model_path)) {
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "No");
-        }
+        std::string model_path = "/home/hazy/ggml-model.bin";
+        auto model = getModel(model_path);
 
         std::cout << "loaded\n";
 
@@ -92,15 +89,7 @@ public:
             }
             else {
                 std::cout << "Processing " << val << '\n';
-                std::vector<GptVocab::id> embd_inp = gpt_tokenize(model->vocab, val);
-                std::cout << "Tokenized " << val << '\n';
-                std::vector<GptVocab::id> embd = model->predict(embd_inp);
-                std::string result;
-                for (auto id : embd) {
-                    result += model->vocab.id_to_token[id];
-                }
-                std::cout << "Predicted " << result << '\n';
-
+                std::string result = model->eval(val);
                 result_raw[j] = std::move(result);
                 totalsize += result_raw[j].size() + 1;
             }
@@ -129,10 +118,10 @@ public:
     }
 
 private:
-    IGptModel* getModel(const std::string & path) const
+    std::shared_ptr<IGgmlModel> getModel(const std::string & path) const
     {
-        auto & storage = getContext()->getGptStorage();
-        auto * model = storage.get("gptj", []() { return std::make_unique<GptJModel>(); });
+        auto & storage = getContext()->getGgmlModelStorage();
+        auto model = storage.get("gptj", []() { return std::make_shared<GptJModel>(); });
         if (!model->load(path)) {
             // TODO: more suitable error codes
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Could not load model from {}", path);
