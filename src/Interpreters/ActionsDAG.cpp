@@ -21,6 +21,9 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/inlined_vector.h>
+
 
 namespace DB
 {
@@ -714,22 +717,24 @@ Block ActionsDAG::updateHeader(const Block & header) const
     std::set<size_t> pos_to_remove;
 
     {
-        size_t out = inputs.size(); /// Always out of range
-        std::unordered_map<std::string_view, size_t> input_positions;
-        input_positions.reserve(inputs.size());
+        using inline_vector = absl::InlinedVector<size_t, 7>; // 64B, holding max 7 size_t elements inlined
+        absl::flat_hash_map<std::string_view, inline_vector> input_positions;
 
-        for (size_t pos = 0; pos < inputs.size(); ++pos)
-            input_positions[inputs[pos]->result_name] = pos;
+        /// We insert from last to first in the inlinedVector so it's easier to pop_back matches later
+        for (size_t pos = inputs.size(); pos != 0; pos--)
+            input_positions[inputs[pos - 1]->result_name].emplace_back(pos - 1);
 
         for (size_t pos = 0; pos < header.columns(); ++pos)
         {
             const auto & col = header.getByPosition(pos);
             auto it = input_positions.find(col.name);
-            if (it != input_positions.end() && it->second != out)
+            if (it != input_positions.end() && !it->second.empty())
             {
                 pos_to_remove.insert(pos);
-                node_to_column[inputs[it->second]] = col;
-                it->second = out;
+
+                auto & v = it->second;
+                node_to_column[inputs[v.back()]] = col;
+                v.pop_back();
             }
         }
     }
