@@ -31,6 +31,11 @@
                 <allow_experimental_analyzer>
                     <readonly/>
                 </allow_experimental_analyzer>
+
+                <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
+                <allow_experimental_object_type>
+                    <readonly/>
+                </allow_experimental_object_type>
             </constraints>
         </default>
     </profiles>
