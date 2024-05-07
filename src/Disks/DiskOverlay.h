@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Disks/IDisk.h>
-#include <IO/ReadBufferFromFile.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
 
 namespace DB {
 
@@ -123,6 +122,31 @@ private:
     };
 
     std::unordered_map<String, OverlayInfo> overlay_info;
+};
+
+class ReadBufferFromOverlayDisk : public ReadBufferFromFileBase
+{
+public:
+    ReadBufferFromOverlayDisk(
+        size_t buffer_size_,
+        std::unique_ptr<ReadBufferFromFileBase> base_,
+        std::unique_ptr<ReadBufferFromFileBase> diff_);
+
+    off_t seek(off_t off, int whence) override;
+
+    off_t getPosition() override;
+
+    std::string getFileName() const override { return diff->getFileName(); }
+
+    size_t getFileSize() override { return base->getFileSize() + diff->getFileSize(); }
+
+private:
+    bool nextImpl() override;
+
+    std::unique_ptr<ReadBufferFromFileBase> base, diff;
+    bool done_base = false, done = false;
+    size_t base_size, diff_size;
+
 };
 
 };

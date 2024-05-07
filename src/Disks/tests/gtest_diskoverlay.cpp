@@ -7,8 +7,8 @@
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "Core/Defines.h"
-#include "Disks/WriteMode.h"
+#include <Core/Defines.h>
+#include <Disks/WriteMode.h>
 
 using DB::DiskPtr, DB::MetadataStoragePtr;
 
@@ -29,19 +29,36 @@ public:
     MetadataStoragePtr meta, tr_meta;
 
     void SetUp() override {
-        fs::create_directory("/home/ubuntu/tmp/test_overlay");
+        fs::create_directories("tmp/test_overlay");
 
-        base = createLocalDisk("/home/ubuntu/tmp/test_overlay/base");
-        diff = createLocalDisk("/home/ubuntu/tmp/test_overlay/over");
+        base = createLocalDisk("tmp/test_overlay/base");
+        diff = createLocalDisk("tmp/test_overlay/over");
 
-        meta = createLocalDiskMetaData("/home/ubuntu/tmp/test_overlay/meta");
-        tr_meta = createLocalDiskMetaData("/home/ubuntu/tmp/test_overlay/tr_meta");
+        meta = createLocalDiskMetaData("tmp/test_overlay/meta");
+        tr_meta = createLocalDiskMetaData("tmp/test_overlay/tr_meta");
 
         over = std::make_shared<DB::DiskOverlay>("disk_overlay", base, diff, meta, tr_meta);
     }
 
     void TearDown() override {
-        fs::remove_all("/home/ubuntu/tmp/test_overlay");
+        fs::remove_all("tmp/test_overlay");
+    }
+
+    void writeToFileBase(const String& path, const String& text) const {
+        std::unique_ptr<DB::WriteBuffer> out = base->writeFile(path);
+        writeString(text, *out);
+    }
+
+    void writeToFileOver(const String& path, const String& text, bool append) const {
+        std::unique_ptr<DB::WriteBuffer> out = over->writeFile(path, DB::DBMS_DEFAULT_BUFFER_SIZE, append ? DB::WriteMode::Append : DB::WriteMode::Rewrite);
+        writeString(text, *out);
+    }
+
+    String readFromFileOver(const String& path) const {
+        String result;
+        std::unique_ptr<DB::ReadBuffer> in = over->readFile(path);
+        readString(result, *in);
+        return result;
     }
 };
 
@@ -136,5 +153,54 @@ TEST_F(OverlayTest, moveDirectory)
 
     corr = {"file0.txt"};
     over->listFiles("folder2/folder1/inner", paths);
+    EXPECT_EQ(paths, corr);
+
+    EXPECT_TRUE(!over->exists("folder1"));
+}
+
+TEST_F(OverlayTest, readFileBaseEmpty) {
+    base->createFile("file.txt");
+
+    writeToFileOver("file.txt", "test data", true);
+    EXPECT_EQ(readFromFileOver("file.txt"), "test data");
+}
+
+
+TEST_F(OverlayTest, readFile)
+{
+    writeToFileBase("file.txt", "test data");
+    EXPECT_EQ(readFromFileOver("file.txt"), "test data");
+
+    writeToFileOver("file1.txt", "test data1", false);
+    EXPECT_EQ(readFromFileOver("file1.txt"), "test data1");
+
+    writeToFileOver("file.txt", " data1", true);
+    EXPECT_EQ(readFromFileOver("file.txt"), "test data data1");
+
+    writeToFileOver("file.txt", " data1", false);
+    EXPECT_EQ(readFromFileOver("file.txt"), " data1");
+}
+
+TEST_F(OverlayTest, moveDeleteReadListFile) {
+    base->createDirectory("folder");
+    writeToFileBase("folder/file.txt", "test data");
+    writeToFileBase("file1.txt", "test data 1");
+
+    over->createDirectory("folder2");
+    over->moveDirectory("folder", "folder2/folder");
+
+    writeToFileOver("folder2/folder/file.txt", " more data", true);
+    EXPECT_EQ(readFromFileOver("folder2/folder/file.txt"), "test data more data");
+
+    over->removeFile("folder2/folder/file.txt");
+    writeToFileOver("folder2/folder/file.txt", "more data", true);
+    EXPECT_EQ(readFromFileOver("folder2/folder/file.txt"), "more data");
+
+    writeToFileOver("file1.txt", "more data", false);
+
+    std::vector<String> paths, corr({"file1.txt", "folder2"});
+    over->listFiles("", paths);
+
+    std::sort(paths.begin(), paths.end());
     EXPECT_EQ(paths, corr);
 }
