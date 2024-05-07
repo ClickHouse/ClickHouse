@@ -112,7 +112,7 @@ StoragePtr TableFunctionLoop::executeImpl(
             database_name = context->getCurrentDatabase();
 
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        storage = database->tryGetTable(table_name_ ,context);
+        storage = database->tryGetTable(table_name_, context);
         if (!storage)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", table_name_, database_name);
     }
