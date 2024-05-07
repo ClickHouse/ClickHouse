@@ -140,7 +140,7 @@ function setup_logs_replication
             time DateTime COMMENT 'The time of test run',
             test_name String COMMENT 'The name of the test',
             coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
-        ) ENGINE = Null COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
+        ) ENGINE = MergeTree ORDER BY test_name COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
     "
 
     # For each system log table:
