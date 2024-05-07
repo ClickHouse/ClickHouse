@@ -1173,9 +1173,7 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
 
     if (auto result = handleAllJoinState())
-    {
         return std::move(*result);
-    }
 
     if (auto result = handleAsofJoinState())
         return std::move(*result);
