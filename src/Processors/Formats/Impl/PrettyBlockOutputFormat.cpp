@@ -453,7 +453,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         value_width = format_settings.pretty.max_value_width;
         has_break_line = false;
     }
-    else if (!has_break_line || !format_settings.pretty.preserve_border_for_multiline_string)
+    else if (!has_break_line)
         value += ' ';
 
     auto write_padding = [&]()
@@ -478,7 +478,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (has_break_line && format_settings.pretty.preserve_border_for_multiline_string)
+    if (has_break_line)
         writeString("…", out);
 }
 
