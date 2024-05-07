@@ -41,8 +41,9 @@ At a minimum, the following information should be added (but add more as needed)
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
 
----
-### Modify your CI run:
+<details>
+    <summary>Modify your CI run</summary>
+
 **NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
 **NOTE:** Checked options will be applied if set before CI RunConfig/PrepareRunConfig step
 
@@ -56,6 +57,7 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_include_asan--> All with ASAN
 - [ ] <!---ci_include_tsan--> All with TSAN
 - [ ] <!---ci_include_analyzer--> All with Analyzer
+- [ ] <!---ci_include_azure --> All with Azure
 - [ ] <!---ci_include_KEYWORD--> Add your option here
 
 #### Exclude tests:
@@ -82,3 +84,5 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---batch_1--> 2
 - [ ] <!---batch_2--> 3
 - [ ] <!---batch_3--> 4
+
+<details>

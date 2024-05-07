@@ -91,6 +91,7 @@ The supported formats are:
 | [MySQLDump](#mysqldump)                                                                   | ✔    | ✗     |
 | [DWARF](#dwarf)                                                                           | ✔    | ✗     |
 | [Markdown](#markdown)                                                                     | ✗    | ✔     |
+| [Form](#form)                                                                             | ✔    | ✗     |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -2843,3 +2844,31 @@ FORMAT Markdown
 ```
 
 Markdown table will be generated automatically and can be used on markdown-enabled platforms, like Github. This format is used only for output.
+
+## Form {#form}
+
+The Form format can be used to read or write a single record in the application/x-www-form-urlencoded format in which data is formatted `key1=value1&key2=value2`
+
+Examples:
+
+Given a file `data.tmp` placed in the `user_files` path with some URL encoded data:
+
+```text
+t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
+```
+
+```sql
+SELECT * FROM file(data.tmp, Form) FORMAT vertical;
+```
+
+Result:
+
+```text
+Row 1:
+──────
+t_page:   116
+c.e:      ls7xfkpm
+c.tti.m:  raf
+rt.start: navigation
+rt.bmr:   390,11,10
+```
