@@ -5021,7 +5021,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             scope.scope_node->formatASTForErrorMessage());
     }
 
+    auto original_ast = matcher_node->getOriginalAST();
     matcher_node = std::move(list);
+    if (original_ast)
+        matcher_node->setOriginalAST(original_ast);
 
     return result_projection_names;
 }
