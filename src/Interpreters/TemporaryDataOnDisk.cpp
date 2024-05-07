@@ -224,7 +224,7 @@ struct TemporaryFileStream::OutputWriter
     bool finalized = false;
 };
 
-InputReader::InputReader(const String & path, const Block & header_, size_t size)
+TemporaryFileStream::Reader::Reader(const String & path, const Block & header_, size_t size)
     : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
     , in_compressed_buf(in_file_buf)
     , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
@@ -232,7 +232,7 @@ InputReader::InputReader(const String & path, const Block & header_, size_t size
     LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
 }
 
-InputReader::InputReader(const String & path, size_t size)
+TemporaryFileStream::Reader::Reader(const String & path, size_t size)
     : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
     , in_compressed_buf(in_file_buf)
     , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
@@ -240,7 +240,7 @@ InputReader::InputReader(const String & path, size_t size)
     LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
 }
 
-Block InputReader::read()
+Block TemporaryFileStream::Reader::read()
 {
     return in_reader.read();
 }
@@ -305,15 +305,7 @@ TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
 
 TemporaryFileStream::Stat TemporaryFileStream::finishWritingAsyncSafe()
 {
-    if (!writing_finished.load(std::memory_order_relaxed))
-    {
-        std::lock_guard lock(finish_writing);
-        if (!writing_finished.load())
-        {
-            return finishWriting();
-        }
-        writing_finished.store(true);
-    }
+    std::call_once(finish_writing, [this]{ finishWriting(); });
     return stat;
 }
 
@@ -333,7 +325,7 @@ Block TemporaryFileStream::read()
 
     if (!in_reader)
     {
-        in_reader = std::make_unique<InputReader>(getPath(), header, getSize());
+        in_reader = std::make_unique<Reader>(getPath(), header, getSize());
     }
 
     Block block = in_reader->read();
@@ -341,12 +333,11 @@ Block TemporaryFileStream::read()
     {
         /// finalize earlier to release resources, do not wait for the destructor
         this->release();
-        in_reader.reset();
     }
     return block;
 }
 
-std::unique_ptr<InputReader> TemporaryFileStream::getReadStream()
+std::unique_ptr<TemporaryFileStream::Reader> TemporaryFileStream::getReadStream()
 {
     if (!isWriteFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
@@ -354,7 +345,7 @@ std::unique_ptr<InputReader> TemporaryFileStream::getReadStream()
     if (isEof())
         return nullptr;
 
-    return std::make_unique<InputReader>(getPath(), header, getSize());
+    return std::make_unique<Reader>(getPath(), header, getSize());
 }
 
 void TemporaryFileStream::updateAllocAndCheck()

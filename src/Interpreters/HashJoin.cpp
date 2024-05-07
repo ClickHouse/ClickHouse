@@ -36,6 +36,7 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include "Core/Joins.h"
+#include "Interpreters/TemporaryDataOnDisk.h"
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
@@ -64,7 +65,7 @@ struct NotProcessedCrossJoin : public ExtraBlock
 {
     size_t left_position;
     size_t right_block;
-    std::unique_ptr<InputReader> reader;
+    std::unique_ptr<TemporaryFileStream::Reader> reader;
 };
 
 
@@ -2260,7 +2261,7 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 {
     size_t start_left_row = 0;
     size_t start_right_block = 0;
-    std::unique_ptr<InputReader> reader = nullptr;
+    std::unique_ptr<TemporaryFileStream::Reader> reader = nullptr;
     if (not_processed)
     {
         auto & continuation = static_cast<NotProcessedCrossJoin &>(*not_processed);
@@ -2322,6 +2323,10 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
         for (const Block & compressed_block_right : data->blocks)
         {
+            if (rows_added > max_joined_block_rows)
+            {
+                break;
+            }
             auto block_right = compressed_block_right.decompress();
             process_right_block(block_right);
         }
@@ -2335,6 +2340,10 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             }
             while (auto block_right = reader->read())
             {
+                if (rows_added > max_joined_block_rows)
+                {
+                    break;
+                }
                 process_right_block(block_right);
             }
         }

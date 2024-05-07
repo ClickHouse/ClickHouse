@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
 #include <boost/noncopyable.hpp>
 
 #include <IO/ReadBufferFromFile.h>
@@ -134,19 +135,6 @@ private:
     typename CurrentMetrics::Metric current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
 };
 
-struct InputReader
-{
-    InputReader(const String & path, const Block & header_, size_t size = 0);
-
-    explicit InputReader(const String & path, size_t size = 0);
-
-    Block read();
-
-    ReadBufferFromFile in_file_buf;
-    CompressedReadBuffer in_compressed_buf;
-    NativeReader in_reader;
-};
-
 /*
  * Data can be written into this stream and then read.
  * After finish writing, call `finishWriting` and then either call `read` or 'getReadStream'(only one of the two) to read the data.
@@ -155,6 +143,19 @@ struct InputReader
 class TemporaryFileStream : boost::noncopyable
 {
 public:
+    struct Reader
+    {
+        Reader(const String & path, const Block & header_, size_t size = 0);
+
+        explicit Reader(const String & path, size_t size = 0);
+
+        Block read();
+
+        ReadBufferFromFile in_file_buf;
+        CompressedReadBuffer in_compressed_buf;
+        NativeReader in_reader;
+    };
+
     struct Stat
     {
         /// Statistics for file
@@ -174,7 +175,7 @@ public:
     Stat finishWritingAsyncSafe();
     bool isWriteFinished() const;
 
-    std::unique_ptr<InputReader> getReadStream();
+    std::unique_ptr<Reader> getReadStream();
 
     Block read();
 
@@ -204,13 +205,12 @@ private:
 
     Stat stat;
 
-    mutable std::mutex finish_writing;
-    std::atomic_bool writing_finished{false};
+    std::once_flag finish_writing;
 
     struct OutputWriter;
     std::unique_ptr<OutputWriter> out_writer;
 
-    std::unique_ptr<InputReader> in_reader;
+    std::unique_ptr<Reader> in_reader;
 };
 
 }
