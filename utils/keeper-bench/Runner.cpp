@@ -635,11 +635,14 @@ struct ZooKeeperRequestFromLogReader
                 break;
             }
             case Coordination::OpNum::Check:
+            case Coordination::OpNum::CheckNotExists:
             {
                 auto check_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
                 check_request->path = current_block->getPath(idx_in_block);
                 if (auto version = current_block->getVersion(idx_in_block))
                     check_request->version = *version;
+                if (op_num == Coordination::OpNum::CheckNotExists)
+                    check_request->not_exists = true;
                 request_from_log.request = check_request;
                 break;
             }
@@ -868,10 +871,20 @@ void Runner::runBenchmarkFromLog()
     }
 
     ZooKeeperRequestFromLogReader request_reader(input_request_log, global_context);
+
+    delay_watch.restart();
     while (auto request_from_log = request_reader.getNextRequest())
     {
         request_from_log->connection = get_zookeeper_connection(request_from_log->session_id);
         push_request(std::move(*request_from_log));
+
+        if (delay > 0 && delay_watch.elapsedSeconds() > delay)
+        {
+            dumpStats("Write", stats.write_requests);
+            dumpStats("Read", stats.read_requests);
+            std::cerr << std::endl;
+            delay_watch.restart();
+        }
     }
 }
 
