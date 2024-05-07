@@ -96,7 +96,7 @@ public:
       *  However, if delayReadForGlobalSubqueries is called, first read from `in` will check for new_data and return it.
       *
       *
-      * Why is delayReadForGlobalSubqueries needed?
+      * Why is delayRead needed?
       *
       * The fact is that when processing a query of the form
       *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
@@ -120,7 +120,7 @@ public:
       * Therefore, we make the initialization of step (2) delayed
       *  - so that it does not occur until step (1) is completed, on which the table will be populated.
       */
-    void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
+    void delayRead() { delay_read = true; }
 
 private:
     /// Restores the data of this table from backup.
@@ -132,7 +132,7 @@ private:
 
     mutable std::mutex mutex;
 
-    bool delay_read_for_global_subqueries = false;
+    bool delay_read = false;
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;

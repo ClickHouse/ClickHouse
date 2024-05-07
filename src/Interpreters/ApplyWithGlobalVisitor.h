@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Interpreters/Context_fwd.h>
 #include <map>
 
 namespace DB
@@ -11,15 +12,16 @@ class ASTSelectQuery;
 class ASTSelectIntersectExceptQuery;
 
 /// Pull out the WITH statement from the first child of ASTSelectWithUnion query if any.
-class ApplyWithGlobalVisitor
+class ApplyWithGlobalVisitor : public WithContext
 {
 public:
-    static void visit(ASTPtr & ast);
+    ApplyWithGlobalVisitor(const ContextPtr & context_) : WithContext(context_) {}
+    void visit(ASTPtr & ast);
 
 private:
-    static void visit(ASTSelectWithUnionQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
-    static void visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
-    static void visit(ASTSelectIntersectExceptQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
+    void visit(ASTSelectWithUnionQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
+    void visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
+    void visit(ASTSelectIntersectExceptQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
 };
 
 }

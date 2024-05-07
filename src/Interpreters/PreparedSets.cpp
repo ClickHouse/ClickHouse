@@ -5,6 +5,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/Context.h"
+#include "Storages/StorageSet.h"
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -46,12 +48,33 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 }
 
 
-FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
+FutureSetFromStorage::FutureSetFromStorage(StorageSet * storage_set_)
+: set(storage_set_->getSet())
+, storage(storage_set_->shared_from_this())
+{
+}
+
+FutureSetFromStorage::FutureSetFromStorage(SetPtr set_)
+: set(std::move(set_))
+{
+}
+
 SetPtr FutureSetFromStorage::get() const { return set; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
 
-SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
+SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr & context)
 {
+    if (auto required_storage = storage.lock(); required_storage)
+    {
+        auto future_tables = context->getFutureTables({required_storage});
+        if (!future_tables.empty())
+        {
+            if (!set->hasExplicitSetElements())
+                set->fillSetElements();
+            if (!materializeFutureTablesIfNeeded(context, future_tables))
+                return nullptr;
+        }
+    }
     return set->hasExplicitSetElements() ? set : nullptr;
 }
 
@@ -211,6 +234,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (!plan)
         return nullptr;
 
+    if (!materializeFutureTablesIfNeeded(context, context->getFutureTables(plan->getRequiredStorages())))
+        return nullptr;
+
     set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
@@ -263,9 +289,9 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, 
     return from_tuple;
 }
 
-FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
+FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, StorageSet * storage_set)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(std::move(set_));
+    auto from_storage = std::make_shared<FutureSetFromStorage>(storage_set);
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)

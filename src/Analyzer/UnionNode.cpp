@@ -2,6 +2,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include "Analyzer/IQueryTreeNode.h"
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -145,17 +146,8 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_subquery)
         buffer << ", is_subquery: " << is_subquery;
 
-    if (is_cte)
-        buffer << ", is_cte: " << is_cte;
-
-    if (is_recursive_cte)
-        buffer << ", is_recursive_cte: " << is_recursive_cte;
-
     if (recursive_cte_table)
         buffer << ", recursive_cte_table: " << recursive_cte_table->storage->getStorageID().getNameForLogs();
-
-    if (!cte_name.empty())
-        buffer << ", cte_name: " << cte_name;
 
     buffer << ", union_mode: " << toString(union_mode);
 
@@ -173,15 +165,12 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     else if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
         return false;
 
-    return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && is_recursive_cte == rhs_typed.is_recursive_cte
-        && cte_name == rhs_typed.cte_name && union_mode == rhs_typed.union_mode;
+    return is_subquery == rhs_typed.is_subquery && union_mode == rhs_typed.union_mode;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_subquery);
-    state.update(is_cte);
-    state.update(is_recursive_cte);
 
     if (recursive_cte_table)
     {
@@ -189,9 +178,6 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(full_name.size());
         state.update(full_name);
     }
-
-    state.update(cte_name.size());
-    state.update(cte_name);
 
     state.update(static_cast<size_t>(union_mode));
 }
@@ -201,10 +187,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     auto result_union_node = std::make_shared<UnionNode>(context, union_mode);
 
     result_union_node->is_subquery = is_subquery;
-    result_union_node->is_cte = is_cte;
-    result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
-    result_union_node->cte_name = cte_name;
 
     return result_union_node;
 }

@@ -11,7 +11,10 @@
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/misc.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -37,6 +40,59 @@ namespace ErrorCodes
 
 namespace ClusterProxy
 {
+
+/// Simple visitor to collect temporary tables from AST to be sent to remote shard
+/// It may includes false positives, on that case, we will send more tables than necessary
+/// But it's better to send more than necessary.
+struct CollectTemporaryTablesVisitor
+{
+    struct Data
+    {
+        NameSet & tables;
+        explicit Data(NameSet & tables_) : tables(tables_) {}
+    };
+
+    Data data;
+
+    explicit CollectTemporaryTablesVisitor(NameSet & tables_) : data(tables_) {}
+    void visit(const ASTPtr & ast)
+    {
+        for (auto & child : ast->children)
+            visit(child);
+
+        if (auto * node_func = ast->as<ASTFunction>())
+            visit(*node_func);
+        else if (auto * node_table = ast->as<ASTTableExpression>())
+            visit(*node_table);
+    }
+
+    void visit(ASTTableExpression & table)
+    {
+        if (table.database_and_table_name)
+        {
+            auto table_id = table.database_and_table_name->as<ASTTableIdentifier>()->getTableId();
+            if (table_id.database_name.empty())
+                data.tables.insert(table_id.table_name);
+        }
+    }
+
+    void visit(ASTFunction & func)
+    {
+        /// Right argument of IN is alias (ASTIdentifier) of temporary table
+        if (checkFunctionIsInOrGlobalInOperator(func))
+        {
+            auto & ast = func.arguments->children.at(1);
+            if (const auto * identifier = ast->as<ASTIdentifier>())
+            {
+                if (identifier->isShort())
+                {
+                    auto name = identifier->shortName();  // NOLINT
+                    data.tables.insert(name);
+                }
+            }
+        }
+    }
+};
 
 ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     ContextPtr context,
@@ -327,7 +383,10 @@ void executeQuery(
         Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
         scalars.emplace(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-        auto external_tables = context->getExternalTables();
+
+        NameSet external_table_names;
+        CollectTemporaryTablesVisitor(external_table_names).visit(query_info.query);
+        auto external_tables = context->getExternalTables(external_table_names);
 
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
@@ -459,7 +518,11 @@ void executeQueryWithParallelReplicas(
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(
         new_cluster->getShardsInfo().begin()->getAllNodeCount(), settings.parallel_replicas_mark_segment_size);
-    auto external_tables = new_context->getExternalTables();
+
+    NameSet external_table_names;
+    CollectTemporaryTablesVisitor(external_table_names).visit(query_ast);
+    auto external_tables = context->getExternalTables(external_table_names);
+
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
         new_cluster,

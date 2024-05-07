@@ -17,6 +17,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Columns/FilterDescription.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
 
 namespace Poco
 {
@@ -93,11 +94,8 @@ public:
 
     ~InterpreterSelectQuery() override;
 
-    /// Execute a query. Get the stream of blocks to read.
-    BlockIO execute() override;
-
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan) override;
+    void buildQueryPlanImpl(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }

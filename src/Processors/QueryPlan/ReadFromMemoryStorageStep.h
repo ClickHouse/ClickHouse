@@ -22,7 +22,7 @@ public:
         const ContextPtr & context_,
         StoragePtr storage_,
         size_t num_streams_,
-        bool delay_read_for_global_sub_queries_);
+        bool delay_read_);
 
     ReadFromMemoryStorageStep() = delete;
     ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep &) = delete;
@@ -41,7 +41,7 @@ private:
     Names columns_to_read;
     StoragePtr storage;
     size_t num_streams;
-    bool delay_read_for_global_sub_queries;
+    bool delay_read;
 
     Pipe makePipe();
 };

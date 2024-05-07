@@ -20,6 +20,10 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FieldVisitorToString.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace ProfileEvents
@@ -188,10 +192,15 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            auto io = interpreter->execute();
+            const auto & context = interpreter->getContext();
+            QueryPlan plan;
+            interpreter->buildQueryPlan(plan);
+            materializeFutureTablesIfNeeded(context, context->getFutureTables(plan.getRequiredStorages()));
+            auto builder = std::move(*plan.buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
-            PullingAsyncPipelineExecutor executor(io.pipeline);
-            io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
+            PullingAsyncPipelineExecutor executor(pipeline);
+            pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             while (block.rows() == 0 && executor.pull(block))
             {
             }

@@ -58,7 +58,7 @@ public:
             if (sets.findStorage(set_key))
                 return;
 
-            sets.addFromStorage(set_key, storage_set->getSet());
+            sets.addFromStorage(set_key, storage_set);
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {

@@ -1,0 +1,254 @@
+-- Simple tests
+(DelayedMaterializingCTEs)
+DelayedPorts 4 → 2
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (Union)
+    (Expression)
+    ExpressionTransform
+      (ReadFromMemoryStorage)
+    (Expression)
+    ExpressionTransform
+      (ReadFromMemoryStorage)
+0
+1
+2
+3
+4
+0
+1
+2
+3
+4
+(DelayedMaterializingCTEs)
+DelayedPorts 2 → 1
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (Expression)
+  ExpressionTransform
+    (Join)
+    JoiningTransform 2 → 1
+      (Expression)
+      ExpressionTransform
+        (FilledJoin)
+        JoiningTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromSystemNumbers)
+            NumbersRange 0 → 1
+      (Expression)
+      FillingRightJoinSide
+        ExpressionTransform
+          (ReadFromStorage)
+          Join 0 → 1
+0	0	foo
+1	1	foo
+2	2	foo
+3	3	foo
+4	4	foo
+5	5	\N
+6	6	\N
+7	7	\N
+8	8	\N
+9	9	\N
+(DelayedMaterializingCTEs)
+DelayedPorts 2 → 1
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemNumbers)
+    NumbersRange 0 → 1
+0	foo
+1	foo
+2	foo
+3	foo
+4	foo
+5	\N
+6	\N
+7	\N
+8	\N
+9	\N
+(DelayedMaterializingCTEs)
+  (Expression)
+  ExpressionTransform
+    (Filter)
+    FilterTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+0
+1
+2
+3
+4
+-- CTE is used for index analyzer
+6
+7
+8
+9
+0
+1
+2
+3
+4
+-- Distributed queries
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+-- Distributed broadcast JOIN
+1	a
+1	a
+2	b
+2	b
+3	c
+3	c
+-- Materialized CTE in scalar subquery
+10
+
+----- Same test but for analyzer -----
+-- Simple tests
+(DelayedMaterializingCTEs)
+DelayedPorts 4 → 2
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (Union)
+    (Expression)
+    ExpressionTransform
+      (ReadFromMemoryStorage)
+    (Expression)
+    ExpressionTransform
+      (ReadFromMemoryStorage)
+0
+1
+2
+3
+4
+0
+1
+2
+3
+4
+(DelayedMaterializingCTEs)
+DelayedPorts 2 → 1
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (Expression)
+  ExpressionTransform
+    (FilledJoin)
+    JoiningTransform
+      (Expression)
+      ExpressionTransform
+        (FilledJoin)
+        JoiningTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromSystemNumbers)
+            NumbersRange 0 → 1
+0	0	foo
+1	1	foo
+2	2	foo
+3	3	foo
+4	4	foo
+5	5	\N
+6	6	\N
+7	7	\N
+8	8	\N
+9	9	\N
+(DelayedMaterializingCTEs)
+DelayedPorts 2 → 1
+  (MaterializingCTE)
+  MaterializingCTETransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+  (Expression)
+  ExpressionTransform
+    (ReadFromSystemNumbers)
+    NumbersRange 0 → 1
+0	foo
+1	foo
+2	foo
+3	foo
+4	foo
+5	\N
+6	\N
+7	\N
+8	\N
+9	\N
+(DelayedMaterializingCTEs)
+  (Expression)
+  ExpressionTransform
+    (Filter)
+    FilterTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+-- CTE is used for index analyzer
+6
+7
+8
+9
+0
+1
+2
+3
+4
+-- Distributed queries
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+-- Distributed broadcast JOIN
+1	a
+1	a
+2	b
+2	b
+3	c
+3	c
+-- Materialized CTE in scalar subquery
+10

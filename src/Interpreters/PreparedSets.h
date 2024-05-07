@@ -14,6 +14,7 @@ namespace DB
 {
 
 class QueryPlan;
+class StorageSet;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -59,7 +60,9 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
+    explicit FutureSetFromStorage(StorageSet * storage_set_);
     explicit FutureSetFromStorage(SetPtr set_);
+
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -67,6 +70,8 @@ public:
 
 private:
     SetPtr set;
+    /// Avoid circular reference
+    std::weak_ptr<IStorage> storage;
 };
 
 using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
@@ -146,7 +151,7 @@ public:
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
+    FutureSetFromStoragePtr addFromStorage(const Hash & key, StorageSet * storage_set);
     FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
 
     FutureSetFromSubqueryPtr addFromSubquery(

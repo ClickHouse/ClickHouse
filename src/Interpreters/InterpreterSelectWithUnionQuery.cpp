@@ -6,6 +6,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/GlobalMaterializeCTEVisitor.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -47,6 +49,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
+
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
 
@@ -288,7 +291,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
 }
 
 
-void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
+void InterpreterSelectWithUnionQuery::buildQueryPlanImpl(QueryPlan & query_plan)
 {
     size_t num_plans = nested_interpreters.size();
     const Settings & settings = context->getSettingsRef();
@@ -368,22 +371,6 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 
     addAdditionalPostFilter(query_plan);
     query_plan.addInterpreterContext(context);
-}
-
-BlockIO InterpreterSelectWithUnionQuery::execute()
-{
-    BlockIO res;
-
-    QueryPlan query_plan;
-    buildQueryPlan(query_plan);
-
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
-
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    setQuota(res.pipeline);
-    return res;
 }
 
 void InterpreterSelectWithUnionQuery::ignoreWithTotals()

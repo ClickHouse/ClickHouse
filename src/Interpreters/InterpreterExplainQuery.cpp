@@ -29,6 +29,8 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
+#include "Interpreters/GlobalMaterializeCTEVisitor.h"
+#include "Interpreters/MaterializedTableFromCTE.h"
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -350,7 +352,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 QueryPipeline InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<const ASTExplainQuery &>();
-
+    auto explaining_query = ast.getExplainedQuery();
     Block sample_block = getSampleBlock(ast.getKind());
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
@@ -361,6 +363,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     SelectQueryOptions options;
     options.setExplain();
 
+    ContextPtr explain_context;
+    if (!getContext()->getSettingsRef().allow_experimental_analyzer && (ast.getKind() == ASTExplainQuery::ParsedAST || ast.getKind() == ASTExplainQuery::AnalyzedSyntax))
+    {
+        auto mutable_context = Context::createCopy(context);
+        FutureTablesFromCTE future_tables;
+        GlobalMaterializeCTEVisitor::Data data(mutable_context, future_tables);
+        GlobalMaterializeCTEVisitor(data).visit(explaining_query);
+        explain_context = std::move(mutable_context);
+    }
+    else
+        explain_context = getContext();
+
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
@@ -368,41 +382,41 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
             if (settings.optimize)
             {
-                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+                ExplainAnalyzedSyntaxVisitor::Data data(explain_context);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
             if (settings.graph)
-                dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
+                dumpASTInDotFormat(*explaining_query, buf);
             else
-                dumpAST(*ast.getExplainedQuery(), buf);
+                dumpAST(*explaining_query, buf);
             break;
         }
         case ASTExplainQuery::AnalyzedSyntax:
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
-            ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+            ExplainAnalyzedSyntaxVisitor::Data data(explain_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
+            explaining_query->format(IAST::FormatSettings(buf, settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (!explain_context->getSettingsRef().allow_experimental_analyzer)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
 
-            if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
+            if (explaining_query->as<ASTSelectWithUnionQuery>() == nullptr)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
-            auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
+            auto query_tree = buildQueryTree(explaining_query, explain_context);
 
             if (settings.run_passes)
             {
-                auto query_tree_pass_manager = QueryTreePassManager(getContext());
+                auto query_tree_pass_manager = QueryTreePassManager(explain_context);
                 addQueryTreePasses(query_tree_pass_manager);
 
                 size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
@@ -434,7 +448,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryPlan:
         {
-            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(explaining_query.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN query");
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
@@ -442,15 +456,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (explain_context->getSettingsRef().allow_experimental_analyzer)
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
+                InterpreterSelectQueryAnalyzer interpreter(explaining_query, explain_context, options);
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                InterpreterSelectWithUnionQuery interpreter(explaining_query, explain_context, options);
                 interpreter.buildQueryPlan(plan);
                 context = interpreter.getContext();
             }
@@ -466,7 +480,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
                 plan_array->add(std::move(plan_map));
 
-                auto format_settings = getFormatSettings(getContext());
+                auto format_settings = getFormatSettings(explain_context);
                 format_settings.json.quote_64bit_integers = false;
 
                 JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
@@ -482,21 +496,21 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryPipeline:
         {
-            if (dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            if (dynamic_cast<const ASTSelectWithUnionQuery *>(explaining_query.get()))
             {
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                if (explain_context->getSettingsRef().allow_experimental_analyzer)
                 {
-                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
+                    InterpreterSelectQueryAnalyzer interpreter(explaining_query, explain_context, options);
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
                 else
                 {
-                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                    InterpreterSelectWithUnionQuery interpreter(explaining_query, explain_context, options);
                     interpreter.buildQueryPlan(plan);
                     context = interpreter.getContext();
                 }
@@ -522,9 +536,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     plan.explainPipeline(buf, settings.query_pipeline_options);
                 }
             }
-            else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
+            else if (dynamic_cast<const ASTInsertQuery *>(explaining_query.get()))
             {
-                InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext());
+                InterpreterInsertQuery insert(explaining_query, explain_context);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
             }
@@ -534,22 +548,22 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryEstimates:
         {
-            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(explaining_query.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN ESTIMATE query");
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context = getContext();
+            ContextPtr context = explain_context;
 
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                InterpreterSelectQueryAnalyzer interpreter(explaining_query, explain_context, SelectQueryOptions());
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                InterpreterSelectWithUnionQuery interpreter(explaining_query, explain_context, SelectQueryOptions());
                 context = interpreter.getContext();
                 interpreter.buildQueryPlan(plan);
             }
@@ -571,7 +585,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
-            auto storage = getContext()->getQueryContext()->executeTableFunction(ast.getTableFunction());
+            auto storage = explain_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
             auto metadata_snapshot = storage->getInMemoryMetadata();
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
@@ -584,7 +598,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (ast.getSettings())
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Settings are not supported for EXPLAIN CURRENT TRANSACTION query.");
 
-            if (auto txn = getContext()->getCurrentTransaction())
+            if (auto txn = explain_context->getCurrentTransaction())
             {
                 String dump = txn->dumpDescription();
                 buf.write(dump.data(), dump.size());

@@ -6,12 +6,13 @@
 #include <Parsers/SelectUnionMode.h>
 
 #include <Analyzer/Identifier.h>
-#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/CTENodeExtension.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/RecursiveCTE.h>
 
 #include <Interpreters/Context_fwd.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 namespace DB
 {
@@ -73,28 +74,16 @@ public:
         is_subquery = is_subquery_value;
     }
 
-    /// Returns true if union node is CTE, false otherwise
-    bool isCTE() const
+    /// Set cte name - only for recursive CTE
+    void setRecursiveCTEName(std::string cte_name_value)
     {
-        return is_cte;
+        cte_name = std::move(cte_name_value);
     }
 
-    /// Set union node is CTE
-    void setIsCTE(bool is_cte_value)
+    /// Set cte name - only for recursive CTE
+    std::string getRecursiveCTEName() const
     {
-        is_cte = is_cte_value;
-    }
-
-    /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
-    bool isRecursiveCTE() const
-    {
-        return is_recursive_cte;
-    }
-
-    /// Set union node is recursive CTE value
-    void setIsRecursiveCTE(bool is_recursive_cte_value)
-    {
-        is_recursive_cte = is_recursive_cte_value;
+        return cte_name;
     }
 
     /// Returns true if union node has recursive CTE table, false otherwise
@@ -119,18 +108,6 @@ public:
     void setRecursiveCTETable(RecursiveCTETable recursive_cte_table_value)
     {
         recursive_cte_table.emplace(std::move(recursive_cte_table_value));
-    }
-
-    /// Get union node CTE name
-    const std::string & getCTEName() const
-    {
-        return cte_name;
-    }
-
-    /// Set union node CTE name
-    void setCTEName(std::string cte_name_value)
-    {
-        cte_name = std::move(cte_name_value);
     }
 
     /// Get union mode
@@ -190,10 +167,9 @@ protected:
 
 private:
     bool is_subquery = false;
-    bool is_cte = false;
+    std::string cte_name;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
-    std::string cte_name;
     ContextMutablePtr context;
     SelectUnionMode union_mode;
 

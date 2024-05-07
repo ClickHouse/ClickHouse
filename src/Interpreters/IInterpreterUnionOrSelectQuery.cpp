@@ -1,3 +1,4 @@
+#include <memory>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -10,10 +11,18 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 
 namespace DB
 {
+
+void IInterpreterUnionOrSelectQuery::buildQueryPlan(QueryPlan & query_plan)
+{
+    buildQueryPlanImpl(query_plan);
+    if (!options.only_analyze)
+        addDelayedMaterializingCTETables(query_plan);
+}
 
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
@@ -26,6 +35,15 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPla
     buildQueryPlan(query_plan);
     return std::move(*query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+}
+
+BlockIO IInterpreterUnionOrSelectQuery::execute()
+{
+    BlockIO res;
+    auto builder = buildQueryPipeline();
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    setQuota(res.pipeline);
+    return res;
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
@@ -137,6 +155,13 @@ void IInterpreterUnionOrSelectQuery::addStorageLimits(const StorageLimitsList & 
 {
     for (const auto & val : limits)
         storage_limits.push_back(val);
+}
+
+void IInterpreterUnionOrSelectQuery::addDelayedMaterializingCTETables(QueryPlan & plan)
+{
+    if (future_tables.empty())
+        return;
+    plan.addStep(std::make_unique<MaterializingCTEsStep>(context, std::move(future_tables), plan.getCurrentDataStream()));
 }
 
 }

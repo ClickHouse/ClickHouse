@@ -14,25 +14,47 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier s_ident;
     ParserKeyword s_as(Keyword::AS);
+    ParserKeyword s_materialized(Keyword::MATERIALIZED);
     ParserSubquery s_subquery;
+    ParserKeyword s_engine(Keyword::ENGINE);
+    ParserToken s_eq(TokenType::Equals);
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
 
     auto old_pos = pos;
     if (ASTPtr name, subquery;
-        s_ident.parse(pos, name, expected) && s_as.ignore(pos, expected) && s_subquery.parse(pos, subquery, expected))
+        s_ident.parse(pos, name, expected) && s_as.ignore(pos, expected))
     {
         auto with_element = std::make_shared<ASTWithElement>();
+        if (s_materialized.ignore(pos, expected))
+            with_element->has_materialized_keyword = true;
         tryGetIdentifierNameInto(name, with_element->name);
-        with_element->subquery = subquery;
-        with_element->children.push_back(with_element->subquery);
-        node = with_element;
+        if (s_subquery.parse(pos, subquery, expected))
+        {
+            with_element->subquery = subquery;
+            with_element->children.push_back(with_element->subquery);
+            if (s_engine.ignore(pos, expected))
+            {
+                ASTPtr engine;
+                if (s_eq.ignore(pos, expected) && ident_with_optional_params_p.parse(pos, engine, expected))
+                {
+                    with_element->engine = std::move(engine);
+                    with_element->children.push_back(with_element->engine);
+                }
+                else
+                    return false;
+            }
+            node = with_element;
+        }
     }
-    else
+
+    if (!node)
     {
         pos = old_pos;
         ParserExpressionWithOptionalAlias s_expr(false);
         if (!s_expr.parse(pos, node, expected))
             return false;
     }
+
     return true;
 }
 

@@ -111,7 +111,7 @@ InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", ast_ptr_->getID());
 }
 
-void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_plan)
+void InterpreterSelectIntersectExceptQuery::buildQueryPlanImpl(QueryPlan & query_plan)
 {
     auto local_limits = getStorageLimits(*context, options);
     storage_limits.emplace_back(local_limits);
@@ -166,24 +166,6 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
 
     addAdditionalPostFilter(query_plan);
     query_plan.addInterpreterContext(context);
-}
-
-BlockIO InterpreterSelectIntersectExceptQuery::execute()
-{
-    BlockIO res;
-
-    QueryPlan query_plan;
-    buildQueryPlan(query_plan);
-
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
-
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-
-    setQuota(res.pipeline);
-
-    return res;
 }
 
 void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()

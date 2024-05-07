@@ -26,8 +26,12 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
-    bool storesDataOnDisk() const override { return true; }
-    Strings getDataPaths() const override { return {path}; }
+    /// Disk can be nullptr when creating temporary in-memory storage join
+    bool storesDataOnDisk() const override { return disk != nullptr; }
+    Strings getDataPaths() const override { return storesDataOnDisk() ? Strings{path} : Strings{}; }
+
+    /// Delay read until the first call
+    void delayRead() { delay_read = true; }
 
 protected:
     StorageSetOrJoinBase(
@@ -45,6 +49,8 @@ protected:
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
+    bool delay_read = false;
+
     /// Restore from backup.
     void restore();
 
@@ -54,7 +60,7 @@ private:
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
     /// Call after all blocks were inserted.
-    virtual void finishInsert() = 0;
+    virtual void finishInsert(const ContextPtr &) = 0;
     virtual size_t getSize(ContextPtr context) const = 0;
 };
 
@@ -92,7 +98,7 @@ private:
     SetPtr set TSA_GUARDED_BY(mutex);
 
     void insertBlock(const Block & block, ContextPtr) override;
-    void finishInsert() override;
+    void finishInsert(const ContextPtr &) override;
     size_t getSize(ContextPtr) const override;
 };
 

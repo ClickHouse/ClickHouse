@@ -161,7 +161,7 @@ public:
                 ColumnsDescription{columns},
                 ConstraintsDescription{},
                 nullptr,
-                /*create_for_global_subquery*/ true);
+                /*delay_read*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
             external_tables.emplace(external_table_name, external_storage_holder);
 

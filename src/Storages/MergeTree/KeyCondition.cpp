@@ -1216,6 +1216,11 @@ bool KeyCondition::tryPrepareSetIndex(
         return false;
 
     const auto right_arg = func.getArgumentAt(1);
+    String printable_rhs;
+    if (right_arg.getASTNode())
+        printable_rhs = right_arg.getASTNode()->formatForLogging();
+    else if (right_arg.getDAGNode())
+        printable_rhs = right_arg.getDAGNode()->result_name;
 
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)

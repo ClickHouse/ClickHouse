@@ -419,6 +419,8 @@ private:
 
     friend class JoinSource;
 
+    friend class StorageJoin;
+
     std::shared_ptr<TableJoin> table_join;
     const JoinKind kind;
     const JoinStrictness strictness;

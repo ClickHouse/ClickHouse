@@ -14,6 +14,7 @@
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
@@ -65,6 +66,21 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/GlobalMaterializeCTEVisitor.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
+#include <Planner/Utils.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Dictionaries/IDictionary.h>
+#include <Functions/FunctionsExternalDictionaries.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Storages/StorageDictionary.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -288,7 +304,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
 }
-
 
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
@@ -926,7 +941,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
         {
-            ApplyWithGlobalVisitor::visit(ast);
+            ApplyWithGlobalVisitor(context).visit(ast);
         }
 
         {

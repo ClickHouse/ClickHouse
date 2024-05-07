@@ -14,6 +14,11 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Formats/NativeWriter.h>
+#include <IO/WriteBuffer.h>
+#include <IO/SharedThreadPools.h>
+#include <Disks/DiskLocal.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
@@ -103,13 +108,16 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    if (disk->exists(path))
-        disk->removeRecursive(path);
-    else
-        LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
+    if (storesDataOnDisk())
+    {
+        if (disk->exists(path))
+            disk->removeRecursive(path);
+        else
+            LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
 
-    disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(path);
+    }
 
     increment = 0;
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
@@ -129,12 +137,18 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// for execution of mutation interpreter.
     std::lock_guard mutate_lock(mutate_mutex);
 
-    constexpr auto tmp_backup_file_name = "tmp/mut.bin";
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
-    auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
-    auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+    WriteBufferPtr backup_buf;
+    std::unique_ptr<CompressedWriteBuffer> compressed_backup_buf;
+    std::unique_ptr<NativeWriter> backup_stream;
+    constexpr auto tmp_backup_file_name = "tmp/mut.bin";
+    if (storesDataOnDisk() && persistent)
+    {
+        backup_buf = disk->writeFile(path + tmp_backup_file_name);
+        compressed_backup_buf = std::make_unique<CompressedWriteBuffer>(*backup_buf);
+        backup_stream = std::make_unique<NativeWriter>(*compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+    }
 
     auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
 
@@ -150,8 +164,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         while (executor.pull(block))
         {
             new_data->addBlockToJoin(block, true);
-            if (persistent)
-                backup_stream.write(block);
+            if (backup_stream)
+                backup_stream->write(block);
         }
     }
 
@@ -161,10 +175,10 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     join = std::move(new_data);
     increment = 1;
 
-    if (persistent)
+    if (backup_stream)
     {
-        backup_stream.flush();
-        compressed_backup_buf.next();
+        backup_stream->flush();
+        compressed_backup_buf->next();
         backup_buf->next();
         backup_buf->finalize();
 
@@ -244,10 +258,16 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+    join_clone->from_storage_join = true;
 
-    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
-    join_clone->setLock(holder);
-    join_clone->reuseJoinedData(*join);
+    if (!delay_read)
+    {
+        RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+        join_clone->setLock(holder);
+        join_clone->reuseJoinedData(*join);
+    }
+    else
+        cloning_joins.push_back(join_clone);
 
     return join_clone;
 }
@@ -264,6 +284,22 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 
     join->addBlockToJoin(block_to_insert, true);
 }
+
+void StorageJoin::finishInsert(const ContextPtr & context)
+{
+    const auto & current_context = context ? context : Context::getGlobalContextInstance();
+    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, current_context);
+    for (auto & join_weak : cloning_joins)
+    {
+        /// TODO: should throw here if join is expired instead?
+        if (auto join_clone = join_weak.lock())
+        {
+            join_clone->setLock(holder);
+            join_clone->reuseJoinedData(*join);
+        }
+    }
+}
+
 
 size_t StorageJoin::getSize(ContextPtr context) const
 {
@@ -304,130 +340,154 @@ void StorageJoin::convertRightBlock(Block & block) const
         JoinCommon::convertColumnToNullable(col);
 }
 
+std::shared_ptr<StorageJoin> StorageJoin::create(
+    String disk_name,
+    const String & relative_path,
+    const StorageID & table_id,
+    ASTStorage * storage,
+    const String & storage_name,
+    ASTs engine_args,
+    bool persistent_,
+    const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
+    const String & comment,
+    ContextPtr context)
+{
+    /// Join(ANY, LEFT, k1, k2, ...)
+
+    const auto & settings = context->getSettingsRef();
+
+    auto join_use_nulls = settings.join_use_nulls;
+    auto max_rows_in_join = settings.max_rows_in_join;
+    auto max_bytes_in_join = settings.max_bytes_in_join;
+    auto join_overflow_mode = settings.join_overflow_mode;
+    auto join_any_take_last_row = settings.join_any_take_last_row;
+    auto old_any_join = settings.any_join_distinct_right_table_keys;
+
+    if (storage && storage->settings)
+    {
+        for (const auto & setting : storage->settings->changes)
+        {
+            if (setting.name == "join_use_nulls")
+                join_use_nulls = setting.value;
+            else if (setting.name == "max_rows_in_join")
+                max_rows_in_join = setting.value;
+            else if (setting.name == "max_bytes_in_join")
+                max_bytes_in_join = setting.value;
+            else if (setting.name == "join_overflow_mode")
+                join_overflow_mode = setting.value;
+            else if (setting.name == "join_any_take_last_row")
+                join_any_take_last_row = setting.value;
+            else if (setting.name == "any_join_distinct_right_table_keys")
+                old_any_join = setting.value;
+            else if (setting.name == "disk")
+                disk_name = setting.value.get<String>();
+            else if (setting.name == "persistent")
+            {
+                persistent_ = setting.value.get<bool>();
+            }
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting {} for storage engine {}", setting.name, storage_name);
+        }
+    }
+
+    DiskPtr disk = disk_name.empty() ? nullptr : context->getDisk(disk_name);
+
+    if (engine_args.size() < 3)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Storage Join requires at least 3 parameters: "
+                        "Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).");
+
+    JoinStrictness strictness = JoinStrictness::Unspecified;
+    JoinKind kind = JoinKind::Comma;
+
+    if (auto opt_strictness_id = tryGetIdentifierName(engine_args[0]))
+    {
+        const String strictness_str = Poco::toLower(*opt_strictness_id);
+
+        if (strictness_str == "any")
+        {
+            if (old_any_join)
+                strictness = JoinStrictness::RightAny;
+            else
+                strictness = JoinStrictness::Any;
+        }
+        else if (strictness_str == "all")
+            strictness = JoinStrictness::All;
+        else if (strictness_str == "semi")
+            strictness = JoinStrictness::Semi;
+        else if (strictness_str == "anti")
+            strictness = JoinStrictness::Anti;
+    }
+
+
+    if (strictness == JoinStrictness::Unspecified)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).");
+
+    if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
+    {
+        const String kind_str = Poco::toLower(*opt_kind_id);
+
+        if (kind_str == "left")
+            kind = JoinKind::Left;
+        else if (kind_str == "inner")
+            kind = JoinKind::Inner;
+        else if (kind_str == "right")
+            kind = JoinKind::Right;
+        else if (kind_str == "full")
+        {
+            if (strictness == JoinStrictness::Any)
+                strictness = JoinStrictness::RightAny;
+            kind = JoinKind::Full;
+        }
+    }
+
+    if (kind == JoinKind::Comma)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");
+
+    Names key_names;
+    key_names.reserve(engine_args.size() - 2);
+    for (size_t i = 2, size = engine_args.size(); i < size; ++i)
+    {
+        auto opt_key = tryGetIdentifierName(engine_args[i]);
+        if (!opt_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter №{} of storage Join don't look like column name.", i + 1);
+
+        key_names.push_back(*opt_key);
+    }
+
+    return std::make_shared<StorageJoin>(
+        disk,
+        relative_path,
+        table_id,
+        key_names,
+        join_use_nulls,
+        SizeLimits{max_rows_in_join, max_bytes_in_join, join_overflow_mode},
+        kind,
+        strictness,
+        columns,
+        constraints,
+        comment,
+        join_any_take_last_row,
+        persistent_);
+}
+
 void registerStorageJoin(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        /// Join(ANY, LEFT, k1, k2, ...)
-
-        ASTs & engine_args = args.engine_args;
-
-        const auto & settings = args.getContext()->getSettingsRef();
-
-        auto join_use_nulls = settings.join_use_nulls;
-        auto max_rows_in_join = settings.max_rows_in_join;
-        auto max_bytes_in_join = settings.max_bytes_in_join;
-        auto join_overflow_mode = settings.join_overflow_mode;
-        auto join_any_take_last_row = settings.join_any_take_last_row;
-        auto old_any_join = settings.any_join_distinct_right_table_keys;
-        bool persistent = true;
-        String disk_name = "default";
-
-        if (args.storage_def && args.storage_def->settings)
-        {
-            for (const auto & setting : args.storage_def->settings->changes)
-            {
-                if (setting.name == "join_use_nulls")
-                    join_use_nulls = setting.value;
-                else if (setting.name == "max_rows_in_join")
-                    max_rows_in_join = setting.value;
-                else if (setting.name == "max_bytes_in_join")
-                    max_bytes_in_join = setting.value;
-                else if (setting.name == "join_overflow_mode")
-                    join_overflow_mode = setting.value;
-                else if (setting.name == "join_any_take_last_row")
-                    join_any_take_last_row = setting.value;
-                else if (setting.name == "any_join_distinct_right_table_keys")
-                    old_any_join = setting.value;
-                else if (setting.name == "disk")
-                    disk_name = setting.value.get<String>();
-                else if (setting.name == "persistent")
-                {
-                    persistent = setting.value.get<bool>();
-                }
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting {} for storage {}", setting.name, args.engine_name);
-            }
-        }
-
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
-
-        if (engine_args.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Join requires at least 3 parameters: "
-                            "Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).");
-
-        JoinStrictness strictness = JoinStrictness::Unspecified;
-        JoinKind kind = JoinKind::Comma;
-
-        if (auto opt_strictness_id = tryGetIdentifierName(engine_args[0]))
-        {
-            const String strictness_str = Poco::toLower(*opt_strictness_id);
-
-            if (strictness_str == "any")
-            {
-                if (old_any_join)
-                    strictness = JoinStrictness::RightAny;
-                else
-                    strictness = JoinStrictness::Any;
-            }
-            else if (strictness_str == "all")
-                strictness = JoinStrictness::All;
-            else if (strictness_str == "semi")
-                strictness = JoinStrictness::Semi;
-            else if (strictness_str == "anti")
-                strictness = JoinStrictness::Anti;
-        }
-
-        if (strictness == JoinStrictness::Unspecified)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).");
-
-        if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
-        {
-            const String kind_str = Poco::toLower(*opt_kind_id);
-
-            if (kind_str == "left")
-                kind = JoinKind::Left;
-            else if (kind_str == "inner")
-                kind = JoinKind::Inner;
-            else if (kind_str == "right")
-                kind = JoinKind::Right;
-            else if (kind_str == "full")
-            {
-                if (strictness == JoinStrictness::Any)
-                    strictness = JoinStrictness::RightAny;
-                kind = JoinKind::Full;
-            }
-        }
-
-        if (kind == JoinKind::Comma)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");
-
-        Names key_names;
-        key_names.reserve(engine_args.size() - 2);
-        for (size_t i = 2, size = engine_args.size(); i < size; ++i)
-        {
-            auto opt_key = tryGetIdentifierName(engine_args[i]);
-            if (!opt_key)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter №{} of storage Join don't look like column name.", i + 1);
-
-            key_names.push_back(*opt_key);
-        }
-
-        return std::make_shared<StorageJoin>(
-            disk,
+        return StorageJoin::create(
+            /*disk_name*/ "default",
             args.relative_data_path,
             args.table_id,
-            key_names,
-            join_use_nulls,
-            SizeLimits{max_rows_in_join, max_bytes_in_join, join_overflow_mode},
-            kind,
-            strictness,
+            args.storage_def,
+            args.engine_name,
+            args.engine_args,
+            /*persistent*/ true,
             args.columns,
             args.constraints,
             args.comment,
-            join_any_take_last_row,
-            persistent);
+            args.getContext());
     };
 
     factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
@@ -457,38 +517,53 @@ size_t rawSize(const StringRef & t)
 class JoinSource : public ISource
 {
 public:
-    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
+    JoinSource(StoragePtr storage_, UInt64 max_block_size_, Block sample_block_, ContextPtr context_)
         : ISource(sample_block_)
-        , join(join_)
-        , lock_holder(lock_holder_)
+        , storage_holder(std::move(storage_))
+        , storage(typeid_cast<StorageJoin &>(*storage_holder))
+        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
-        if (!join->getTableJoin().oneDisjunct())
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
-
-        column_indices.resize(sample_block.columns());
-
-        auto & saved_block = join->getJoinedData()->sample_block;
-
-        for (size_t i = 0; i < sample_block.columns(); ++i)
+        delay_read_initializer = [this]()
         {
-            auto & [_, type, name] = sample_block.getByPosition(i);
-            if (join->right_table_keys.has(name))
-            {
-                key_pos = i;
-                const auto & column = join->right_table_keys.getByName(name);
-                restored_block.insert(column);
-            }
-            else
-            {
-                size_t pos = saved_block.getPositionByName(name);
-                column_indices[i] = pos;
+            LOG_DEBUG(getLogger("JoinSource"), "Initiating Join source");
+            lock_holder = storage.tryLockTimedWithContext(storage.rwlock, RWLockImpl::Type::Read, context);
+            join = storage.join;
+            if (!join->getTableJoin().oneDisjunct())
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
 
-                const auto & column = saved_block.getByPosition(pos);
-                restored_block.insert(column);
+            column_indices.resize(sample_block.columns());
+
+            auto & saved_block = join->getJoinedData()->sample_block;
+
+            for (size_t i = 0; i < sample_block.columns(); ++i)
+            {
+                auto & [_, type, name] = sample_block.getByPosition(i);
+                if (join->right_table_keys.has(name))
+                {
+                    key_pos = i;
+                    const auto & column = join->right_table_keys.getByName(name);
+                    restored_block.insert(column);
+                }
+                else
+                {
+                    size_t pos = saved_block.getPositionByName(name);
+                    column_indices[i] = pos;
+
+                    const auto & column = saved_block.getByPosition(pos);
+                    restored_block.insert(column);
+                }
             }
+        };
+
+        if (!storage.delay_read)
+        {
+            delay_read_initializer();
+            delay_read_initializer = {};
         }
+        else
+            LOG_DEBUG(getLogger("JoinSource"), "Delayed initialization of JoinSource");
     }
 
     String getName() const override { return "Join"; }
@@ -496,6 +571,12 @@ public:
 protected:
     Chunk generate() override
     {
+        if (delay_read_initializer)
+        {
+            delay_read_initializer();
+            delay_read_initializer = {};
+        }
+
         if (join->data->blocks.empty())
             return {};
 
@@ -507,6 +588,9 @@ protected:
     }
 
 private:
+    StoragePtr storage_holder;
+    StorageJoin & storage;
+    ContextPtr context;
     HashJoinPtr join;
     TableLockHolder lock_holder;
 
@@ -517,6 +601,7 @@ private:
     ColumnNumbers column_indices;
     std::optional<size_t> key_pos;
 
+    std::function<void()> delay_read_initializer;
     std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
 
 
@@ -665,8 +750,7 @@ Pipe StorageJoin::read(
     storage_snapshot->check(column_names);
 
     Block source_sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
-    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
-    return Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
+    return Pipe(std::make_shared<JoinSource>(shared_from_this(), max_block_size, source_sample_block, std::move(context)));
 }
 
 }

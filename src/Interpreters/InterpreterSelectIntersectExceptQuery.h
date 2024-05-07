@@ -29,8 +29,6 @@ public:
         ContextMutablePtr context_,
         const SelectQueryOptions & options_);
 
-    BlockIO execute() override;
-
     Block getSampleBlock() { return result_header; }
 
     void ignoreWithTotals() override;
@@ -43,7 +41,7 @@ private:
     std::unique_ptr<IInterpreterUnionOrSelectQuery>
     buildCurrentChildInterpreter(const ASTPtr & ast_ptr_);
 
-    void buildQueryPlan(QueryPlan & query_plan) override;
+    void buildQueryPlanImpl(QueryPlan & query_plan) override;
 
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 

@@ -5,6 +5,8 @@
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include "Analyzer/CTENode.h"
+#include "Analyzer/IQueryTreeNode.h"
 
 #include <Core/NamesAndTypes.h>
 
@@ -106,12 +108,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_subquery)
         buffer << ", is_subquery: " << is_subquery;
 
-    if (is_cte)
-        buffer << ", is_cte: " << is_cte;
-
-    if (is_recursive_with)
-        buffer << ", is_recursive_with: " << is_recursive_with;
-
     if (is_distinct)
         buffer << ", is_distinct: " << is_distinct;
 
@@ -137,9 +133,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!group_by_type.empty())
         buffer << ", group_by_type: " << group_by_type;
-
-    if (!cte_name.empty())
-        buffer << ", cte_name: " << cte_name;
 
     if (hasWith())
     {
@@ -263,7 +256,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        is_cte == rhs_typed.is_cte &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -273,7 +265,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
-        cte_name == rhs_typed.cte_name &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
@@ -281,11 +272,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_subquery);
-    state.update(is_cte);
-
-    state.update(cte_name.size());
-    state.update(cte_name);
-
     state.update(projection_columns.size());
     for (const auto & projection_column : projection_columns)
     {
@@ -325,7 +311,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     auto result_query_node = std::make_shared<QueryNode>(context);
 
     result_query_node->is_subquery = is_subquery;
-    result_query_node->is_cte = is_cte;
     result_query_node->is_recursive_with = is_recursive_with;
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
@@ -335,7 +320,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
-    result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
 
@@ -366,23 +350,18 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             auto with_node_ast = with_node->toAST(options);
             expression_list_ast->children.push_back(with_node_ast);
 
-            const auto * with_query_node = with_node->as<QueryNode>();
-            const auto * with_union_node = with_node->as<UnionNode>();
-            if (!with_query_node && !with_union_node)
+            const auto * cte_node = with_node->as<CTENode>();
+            if (!cte_node)
                 continue;
-
-            bool is_with_node_cte = with_query_node ? with_query_node->isCTE() : with_union_node->isCTE();
-            if (!is_with_node_cte)
-                continue;
-
-            const auto & with_node_cte_name = with_query_node ? with_query_node->cte_name : with_union_node->getCTEName();
 
             auto * with_node_ast_subquery = with_node_ast->as<ASTSubquery>();
             if (with_node_ast_subquery)
                 with_node_ast_subquery->cte_name = "";
 
             auto with_element_ast = std::make_shared<ASTWithElement>();
-            with_element_ast->name = with_node_cte_name;
+            with_element_ast->name = cte_node->getCTEName();
+            with_element_ast->has_materialized_keyword = cte_node->isMaterializedCTE();
+            with_element_ast->engine = cte_node->getMaterializedCTEEngine() ? cte_node->getMaterializedCTEEngine()->clone() : nullptr;
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
 
@@ -474,7 +453,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (is_subquery)
     {
         auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
-        subquery->cte_name = cte_name;
         return subquery;
     }
 

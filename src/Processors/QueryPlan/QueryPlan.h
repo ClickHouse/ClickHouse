@@ -83,7 +83,7 @@ public:
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0);
-    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
+    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options, size_t offset = 0);
     void explainEstimate(MutableColumns & columns);
 
     /// Do not allow to change the table while the pipeline alive.
@@ -111,6 +111,7 @@ public:
     using Nodes = std::list<Node>;
 
     Node * getRootNode() const { return root; }
+    const std::vector<StoragePtr> & getRequiredStorages() const { return resources.storage_holders; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
 private:

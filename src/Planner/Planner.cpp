@@ -1,5 +1,8 @@
 #include <Planner/Planner.h>
 
+#include <Core/ProtocolDefines.h>
+#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/ProtocolDefines.h>
@@ -15,6 +18,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -1152,6 +1156,15 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     query_plan.addStep(std::move(filter_step));
 }
 
+void addDelayedMaterializingCTETablesStepIfNeeded(QueryPlan & query_plan,
+    const PlannerContextPtr & planner_context)
+{
+    auto & future_tables = planner_context->getFutureTablesFromCTE();
+    if (future_tables.empty())
+        return;
+    query_plan.addStep(std::make_unique<MaterializingCTEsStep>(planner_context->getQueryContext(), std::move(future_tables), query_plan.getCurrentDataStream()));
+}
+
 }
 
 PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
@@ -1240,6 +1253,9 @@ void Planner::buildQueryPlanIfNeeded()
         buildPlanForQueryNode();
 
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
+
+    if (!select_query_options.only_analyze)
+        addDelayedMaterializingCTETablesStepIfNeeded(query_plan, planner_context);
 }
 
 void Planner::buildPlanForUnionNode()

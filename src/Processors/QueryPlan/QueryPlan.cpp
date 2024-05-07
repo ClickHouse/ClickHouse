@@ -1,6 +1,8 @@
 #include <stack>
 
 #include <Common/JSONBuilder.h>
+#include <Common/logger_useful.h>
+#include "Processors/QueryPlan/MaterializingCTEStep.h"
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -422,7 +424,7 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.indent;
 }
 
-void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options)
+void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options, size_t offset)
 {
     checkInitialized();
 
@@ -431,13 +433,13 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     struct Frame
     {
         Node * node = {};
-        size_t offset = 0;
+        size_t offset;
         bool is_description_printed = false;
         size_t next_child = 0;
     };
 
     std::stack<Frame> stack;
-    stack.push(Frame{.node = root});
+    stack.push(Frame{.node = root, .offset = offset});
 
     while (!stack.empty())
     {

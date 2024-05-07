@@ -147,6 +147,8 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+struct FutureTableFromCTE;
+using FutureTablesFromCTE = std::vector<std::shared_ptr<FutureTableFromCTE>>;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -298,7 +300,11 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    /// Mapping from storage -> CTE future table created by CTE
+    std::unordered_map<StorageID, std::shared_ptr<FutureTableFromCTE>, StorageID::DatabaseAndTableNameHash> future_tables_mapping;
+    /// Temporary data for query execution accounting
     TemporaryTablesMapping external_tables_mapping;
+    /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
@@ -681,7 +687,10 @@ public:
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
 
-    Tables getExternalTables() const;
+    void addExternalTableFromCTE(std::shared_ptr<FutureTableFromCTE> future_table, TemporaryTableHolder && temporary_table);
+    FutureTablesFromCTE getFutureTables(const std::vector<StoragePtr> & storages) const;
+
+    Tables getExternalTables(const NameSet & names = {}) const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);

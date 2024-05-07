@@ -1,6 +1,10 @@
 #pragma once
 
 #include <Common/RWLock.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -23,7 +27,9 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   */
 class StorageJoin final : public StorageSetOrJoinBase
 {
+friend class JoinSource;
 public:
+    /// For temporary in-memory join table, disk_ can be nullptr.
     StorageJoin(
         DiskPtr disk_,
         const String & relative_path_,
@@ -87,6 +93,19 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
+    static std::shared_ptr<StorageJoin> create(
+        String disk_name,
+        const String & relative_path,
+        const StorageID & table_id,
+        ASTStorage * storage,
+        const String & storage_name,
+        ASTs engine_args,
+        bool persistent,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints,
+        const String & comment,
+        ContextPtr context);
+
 private:
     Block sample_block;
     const Names key_names;
@@ -105,8 +124,16 @@ private:
 
     mutable std::mutex mutate_mutex;
 
+    /// All HashJoin instance created by this storage via `getJoinLocked`.
+    /// Normally, `getJoinLocked` will create a clone join that refers to `join` and also lock it
+    /// to prevent concurrent insertions to StorageJoin. However, if this storage is created by
+    /// materialized CTE, at the time of calling `getJoinLocked` the `join` is not yet filled.
+    /// In this case, we don't initiate cloned join data and lock during `getJoinLocked` call but
+    /// keep it in `cloning_joins`. They will be initialized once `finishInsert` is called.
+    mutable std::vector<std::weak_ptr<HashJoin>> cloning_joins;
+
     void insertBlock(const Block & block, ContextPtr context) override;
-    void finishInsert() override {}
+    void finishInsert(const ContextPtr &) override;
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.

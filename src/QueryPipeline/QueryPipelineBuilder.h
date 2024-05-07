@@ -5,7 +5,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
 
 namespace DB
 {
@@ -91,9 +91,6 @@ public:
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
 
-    /// Will read from this stream after all data was read from other streams.
-    void addDelayedStream(ProcessorPtr source);
-
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
@@ -151,6 +148,12 @@ public:
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
 
+    void addMaterializingCTEsTransform(
+        ContextPtr context,
+        const Block & res_header,
+        FutureTableFromCTEPtr future_table,
+        const SizeLimits & limits);
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
@@ -192,6 +195,8 @@ public:
     {
         return concurrency_control;
     }
+
+    const Processors & getProcessors() { return pipe.getProcessors(); }
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
