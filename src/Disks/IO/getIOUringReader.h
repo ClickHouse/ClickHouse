@@ -5,6 +5,7 @@
 #if USE_LIBURING
 
 #include <Interpreters/Context_fwd.h>
+#include <Disks/IO/IOUringReader.h>
 
 namespace DB
 {
