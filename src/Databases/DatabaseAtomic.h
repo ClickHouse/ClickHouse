@@ -92,7 +92,7 @@ protected:
     LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);
 
 private:
-    String GetPathSymlink(const String & table_name) const;
+    String getPathSymlink(const String & table_name) const;
 };
 
 }

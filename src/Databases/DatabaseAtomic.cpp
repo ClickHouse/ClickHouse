@@ -188,7 +188,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         table_name_to_path.erase(table_name);
     }
 
-    if (fs::exists(GetPathSymlink(table_name)))
+    if (fs::exists(getPathSymlink(table_name)))
     {
         LOG_TRACE(log, "Remove symlink for {}", table_name);
         tryRemoveSymlink(table_name);
@@ -539,7 +539,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
 {
     try
     {
-        String link = GetPathSymlink(table_name);
+        String link = getPathSymlink(table_name);
         fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
 
         /// If it already points where needed.
@@ -558,7 +558,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
 }
 
-String DatabaseAtomic::GetPathSymlink(const String & table_name) const
+String DatabaseAtomic::getPathSymlink(const String & table_name) const
 {
     return path_to_table_symlinks + escapeForFileName(table_name);
 }
@@ -567,7 +567,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 {
     try
     {
-        String path = GetPathSymlink(table_name);
+        String path = getPathSymlink(table_name);
         fs::remove(path);
     }
     catch (...)
