@@ -130,7 +130,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
                 parent_part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
             if (!parent_part)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for potentially broken projection part {}",
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for projection part {}",
                             parent_part_name, data_part->getDataPartStorage().getFullPath());
 
             return parent_part_name;
