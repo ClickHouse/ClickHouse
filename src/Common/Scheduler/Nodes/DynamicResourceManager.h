@@ -85,6 +85,7 @@ private:
         StatePtr state; // hold state to avoid ResourceLink invalidation due to resource deregistration from SchedulerRoot
     };
 
+private:
     SchedulerRoot scheduler;
     std::mutex mutex;
     StatePtr state;

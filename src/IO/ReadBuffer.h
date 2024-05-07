@@ -63,23 +63,21 @@ public:
       */
     bool next()
     {
-        chassert(!hasPendingData());
-        chassert(position() <= working_buffer.end());
+        assert(!hasPendingData());
+        assert(position() <= working_buffer.end());
 
         bytes += offset();
         bool res = nextImpl();
         if (!res)
-        {
             working_buffer = Buffer(pos, pos);
-        }
         else
         {
-            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
-            chassert(position() < working_buffer.end());
+            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            assert(position() != working_buffer.end());
         }
         nextimpl_working_buffer_offset = 0;
 
-        chassert(position() <= working_buffer.end());
+        assert(position() <= working_buffer.end());
 
         return res;
     }
@@ -227,22 +225,11 @@ public:
      *  - seek() to a position above the until position (even if you setReadUntilPosition() to a
      *    higher value right after the seek!),
      *
-     * Implementations are recommended to:
-     *  - Allow the read-until-position to go below current position, e.g.:
-     *      // Read block [300, 400)
-     *      setReadUntilPosition(400);
-     *      seek(300);
-     *      next();
-     *      // Read block [100, 200)
-     *      setReadUntilPosition(200); // oh oh, this is below the current position, but should be allowed
-     *      seek(100); // but now everything's fine again
-     *      next();
-     *      // (Swapping the order of seek and setReadUntilPosition doesn't help: then it breaks if the order of blocks is reversed.)
-     *  - Check if new read-until-position value is equal to the current value and do nothing in this case,
-     *    so that the caller doesn't have to.
+     * Typical implementations discard any current buffers and connections, even if the position is
+     * adjusted only a little.
      *
-     * Typical implementations discard any current buffers and connections when the
-     * read-until-position changes even by a small (nonzero) amount.
+     * Typical usage is to call it right after creating the ReadBuffer, before it started doing any
+     * work.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
 

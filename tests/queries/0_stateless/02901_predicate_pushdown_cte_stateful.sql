@@ -1,5 +1,3 @@
-SET allow_deprecated_functions = 1;
-
 CREATE TABLE t
 (
     `rDate` String,

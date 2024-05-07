@@ -1,9 +1,12 @@
 #pragma once
 
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <utility>
+#include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/GinIndexStore.h>
@@ -221,11 +224,11 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
 void setIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
-
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
+
+MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
+void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
@@ -240,7 +243,7 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
 void usearchIndexValidator(const IndexDescription& index, bool attach);
 #endif
 
-MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription& index);
-void fullTextIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);
+void invertedIndexValidator(const IndexDescription& index, bool attach);
 
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
+from copy import deepcopy
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
@@ -11,15 +11,7 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
-class WorkFlows(metaclass=WithIter):
-    PULL_REQUEST = "PULL_REQUEST"
-    MASTER = "MASTER"
-    BACKPORT = "BACKPORT"
-    RELEASE = "RELEASE"
-    SYNC = "SYNC"
-
-
-class CIStages(metaclass=WithIter):
+class CIStages:
     NA = "UNKNOWN"
     BUILDS_1 = "Builds_1"
     BUILDS_2 = "Builds_2"
@@ -37,7 +29,7 @@ class Runners(metaclass=WithIter):
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
-class CILabels(metaclass=WithIter):
+class Labels(metaclass=WithIter):
     """
     Label names or commit tokens in normalized form
     """
@@ -46,14 +38,9 @@ class CILabels(metaclass=WithIter):
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     CI_SET_REDUCED = "ci_set_reduced"
-    CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
-    CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
-    CI_SET_STATLESS = "ci_set_stateless"
-    CI_SET_STATEFUL = "ci_set_stateful"
-    CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
-    CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
+    CI_SET_ANALYZER = "ci_set_analyzer"
 
     libFuzzer = "libFuzzer"
 
@@ -98,16 +85,15 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
-    STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
-        "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
+    STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE = (
+        "Stateless tests (release, analyzer, s3, DatabaseReplicated)"
     )
-    # merged into STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE:
-    # STATELESS_TEST_OLD_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
+    # merged into STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE:
+    # STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
     # STATELESS_TEST_DB_REPL_RELEASE = "Stateless tests (release, DatabaseReplicated)"
     # STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
-    STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
 
     STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
@@ -130,12 +116,10 @@ class JobNames(metaclass=WithIter):
     STRESS_TEST_UBSAN = "Stress test (ubsan)"
     STRESS_TEST_MSAN = "Stress test (msan)"
     STRESS_TEST_DEBUG = "Stress test (debug)"
-    STRESS_TEST_AZURE_TSAN = "Stress test (azure, tsan)"
-    STRESS_TEST_AZURE_MSAN = "Stress test (azure, msan)"
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
-    INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
+    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
     INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
@@ -182,13 +166,6 @@ class JobNames(metaclass=WithIter):
 
     DOCS_CHECK = "Docs check"
     BUGFIX_VALIDATE = "Bugfix validation"
-
-
-class StatusNames(metaclass=WithIter):
-    "Class with statuses that aren't related to particular jobs"
-    CI = "CI running"
-    MERGEABLE = "Mergeable Check"
-    SYNC = "A Sync"
 
 
 # dynamically update JobName with Build jobs
@@ -245,8 +222,6 @@ class JobConfig:
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
-    # job will run if it's enabled in CI option
-    run_by_ci_option: bool = False
     # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
     random_bucket: str = ""
 
@@ -287,7 +262,7 @@ builds_job_config = JobConfig(
     run_command="build_check.py $BUILD_NAME",
 )
 fuzzer_build_job_config = deepcopy(builds_job_config)
-fuzzer_build_job_config.run_by_label = CILabels.libFuzzer
+fuzzer_build_job_config.run_by_label = Labels.libFuzzer
 
 
 @dataclass
@@ -311,8 +286,6 @@ class BuildConfig:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
-            elif not isinstance(field, str):
-                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
@@ -397,11 +370,7 @@ upgrade_check_digest = DigestConfig(
     docker=["clickhouse/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/ci/integration_test_check.py",
-        "./tests/ci/integration_tests_runner.py",
-        "./tests/integration/",
-    ],
+    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
     exclude_files=[".md"],
     docker=IMAGES.copy(),
 )
@@ -580,17 +549,9 @@ class CIConfig:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
             stage_type = CIStages.TESTS_1
-            if job_name in CI_CONFIG.test_configs:
-                required_build = CI_CONFIG.test_configs[job_name].required_build
-                assert required_build
-                if required_build in CI_CONFIG.get_builds_for_report(
-                    JobNames.BUILD_CHECK
-                ):
-                    stage_type = CIStages.TESTS_1
-                else:
-                    stage_type = CIStages.TESTS_2
-            else:
-                stage_type = CIStages.TESTS_1
+            if job_name == JobNames.LIBFUZZER_TEST:
+                # since fuzzers build in Builds_2, test must be in Tests_2
+                stage_type = CIStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -726,18 +687,18 @@ class CIConfig:
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
-    def job_generator(self, branch: str) -> Iterable[str]:
+    def job_generator(self) -> Iterable[str]:
         """
         traverses all check names in CI pipeline
         """
-        assert branch
         for config in (
             self.other_jobs_configs,
             self.build_config,
             self.builds_report_config,
             self.test_configs,
         ):
-            yield from config  # type: ignore
+            for check_name in config:  # type: ignore
+                yield check_name
 
     def get_builds_for_report(
         self, report_name: str, release: bool = False, backport: bool = False
@@ -830,84 +791,47 @@ class CIConfig:
 
 CI_CONFIG = CIConfig(
     label_configs={
-        CILabels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        CILabels.CI_SET_FAST: LabelConfig(
+        Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        Labels.CI_SET_ARM: LabelConfig(
             run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-            ]
-        ),
-        CILabels.CI_SET_ARM: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
+                # JobNames.STYLE_CHECK,
                 Build.PACKAGE_AARCH64,
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        CILabels.CI_SET_INTEGRATION: LabelConfig(
+        Labels.CI_SET_INTEGRATION: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 Build.PACKAGE_RELEASE,
                 JobNames.INTEGRATION_TEST,
             ]
         ),
-        CILabels.CI_SET_OLD_ANALYZER: LabelConfig(
+        Labels.CI_SET_ANALYZER: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
                 Build.PACKAGE_RELEASE,
                 Build.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-                JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+                JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
+                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
-        CILabels.CI_SET_STATLESS: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_RELEASE,
-                JobNames.STATELESS_TEST_RELEASE,
-            ]
-        ),
-        CILabels.CI_SET_STATLESS_ASAN: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_ASAN,
-            ]
-        ),
-        CILabels.CI_SET_STATEFUL: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_RELEASE,
-                JobNames.STATEFUL_TEST_RELEASE,
-            ]
-        ),
-        CILabels.CI_SET_STATEFUL_ASAN: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_ASAN,
-                JobNames.STATEFUL_TEST_ASAN,
-            ]
-        ),
-        CILabels.CI_SET_REDUCED: LabelConfig(
+        Labels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
                 for job in JobNames
                 if not any(
-                    nogo in job
-                    for nogo in (
-                        "asan",
-                        "tsan",
-                        "msan",
-                        "ubsan",
-                        "coverage",
-                        # skip build report jobs as not all builds will be done
-                        "build check",
-                    )
+                    [
+                        nogo in job
+                        for nogo in (
+                            "asan",
+                            "tsan",
+                            "msan",
+                            "ubsan",
+                            # skip build report jobs as not all builds will be done
+                            "build check",
+                        )
+                    ]
                 )
             ]
         ),
@@ -1197,17 +1121,13 @@ CI_CONFIG = CIConfig(
         JobNames.STATELESS_TEST_AARCH64: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
-        JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
+        JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
             job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
-        ),
-        JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
-            Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
@@ -1231,12 +1151,6 @@ CI_CONFIG = CIConfig(
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
-        JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
-        ),
-        JobNames.STRESS_TEST_AZURE_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
-        ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
@@ -1250,7 +1164,7 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_ASAN,
             job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
         ),
-        JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: TestConfig(
+        JobNames.INTEGRATION_TEST_ASAN_ANALYZER: TestConfig(
             Build.PACKAGE_ASAN,
             job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
         ),
@@ -1356,7 +1270,7 @@ CI_CONFIG = CIConfig(
         JobNames.LIBFUZZER_TEST: TestConfig(
             Build.FUZZERS,
             job_config=JobConfig(
-                run_by_label=CILabels.libFuzzer,
+                run_by_label=Labels.libFuzzer,
                 timeout=10800,
                 run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
             ),
@@ -1369,7 +1283,7 @@ CI_CONFIG.validate()
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
     "PR Check",
-    StatusNames.SYNC,
+    "A Sync",  # Cloud sync
     JobNames.BUILD_CHECK,
     JobNames.BUILD_CHECK_SPECIAL,
     JobNames.DOCS_CHECK,
@@ -1382,8 +1296,8 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST,
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
-    JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-    JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
+    JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
+    JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
 ]
 
 
@@ -1482,9 +1396,9 @@ CHECK_DESCRIPTIONS = [
         lambda x: x.startswith("Integration tests ("),
     ),
     CheckDescription(
-        StatusNames.MERGEABLE,
+        "Mergeable Check",
         "Checks if all other necessary checks are successful",
-        lambda x: x == StatusNames.MERGEABLE,
+        lambda x: x == "Mergeable Check",
     ),
     CheckDescription(
         "Performance Comparison",

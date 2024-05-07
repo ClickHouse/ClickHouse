@@ -2,6 +2,7 @@
 
 #if defined(OS_LINUX)
 
+#include <mutex>
 #include <atomic>
 #include <Common/Fiber.h>
 #include <Common/TimerDescriptor.h>
@@ -52,7 +53,7 @@ private:
 
     struct Task : public AsyncTask
     {
-        explicit Task(RemoteQueryExecutorReadContext & read_context_) : read_context(read_context_) {}
+        Task(RemoteQueryExecutorReadContext & read_context_) : read_context(read_context_) {}
 
         RemoteQueryExecutorReadContext & read_context;
 

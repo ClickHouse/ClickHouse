@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class StorageSystemDatabaseEngines final : public IStorageSystemOneBlock
+class StorageSystemDatabaseEngines final : public IStorageSystemOneBlock<StorageSystemDatabaseEngines>
 {
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 

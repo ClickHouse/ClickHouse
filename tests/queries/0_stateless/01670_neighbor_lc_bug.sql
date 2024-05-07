@@ -1,6 +1,3 @@
-SET allow_deprecated_functions = 1;
-SET output_format_pretty_row_numbers = 0;
-
 SELECT
     neighbor(n, -2) AS int,
     neighbor(s, -2) AS str,

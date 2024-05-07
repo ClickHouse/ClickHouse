@@ -45,7 +45,8 @@ namespace
             const String & dest_container_for_logging_,
             const String & dest_blob_,
             std::shared_ptr<const AzureObjectStorageSettings> settings_,
-            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
+            ThreadPoolCallbackRunner<void> schedule_,
+            bool for_disk_azure_blob_storage_,
             const Poco::Logger * log_)
             : create_read_buffer(create_read_buffer_)
             , client(client_)
@@ -55,6 +56,7 @@ namespace
             , dest_blob(dest_blob_)
             , settings(settings_)
             , schedule(schedule_)
+            , for_disk_azure_blob_storage(for_disk_azure_blob_storage_)
             , log(log_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
         {
@@ -70,7 +72,8 @@ namespace
         const String & dest_container_for_logging;
         const String & dest_blob;
         std::shared_ptr<const AzureObjectStorageSettings> settings;
-        ThreadPoolCallbackRunnerUnsafe<void> schedule;
+        ThreadPoolCallbackRunner<void> schedule;
+        bool for_disk_azure_blob_storage;
         const Poco::Logger * log;
         size_t max_single_part_upload_size;
 
@@ -214,7 +217,7 @@ namespace
         void processUploadPartRequest(UploadPartTask & task)
         {
             ProfileEvents::increment(ProfileEvents::AzureUploadPart);
-            if (client->GetClickhouseOptions().IsClientForDisk)
+            if (for_disk_azure_blob_storage)
                 ProfileEvents::increment(ProfileEvents::DiskAzureUploadPart);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
@@ -266,9 +269,10 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule)
+    ThreadPoolCallbackRunner<void> schedule,
+    bool for_disk_azure_blob_storage)
 {
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
     helper.performCopy();
 }
 
@@ -284,13 +288,14 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule)
+    ThreadPoolCallbackRunner<void> schedule,
+    bool for_disk_azure_blob_storage)
 {
 
     if (settings->use_native_copy)
     {
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
-        if (dest_client->GetClickhouseOptions().IsClientForDisk)
+        if (for_disk_azure_blob_storage)
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
         auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
@@ -325,7 +330,7 @@ void copyAzureBlobStorageFile(
             settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, &Poco::Logger::get("copyAzureBlobStorageFile")};
+        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyAzureBlobStorageFile")};
         helper.performCopy();
     }
 }

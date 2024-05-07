@@ -1,5 +1,6 @@
 #include "LibraryBridgeHandlers.h"
 
+#include "CatBoostLibraryHandler.h"
 #include "CatBoostLibraryHandlerFactory.h"
 #include "Common/ProfileEvents.h"
 #include "ExternalDictionaryLibraryHandler.h"
@@ -10,8 +11,10 @@
 #include <IO/ReadHelpers.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/ThreadPool.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>

@@ -2,14 +2,16 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 import os
+import time
 
-METADATA_SERVER_HOSTNAME = "node_imds"
+METADATA_SERVER_HOSTNAME = "resolver"
 METADATA_SERVER_PORT = 8080
 
 cluster = ClickHouseCluster(__file__)
 node_imds = cluster.add_instance(
     "node_imds",
-    main_configs=["configs/imds_bootstrap.xml"],
+    with_minio=True,
+    main_configs=["configs/imds.xml"],
     env_variables={
         "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"http://{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
     },
@@ -30,10 +32,10 @@ node_missing_value = cluster.add_instance(
 )
 
 
-def start_metadata_server(started_cluster):
+def start_metadata_server():
     script_dir = os.path.join(os.path.dirname(__file__), "metadata_servers")
     start_mock_servers(
-        started_cluster,
+        cluster,
         script_dir,
         [
             (
@@ -49,17 +51,13 @@ def start_metadata_server(started_cluster):
 def start_cluster():
     try:
         cluster.start()
-        start_metadata_server(cluster)
-        yield cluster
+        start_metadata_server()
+        yield
     finally:
         cluster.shutdown()
 
 
 def test_placement_info_from_imds():
-    with open(os.path.join(os.path.dirname(__file__), "configs/imds.xml"), "r") as f:
-        node_imds.replace_config(
-            "/etc/clickhouse-server/config.d/imds_bootstrap.xml", f.read()
-        )
     node_imds.stop_clickhouse(kill=True)
     node_imds.start_clickhouse()
 

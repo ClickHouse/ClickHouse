@@ -76,7 +76,6 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
-void registerInputFormatForm(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -149,7 +148,6 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
-void registerFormSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -214,7 +212,6 @@ void registerFormats()
     registerOutputFormatRawBLOB(factory);
     registerInputFormatCustomSeparated(factory);
     registerOutputFormatCustomSeparated(factory);
-    registerInputFormatForm(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);
@@ -294,7 +291,6 @@ void registerFormats()
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
-    registerFormSchemaReader(factory);
 }
 
 }

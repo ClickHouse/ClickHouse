@@ -101,7 +101,7 @@ class SystemLogQueue
     using Index = uint64_t;
 
 public:
-    explicit SystemLogQueue(const SystemLogQueueSettings & settings_);
+    SystemLogQueue(const SystemLogQueueSettings & settings_);
 
     void shutdown();
 
@@ -153,7 +153,7 @@ class SystemLogBase : public ISystemLog
 public:
     using Self = SystemLogBase;
 
-    explicit SystemLogBase(
+    SystemLogBase(
         const SystemLogQueueSettings & settings_,
         std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 

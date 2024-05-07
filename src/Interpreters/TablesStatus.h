@@ -28,11 +28,9 @@ struct TableStatus
 {
     bool is_replicated = false;
     UInt32 absolute_delay = 0;
-    /// Used to filter such nodes out for INSERTs
-    bool is_readonly = false;
 
-    void write(WriteBuffer & out, UInt64 client_protocol_revision) const;
-    void read(ReadBuffer & in, UInt64 server_protocol_revision);
+    void write(WriteBuffer & out) const;
+    void read(ReadBuffer & in);
 };
 
 struct TablesStatusRequest

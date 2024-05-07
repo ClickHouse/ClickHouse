@@ -13,7 +13,7 @@ def cluster():
             "node1",
             main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
-            use_old_analyzer=True,
+            allow_analyzer=False,
         )
         cluster.add_instance(
             "node2",
@@ -21,14 +21,14 @@ def cluster():
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
-            use_old_analyzer=True,
+            allow_analyzer=False,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             with_zookeeper=True,
-            use_old_analyzer=True,
+            allow_analyzer=False,
         )
 
         cluster.add_instance(
@@ -39,6 +39,7 @@ def cluster():
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
             tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+            allow_analyzer=False,
         )
 
         cluster.start()
@@ -277,7 +278,7 @@ def test_unavailable_server(cluster):
             "Caught exception while loading metadata.*Connection refused"
         )
         assert node2.contains_in_log(
-            "Failed to make request to 'http://nginx:8080/test1/.*'. Error: 'Connection refused'. Failed at try 10/10."
+            "HTTP request to \`http://nginx:8080/test1/.*\` failed at try 1/10 with bytes read: 0/unknown. Error: Connection refused."
         )
     finally:
         node2.exec_in_container(
@@ -295,6 +296,7 @@ def test_replicated_database(cluster):
     node1 = cluster.instances["node3"]
     node1.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
+        settings={"allow_experimental_database_replicated": 1},
     )
 
     global uuids
@@ -311,6 +313,7 @@ def test_replicated_database(cluster):
     node2 = cluster.instances["node2"]
     node2.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r2')",
+        settings={"allow_experimental_database_replicated": 1},
     )
     node2.query("SYSTEM SYNC DATABASE REPLICA rdb")
 
@@ -319,74 +322,3 @@ def test_replicated_database(cluster):
 
     node1.query("DROP DATABASE rdb SYNC")
     node2.query("DROP DATABASE rdb SYNC")
-
-
-def test_page_cache(cluster):
-    node = cluster.instances["node2"]
-    global uuids
-    assert len(uuids) == 3
-    for i in range(3):
-        node.query(
-            """
-            CREATE TABLE test{} UUID '{}'
-            (id Int32) ENGINE = MergeTree() ORDER BY id
-            SETTINGS storage_policy = 'web';
-        """.format(
-                i, uuids[i], i, i
-            )
-        )
-
-        result1 = node.query(
-            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test cold cache"
-        )
-        result2 = node.query(
-            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test warm cache"
-        )
-        result3 = node.query(
-            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=0 -- test no cache"
-        )
-
-        assert result1 == result3
-        assert result2 == result3
-
-        node.query("SYSTEM FLUSH LOGS")
-
-        def get_profile_events(query_name):
-            print(f"asdqwe {query_name}")
-            text = node.query(
-                f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
-            )
-            res = {}
-            for line in text.split("\n"):
-                if line == "":
-                    continue
-                name, value = line.split("\t")
-                print(f"asdqwe {name} = {int(value)}")
-                res[name] = int(value)
-            return res
-
-        ev1 = get_profile_events("test cold cache")
-        assert ev1.get("PageCacheChunkMisses", 0) > 0
-        assert (
-            ev1.get("DiskConnectionsCreated", 0) + ev1.get("DiskConnectionsReused", 0)
-            > 0
-        )
-
-        ev2 = get_profile_events("test warm cache")
-        assert ev2.get("PageCacheChunkDataHits", 0) > 0
-        assert ev2.get("PageCacheChunkMisses", 0) == 0
-        assert (
-            ev2.get("DiskConnectionsCreated", 0) + ev2.get("DiskConnectionsReused", 0)
-            == 0
-        )
-
-        ev3 = get_profile_events("test no cache")
-        assert ev3.get("PageCacheChunkDataHits", 0) == 0
-        assert ev3.get("PageCacheChunkMisses", 0) == 0
-        assert (
-            ev3.get("DiskConnectionsCreated", 0) + ev3.get("DiskConnectionsReused", 0)
-            > 0
-        )
-
-        node.query("DROP TABLE test{} SYNC".format(i))
-        print(f"Ok {i}")

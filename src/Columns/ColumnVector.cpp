@@ -20,7 +20,6 @@
 #include <Common/TargetSpecific.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <Common/findExtreme.h>
 #include <Common/iota.h>
 
 #include <bit>
@@ -50,6 +49,31 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+template <typename T>
+StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
+{
+    constexpr size_t null_bit_size = sizeof(UInt8);
+    StringRef res;
+    char * pos;
+    if (null_bit)
+    {
+        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+        memcpy(pos, null_bit, null_bit_size);
+        if (*null_bit) return res;
+        pos += null_bit_size;
+    }
+    else
+    {
+        res.size = sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+    }
+    unalignedStore<T>(pos, data[n]);
+    return res;
 }
 
 template <typename T>
@@ -223,26 +247,6 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
         limit = 0;
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
-
-    if constexpr (has_find_extreme_implementation<T> && !std::is_floating_point_v<T>)
-    {
-        /// Disabled for:floating point
-        /// * floating point: We don't deal with nan_direction_hint
-        /// * stability::Stable: We might return any value, not the first
-        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
-        {
-            std::optional<size_t> index;
-            if (direction == IColumn::PermutationSortDirection::Ascending)
-                index = findExtremeMinIndex(data.data(), 0, data.size());
-            else
-                index = findExtremeMaxIndex(data.data(), 0, data.size());
-            if (index)
-            {
-                res.data()[0] = *index;
-                return;
-            }
-        }
-    }
 
     if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
     {
@@ -458,28 +462,6 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
         return static_cast<Float32>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);
-}
-
-template <typename T>
-bool ColumnVector<T>::tryInsert(const DB::Field & x)
-{
-    NearestFieldType<T> value;
-    if (!x.tryGet<NearestFieldType<T>>(value))
-    {
-        if constexpr (std::is_same_v<T, UInt8>)
-        {
-            /// It's also possible to insert boolean values into UInt8 column.
-            bool boolean_value;
-            if (x.tryGet<bool>(boolean_value))
-            {
-                data.push_back(static_cast<T>(boolean_value));
-                return true;
-            }
-        }
-        return false;
-    }
-    data.push_back(static_cast<T>(value));
-    return true;
 }
 
 template <typename T>
@@ -878,6 +860,12 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 template <typename T>

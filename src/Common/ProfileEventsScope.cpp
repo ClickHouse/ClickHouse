@@ -1,4 +1,3 @@
-#include <Common/CurrentThread.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace DB

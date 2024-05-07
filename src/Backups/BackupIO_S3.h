@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_Default.h>
-#include <Common/Logger.h>
 #include <Disks/DiskType.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3Settings.h>
@@ -18,15 +17,7 @@ namespace DB
 class BackupReaderS3 : public BackupReaderDefault
 {
 public:
-    BackupReaderS3(
-        const S3::URI & s3_uri_,
-        const String & access_key_id_,
-        const String & secret_access_key_,
-        bool allow_s3_native_copy,
-        const ReadSettings & read_settings_,
-        const WriteSettings & write_settings_,
-        const ContextPtr & context_,
-        bool is_internal_backup);
+    BackupReaderS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
     ~BackupReaderS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -49,16 +40,7 @@ private:
 class BackupWriterS3 : public BackupWriterDefault
 {
 public:
-    BackupWriterS3(
-        const S3::URI & s3_uri_,
-        const String & access_key_id_,
-        const String & secret_access_key_,
-        bool allow_s3_native_copy,
-        const String & storage_class_name,
-        const ReadSettings & read_settings_,
-        const WriteSettings & write_settings_,
-        const ContextPtr & context_,
-        bool is_internal_backup);
+    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const String & storage_class_name, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
     ~BackupWriterS3() override;
 
     bool fileExists(const String & file_name) override;

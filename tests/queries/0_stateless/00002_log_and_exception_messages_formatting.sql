@@ -20,8 +20,6 @@ SELECT
                 length(message_format_string) = 0
               AND message not like '% Received from %clickhouse-staging.com:9440%'
               AND source_file not like '%/AWSLogger.cpp%'
-              AND source_file not like '%/BaseDaemon.cpp%'
-              AND logger_name not in ('RaftInstance')
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
@@ -58,13 +56,13 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
 WHERE
   (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%';
+  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%';
 
 
 -- FIXME some of the following messages are not informative and it has to be fixed
@@ -131,10 +129,7 @@ create temporary table known_short_messages (s String) as select * from (select 
     'String size is too big ({}), maximum: {}',
     'Substitution {} is not set',
     'Table {} does not exist',
-    'Table {} doesn\'t exist',
     'Table {}.{} doesn\'t exist',
-    'Table {} doesn\'t exist',
-    'Table {} is not empty',
     'There are duplicate id {}',
     'There is no cache by name: {}',
     'Too large node state size',
@@ -144,11 +139,9 @@ create temporary table known_short_messages (s String) as select * from (select 
     'Unknown BSON type: {}',
     'Unknown explain kind \'{}\'',
     'Unknown format {}',
-    'Unknown geometry type {}',
     'Unknown identifier: \'{}\'',
     'Unknown input format {}',
     'Unknown setting {}',
-    'Unknown setting \'{}\'',
     'Unknown statistic column: {}',
     'Unknown table function {}',
     'User has been dropped',
@@ -223,10 +216,7 @@ select 'noisy Debug messages',
 -- Same as above for Info
 WITH 0.05 as threshold
 select 'noisy Info messages',
-       greatest(coalesce(((select message_format_string, count() from logs
-            where level = 'Information'
-              and message_format_string not in ('Sorting and writing part of data into temporary file {}', 'Done writing part of data into temporary file {}, compressed {}, uncompressed {}')
-            group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+       greatest(coalesce(((select message_format_string, count() from logs where level = 'Information' group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
        r <= threshold ? '' : top_message.1;
 
 -- Same as above for Warning
