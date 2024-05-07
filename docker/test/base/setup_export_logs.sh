@@ -127,9 +127,6 @@ function setup_logs_replication
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
 
-    # It's doesn't make sense to try creating tables if SYNC fails
-    echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client "${CONNECTION_ARGS[@]}" || return 0
-
     debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
