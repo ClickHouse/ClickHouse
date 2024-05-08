@@ -2,6 +2,9 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <fmt/core.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -71,6 +74,12 @@ using QueryPlanRawPtrs = std::list<QueryPlan *>;
 class IQueryPlanStep
 {
 public:
+    IQueryPlanStep()
+    {
+        auto context = CurrentThread::getQueryContext().get();
+        if (context != nullptr)
+            step_index = context->getStepIndex();
+    }
     virtual ~IQueryPlanStep() = default;
 
     virtual String getName() const = 0;
@@ -138,7 +147,8 @@ public:
     }
 
     virtual bool canUpdateInputStream() const { return false; }
-
+    void setStepIndex(size_t index) { step_index = index; }
+    String getUniqID() const { return fmt::format("{}_{}", getName(), step_index); }
 protected:
     virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 
@@ -153,6 +163,9 @@ protected:
     Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
+
+private:
+    size_t step_index = 0;
 };
 
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;

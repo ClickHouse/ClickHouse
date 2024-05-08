@@ -87,8 +87,14 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     }
 
     for (auto & plan : plans)
-        nodes.splice(nodes.end(), std::move(plan->nodes));
+    {
+        for (auto & unite_node : plan->nodes)
+            unite_node.step->setStepIndex(node_index++);
 
+        nodes.splice(nodes.end(), std::move(plan->nodes));
+    }
+
+    step->setStepIndex(node_index++);
     nodes.emplace_back(Node{.step = std::move(step)});
     root = &nodes.back();
 
@@ -116,6 +122,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                 "Cannot add step {} to QueryPlan because step has no inputs, but QueryPlan is already initialized",
                 step->getName());
 
+        step->setStepIndex(node_index++);
         nodes.emplace_back(Node{.step = std::move(step)});
         root = &nodes.back();
         return;
@@ -140,6 +147,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                 root_header.dumpStructure(),
                 step_header.dumpStructure());
 
+        step->setStepIndex(node_index++);
         nodes.emplace_back(Node{.step = std::move(step), .children = {root}});
         root = &nodes.back();
         return;
@@ -206,6 +214,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
+    map.add("Node Id", step.getUniqID());
 
     if (options.description)
     {
@@ -304,7 +313,7 @@ static void explainStep(
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
-    settings.out << step.getName();
+    settings.out << step.getUniqID();
 
     const auto & description = step.getStepDescription();
     if (options.description && !description.empty())
@@ -414,7 +423,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
 static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
-    settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
+    settings.out << String(settings.offset, settings.indent_char) << "(" << step.getUniqID() << ")\n";
 
     size_t current_offset = settings.offset;
     step.describePipeline(settings);

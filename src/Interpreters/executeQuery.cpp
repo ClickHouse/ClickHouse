@@ -65,6 +65,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -442,23 +443,22 @@ void logQueryFinish(
                 processor_elem.initial_query_id = elem.client_info.initial_query_id;
                 processor_elem.query_id = elem.client_info.current_query_id;
 
-                auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
 
                 for (const auto & processor : query_pipeline.getProcessors())
                 {
-                    std::vector<UInt64> parents;
+                    std::vector<String> parents;
                     for (const auto & port : processor->getOutputs())
                     {
                         if (!port.isConnected())
                             continue;
                         const IProcessor & next = port.getInputPort().getProcessor();
-                        parents.push_back(get_proc_id(next));
+                        parents.push_back(next.getUniqID());
                     }
 
-                    processor_elem.id = get_proc_id(*processor);
+                    processor_elem.id = processor->getUniqID();
                     processor_elem.parent_ids = std::move(parents);
 
-                    processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                    processor_elem.plan_step = processor->getStepUniqID();
                     processor_elem.plan_group = processor->getQueryPlanStepGroup();
 
                     processor_elem.processor_name = processor->getName();

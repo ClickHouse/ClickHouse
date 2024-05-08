@@ -3,7 +3,9 @@
 #include <memory>
 #include <Processors/Port.h>
 #include <Common/Stopwatch.h>
-
+#include <Common/CurrentThread.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Interpreters/Context.h>
 
 class EventCounter;
 
@@ -121,7 +123,12 @@ protected:
     OutputPorts outputs;
 
 public:
-    IProcessor() = default;
+    IProcessor()
+    {
+        auto context = CurrentThread::getQueryContext().get();
+        if (context != nullptr)
+            processor_index = context->getProcessorIndex();
+    }
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_)
         : inputs(std::move(inputs_)), outputs(std::move(outputs_))
@@ -130,9 +137,14 @@ public:
             port.processor = this;
         for (auto & port : outputs)
             port.processor = this;
+
+        auto context = CurrentThread::getQueryContext().get();
+        if (context != nullptr)
+            processor_index = context->getProcessorIndex();
     }
 
     virtual String getName() const = 0;
+    String getUniqID() const { return fmt::format("{}_{}", getName(), processor_index); }
 
     enum class Status
     {
@@ -300,11 +312,16 @@ public:
     /// Step of QueryPlan from which processor was created.
     void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
     {
-        query_plan_step = step;
+        if (step != nullptr)
+        {
+            query_plan_step = step;
+            step_uniq_id = step->getUniqID();
+        }
         query_plan_step_group = group;
     }
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    const String &getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
 
     uint64_t getElapsedUs() const { return elapsed_us; }
@@ -392,7 +409,10 @@ private:
     size_t stream_number = NO_STREAM;
 
     IQueryPlanStep * query_plan_step = nullptr;
+    String step_uniq_id;
     size_t query_plan_step_group = 0;
+
+    size_t processor_index = 0;
 };
 
 

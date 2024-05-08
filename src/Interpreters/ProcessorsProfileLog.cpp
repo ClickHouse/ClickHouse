@@ -27,9 +27,9 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the event happened."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time with microseconds precision when the event happened."},
 
-        {"id", std::make_shared<DataTypeUInt64>(), "ID of processor."},
-        {"parent_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Parent processors IDs."},
-        {"plan_step", std::make_shared<DataTypeUInt64>(), "ID of the query plan step which created this processor. The value is zero if the processor was not added from any step."},
+        {"id", std::make_shared<DataTypeString>(), "ID of processor."},
+        {"parent_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Parent processors IDs."},
+        {"plan_step", std::make_shared<DataTypeString>(), "ID of the query plan step which created this processor. The value is zero if the processor was not added from any step."},
         {"plan_group", std::make_shared<DataTypeUInt64>(), "Group of the processor if it was created by query plan step. A group is a logical partitioning of processors added from the same query plan step. Group is used only for beautifying the result of EXPLAIN PIPELINE result."},
 
         {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
@@ -58,7 +58,7 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     {
         Array parent_ids_array;
         parent_ids_array.reserve(parent_ids.size());
-        for (const UInt64 parent : parent_ids)
+        for (const auto & parent : parent_ids)
             parent_ids_array.emplace_back(parent);
         columns[i++]->insert(parent_ids_array);
     }

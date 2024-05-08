@@ -124,6 +124,7 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     bool concurrency_control = false;
+    size_t node_index = 0;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

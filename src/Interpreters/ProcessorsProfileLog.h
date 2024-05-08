@@ -14,10 +14,10 @@ struct ProcessorProfileLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
-    UInt64 id{};
-    std::vector<UInt64> parent_ids;
+    String id{};
+    std::vector<String> parent_ids;
 
-    UInt64 plan_step{};
+    String plan_step;
     UInt64 plan_group{};
 
     String initial_query_id;
