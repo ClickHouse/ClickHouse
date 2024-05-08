@@ -91,6 +91,9 @@ private:
     String queue_base;
     Names queue_settings_list;
     size_t max_rows_per_message;
+    bool reject_unhandled_messages = false;
+
+    LoggerPtr log;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
@@ -101,7 +104,6 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    LoggerPtr log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
