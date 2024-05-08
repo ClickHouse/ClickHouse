@@ -219,7 +219,8 @@ Features:
 - Query monitor: current queries, query history, query resources (memory, parts read, file_open, ...), most expensive queries, most used tables or columns, etc.
 - Cluster monitor: total memory/CPU usage, distributed queue, global settings, mergetree settings, metrics, etc.
 - Tables and parts information: size, row count, compression, part size, etc., at the column level detail.
-- Visualization metric charts: total queries, memory usage, number of merges, number of parts, etc.
+- Useful tools: Zookeeper data exploration, query EXPLAIN, kill queries, etc.
+- Visualization metric charts: queries and resource usage, number of merges/mutation, merge performance, query performance, etc.
 
 ## Commercial {#commercial}
 
