@@ -7300,10 +7300,19 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
-    else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
     else
-        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    {
+        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
+        {
+            auto lock = lockParts();
+            state = data_part->getState();
+        }
+
+        if (state == MergeTreeDataPartState::Active)
+            broken_part_callback(data_part->name);
+        else
+            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    }
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
