@@ -22,6 +22,9 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/MemoryBoundMerging.h>
+#include <Processors/Transforms/MergingAggregatedTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
@@ -175,8 +178,9 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ///   1. Remote: Set counter on Remote
         ///   2. Limit ... PartialSorting: Set counter on PartialSorting
         ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
-        ///   4. Limit ... Remote: Set counter on Remote
-        ///   5. Limit ... : Set counter on the input port of Limit
+        ///   4. Limit ... MergingAggregated ... Remote: Set counter on the input port of Limit
+        ///   5. Limit ... Remote: Set counter on Remote
+        ///   6. Limit ... : Set counter on the input port of Limit
 
         /// Case 1.
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_processor)
@@ -214,6 +218,14 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 4.
+            if (typeid_cast<MergingAggregatedTransform *>(processor) || typeid_cast<MergingAggregatedBucketTransform *>(processor)
+                || typeid_cast<SortingAggregatedTransform *>(processor)
+                || typeid_cast<SortingAggregatedForMemoryBoundMergingTransform *>(processor))
+            {
+                continue;
+            }
+
+            /// Case 5.
             if (typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor))
             {
                 processors.emplace_back(processor);
@@ -254,7 +266,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
     }
 
-    /// Case 5.
+    /// Case 6.
     for (auto && [limit, ports] : limit_candidates)
     {
         /// If there are some input ports which don't have the counter, add it to LimitTransform.
