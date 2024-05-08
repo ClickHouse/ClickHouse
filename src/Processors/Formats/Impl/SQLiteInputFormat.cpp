@@ -111,15 +111,6 @@ void SQLiteInputFormat::readPrefix()
             throw Exception::createDeprecated(fmt::format("Failed to find SQLite {} table", table_name), ErrorCodes::UNKNOWN_TABLE);
     }
 
-    /*
-    auto names_and_types = fetchSQLiteTableStructure(db.get(), table_name);
-
-    serializations.resize(names_and_types->getTypes().size());
-    for (size_t i = 0; i < serializations.size(); i++) {
-        serializations[i] = names_and_types->getTypes()[i]->getDefaultSerialization();
-    }
-    */
-
     std::string select_query = fmt::format("SELECT * FROM {};", table_name);
     sqlite3_stmt * stmt_ptr = nullptr;
     sqlite3_prepare(db.get(), select_query.c_str(), static_cast<int>(select_query.size()), &stmt_ptr, nullptr);
