@@ -10,6 +10,19 @@
 namespace DB
 {
 
+struct ConnectionTimeouts;
+
+struct RemoteProxyHostFetcher
+{
+    virtual ~RemoteProxyHostFetcher() = default;
+    virtual std::string fetch(const Poco::URI & uri, const ConnectionTimeouts & timeouts) const = 0;
+};
+
+struct RemoteProxyHostFetcherImpl : public RemoteProxyHostFetcher
+{
+    std::string fetch(const Poco::URI & uri, const ConnectionTimeouts & timeouts) const override;
+};
+
 /*
  * Makes an HTTP GET request to the specified endpoint to obtain a proxy host.
  * */
@@ -28,7 +41,8 @@ public:
     RemoteProxyConfigurationResolver(
         const RemoteServerConfiguration & remote_server_configuration_,
         Protocol request_protocol_,
-        bool disable_tunneling_for_https_requests_over_http_proxy_ = true);
+        std::unique_ptr<RemoteProxyHostFetcher> fetcher_,
+        bool disable_tunneling_for_https_requests_over_http_proxy_ = false);
 
     ProxyConfiguration resolve() override;
 
@@ -36,6 +50,7 @@ public:
 
 private:
     RemoteServerConfiguration remote_server_configuration;
+    std::unique_ptr<RemoteProxyHostFetcher> fetcher;
 
     std::mutex cache_mutex;
     bool cache_valid = false;
