@@ -556,7 +556,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Parameters**
 
 - `database` : name of the database. [String literal](../syntax#syntax-string-literal)
-- `table` : name of the table. [String literal](../syntax#syntax-string-literal) 
+- `table` : name of the table. [String literal](../syntax#syntax-string-literal)
 - `column` : name of the column. [String literal](../syntax#syntax-string-literal)
 - `hostname` : remote server name to perform the check on. [String literal](../syntax#syntax-string-literal)
 - `username` : username for remote server. [String literal](../syntax#syntax-string-literal)
@@ -565,7 +565,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Returned value**
 
 - `1` if the given column exists.
-- `0`, otherwise. 
+- `0`, otherwise.
 
 **Implementation details**
 
@@ -1024,6 +1024,7 @@ The result of the function depends on the affected data blocks and the order of 
 
 :::note
 Only returns neighbor inside the currently processed data block.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The order of rows during calculation of `neighbor()` can differ from the order of rows returned to the user.
@@ -1134,6 +1135,7 @@ Returns 0 for the first row, and for subsequent rows the difference to the previ
 
 :::note
 Only returns differences inside the currently processed data block.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The result of the function depends on the affected data blocks and the order of data in the block.
@@ -1206,6 +1208,10 @@ WHERE diff != 1
 ```
 
 ## runningDifferenceStartingWithFirstValue
+
+:::note
+This function is DEPRECATED (see the note for `runningDifference`).
+:::
 
 Same as [runningDifference](./other-functions.md#other_functions-runningdifference), but returns the value of the first row as the value on the first row.
 
@@ -1930,6 +1936,7 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 :::note
 The state is reset for each new block of data.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 **Syntax**
@@ -2444,7 +2451,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultRoles
 
-Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
+Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
 
 **Syntax**
 

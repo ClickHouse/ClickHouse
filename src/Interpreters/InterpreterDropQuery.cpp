@@ -571,7 +571,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     return drop.cluster.empty()
             && !drop.temporary
             && drop.kind == ASTDropQuery::Kind::Truncate
-            && drop.database_and_tables;
+            && drop.table;
 }
 
 void registerInterpreterDropQuery(InterpreterFactory & factory)

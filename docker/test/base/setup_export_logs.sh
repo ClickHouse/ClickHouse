@@ -127,9 +127,6 @@ function setup_logs_replication
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
 
-    # It's doesn't make sense to try creating tables if SYNC fails
-    echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client "${CONNECTION_ARGS[@]}" || return 0
-
     debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
@@ -143,7 +140,7 @@ function setup_logs_replication
             time DateTime COMMENT 'The time of test run',
             test_name String COMMENT 'The name of the test',
             coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
-        ) ENGINE = Null COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
+        ) ENGINE = MergeTree ORDER BY test_name COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
     "
 
     # For each system log table:
