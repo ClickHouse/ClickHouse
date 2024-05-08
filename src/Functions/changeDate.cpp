@@ -57,6 +57,12 @@ constexpr bool isDate32()
 }
 
 template <typename DataType>
+constexpr bool isDateTime()
+{
+    return DataType::type_id == TypeIndex::DateTime;
+}
+
+template <typename DataType>
 constexpr bool isDateTime64()
 {
     return DataType::type_id == TypeIndex::DateTime64;
@@ -86,7 +92,7 @@ public:
         if (!isDateOrDate32OrDateTimeOrDateTime64(*arguments[0].type) || !isNumber(*arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Date(32) or DateTime(64), second - numeric", getName());
 
-        if (isTimeChange(Traits::EnumName))
+        if constexpr (isTimeChange(Traits::EnumName))
         {
             if (isDate(arguments[0].type))
                 return std::make_shared<DataTypeDateTime>();
@@ -102,13 +108,13 @@ public:
         const auto & input_type = arguments[0].type;
         if (isDate(input_type))
         {
-            if (isTimeChange(Traits::EnumName))
+            if constexpr (isTimeChange(Traits::EnumName))
                 return execute<DataTypeDate, DataTypeDateTime>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate, DataTypeDate>(arguments, input_type, result_type, input_rows_count);
         }
         if (isDate32(input_type))
         {
-            if (isTimeChange(Traits::EnumName))
+            if constexpr (isTimeChange(Traits::EnumName))
                 return execute<DataTypeDate32, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate32, DataTypeDate32>(arguments, input_type, result_type, input_rows_count);
         }
@@ -145,6 +151,7 @@ public:
 
         for (size_t i = 0; i < result_rows_count; ++i)
         {
+            
             if constexpr (isDateTime64<DataType>())
             {
                 const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
@@ -165,16 +172,21 @@ public:
 
                 result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 3, 0);
             }
+            else if constexpr (isDateTime<DataType>())
+            {
+                const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
+                Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
+
+                result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+            }
             else
             {
                 const auto & date_lut = DateLUT::instance();
                 Int64 time;
                 if (isDate(input_type))
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(input_column_data[i]))) * 1'000'000;
-                else if (isDate32(input_type))
-                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
                 else
-                    time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
+                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
 
                 if (isDate(result_type))
                     result_data[i] = static_cast<UInt16>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
@@ -336,12 +348,58 @@ struct ChangeSecondTraits
 
 REGISTER_FUNCTION(ChangeDate)
 {
-    factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>();
-    factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>();
-    factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>();
-    factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>();
-    factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>();
-    factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>();
+    factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(
+        FunctionDocumentation{
+            .description = R"(
+Changes the year of the given Date(32) or DateTime(64).
+Returns the same type as the input data.
+)",
+            .categories{"Dates and Times"}
+        }
+    );
+    factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(
+        FunctionDocumentation{
+            .description = R"(
+Same as changeYear function, but changes month of the date.
+)",
+            .categories{"Dates and Times"}
+        }
+    );
+    factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(
+        FunctionDocumentation{
+            .description = R"(
+Same as changeYear function, but changes day_of_month of the date.
+)",
+            .categories{"Dates and Times"}
+        }
+    );
+    factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(
+        FunctionDocumentation{
+            .description = R"(
+Changes the hour of the given Date(32) or DateTime(64).
+If the input data is Date, return DateTime;
+if the input data is Date32, return DateTime64;
+In other cases returns the same type as the input data.
+)",
+            .categories{"Dates and Times"}
+        }
+    );
+    factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(
+        FunctionDocumentation{
+            .description = R"(
+Same as changeHour function, but changes minute of the date.
+)",
+            .categories{"Dates and Times"}
+        }
+    );
+    factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(
+        FunctionDocumentation{
+            .description = R"(
+Same as changeHour function, but changes seconds of the date.
+)",
+            .categories{"Dates and Times"}
+        }
+    );
 }
 
 }
