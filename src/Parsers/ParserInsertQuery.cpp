@@ -12,6 +12,7 @@
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 #include "Parsers/IAST_fwd.h"
+#include <ParserInsertDefaultValue.h>
 
 
 namespace DB
@@ -272,13 +273,19 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (table)
             query->children.push_back(table);
     }
-
+    for(auto & col : columns) {
+        if(col.getName() == "defaulted") {
+            //push back (??) and replace with name from DefaultedColumn
+            col = col->name;
+        }
+    }
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = end;
+    query->defaulted = defaulted;
 
     if (columns)
         query->children.push_back(columns);
@@ -295,7 +302,8 @@ bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     return ParserColumnsMatcher().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserCompoundIdentifier().parse(pos, node, expected);
+        || ParserCompoundIdentifier().parse(pos, node, expected)
+        || ParserDefaultValue().parse(pos, node, expected);
 }
 
 }
