@@ -1576,8 +1576,6 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
       * But actually we can't precisely determine that ALL missing parts
       * covered by this unexpected part. So missing parts will be downloaded.
       */
-    waitForUnexpectedPartsToBeLoaded();
-
     /// Intersection of local parts and expected parts
     ActiveDataPartSet local_expected_parts_set(format_version);
 
@@ -1596,13 +1594,15 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
+    waitForUnexpectedPartsToBeLoaded();
+
     ActiveDataPartSet set_of_empty_unexpected_parts(format_version);
     for (const auto & load_state : unexpected_data_parts)
     {
         if (load_state.is_broken || load_state.part->rows_count || !load_state.uncovered)
             continue;
 
-        set_of_empty_unexpected_parts.add(part->name);
+        set_of_empty_unexpected_parts.add(load_state.part->name);
     }
     if (auto empty_count = set_of_empty_unexpected_parts.size())
         LOG_WARNING(log, "Found {} empty unexpected parts (probably some dropped parts were not cleaned up before restart): [{}]",
@@ -1623,31 +1623,33 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     for (const auto & load_state : unexpected_data_parts)
     {
+        if (load_state.is_broken)
+            continue;
         unexpected_parts_rows += load_state.part->rows_count;
 
         /// This part may be covered by some expected part that is active and present locally
         /// Probably we just did not remove this part from disk before restart (but removed from ZooKeeper)
-        String covering_local_part = local_expected_parts_set.getContainingPart(part->name);
+        String covering_local_part = local_expected_parts_set.getContainingPart(load_state.part->name);
         if (!covering_local_part.empty())
         {
-            covered_unexpected_parts.push_back(part->name);
+            covered_unexpected_parts.push_back(load_state.part->name);
             continue;
         }
 
-        String covering_empty_part = set_of_empty_unexpected_parts.getContainingPart(part->name);
+        String covering_empty_part = set_of_empty_unexpected_parts.getContainingPart(load_state.part->name);
         if (!covering_empty_part.empty())
         {
             LOG_INFO(log, "Unexpected part {} is covered by empty part {}, assuming it has been dropped just before restart",
-                        part->name, covering_empty_part);
-            covered_unexpected_parts.push_back(part->name);
+                        load_state.part->name, covering_empty_part);
+            covered_unexpected_parts.push_back(load_state.part->name);
             continue;
         }
 
-        auto covered_parts = local_expected_parts_set.getPartInfosCoveredBy(part->info);
+        auto covered_parts = local_expected_parts_set.getPartInfosCoveredBy(load_state.part->info);
 
-        if (MergeTreePartInfo::areAllBlockNumbersCovered(part->info, covered_parts))
+        if (MergeTreePartInfo::areAllBlockNumbersCovered(load_state.part->info, covered_parts))
         {
-            restorable_unexpected_parts.insert(part->name);
+            restorable_unexpected_parts.insert(load_state.part->name);
             continue;
         }
 
@@ -1661,15 +1663,17 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         }
 
         /// Part is unexpected and we don't have covering part: it's suspicious
-        uncovered_unexpected_parts.insert(part->name);
-        uncovered_unexpected_parts_rows += part->rows_count;
+        uncovered_unexpected_parts.insert(load_state.part->name);
+        uncovered_unexpected_parts_rows += load_state.part->rows_count;
 
-        if (part->info.level > 0)
+        if (load_state.part->info.level > 0)
         {
             ++unexpected_parts_nonnew;
-            unexpected_parts_nonnew_rows += part->rows_count;
+            unexpected_parts_nonnew_rows += load_state.part->rows_count;
         }
     }
+
+    unexpected_data_parts.clear();
 
     const UInt64 parts_to_fetch_blocks = std::accumulate(parts_to_fetch.cbegin(), parts_to_fetch.cend(), 0,
         [&](UInt64 acc, const String & part_name)
@@ -1734,13 +1738,6 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
     queue.setBrokenPartsToEnqueueFetchesOnLoading(std::move(parts_to_fetch));
 
-    /// Remove extra local parts.
-    /// for (const DataPartPtr & part : unexpected_parts)
-    /// {
-    ///     bool restore_covered = restorable_unexpected_parts.contains(part->name) || uncovered_unexpected_parts.contains(part->name);
-    ///     LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
-    ///     forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
-    /// }
 
     return true;
 }

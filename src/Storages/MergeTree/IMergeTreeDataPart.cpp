@@ -1270,7 +1270,7 @@ void IMergeTreeDataPart::loadRowsCountFileForUnexpectedPart()
     };
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
     {
-        if(metadata_manager->exists("count.txt"))
+        if (metadata_manager->exists("count.txt"))
         {
             read_rows_count();
             return;

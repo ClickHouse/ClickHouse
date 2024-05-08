@@ -1560,12 +1560,11 @@ protected:
         /// if it is covered by any unexpected part
         bool uncovered = true;
         bool is_broken = false;
-        bool is_empty = false;
         MutableDataPartPtr part;
     };
 
     BackgroundSchedulePool::TaskHolder unexpected_data_parts_loading_task;
-    std::vector<UnexpectedPartLoadState> unexpected_data_parts TSA_GUARDED_BY(unexpected_data_parts_mutex);
+    std::vector<UnexpectedPartLoadState> unexpected_data_parts;
     bool unexpected_data_parts_loading_canceled TSA_GUARDED_BY(unexpected_data_parts_mutex) = false;
 
     void loadUnexpectedDataParts();
@@ -1574,6 +1573,7 @@ protected:
     /// This has to be "true" by default, because in case of empty table or absence of Outdated parts
     /// it is automatically finished.
     std::atomic_bool outdated_data_parts_loading_finished = true;
+    std::atomic_bool unexpected_data_parts_loading_finished = true;
 
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedAndUnexpectedDataPartsLoadingTask();

@@ -20,6 +20,9 @@ namespace CurrentMetrics
     extern const Metric MergeTreeOutdatedPartsLoaderThreads;
     extern const Metric MergeTreeOutdatedPartsLoaderThreadsActive;
     extern const Metric MergeTreeOutdatedPartsLoaderThreadsScheduled;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreads;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsActive;
+    extern const Metric MergeTreeUnexpectedPartsLoaderThreadsScheduled;
     extern const Metric DatabaseReplicatedCreateTablesThreads;
     extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
     extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
