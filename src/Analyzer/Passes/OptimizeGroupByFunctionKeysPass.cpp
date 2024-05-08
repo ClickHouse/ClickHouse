@@ -31,12 +31,6 @@ public:
         if (!getSettings().optimize_group_by_function_keys)
             return;
 
-        /// When group_by_use_nulls = 1 removing keys from GROUP BY can lead
-        /// to unexpected types in some functions.
-        /// See example in https://github.com/ClickHouse/ClickHouse/pull/61567#issuecomment-2018007887
-        if (getSettings().group_by_use_nulls)
-            return;
-
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -79,14 +73,12 @@ private:
             candidates.push_back({ *it, is_deterministic });
 
         /// Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
-        bool found_at_least_one_usage = false;
         while (!candidates.empty())
         {
             auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
             bool found = group_by_keys.contains(candidate);
-            found_at_least_one_usage |= found;
 
             switch (candidate->getNodeType())
             {
@@ -100,7 +92,7 @@ private:
                     if (!found)
                     {
                         bool is_deterministic_function = parents_are_only_deterministic &&
-                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+                            function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }
@@ -119,7 +111,7 @@ private:
             }
         }
 
-        return found_at_least_one_usage;
+        return true;
     }
 
     static void optimizeGroupingSet(QueryTreeNodes & grouping_set)
@@ -138,7 +130,7 @@ private:
     }
 };
 
-void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     OptimizeGroupByFunctionKeysVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

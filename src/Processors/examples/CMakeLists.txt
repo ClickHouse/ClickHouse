@@ -1,0 +1,10 @@
+if (TARGET ch_contrib::hivemetastore)
+    clickhouse_add_executable (comma_separated_streams comma_separated_streams.cpp)
+    target_link_libraries (comma_separated_streams PRIVATE dbms)
+endif()
+
+if (USE_ORC)
+    clickhouse_add_executable (native_orc native_orc.cpp)
+    target_link_libraries (native_orc PRIVATE dbms)
+    target_include_directories (native_orc PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/orc/c++/include)
+endif ()

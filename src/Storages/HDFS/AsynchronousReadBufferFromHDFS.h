@@ -62,7 +62,7 @@ private:
     std::optional<size_t> read_until_position;
     bool use_prefetch;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Metrics to profile prefetch
     Stopwatch interval_watch;

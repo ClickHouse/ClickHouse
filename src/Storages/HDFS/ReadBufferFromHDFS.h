@@ -44,6 +44,8 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override;
 
+    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
+
     String getFileName() const override;
 
 private:

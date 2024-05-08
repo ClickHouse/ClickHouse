@@ -1,12 +1,11 @@
 #include <Backups/RestoreCoordinationLocal.h>
-#include <Parsers/formatAST.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() : log(getLogger("RestoreCoordinationLocal"))
+RestoreCoordinationLocal::RestoreCoordinationLocal() : log(&Poco::Logger::get("RestoreCoordinationLocal"))
 {
 }
 
@@ -50,45 +49,6 @@ bool RestoreCoordinationLocal::acquireReplicatedAccessStorage(const String &)
 bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserDefinedSQLObjectType)
 {
     return true;
-}
-
-bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
-{
-    std::lock_guard lock{mutex};
-    return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
-}
-
-void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
-{
-    String query_str = serializeAST(create_query);
-
-    auto find_in_map = [&]
-    {
-        auto it = create_query_uuids.find(query_str);
-        if (it != create_query_uuids.end())
-        {
-            create_query.setUUID(it->second);
-            return true;
-        }
-        return false;
-    };
-
-    {
-        std::lock_guard lock{mutex};
-        if (find_in_map())
-            return;
-    }
-
-    auto new_uuids = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true);
-
-    String new_query_str = serializeAST(create_query);
-
-    {
-        std::lock_guard lock{mutex};
-        if (find_in_map())
-            return;
-        create_query_uuids[query_str] = new_uuids;
-    }
 }
 
 bool RestoreCoordinationLocal::hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const

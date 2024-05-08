@@ -41,6 +41,7 @@ struct ASTWindowListElement : public IAST
     // ASTWindowDefinition
     ASTPtr definition;
 
+
     ASTPtr clone() const override;
 
     String getID(char delimiter) const override;

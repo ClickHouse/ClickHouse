@@ -11,20 +11,11 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot, const Names & column_names)
+static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
-    auto all_columns_header = storage_snapshot->metadata->getSampleBlock();
-
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
-
-    for (const auto & column_name : column_names)
-    {
-        if (non_virtual_header.has(column_name) || virtual_header.has(column_name))
-            continue;
-        const auto & column = all_columns_header.getByName(column_name);
-        non_virtual_header.insert(column);
-    }
+    auto virtual_header = storage_snapshot->getSampleBlockForColumns(
+                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"});
 
     return {non_virtual_header, virtual_header};
 }
@@ -45,17 +36,15 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    StreamingHandleErrorMode handle_error_mode_,
     bool ack_in_suffix_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
-        getHeaders(storage_snapshot_, columns),
+        getHeaders(storage_snapshot_),
         context_,
         columns,
         max_block_size_,
         max_execution_time_,
-        handle_error_mode_,
         ack_in_suffix_)
 {
 }
@@ -68,7 +57,6 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    StreamingHandleErrorMode handle_error_mode_,
     bool ack_in_suffix_)
     : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
@@ -76,11 +64,10 @@ RabbitMQSource::RabbitMQSource(
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
-    , handle_error_mode(handle_error_mode_)
     , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , log(getLogger("RabbitMQSource"))
+    , log(&Poco::Logger::get("RabbitMQSource"))
     , max_execution_time_ms(max_execution_time_)
 {
     storage.incrementReader();
@@ -148,40 +135,12 @@ Chunk RabbitMQSource::generateImpl()
     auto input_format = FormatFactory::instance().getInput(
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
-    std::optional<String> exception_message;
+    StreamingFormatExecutor executor(non_virtual_header, input_format);
     size_t total_rows = 0;
-
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
-    {
-        if (handle_error_mode == StreamingHandleErrorMode::STREAM)
-        {
-            exception_message = e.message();
-            for (const auto & column : result_columns)
-            {
-                // We could already push some rows to result_columns
-                // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
-
-                // All data columns will get default value in case of error.
-                column->insertDefault();
-            }
-
-            return 1;
-        }
-        else
-        {
-            throw std::move(e);
-        }
-    };
-
-    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
     RabbitMQConsumer::CommitInfo current_commit_info;
     while (true)
     {
-        exception_message.reset();
         size_t new_rows = 0;
 
         if (consumer->hasPendingMessages())
@@ -203,19 +162,6 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[3]->insert(message.redelivered);
                 virtual_columns[4]->insert(message.message_id);
                 virtual_columns[5]->insert(message.timestamp);
-                if (handle_error_mode == StreamingHandleErrorMode::STREAM)
-                {
-                    if (exception_message)
-                    {
-                        virtual_columns[6]->insertData(message.message.data(), message.message.size());
-                        virtual_columns[7]->insertData(exception_message->data(), exception_message->size());
-                    }
-                    else
-                    {
-                        virtual_columns[6]->insertDefault();
-                        virtual_columns[7]->insertDefault();
-                    }
-                }
             }
 
             total_rows += new_rows;

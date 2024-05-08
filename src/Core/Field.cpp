@@ -22,15 +22,9 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
-template <is_decimal T>
-T DecimalField<T>::getScaleMultiplier() const
-{
-    return DecimalUtils::scaleMultiplier<T>(scale);
-}
-
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
-    switch (static_cast<Field::Types::Which>(type))
+    switch (type)
     {
         case Field::Types::Null:
         {
@@ -139,14 +133,8 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinary(value, buf);
             return bool(value);
         }
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-        case Field::Types::CustomType:
-            return Field();
     }
-    UNREACHABLE();
+    return Field();
 }
 
 void readBinary(Array & x, ReadBuffer & buf)
@@ -633,9 +621,5 @@ std::string_view Field::getTypeName() const
     return fieldTypeToString(which);
 }
 
-template class DecimalField<Decimal32>;
-template class DecimalField<Decimal64>;
-template class DecimalField<Decimal128>;
-template class DecimalField<Decimal256>;
-template class DecimalField<DateTime64>;
+
 }

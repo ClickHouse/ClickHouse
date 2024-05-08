@@ -57,7 +57,7 @@ public:
     {
         for (size_t i = 0; i < 4; ++i)
         {
-            if (!isUInt(arguments[i].type))
+            if (!isUnsignedInteger(arguments[i].type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
