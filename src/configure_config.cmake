@@ -170,8 +170,5 @@ endif()
 if (TARGET ch_contrib::pocketfft)
     set(USE_POCKETFFT 1)
 endif()
-if (TARGET ch_contrib::fsst)
-    set(USE_FSST ${ENABLE_LIBRARIES})
-endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

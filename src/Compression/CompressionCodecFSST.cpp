@@ -1,22 +1,21 @@
-#pragma GCC diagnostic ignored "-Wcast-align"
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-
-#include "config.h"
-
-#if USE_FSST
+#ifdef ENABLE_FSST
 
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/VarInt.h>
-#include "base/types.h"
+#include <base/types.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+
+#pragma clang diagnostic ignored "-Wcast-align"
+#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wimplicit-fallthrough"
+
 #include <fsst.h>
 
 namespace DB
@@ -31,7 +30,7 @@ public:
 
     void updateHash(SipHash & hash) const override { getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/true); }
 
-    static const int OUT_SIZE = 2281337;
+    static constexpr int out_size = 2281337;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override
@@ -56,7 +55,7 @@ protected:
                 rows_count,
                 len_in.data(),
                 str_in.data(),
-                OUT_SIZE,
+                out_size,
                 reinterpret_cast<unsigned char *>(dest + header_size),
                 len_out,
                 str_out)
@@ -100,7 +99,7 @@ protected:
                 &decoder,
                 lens[i],
                 reinterpret_cast<const unsigned char *>(str),
-                OUT_SIZE,
+                out_size,
                 reinterpret_cast<unsigned char *>(dest));
 
             str += lens[i];

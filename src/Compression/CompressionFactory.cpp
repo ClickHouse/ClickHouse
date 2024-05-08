@@ -175,9 +175,6 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
-#if USE_FSST
-void registerCodecFSST(CompressionCodecFactory & factory);
-#endif
 #ifdef ENABLE_ZSTD_QAT_CODEC
 void registerCodecZSTDQAT(CompressionCodecFactory & factory);
 #endif
@@ -196,6 +193,9 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+#  ifdef ENABLE_FSST
+void registerCodecFSST(CompressionCodecFactory & factory);
+#  endif
 #endif
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -203,9 +203,6 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
-#if USE_FSST
-    registerCodecFSST(*this);
-#endif
 #ifdef ENABLE_ZSTD_QAT_CODEC
     registerCodecZSTDQAT(*this);
 #endif
@@ -218,10 +215,13 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
-#ifdef ENABLE_QPL_COMPRESSION
+#  ifdef ENABLE_QPL_COMPRESSION
     registerCodecDeflateQpl(*this);
-#endif
+#  endif
     registerCodecGCD(*this);
+#  ifdef ENABLE_FSST
+    registerCodecFSST(*this);
+#  endif
 #endif
 
     default_codec = get("LZ4", {});
