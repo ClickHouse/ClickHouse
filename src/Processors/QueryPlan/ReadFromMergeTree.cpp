@@ -1035,7 +1035,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             /// need_virtual_row = true means a MergingSortedTransform should occur.
             /// If so, adding a virtual row might speedup in the case of multiple parts.
-            bool need_virtual_row = item.size() > 1;
+            bool need_virtual_row = (need_preliminary_merge || output_each_partition_through_separate_port) && item.size() > 1;
             pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit, need_virtual_row));
         }
     }
