@@ -14,6 +14,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
+from github.CommitStatus import CommitStatus
+
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
@@ -1908,6 +1910,51 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
+def update_upstream_a_sync(
+    pr_info: PRInfo,
+    gh: GitHub,
+    mergeable_status: CommitStatus,
+) -> None:
+    pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
+    upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
+    upstream_pr = upstream_repo.get_pull(pr_number)
+    sync_repo = gh.get_repo(GITHUB_REPOSITORY)
+    sync_pr = sync_repo.get_pull(pr_info.number)
+    # Find the commit that is in both repos, upstream and cloud
+    sync_commits = sync_pr.get_commits().reversed
+    upstream_commits = upstream_pr.get_commits()
+    # Github objects are compared by _url attribute. We can't compare them directly and
+    # should compare commits by SHA1
+    upstream_shas = [uc.sha for uc in upstream_commits]
+    found = False
+    for commit in sync_commits:
+        try:
+            idx = upstream_shas.index(commit.sha)
+            found = True
+            upstream_commit = upstream_commits[idx]
+        except ValueError:
+            continue
+
+    if not found:
+        print(
+            "No same commits found in upstream and sync repo, most probably force-push"
+        )
+        return
+
+    post_commit_status(
+        upstream_commit,
+        get_status(mergeable_status.state),
+        "",  # let's won't expose any urls from cloud
+        mergeable_status.description,
+        StatusNames.SYNC,
+    )
+    trigger_mergeable_check(
+        upstream_commit,
+        get_commit_filtered_statuses(upstream_commit),
+        True,
+    )
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
     exit_code = 0
@@ -2204,23 +2251,8 @@ def main() -> int:
                         and mergeable_status
                         and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
                     ):
+                        update_upstream_a_sync(pr_info, gh, mergeable_status)
                         pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-                        upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
-                        head_sha = upstream_repo.get_pull(pr_number).head.sha
-                        upstream_commit = upstream_repo.get_commit(head_sha)
-                        post_commit_status(
-                            upstream_commit,
-                            get_status(mergeable_status.state),
-                            "",  # let's won't expose any urls from cloud
-                            mergeable_status.description,
-                            StatusNames.SYNC,
-                        )
-                        trigger_mergeable_check(
-                            upstream_commit,
-                            get_commit_filtered_statuses(upstream_commit),
-                            True,
-                        )
-
                         prepared_events = prepare_tests_results_for_clickhouse(
                             pr_info,
                             [],
