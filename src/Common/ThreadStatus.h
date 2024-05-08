@@ -10,6 +10,7 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <atomic>
 #include <functional>
 #include <map>
 #include <memory>
@@ -89,6 +90,11 @@ public:
 
         String query_for_logs;
         UInt64 normalized_query_hash = 0;
+
+        //QueryPlan can not build parallel, but processor may build parallel in expand() function.
+        //so we use atomic_size_t for processor_count
+        std::shared_ptr<size_t> step_count = std::make_shared<size_t>(0);
+        std::shared_ptr<std::atomic_size_t> processor_count = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
     };
@@ -308,6 +314,9 @@ public:
     void flushUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
+
+    size_t incrStepIndex();
+    size_t incrProcessorIndex();
 
 private:
     void applyGlobalSettings();

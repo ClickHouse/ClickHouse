@@ -400,10 +400,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     left->pipe.collected_processors = collected_processors;
 
-    /// Collect the NEW processors for the right pipeline.
-    QueryPipelineProcessorsCollector collector(*right);
     /// Remember the last step of the right pipeline.
     IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
+    /// Collect the NEW processors for the right pipeline.
+    QueryPipelineProcessorsCollector collector(*right, step);
 
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;

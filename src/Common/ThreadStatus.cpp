@@ -221,6 +221,16 @@ bool ThreadStatus::isQueryCanceled() const
     return false;
 }
 
+size_t ThreadStatus::incrStepIndex()
+{
+    return ++(*local_data.step_count);
+}
+
+size_t ThreadStatus::incrProcessorIndex()
+{
+    return ++(*local_data.processor_count);
+}
+
 ThreadStatus::~ThreadStatus()
 {
     flushUntrackedMemory();
