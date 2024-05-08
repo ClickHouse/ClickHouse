@@ -1745,7 +1745,10 @@ def _upload_build_profile_data(
         profile_data_file = Path(TEMP_PATH) / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
             for profile_source in profiles_dir.iterdir():
-                if profile_source.name != "binary_sizes.txt" and profile_source.name != "binary_symbols.txt":
+                if (
+                    profile_source.name != "binary_sizes.txt"
+                    and profile_source.name != "binary_symbols.txt"
+                ):
                     with open(profiles_dir / profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
 
@@ -1820,7 +1823,9 @@ def _upload_build_profile_data(
         try:
             ch_helper.insert_file(url, auth, query, binary_symbols_file)
         except InsertException:
-            logging.error("Failed to insert binary_symbols_file for the build, continue")
+            logging.error(
+                "Failed to insert binary_symbols_file for the build, continue"
+            )
 
 
 def _add_build_to_version_history(
