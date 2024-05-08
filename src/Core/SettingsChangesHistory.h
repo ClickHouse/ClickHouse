@@ -91,6 +91,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"cross_join_min_rows_to_compress", 0, 10000000, "A new setting."},
               {"cross_join_min_bytes_to_compress", 0, 1_GiB, "A new setting."},
               {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
+              {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
               }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"max_parsing_threads", 0, 0, "Add a separate setting to control number of threads in parallel parsing from files"},
