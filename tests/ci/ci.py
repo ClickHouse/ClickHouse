@@ -1806,7 +1806,7 @@ def _upload_build_profile_data(
             SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}',
                 file, reinterpretAsUInt64(reverse(unhex(address))), reinterpretAsUInt64(reverse(unhex(size))), type, symbol
             FROM input('file String, address String, size String, type String, symbol String')
-            SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+) ([0-9a-fA-F]+) (.) (.+)$'
+            SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
             FORMAT Regexp"""
 
         binary_symbols_file = profiles_dir / "binary_symbols.txt"
