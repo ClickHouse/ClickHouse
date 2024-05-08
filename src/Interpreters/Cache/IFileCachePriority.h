@@ -137,6 +137,8 @@ public:
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::Lock &) = 0;
 
+    /// Collect eviction candidates sufficient to free `size` bytes
+    /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
         size_t size,
         size_t elements,
@@ -146,7 +148,10 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) = 0;
 
-    /// Collect eviction `candidates_num` candidates for eviction.
+    /// Collect eviction candidates sufficient to have `desired_size`
+    /// and `desired_elements_num` as current cache state.
+    /// Collect no more than `max_candidates_to_evict` elements.
+    /// Return `true` if the first condition is satisfied.
     virtual bool collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,

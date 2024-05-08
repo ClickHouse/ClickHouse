@@ -109,7 +109,7 @@ RestorerFromBackup::~RestorerFromBackup()
     if (getNumFutures() > 0)
     {
         LOG_INFO(log, "Waiting for {} tasks to finish", getNumFutures());
-        waitFutures();
+        waitFutures(/* throw_if_error= */ false);
     }
 }
 
@@ -161,7 +161,7 @@ void RestorerFromBackup::run(Mode mode)
     setStage(Stage::COMPLETED);
 }
 
-void RestorerFromBackup::waitFutures()
+void RestorerFromBackup::waitFutures(bool throw_if_error)
 {
     std::exception_ptr error;
 
@@ -176,11 +176,7 @@ void RestorerFromBackup::waitFutures()
         if (futures_to_wait.empty())
             break;
 
-        /// Wait for all tasks.
-        for (auto & future : futures_to_wait)
-            future.wait();
-
-        /// Check if there is an exception.
+        /// Wait for all tasks to finish.
         for (auto & future : futures_to_wait)
         {
             try
@@ -197,7 +193,12 @@ void RestorerFromBackup::waitFutures()
     }
 
     if (error)
-        std::rethrow_exception(error);
+    {
+        if (throw_if_error)
+            std::rethrow_exception(error);
+        else
+            tryLogException(error, log);
+    }
 }
 
 size_t RestorerFromBackup::getNumFutures() const

@@ -1147,13 +1147,13 @@ tryBase58Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase58Decode('3dc8KtHrwM') as res;
+SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_invalid;
 ```
 
 ```response
-┌─res─────┐
-│ Encoded │
-└─────────┘
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
 ```
 
 ## base64Encode
@@ -1187,13 +1187,13 @@ tryBase64Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase64Decode('RW5jb2RlZA==') as res;
+SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res_invalid;
 ```
 
 ```response
-┌─res─────┐
-│ Encoded │
-└─────────┘
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
 ```
 
 ## endsWith {#endswith}

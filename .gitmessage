@@ -16,7 +16,7 @@
 #ci_set_reduced
 #ci_set_arm
 #ci_set_integration
-#ci_set_analyzer
+#ci_set_old_analyzer
 
 ## To run specified job in CI:
 #job_<JOB NAME>
