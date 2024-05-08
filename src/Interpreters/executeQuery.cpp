@@ -1317,7 +1317,22 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    try
+    {
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    }
+    catch (...)
+    {
+        /// The timezone was already set before query was processed,
+        /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+        result_details.timezone = DateLUT::instance().getTimeZone();
+        throw;
+    }
+
+    /// The timezone was already set before query was processed,
+    /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+    result_details.timezone = DateLUT::instance().getTimeZone();
+
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
