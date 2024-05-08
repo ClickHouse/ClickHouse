@@ -6518,11 +6518,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
-        auto it = scope.nullable_group_by_keys.find(node);
-        if (it != scope.nullable_group_by_keys.end())
+        for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            node = it->node->clone();
-            node->convertToNullable();
+            auto it = scope_ptr->nullable_group_by_keys.find(node);
+            if (it != scope_ptr->nullable_group_by_keys.end())
+            {
+                node = it->node->clone();
+                node->convertToNullable();
+                break;
+            }
         }
     }
 
