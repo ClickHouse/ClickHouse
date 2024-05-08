@@ -61,7 +61,7 @@ struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
-enum class RowPolicyFilterType;
+enum class RowPolicyFilterType : uint8_t;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
@@ -718,7 +718,7 @@ public:
     void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
     /// Supported factories for records in query_log
-    enum class QueryLogFactories
+    enum class QueryLogFactories : uint8_t
     {
         AggregateFunction,
         AggregateFunctionCombinator,
@@ -1155,7 +1155,7 @@ public:
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
-    enum class ApplicationType
+    enum class ApplicationType : uint8_t
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client

@@ -41,7 +41,7 @@ enum class WeekModeFlag : UInt8
 using YearWeek = std::pair<UInt16, UInt8>;
 
 /// Modes for toDayOfWeek() function.
-enum class WeekDayMode
+enum class WeekDayMode : uint8_t
 {
     WeekStartsMonday1 = 0,
     WeekStartsMonday0 = 1,

@@ -32,7 +32,7 @@ namespace ErrorCodes
 /// For more readable instantiations of MultiMatchAnyImpl<>
 struct MultiMatchTraits
 {
-enum class Find
+enum class Find : uint8_t
 {
     Any,
     AnyIndex

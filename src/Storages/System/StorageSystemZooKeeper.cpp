@@ -166,7 +166,7 @@ public:
 };
 
 /// Type of path to be fetched
-enum class ZkPathType
+enum class ZkPathType : uint8_t
 {
     Exact, /// Fetch all nodes under this path
     Prefix, /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)

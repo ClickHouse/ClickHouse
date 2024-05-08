@@ -3768,7 +3768,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     const Names deduplicate_by_columns = {};
     CreateMergeEntryResult create_result = CreateMergeEntryResult::Other;
 
-    enum class AttemptStatus
+    enum class AttemptStatus : uint8_t
     {
         EntryCreated,
         NeedRetry,

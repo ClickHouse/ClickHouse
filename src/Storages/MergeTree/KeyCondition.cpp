@@ -1945,7 +1945,7 @@ KeyCondition::Description KeyCondition::getDescription() const
     /// Build and optimize it simultaneously.
     struct Node
     {
-        enum class Type
+        enum class Type : uint8_t
         {
             /// Leaf, which is RPNElement.
             Leaf,

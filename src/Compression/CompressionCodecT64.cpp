@@ -27,7 +27,7 @@ public:
     /// There're 2 compression variants:
     /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
     /// Bits - full bit-transpose of the bit matrix. It uses more resources and leads to better compression with ZSTD (but worse with LZ4).
-    enum class Variant
+    enum class Variant : uint8_t
     {
         Byte,
         Bit

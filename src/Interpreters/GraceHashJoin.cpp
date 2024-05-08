@@ -108,7 +108,7 @@ namespace
 
 class GraceHashJoin::FileBucket : boost::noncopyable
 {
-    enum class State : int
+    enum class State : uint8_t
     {
         WRITING_BLOCKS,
         JOINING_BLOCKS,

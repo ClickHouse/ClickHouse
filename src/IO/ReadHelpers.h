@@ -329,7 +329,7 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
     return ReturnType(true);
 }
 
-enum class ReadIntTextCheckOverflow
+enum class ReadIntTextCheckOverflow : uint8_t
 {
     DO_NOT_CHECK_OVERFLOW,
     CHECK_OVERFLOW,

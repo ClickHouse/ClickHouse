@@ -171,7 +171,7 @@ private:
     /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
     /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.
     /// Keys and indices can be nonconst, in this case they are calculated for each row.
-    enum class MoveType
+    enum class MoveType : uint8_t
     {
         Key,
         Index,

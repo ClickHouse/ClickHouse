@@ -108,7 +108,7 @@ private:
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
-    enum class IterationResult
+    enum class IterationResult : uint8_t
     {
         BREAK,
         CONTINUE,

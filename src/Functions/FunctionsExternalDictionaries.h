@@ -297,7 +297,7 @@ private:
     mutable FunctionDictHelper helper;
 };
 
-enum class DictionaryGetFunctionType
+enum class DictionaryGetFunctionType : uint8_t
 {
     get,
     getOrDefault,

@@ -1671,7 +1671,7 @@ struct ToISOWeekImpl
     using FactorTransform = ToISOYearImpl;
 };
 
-enum class ResultPrecision
+enum class ResultPrecision : uint8_t
 {
     Standard,
     Extended

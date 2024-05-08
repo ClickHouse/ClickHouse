@@ -256,7 +256,7 @@ namespace
 /// 1) there should be separate thread pools for BACKUP and RESTORE;
 /// 2) a task from a thread pool can't wait another task from the same thread pool. (Because if it schedules and waits
 /// while the thread pool is still occupied with the waiting task then a scheduled task can be never executed).
-enum class BackupsWorker::ThreadPoolId
+enum class BackupsWorker::ThreadPoolId : uint8_t
 {
     /// "BACKUP ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
     BACKUP_ASYNC_ON_CLUSTER,

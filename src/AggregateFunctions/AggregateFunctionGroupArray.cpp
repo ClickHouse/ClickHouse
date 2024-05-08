@@ -43,7 +43,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class Sampler
+enum class Sampler : uint8_t
 {
     NONE,
     RNG,

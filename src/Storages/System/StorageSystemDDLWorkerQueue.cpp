@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-enum class Status
+enum class Status : uint8_t
 {
     INACTIVE,
     ACTIVE,

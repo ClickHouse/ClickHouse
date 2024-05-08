@@ -47,7 +47,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupArraySortedStrategy
+enum class GroupArraySortedStrategy : uint8_t
 {
     heap,
     sort

@@ -291,7 +291,7 @@ private:
 
     void setProgressCallback();
 
-    enum class ScanMode
+    enum class ScanMode : uint8_t
     {
         /// Main working set for the replica
         TakeWhatsMineByHash,

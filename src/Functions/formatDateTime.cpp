@@ -43,13 +43,13 @@ namespace
 {
 using Pos = const char *;
 
-enum class SupportInteger
+enum class SupportInteger : uint8_t
 {
     Yes,
     No
 };
 
-enum class FormatSyntax
+enum class FormatSyntax : uint8_t
 {
     MySQL,
     Joda

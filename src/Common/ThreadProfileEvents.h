@@ -189,7 +189,7 @@ extern PerfEventsCounters current_thread_counters;
 class TasksStatsCounters
 {
 public:
-    enum class MetricsProvider
+    enum class MetricsProvider : uint8_t
     {
         None,
         Procfs,

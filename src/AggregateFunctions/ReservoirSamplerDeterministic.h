@@ -50,7 +50,7 @@ namespace detail
 }
 
 /// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
-enum class ReservoirSamplerDeterministicOnEmpty
+enum class ReservoirSamplerDeterministicOnEmpty : uint8_t
 {
     THROW,
     RETURN_NAN_OR_ZERO,

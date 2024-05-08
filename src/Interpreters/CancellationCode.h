@@ -4,7 +4,7 @@ namespace DB
 {
 
 /// A result code for the KILL QUERY/KILL MUTATION statement.
-enum class CancellationCode
+enum class CancellationCode : uint8_t
 {
     NotFound = 0,                     /// already cancelled
     QueryIsNotInitializedYet = 1,

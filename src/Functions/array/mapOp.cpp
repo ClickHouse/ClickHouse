@@ -37,7 +37,7 @@ struct TupArg
 };
 using TupleMaps = std::vector<TupArg>;
 
-enum class OpTypes
+enum class OpTypes : uint8_t
 {
     ADD = 0,
     SUBTRACT = 1
