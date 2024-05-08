@@ -156,28 +156,33 @@ public:
                 Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i] / deg);
                 Int64 fraction = input_column_data[i] % deg;
 
-                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, deg, fraction);
+                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, scale, fraction);
             }
             else if constexpr (isDate32<DataType>() && isDateTime64<ResultDataType>())
             {
                 const auto & date_lut = DateLUT::instance();
-                Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(input_column_data[i]))) * 1'000'000;
+                Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
 
-                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 1'000, 0);
+                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 3, 0);
             }
             else
             {
                 const auto & date_lut = DateLUT::instance();
                 Int64 time;
-                if (isDateOrDate32(input_type))
+                if (isDate(input_type))
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(input_column_data[i]))) * 1'000'000;
+                else if (isDate32(input_type))
+                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
                 else
                     time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
 
-                if (isDateOrDate32(result_type))
+                
+                if (isDate(result_type))
+                    result_data[i] = static_cast<UInt16>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                else if (isDate32(result_type))
                     result_data[i] = static_cast<Int32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
                 else
-                    result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut, 1, 0));
+                    result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
             }
         }
 
@@ -187,7 +192,7 @@ public:
         return result_column;
     }
 
-    Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 deg = 0, Int64 fraction = 0) const
+    Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const
     {
         auto year = time / 10'000'000'000;
         auto month = (time % 10'000'000'000) / 100'000'000;
@@ -221,8 +226,17 @@ public:
         }
         else
         {
-            min_date = date_lut.makeDateTime(1900, 1, 1, 0, 0, 0) * deg;
-            max_date = date_lut.makeDateTime(2299, 12, 31, 23, 59, 59) * deg + (deg - 1);
+            min_date = DecimalUtils::decimalFromComponents<DateTime64>(
+                date_lut.makeDateTime(1900, 1, 1, 0, 0, 0),
+                static_cast<Int64>(0),
+                static_cast<UInt32>(scale));
+            Int64 deg = 1;
+            for (Int64 j = 0; j < scale; ++j)
+                deg *= 10;
+            max_date = DecimalUtils::decimalFromComponents<DateTime64>(
+                date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
+                static_cast<Int64>(deg - 1),
+                static_cast<UInt32>(scale));
             min_year = 1900;
             max_year = 2299;
         }
@@ -266,8 +280,13 @@ public:
         Int64 result;
         if (isDateOrDate32(result_type))
             result = date_lut.makeDayNum(year, month, day);
+        else if (isDateTime(result_type))
+            result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
         else
-            result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds) * deg + fraction;
+            result = DecimalUtils::decimalFromComponents<DateTime64>(
+                date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
+                static_cast<Int64>(fraction),
+                static_cast<UInt32>(scale));
 
         if (result > max_date)
             return max_date;
