@@ -879,6 +879,7 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
+sigmoid
 Smirnov's
 Smirnov'test
 Soundex
@@ -2408,6 +2409,8 @@ simpleaggregatefunction
 simplelinearregression
 simpod
 singlepart
+singleValueOrNull
+singlevalueornull
 sinh
 sipHash
 siphash
@@ -2527,6 +2530,8 @@ subtractQuarters
 subtractSeconds
 subtractWeeks
 subtractYears
+subtractInterval
+subtractTupleOfIntervals
 subtree
 subtrees
 subtype

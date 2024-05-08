@@ -27,9 +27,9 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM rocksdb_worm;"
 
 # Testing insert with multiple sinks and fixed block size
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE rocksdb_worm;"
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE rocksdb_worm MODIFY SETTING bulk_insert_block_size = 500000;"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO rocksdb_worm SELECT number, number+1 FROM numbers_mt(1000000) SETTINGS max_insert_threads = 2, max_block_size = 100000;"
-${CLICKHOUSE_CLIENT} --query "SELECT sum(value) FROM system.rocksdb WHERE database = currentDatabase() AND table = 'rocksdb_worm' AND name = 'no.file.opens';" # should be 2 as max_block_size is set to 500000
+# Must set both max_threads and max_insert_threads to 2 to make sure there is only two sinks
+${CLICKHOUSE_CLIENT} --query "INSERT INTO rocksdb_worm SELECT number, number+1 FROM numbers_mt(1000000) SETTINGS max_threads = 2, max_insert_threads = 2, max_block_size = 10000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, insert_deduplication_token = '';"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(value) FROM system.rocksdb WHERE database = currentDatabase() AND table = 'rocksdb_worm' AND name = 'no.file.opens';" # should be 2 because default bulk sink size is ~1M rows / SST file
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM rocksdb_worm;"
 
 # Testing insert with duplicated keys
