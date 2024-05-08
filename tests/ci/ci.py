@@ -854,6 +854,7 @@ class CiOptions:
         jobs_to_do: List[str],
         jobs_to_skip: List[str],
         jobs_params: Dict[str, Dict[str, Any]],
+        pr_info: PRInfo,
     ) -> Tuple[List[str], List[str], Dict[str, Dict[str, Any]]]:
         """
         Applies specified options on CI Run Config
@@ -953,7 +954,8 @@ class CiOptions:
                     jobs_params[job] = {
                         "batches": list(range(num_batches)),
                         "num_batches": num_batches,
-                        "run_if_ci_option_include_set": job_config.run_by_ci_option,
+                        "run_if_ci_option_include_set": job_config.run_by_ci_option
+                        and pr_info.is_pr,
                     }
 
         # 4. Handle "batch_" tags
@@ -1444,7 +1446,8 @@ def _configure_jobs(
             jobs_params[job] = {
                 "batches": batches_to_do,
                 "num_batches": num_batches,
-                "run_if_ci_option_include_set": job_config.run_by_ci_option,
+                "run_if_ci_option_include_set": job_config.run_by_ci_option
+                and pr_info.is_pr,
             }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
@@ -1469,7 +1472,7 @@ def _configure_jobs(
                 ]
 
     jobs_to_do, jobs_to_skip, jobs_params = ci_options.apply(
-        jobs_to_do, jobs_to_skip, jobs_params
+        jobs_to_do, jobs_to_skip, jobs_params, pr_info
     )
 
     return {
