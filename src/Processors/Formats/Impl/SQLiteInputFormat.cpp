@@ -51,7 +51,7 @@ void SQLiteInputFormat::prepareReader() {
     file_reader = asArrowFile(*in, format_settings, is_stopped, "sqlite3", "");
     //file_reader = asArrowFile(*in, format_settings, is_stopped, "sqlite3", "SQLite format 3");
 
-    std::ostringstream ss;
+    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 	ss << file_reader.get();
 	std::string uri = ss.str();
 
@@ -61,31 +61,31 @@ void SQLiteInputFormat::prepareReader() {
         throw Exception::createDeprecated(fmt::format("Cannot open sqlite database. Error status: {}. Message: {}",
                                        status, sqlite3_errstr(status)), ErrorCodes::SQLITE_ENGINE_ERROR);
     }
-    db.reset(db_ptr, sqlite3_close_v2); 
+    db.reset(db_ptr, sqlite3_close_v2);
 }
 
 std::vector<String> SQLiteInputFormat::getTablesNames() {
     std::vector<String> tables_names;
     std::string query = "SELECT name FROM sqlite_master "
                         "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'";
-    
+
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** /* col_names */) -> int
-    {   
+    {
         for (int i = 0; i < col_num; ++i)
             static_cast<std::vector<String> *>(res)->push_back(String(data_by_col[i]));
         return 0;
     };
 
-    
-    
+
+
     int status = sqlite3_exec(db.get(), query.c_str(), callback_get_data, &tables_names, nullptr);
-    
+
     if (status != SQLITE_OK)
     {
         throw Exception::createDeprecated(fmt::format("Failed to fetch SQLite tables names. Error status: {}. Message: {}",
                                        status, sqlite3_errstr(status)), ErrorCodes::SQLITE_ENGINE_ERROR);
     }
-    
+
     return tables_names;
 }
 
@@ -104,10 +104,10 @@ void SQLiteInputFormat::readPrefix()
             throw Exception::createDeprecated(fmt::format("Failed to find SQLite {} table", table_name), ErrorCodes::UNKNOWN_TABLE);
         }
     }
-    
+
     /*
     auto names_and_types = fetchSQLiteTableStructure(db.get(), table_name);
-    
+
     serializations.resize(names_and_types->getTypes().size());
     for (size_t i = 0; i < serializations.size(); i++) {
         serializations[i] = names_and_types->getTypes()[i]->getDefaultSerialization();
@@ -125,7 +125,7 @@ bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*e
     if (!continue_read) {
         return false;
     }
-    
+
     auto errcode = sqlite3_step(stmt.get());
 
     if ( SQLITE_ROW != errcode) {
@@ -137,7 +137,7 @@ bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*e
         auto value = reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), static_cast<int>(i)));
         auto value_len = (value == nullptr) ? 0 : strlen(value);
         auto stringBuffer = ReadBufferFromMemory(value, value_len);
-        
+
         serializations[i]->deserializeWholeText(*columns[i], stringBuffer, format_settings);
     }
 

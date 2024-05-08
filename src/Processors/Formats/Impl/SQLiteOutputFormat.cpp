@@ -37,12 +37,12 @@ void SQLiteOutputFormat::writePrefix()
     sqlite3 *db_ptr;
 
     int status = sqlite3_open_v2(uri.c_str(), &db_ptr, SQLITE_OPEN_READWRITE | SQLITE_OPEN_URI, nullptr);
-    
+
     if (status != SQLITE_OK) {
         throw Exception::createDeprecated(fmt::format("Cannot open sqlite database. Error status: {}. Message: {}",
                                        status, sqlite3_errstr(status)), ErrorCodes::SQLITE_ENGINE_ERROR);
     }
-    db.reset(db_ptr, sqlite3_close_v2); 
+    db.reset(db_ptr, sqlite3_close_v2);
 
 
     auto names_and_types = getPort(PortKind::Main).getHeader().getNamesAndTypes();
@@ -50,7 +50,7 @@ void SQLiteOutputFormat::writePrefix()
     for (size_t i = 0; i < names_and_types.size(); i++) {
         if (i != 0) {
             names_and_types_sub_query += ", ";
-        } 
+        }
         names_and_types_sub_query += (names_and_types[i].name + " " + names_and_types[i].type->getName());
         serializations.emplace_back(names_and_types[i].type->getDefaultSerialization());
     }
@@ -84,7 +84,7 @@ void SQLiteOutputFormat::consume(Chunk chunk)
             if (j != 0) {
                 values += ",";
             }
-            values += ostr.str();            
+            values += ostr.str();
         }
 
         values += ")";
@@ -101,7 +101,7 @@ void SQLiteOutputFormat::consume(Chunk chunk)
 
 void SQLiteOutputFormat::flush()
 {
-    
+
 }
 
 void registerOutputFormatSQLite(FormatFactory & factory)

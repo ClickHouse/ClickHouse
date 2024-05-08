@@ -21,7 +21,7 @@ public:
 
     SQLiteInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
-    
+
     String getName() const override { return "SQLiteInputFormat"; }
 
 private:
@@ -29,7 +29,7 @@ private:
     void readPrefix() override;
     void prepareReader();
     std::vector<String> getTablesNames();
-    
+
     SQLitePtr db;
     std::shared_ptr<arrow::io::RandomAccessFile> file_reader;
     std::shared_ptr<sqlite3_stmt> stmt;

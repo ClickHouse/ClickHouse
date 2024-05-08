@@ -64,7 +64,7 @@ static sqlite3_io_methods mem_io_methods = {
   memShmBarrier,                      /* xShmBarrier */
   memShmUnmap,                        /* xShmUnmap */
   memFetch,                           /* xFetch */
-  memUnfetch                          /* xUnfetch */  
+  memUnfetch                          /* xUnfetch */
 };
 
 static sqlite3_vfs mem_vfs = {
@@ -73,7 +73,7 @@ static sqlite3_vfs mem_vfs = {
   1024,                             /* mxPathname */
   nullptr,                          /* pNext */
   "ch_read_vfs",                    /* zName */
-  nullptr,                          /* pAppData (set in initMemVFS) */ 
+  nullptr,                          /* pAppData (set in initMemVFS) */
   memOpen,                          /* xOpen */
   memDelete,                        /* xDelete */
   memAccess,                        /* xAccess */
@@ -228,9 +228,9 @@ static int memDelete(sqlite3_vfs */*pVfs*/, const char */*zPath*/, int /*dirSync
 }
 
 static int memAccess(
-  sqlite3_vfs */*pVfs*/, 
-  const char */*zPath*/, 
-  int /*flags*/, 
+  sqlite3_vfs */*pVfs*/,
+  const char */*zPath*/,
+  int /*flags*/,
   int *pResOut
 ){
   *pResOut = 0;
@@ -238,9 +238,9 @@ static int memAccess(
 }
 
 static int memFullPathname(
-  sqlite3_vfs */*pVfs*/, 
-  const char *zPath, 
-  int nOut, 
+  sqlite3_vfs */*pVfs*/,
+  const char *zPath,
+  int nOut,
   char *zOut
 ){
   sqlite3_snprintf(nOut, zOut, "%s", zPath);
