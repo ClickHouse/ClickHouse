@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_SQLITE
+
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
 
@@ -29,3 +33,5 @@ private:
 };
 
 }
+
+#endif

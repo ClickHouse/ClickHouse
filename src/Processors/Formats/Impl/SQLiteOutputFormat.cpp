@@ -1,5 +1,8 @@
+#include <Processors/Formats/Impl/SQLiteOutputFormat.h>
+
+#if USE_SQLITE
+
 #include <Interpreters/ProcessList.h>
-#include "SQLiteOutputFormat.h"
 #include <iostream>
 #include <sqlite3.h>
 
@@ -113,3 +116,5 @@ void registerOutputFormatSQLite(FormatFactory & factory)
            const FormatSettings & settings) { return std::make_shared<SQLiteOutputFormat>(buf, sample, settings); });
 }
 }
+
+#endif

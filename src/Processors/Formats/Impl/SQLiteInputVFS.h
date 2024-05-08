@@ -1,10 +1,18 @@
+#pragma once
+
+#include "config.h"
+
+#if USE_SQLITE
+
 #include <sqlite3.h>
-#include "ArrowBufferedStreams.h"
+
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <arrow/result.h>
 
 #define ORIGVFS(p) (static_cast<sqlite3_vfs*>((p)->pAppData))
 
-class RandomAccessSQLiteFile : public sqlite3_file {
+class RandomAccessSQLiteFile : public sqlite3_file
+{
 public:
 	arrow::io::RandomAccessFile* ptr;
 };
@@ -317,3 +325,5 @@ static int initMemVFS()
   }
   return SQLITE_OK;
 }
+
+#endif

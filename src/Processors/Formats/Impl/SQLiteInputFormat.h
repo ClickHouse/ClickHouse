@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_SQLITE
+
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -38,3 +42,5 @@ private:
     bool continue_read = true;
 };
 };
+
+#endif

@@ -1,3 +1,7 @@
+#include <Processors/Formats/Impl/SQLiteInputFormat.h>
+
+#if USE_SQLITE
+
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -15,7 +19,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/ObjectUtils.h>
-#include <sqlite3.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include "ArrowBufferedStreams.h"
@@ -24,8 +27,10 @@
 #include <fstream>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <IO/ReadBufferFromMemory.h>
-#include "SQLiteInputVFS.h"
+#include <Processors/Formats/Impl/SQLiteInputVFS.h>
 #include <sstream>
+
+#include <sqlite3.h>
 
 namespace DB
 {
@@ -53,7 +58,7 @@ void SQLiteInputFormat::prepareReader() {
 
     std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 	ss << file_reader.get();
-	std::string uri = ss.str();
+	std::string uri = ss.   str();
 
     sqlite3 * db_ptr = nullptr;
     int status = sqlite3_open_v2(uri.c_str(), &db_ptr, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, "ch_read_vfs");
@@ -159,3 +164,5 @@ void registerInputFormatSQLite(FormatFactory & factory)
 }
 
 }
+
+#endif
