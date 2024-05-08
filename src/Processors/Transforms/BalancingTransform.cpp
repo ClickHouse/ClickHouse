@@ -25,41 +25,63 @@ IProcessor::Status BalancingChunksTransform::prepare()
 IProcessor::Status BalancingChunksTransform::prepareConsume()
 {
     finished = false;
+    bool all_finished = true;
+    for (auto & output : outputs)
+    {
+        if (output.isFinished())
+            continue;
+
+        all_finished = false;
+    }
+
+    if (all_finished) /// If all outputs are closed, we close inputs (just in case)
+    {
+        for (auto & in : inputs)
+            in.close();
+        return Status::Finished;
+    }
+
+    all_finished = true;
+    for (auto & input : inputs)
+    {
+        if (input.isFinished())
+            continue;
+
+        all_finished = false;
+    }
+
+    if (all_finished) /// If all inputs are closed, we check if we have data in balancing
+    {
+        if (balance.isDataLeft()) /// If we have data in balancing, we process this data
+        {
+            finished = false;
+            transform(chunk);
+            has_data = true;
+        }
+        else    /// If we don't have data, We send FINISHED
+        {
+            for (auto & output : outputs)
+                output.finish();
+
+            return Status::Finished;
+        }
+    }
+
     while (!chunk.hasChunkInfo())
     {
         for (auto & input : inputs)
         {
-            bool all_finished = true;
-            for (auto & output : outputs)
-            {
-                if (output.isFinished())
-                    continue;
-
-                all_finished = false;
-            }
-
-            if (all_finished)
-            {
-                input.close();
-                return Status::Finished;
-            }
-
-            if (input.isFinished() && !balance.isDataLeft())
-            {
-                for (auto & output : outputs)
-                    output.finish();
-
-                return Status::Finished;
-            }
+            if (input.isFinished())
+                continue;
 
             input.setNeeded();
             if (!input.hasData())
             {
-                finished = true;
                 if (!balance.isDataLeft())
                     return Status::NeedData;
                 else
                 {
+                    finished = true;
                     transform(chunk);
                     has_data = true;
                     return Status::Ready;
@@ -68,7 +90,7 @@ IProcessor::Status BalancingChunksTransform::prepareConsume()
 
             chunk = input.pull();
             transform(chunk);
-            was_output_processed.assign(outputs.size(), false);
+            was_output_processed.assign(inputs.size(), false);
             if (chunk.hasChunkInfo())
             {
                 has_data = true;
