@@ -676,7 +676,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         if (task.execution_status.code != 0)
         {
             bool status_written_by_table_or_db = task.ops.empty();
-            if (status_written_by_table_or_db)
+            bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+            if (status_written_by_table_or_db || is_replicated_database_task)
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
             }
@@ -710,6 +711,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     task.createSyncedNodeIfNeed(zookeeper);
     updateMaxDDLEntryID(task.entry_name);
     task.completely_processed = true;
+    subsequent_errors_count = 0;
 }
 
 
@@ -1145,12 +1147,14 @@ void DDLWorker::runMainThread()
 
             cleanup_event->set();
             scheduleTasks(reinitialized);
+            subsequent_errors_count = 0;
 
             LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {
+            subsequent_errors_count = 0;
             if (Coordination::isHardwareError(e.code))
             {
                 initialized = false;
@@ -1168,7 +1172,26 @@ void DDLWorker::runMainThread()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Unexpected error, will try to restart main thread");
+            String message = getCurrentExceptionMessage(/*with_stacktrace*/ true);
+            if (subsequent_errors_count)
+            {
+                if (last_unexpected_error == message)
+                {
+                    ++subsequent_errors_count;
+                }
+                else
+                {
+                    subsequent_errors_count = 1;
+                    last_unexpected_error = message;
+                }
+            }
+            else
+            {
+                subsequent_errors_count = 1;
+                last_unexpected_error = message;
+            }
+
+            LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count, message);
             reset_state();
             sleepForSeconds(5);
         }

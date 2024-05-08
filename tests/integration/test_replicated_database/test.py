@@ -24,7 +24,7 @@ main_node = cluster.add_instance(
 dummy_node = cluster.add_instance(
     "dummy_node",
     main_configs=["configs/config.xml"],
-    user_configs=["configs/settings.xml"],
+    user_configs=["configs/settings2.xml"],
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
@@ -47,8 +47,9 @@ snapshotting_node = cluster.add_instance(
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
-    user_configs=["configs/settings.xml"],
+    user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
+    macros={"shard": 1, "replica": 4},
 )
 
 all_nodes = [
@@ -1443,3 +1444,53 @@ def test_table_metadata_corruption(started_cluster):
 
     main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
     dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+
+
+def test_auto_recovery(started_cluster):
+    dummy_node.query("DROP DATABASE IF EXISTS auto_recovery")
+    snapshot_recovering_node.query("DROP DATABASE IF EXISTS auto_recovery")
+
+    dummy_node.query(
+        "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica1');"
+    )
+    snapshot_recovering_node.query(
+        "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica2') SETTINGS max_retries_before_automatic_recovery=3;"
+    )
+
+    dummy_node.query(
+        "CREATE TABLE auto_recovery.t1 (n int) ENGINE=ReplicatedMergeTree ORDER BY n"
+    )
+    dummy_node.query("INSERT INTO auto_recovery.t1 SELECT 42")
+    # dummy_node has <throw_on_unsupported_query_inside_transaction>0</throw_on_unsupported_query_inside_transaction> (default is 1),
+    # so it will consider that the setting is changed, and will write it to the DDL entry
+    # snapshot_recovering_node has implicit_transaction=1, so it will fail and recover from snapshot
+    dummy_node.query(
+        "CREATE TABLE auto_recovery.t2 (n int) ENGINE=ReplicatedMergeTree ORDER BY tuple()",
+        settings={
+            "throw_on_unsupported_query_inside_transaction": 1,
+            "distributed_ddl_task_timeout": 0,
+        },
+    )
+    dummy_node.query("INSERT INTO auto_recovery.t2 SELECT 137")
+    dummy_node.query(
+        "EXCHANGE TABLES auto_recovery.t1 AND auto_recovery.t2",
+        settings={"distributed_ddl_task_timeout": 0},
+    )
+
+    snapshot_recovering_node.query(
+        "SYSTEM SYNC DATABASE REPLICA auto_recovery", settings={"receive_timeout": 60}
+    )
+    assert snapshot_recovering_node.contains_in_log(
+        "Unexpected error (3 times in a row), will try to restart main thread"
+    )
+    assert snapshot_recovering_node.contains_in_log(
+        "Cannot begin an implicit transaction"
+    )
+    snapshot_recovering_node.query("SYSTEM SYNC REPLICA auto_recovery.t1")
+    snapshot_recovering_node.query("SYSTEM SYNC REPLICA auto_recovery.t2")
+
+    assert "42\n" == dummy_node.query("SELECT * FROM auto_recovery.t2")
+    assert "137\n" == dummy_node.query("SELECT * FROM auto_recovery.t1")
+
+    assert "42\n" == snapshot_recovering_node.query("SELECT * FROM auto_recovery.t2")
+    assert "137\n" == snapshot_recovering_node.query("SELECT * FROM auto_recovery.t1")
