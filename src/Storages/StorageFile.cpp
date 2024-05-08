@@ -283,7 +283,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else if (read_method == LocalFSReadMethod::io_uring && !use_table_fd)
     {
 #if USE_LIBURING
-        auto & reader = getIOURingReaderOrThrow(context);
+        auto & reader = getIOUringReaderOrThrow(context);
         res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
             reader,
             Priority{},

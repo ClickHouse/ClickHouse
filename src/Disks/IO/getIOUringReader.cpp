@@ -1,7 +1,8 @@
-#include "getIOUringReader.h"
+#include <Disks/IO/getIOUringReader.h>
 
 #if USE_LIBURING
 
+#include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 
 namespace DB
@@ -20,8 +21,8 @@ std::unique_ptr<IOUringReader> createIOUringReader()
 
 IOUringReader & getIOUringReaderOrThrow(ContextPtr context)
 {
-    auto reader = context->getIOUringReader();
-    if (!reader.isSupported)
+    auto & reader = context->getIOUringReader();
+    if (!reader.isSupported())
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
     }
@@ -33,7 +34,7 @@ IOUringReader & getIOUringReaderOrThrow()
     auto context = Context::getGlobalContextInstance();
     if (!context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-    return getIOUringReaderOrThrow(context)
+    return getIOUringReaderOrThrow(context);
 }
 
 }

@@ -4,7 +4,7 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
-#include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <IO/AsynchronousReader.h>
@@ -100,7 +100,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
-            auto & reader = getIOURingReaderOrThrow();
+            auto & reader = getIOUringReaderOrThrow();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
                 settings.priority,

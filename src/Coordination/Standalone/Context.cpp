@@ -304,7 +304,7 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
 }
 
 #if USE_LIBURING
-IOUringReader & Context::getIOURingReader() const
+IOUringReader & Context::getIOUringReader() const
 {
     callOnce(shared->io_uring_reader_initialized, [&] {
         shared->io_uring_reader = createIOUringReader();

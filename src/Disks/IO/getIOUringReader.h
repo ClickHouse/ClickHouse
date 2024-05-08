@@ -6,6 +6,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Disks/IO/IOUringReader.h>
+#include <memory>
 
 namespace DB
 {
