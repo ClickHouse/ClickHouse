@@ -1,5 +1,5 @@
 ---
-slug: /zh/sql-reference/functions/functions-for-nulls
+slug: /zh/sql-reference/functions/null-functions
 ---
 # Nullable处理函数 {#nullablechu-li-han-shu}
 
@@ -181,7 +181,7 @@ SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 
 ## assumeNotNull {#assumenotnull}
 
-将[可为空](../../sql-reference/functions/functions-for-nulls.md)类型的值转换为非`Nullable`类型的值。
+将[可为空](../../sql-reference/functions/null-functions.md)类型的值转换为非`Nullable`类型的值。
 
     assumeNotNull(x)
 

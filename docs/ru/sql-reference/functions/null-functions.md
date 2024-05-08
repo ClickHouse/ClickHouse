@@ -1,5 +1,5 @@
 ---
-slug: /ru/sql-reference/functions/functions-for-nulls
+slug: /ru/sql-reference/functions/null-functions
 sidebar_position: 63
 sidebar_label: "Функции для работы с Nullable-аргументами"
 ---
@@ -212,7 +212,7 @@ SELECT nullIf(1, 2);
 
 ## assumeNotNull {#assumenotnull}
 
-Приводит значение типа [Nullable](../../sql-reference/functions/functions-for-nulls.md) к не `Nullable`, если значение не `NULL`.
+Приводит значение типа [Nullable](../../sql-reference/functions/null-functions.md) к не `Nullable`, если значение не `NULL`.
 
 ``` sql
 assumeNotNull(x)

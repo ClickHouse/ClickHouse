@@ -60,7 +60,7 @@ SELECT groupArray(y) FROM t_null_big
 
 `groupArray` does not include `NULL` in the resulting array.
 
-You can use [COALESCE](../../sql-reference/functions/functions-for-nulls.md#coalesce) to change NULL into a value that makes sense in your use case. For example: `avg(COALESCE(column, 0))` with use the column value in the aggregation or zero if NULL:
+You can use [COALESCE](../../sql-reference/functions/null-functions.md#coalesce) to change NULL into a value that makes sense in your use case. For example: `avg(COALESCE(column, 0))` with use the column value in the aggregation or zero if NULL:
 
 ``` sql
 SELECT

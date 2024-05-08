@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/functions-for-nulls
+slug: /en/sql-reference/functions/null-functions
 sidebar_position: 135
 sidebar_label: Nullable
 ---
@@ -11,6 +11,8 @@ sidebar_label: Nullable
 Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
 See also operator [`IS NULL`](../operators/index.md#is_null).
+
+**Syntax**
 
 ``` sql
 isNull(x)
@@ -50,6 +52,45 @@ Result:
 ┌─x─┐
 │ 1 │
 └───┘
+```
+
+## isNullable
+
+Returns `1` if a column allows null values, `0` otherwise.
+
+**Syntax**
+
+``` sql
+isNullable(x)
+```
+
+**Arguments**
+
+- `x` — column.
+
+**Returned value**
+
+- `1` if `x` allows `NULL` values. [UInt8](../data-types/int-uint.md).
+- `0` if `x` does not allow `NULL` values. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE example_table (nullable_column Nullable(UInt32), ordinary_column UInt32) ENGINE = Log;
+INSERT INTO example_table (nullable_column, ordinary_column) VALUES (1,1), (2, 2), (3,3);
+SELECT isNullable(nullable_column), isNullable(ordinary_column) FROM example_table;    
+```
+
+Result:
+
+``` text
+   ┌─isNullable(nullable_column)─┬─isNullable(ordinary_column)─┐
+1. │                           1 │                           0 │
+2. │                           1 │                           0 │
+3. │                           1 │                           0 │
+   └─────────────────────────────┴─────────────────────────────┘
 ```
 
 ## isNotNull
