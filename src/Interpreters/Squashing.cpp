@@ -142,11 +142,7 @@ Block ApplySquashing::add(Chunk && input_chunk)
 Block ApplySquashing::addImpl(Chunk && input_chunk)
 {
     if (!input_chunk.hasChunkInfo())
-    {
-        Block to_return;
-        std::swap(to_return, accumulated_block);
-        return to_return;
-    }
+        return Block();
 
     const auto *info = getInfoFromChunk(input_chunk);
     for (auto & chunk : info->chunks)
@@ -225,7 +221,7 @@ Chunk PlanSquashing::addImpl(Chunk && input_chunk)
         Chunk res_chunk = convertToChunk(chunks_to_merge_vec);
         return res_chunk;
     }
-    return input_chunk;
+    return {};
 }
 
 Chunk PlanSquashing::convertToChunk(std::vector<Chunk> &chunks)
@@ -237,7 +233,7 @@ Chunk PlanSquashing::convertToChunk(std::vector<Chunk> &chunks)
     for (auto &chunk : chunks)
         info->chunks.push_back(std::move(chunk));
 
-    chunks.clear(); // we can remove this
+    chunks.clear();
 
     return Chunk(header.cloneEmptyColumns(), 0, info);
 }

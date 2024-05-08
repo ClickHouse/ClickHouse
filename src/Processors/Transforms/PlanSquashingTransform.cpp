@@ -41,34 +41,32 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
         return Status::Finished;
     }
 
-    all_finished = true;
-    for (auto & input : inputs)
-    {
-        if (input.isFinished())
-            continue;
-
-        all_finished = false;
-    }
-
-    if (all_finished) /// If all inputs are closed, we check if we have data in balancing
-    {
-        if (balance.isDataLeft()) /// If we have data in balancing, we process this data
-        {
-            finished = false;
-            transform(chunk);
-            has_data = true;
-        }
-        else    /// If we don't have data, We send FINISHED
-        {
-            for (auto & output : outputs)
-                output.finish();
-
-            return Status::Finished;
-        }
-    }
-
     while (!chunk.hasChunkInfo())
     {
+        all_finished = true;
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished())
+                all_finished = false;
+        }
+
+        if (all_finished) /// If all inputs are closed, we check if we have data in balancing
+        {
+            if (balance.isDataLeft()) /// If we have data in balancing, we process this data
+            {
+                finished = false;
+                transform(chunk);
+                has_data = true;
+            }
+            else    /// If we don't have data, We send FINISHED
+            {
+                for (auto & output : outputs)
+                    output.finish();
+
+                return Status::Finished;
+            }
+        }
+
         for (auto & input : inputs)
         {
             if (input.isFinished())
@@ -80,12 +78,7 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
                 if (!balance.isDataLeft())
                     return Status::NeedData;
                 else
-                {
-                    finished = true;
-                    transform(chunk);
-                    has_data = true;
-                    return Status::Ready;
-                }
+                    continue;
             }
 
             chunk = input.pull();
@@ -96,7 +89,8 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
                 has_data = true;
                 return Status::Ready;
             }
-
+            else
+                return Status::NeedData;
         }
     }
     return Status::Ready;

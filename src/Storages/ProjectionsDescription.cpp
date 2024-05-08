@@ -311,7 +311,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     builder.resize(1);
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0, builder.getNumStreams()));
+    builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0, 1));
     builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader(), block.rows(), 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
