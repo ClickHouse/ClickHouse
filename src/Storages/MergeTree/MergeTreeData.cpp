@@ -1861,7 +1861,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
     }
 
-    if (num_parts == 0)
+    if (num_parts == 0 && unexpected_parts_to_load.empty())
     {
         resetObjectColumnsFromActiveParts(part_lock);
         LOG_DEBUG(log, "There are no data parts");
@@ -2007,7 +2007,7 @@ void MergeTreeData::loadUnexpectedDataParts()
             }
             else
             {
-                load_state.part->renameToDetached("ignore"); /// detached parts must not have '_' in prefixes
+                load_state.part->renameToDetached("ignored"); /// detached parts must not have '_' in prefixes
             }
         }, Priority{});
     }
