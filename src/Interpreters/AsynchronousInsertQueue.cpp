@@ -726,7 +726,10 @@ try
 
     /// Access rights must be checked for the user who executed the initial INSERT query.
     if (key.user_id)
-        insert_context->setUser(*key.user_id, key.current_roles);
+    {
+        insert_context->setUser(*key.user_id);
+        insert_context->setCurrentRoles(key.current_roles);
+    }
 
     insert_context->setSettings(key.settings);
 
