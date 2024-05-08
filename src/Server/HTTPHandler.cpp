@@ -2,10 +2,7 @@
 
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
-#include <Access/AccessControl.h>
 #include <Access/ExternalAuthenticators.h>
-#include <Access/Role.h>
-#include <Access/User.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -79,7 +76,6 @@ namespace ErrorCodes
 
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
-    extern const int SET_NON_GRANTED_ROLE;
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
@@ -615,20 +611,7 @@ void HTTPHandler::processQuery(
 
     auto roles = params.getAll("role");
     if (!roles.empty())
-    {
-        const auto & access_control = context->getAccessControl();
-        const auto & user = context->getUser();
-        std::vector<UUID> roles_ids(roles.size());
-        for (size_t i = 0; i < roles.size(); i++)
-        {
-            auto role_id = access_control.getID<Role>(roles[i]);
-            if (user->granted_roles.isGranted(role_id))
-                roles_ids[i] = role_id;
-            else
-                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", roles[i].get());
-        }
-        context->setCurrentRoles(roles_ids);
-    }
+        context->setCurrentRoles(roles);
 
     /// Settings can be overridden in the query.
     /// Some parameters (database, default_format, everything used in the code above) do not

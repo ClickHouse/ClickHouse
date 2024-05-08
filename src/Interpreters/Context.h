@@ -63,6 +63,7 @@ class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
 enum class RowPolicyFilterType : uint8_t;
+struct RolesOrUsersSet;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
@@ -602,13 +603,15 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
+    void setUser(const UUID & user_id_);
     UserPtr getUser() const;
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;
 
-    void setCurrentRoles(const std::vector<UUID> & current_roles_);
+    void setCurrentRoles(const Strings & new_current_roles, bool check_grants = true);
+    void setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants = true);
+    void setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants = true);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;
     std::vector<UUID> getEnabledRoles() const;
@@ -1335,7 +1338,7 @@ private:
 
     void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
@@ -1368,6 +1371,7 @@ private:
     void initGlobal();
 
     void setUserID(const UUID & user_id_);
+    void setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
