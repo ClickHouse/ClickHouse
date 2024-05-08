@@ -30,7 +30,7 @@ Here is a simple example that returns the numbers 1 to 10 that are _not_ a part 
 Query:
 
 ``` sql
-SELECT number FROM numbers(1,10) EXCEPT SELECT number FROM numbers(3,6);
+SELECT number FROM numbers(1,10) EXCEPT SELECT number FROM numbers(3,8);
 ```
 
 Result:
