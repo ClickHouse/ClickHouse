@@ -183,7 +183,6 @@ private:
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
 
-    void initExchange(AMQP::TcpChannel & rabbit_channel);
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
