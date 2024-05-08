@@ -1,5 +1,7 @@
 #include <IO/WriteBufferFromOStream.h>
+#include <Common/logger_useful.h>
 
+#include <ostream>
 
 namespace DB
 {
@@ -36,11 +38,6 @@ WriteBufferFromOStream::WriteBufferFromOStream(
     size_t alignment)
     : BufferWithOwnMemory<WriteBuffer>(size, existing_memory, alignment), ostr(&ostr_)
 {
-}
-
-WriteBufferFromOStream::~WriteBufferFromOStream()
-{
-    finalize();
 }
 
 }

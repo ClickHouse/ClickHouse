@@ -56,16 +56,20 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
 
+                if (read_progress->counters.total_bytes)
+                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
                     node->processor->cancel();
             }
         }
     }
-    catch (Exception & exception)
+    catch (Exception exception) /// NOLINT
     {
+        /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
             exception.addMessage("While executing " + node->processor->getName());
-        throw;
+        throw exception;
     }
 }
 

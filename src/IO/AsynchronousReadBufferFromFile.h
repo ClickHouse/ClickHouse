@@ -17,7 +17,7 @@ protected:
 public:
     explicit AsynchronousReadBufferFromFile(
         IAsynchronousReader & reader_,
-        Int32 priority_,
+        Priority priority_,
         const std::string & file_name_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = -1,
@@ -28,7 +28,7 @@ public:
     /// Use pre-opened file descriptor.
     explicit AsynchronousReadBufferFromFile(
         IAsynchronousReader & reader_,
-        Int32 priority_,
+        Priority priority_,
         int & fd, /// Will be set to -1 if constructor didn't throw and ownership of file descriptor is passed to the object.
         const std::string & original_file_name = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
@@ -45,6 +45,8 @@ public:
     {
         return file_name;
     }
+
+    bool isRegularLocalFile(size_t * /* out_view_offset */) override { return true; }
 };
 
 /** Similar to AsynchronousReadBufferFromFile but also transparently shares open file descriptors.
@@ -58,7 +60,7 @@ private:
 public:
     AsynchronousReadBufferFromFileWithDescriptorsCache(
         IAsynchronousReader & reader_,
-        Int32 priority_,
+        Priority priority_,
         const std::string & file_name_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = -1,
@@ -79,6 +81,8 @@ public:
     {
         return file_name;
     }
+
+    bool isRegularLocalFile(size_t * /* out_view_offset */) override { return true; }
 };
 
 }

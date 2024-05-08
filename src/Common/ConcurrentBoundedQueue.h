@@ -110,7 +110,7 @@ public:
     /// Returns false if queue is finished
     [[nodiscard]] bool pushFront(const T & x)
     {
-        return emplaceImpl</* back= */ false>(/* timeout_milliseconds= */ std::nullopt , x);
+        return emplaceImpl</* back= */ false>(/* timeout_milliseconds= */ std::nullopt, x);
     }
 
     /// Returns false if queue is finished

@@ -191,7 +191,8 @@ namespace VolnitskyTraits
                         if (length_l != length_r)
                             return false;
 
-                        assert(length_l >= 2 && length_r >= 2);
+                        if (length_l < 2 || length_r < 2)
+                            return false;  /// Some part of the given ngram contains an invalid UTF-8 sequence.
 
                         chars.c0 = seq_l[seq_ngram_offset];
                         chars.c1 = seq_l[seq_ngram_offset + 1];
@@ -253,7 +254,9 @@ namespace VolnitskyTraits
                     if (size_l != size_u)
                         return false;
 
-                    assert(size_l >= 1 && size_u >= 1);
+                    if (size_l == 0 || size_u == 0)
+                        return false;  /// Some part of the given ngram contains an invalid UTF-8 sequence.
+
                     chars.c1 = seq_l[0];
                     putNGramBase(n, offset);
 
@@ -276,7 +279,8 @@ namespace VolnitskyTraits
                     if (size_l != size_u)
                         return false;
 
-                    assert(size_l > seq_ngram_offset && size_u > seq_ngram_offset);
+                    if (size_l <= seq_ngram_offset || size_u <= seq_ngram_offset)
+                        return false;  /// Some part of the given ngram contains an invalid UTF-8 sequence.
 
                     chars.c0 = seq_l[seq_ngram_offset];
                     putNGramBase(n, offset);
@@ -302,10 +306,8 @@ namespace VolnitskyTraits
                     if (size_first_l != size_first_u || size_second_l != size_second_u)
                         return false;
 
-                    assert(size_first_l > seq_ngram_offset);
-                    assert(size_first_u > seq_ngram_offset);
-                    assert(size_second_l > 0);
-                    assert(size_second_u > 0);
+                    if (size_first_l <= seq_ngram_offset || size_first_u <= seq_ngram_offset || size_second_l == 0 || size_second_u == 0)
+                        return false;
 
                     auto c0l = first_l_seq[seq_ngram_offset];
                     auto c0u = first_u_seq[seq_ngram_offset];
@@ -399,15 +401,14 @@ public:
         if (fallback || fallback_searcher.force_fallback)
             return;
 
-        hash = std::unique_ptr<VolnitskyTraits::Offset[]>(new VolnitskyTraits::Offset[VolnitskyTraits::hash_size]{});
+        hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
 
         auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
         /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
         /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
         {
-            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(
-                needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
+            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
 
             /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
               * are represented by different number of bytes or code points.
@@ -730,9 +731,6 @@ using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using VolnitskyUTF8 = VolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
-
-using VolnitskyCaseSensitiveToken = VolnitskyBase<true, true, ASCIICaseSensitiveTokenSearcher>;
-using VolnitskyCaseInsensitiveToken = VolnitskyBase<false, true, ASCIICaseInsensitiveTokenSearcher>;
 
 using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;

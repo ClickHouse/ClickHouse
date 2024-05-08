@@ -35,7 +35,7 @@ class LambdaNode final : public IQueryTreeNode
 {
 public:
     /// Initialize lambda with argument names and lambda body expression
-    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_);
+    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_ = {});
 
     /// Get argument names
     const Names & getArgumentNames() const
@@ -97,9 +97,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & state) const override;
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

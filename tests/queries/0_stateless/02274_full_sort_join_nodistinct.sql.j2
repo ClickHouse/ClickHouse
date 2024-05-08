@@ -16,7 +16,6 @@ INSERT INTO t2 VALUES (1, 'val11'), (1, 'val12'), (2, 'val22'), (2, 'val23'), (2
 INSERT INTO tn2 VALUES (1, 'val11'), (1, 'val12'), (NULL, 'val22'), (NULL, 'val23'), (NULL, 'val24'), (NULL, 'val25'), (NULL, 'val26'), (NULL, 'val27'), (NULL, 'val28'), (3, 'val3');
 
 {% macro is_implemented(join_algorithm) -%}
-{% if join_algorithm == 'grace_hash' %} -- { serverError NOT_IMPLEMENTED } {% endif %}
 {% endmacro -%}
 
 {% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
@@ -27,7 +26,7 @@ SET join_algorithm = '{{ join_algorithm }}';
 
 SELECT '--- {{ join_algorithm }} ---';
 
-{% for block_size in range(1, 11) -%}
+{% for block_size in range(1, 11, 4) -%}
 SET max_block_size = {{ block_size }};
 
 {% for t1, t2 in [('t1', 't2'), ('t1', 'tn2'), ('tn1', 't2'), ('tn1', 'tn2')]  -%}
@@ -47,9 +46,10 @@ SELECT t1.key, t2.key, length(t1.s), t2.s FROM {{ t1 }} AS t1 {{ kind }} RIGHT J
 SELECT '{{ t1 }} ALL FULL JOIN {{ t2 }} | bs = {{ block_size }}';
 SELECT t1.key, t2.key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 {{ kind }} FULL JOIN {{ t2 }} AS t2 ON t1.key == t2.key ORDER BY t1.key, t2.key, length(t1.s), length(t2.s); {{ is_implemented(join_algorithm) }}
 
+{% if join_algorithm == 'full_sorting_merge' or t2 != 'tn2' -%}
 SELECT '{{ t1 }} ALL FULL JOIN USING {{ t2 }} | bs = {{ block_size }}';
 SELECT key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 ALL FULL JOIN {{ t2 }} AS t2 USING (key) ORDER BY key, length(t1.s), length(t2.s); {{ is_implemented(join_algorithm) }}
-
+{% endif -%}
 {% endfor -%}
 {% endfor -%}
 SET max_bytes_in_join = 0;

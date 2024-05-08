@@ -1,25 +1,25 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=False,
-    image="yandex/clickhouse-server",
-    tag="21.1",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,
-    image="yandex/clickhouse-server",
-    tag="21.1",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False)
+node3 = cluster.add_instance("node3", with_zookeeper=False, use_old_analyzer=True)
 
 
 @pytest.fixture(scope="module")
@@ -74,7 +74,7 @@ def test_backward_compatability(start_cluster):
             from remote('node{1,2,3}', default, t)
             group by a
             limit 1 offset 12345
-            settings optimize_aggregation_in_order = 1
+            settings optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 0
         """
         )
         == "30\n"

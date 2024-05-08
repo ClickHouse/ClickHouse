@@ -5,7 +5,8 @@
 #if USE_AWS_S3
 
 #include <Storages/StorageS3Settings.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
@@ -13,6 +14,7 @@
 
 namespace DB
 {
+struct ReadSettings;
 class SeekableReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
@@ -21,6 +23,13 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// The same functionality can be done by using the function copyData() and the classes ReadBufferFromS3 and WriteBufferFromS3
 /// however copyS3File() is faster and spends less network traffic and memory.
 /// The parameters `src_offset` and `src_size` specify a part in the source to copy.
+///
+/// Note, that it tries to copy file using native copy (CopyObject), but if it
+/// has been disabled (with settings.allow_native_copy) or request failed
+/// because it is a known issue, it is fallbacks to read-write copy
+/// (copyDataToS3File()).
+///
+/// read_settings - is used for throttling in case of native copy is not possible
 void copyS3File(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & src_bucket,
@@ -30,8 +39,10 @@ void copyS3File(
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
+    const ReadSettings & read_settings,
+    BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
     bool for_disk_s3 = false);
 
 /// Copies data from any seekable source to S3.
@@ -47,8 +58,9 @@ void copyDataToS3File(
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
+    BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
     bool for_disk_s3 = false);
 
 }

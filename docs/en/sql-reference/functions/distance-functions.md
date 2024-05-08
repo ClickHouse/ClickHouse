@@ -81,6 +81,43 @@ Result:
 │ 2.23606797749979 │
 └──────────────────┘
 ```
+## L2SquaredNorm
+
+Calculates the square root of the sum of the squares of the vector values (the [L2Norm](#l2norm)) squared.
+
+**Syntax**
+
+```sql
+L2SquaredNorm(vector)
+```
+
+Alias: `normL2Squared`.
+
+***Arguments**
+
+- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+- L2-norm squared.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L2SquaredNorm((1, 2));
+```
+
+Result:
+
+```text
+┌─L2SquaredNorm((1, 2))─┐
+│                     5 │
+└───────────────────────┘
+```
 
 ## LinfNorm
 
@@ -235,6 +272,43 @@ Result:
 ┌─L2Distance((1, 2), (2, 3))─┐
 │         1.4142135623730951 │
 └────────────────────────────┘
+```
+
+## L2SquaredDistance
+
+Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
+
+**Syntax**
+
+```sql
+L2SquaredDistance(vector1, vector2)
+```
+
+Alias: `distanceL2Squared`.
+
+**Arguments**
+
+- `vector1` — First vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+- `vector2` — Second vector. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
+```
+
+Result:
+
+```response
+┌─L2SquaredDistance([1, 2, 3], [0, 0, 0])─┐
+│                                      14 │
+└─────────────────────────────────────────┘
 ```
 
 ## LinfDistance
@@ -472,7 +546,7 @@ Result:
 
 ## cosineDistance
 
-Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The less the returned value is, the more similar are the vectors.
+Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
 
 **Syntax**
 
@@ -487,7 +561,7 @@ cosineDistance(vector1, vector2)
 
 **Returned value**
 
-- Cosine of the angle between two vectors substracted from one.
+- Cosine of the angle between two vectors subtracted from one.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 

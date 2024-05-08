@@ -46,14 +46,14 @@ WriteBufferFromFile::WriteBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
 
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
 
 #ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot set F_NOCACHE on file {}", file_name);
     }
 #endif
 }
@@ -103,7 +103,7 @@ void WriteBufferFromFile::close()
     if (fd < 0)
         return;
 
-    next();
+    finalize();
 
     if (0 != ::close(fd))
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");

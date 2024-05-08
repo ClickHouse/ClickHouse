@@ -1,7 +1,11 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 
+#include <Columns/ColumnNullable.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -109,7 +113,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                             continue;
 
                         auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
+                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->getOutputs().push_back(expression_dag_node);
                         before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
@@ -159,7 +164,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                         continue;
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
+                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                    available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
                     before_aggregation_actions->getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
@@ -507,6 +513,16 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (window_analysis_result_optional)
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
+    std::optional<FilterAnalysisResult> qualify_analysis_result_optional;
+    std::optional<size_t> qualify_action_step_index_optional;
+
+    if (query_node.hasQualify())
+    {
+        qualify_analysis_result_optional = analyzeFilter(query_node.getQualify(), current_output_columns, planner_context, actions_chain);
+        qualify_action_step_index_optional = actions_chain.getLastStepIndex();
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
     auto projection_analysis_result = analyzeProjection(query_node, current_output_columns, planner_context, actions_chain);
     current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
@@ -546,6 +562,20 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
+
+    /** For distributed query `isToAggregationState`, we do not project names on shards/replicas.
+      * However, constant columns from project_names_actions still can be required on the initiator.
+      * For example, for query:
+      *   SELECT hostName(), number from clusterAllReplicas(default, numbers_mt(3)) ORDER BY number;
+      * executed to stage `WithMergeableStateAfterAggregationAndLimit` on replicas
+      * we must send hostName() column to initiator.
+      */
+    if (planner_query_processing_info.isToAggregationState())
+    {
+        for (auto & column : project_names_input)
+            column.column = nullptr;
+    }
+
     bool has_with_fill = sort_analysis_result_optional.has_value() && sort_analysis_result_optional->has_with_fill;
 
     /** If there is WITH FILL we must use non constant projection columns.
@@ -584,7 +614,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     PlannerExpressionsAnalysisResult expressions_analysis_result(std::move(projection_analysis_result));
 
-    if (where_action_step_index_optional && where_analysis_result_optional)
+    if (where_analysis_result_optional && where_action_step_index_optional)
     {
         auto & where_analysis_result = *where_analysis_result_optional;
         auto & where_actions_chain_node = actions_chain.at(*where_action_step_index_optional);
@@ -595,7 +625,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (aggregation_analysis_result_optional)
         expressions_analysis_result.addAggregation(std::move(*aggregation_analysis_result_optional));
 
-    if (having_action_step_index_optional && having_analysis_result_optional)
+    if (having_analysis_result_optional && having_action_step_index_optional)
     {
         auto & having_analysis_result = *having_analysis_result_optional;
         auto & having_actions_chain_node = actions_chain.at(*having_action_step_index_optional);
@@ -605,6 +635,14 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (window_analysis_result_optional)
         expressions_analysis_result.addWindow(std::move(*window_analysis_result_optional));
+
+    if (qualify_analysis_result_optional && qualify_action_step_index_optional)
+    {
+        auto & qualify_analysis_result = *qualify_analysis_result_optional;
+        auto & qualify_actions_chain_node = actions_chain.at(*qualify_action_step_index_optional);
+        qualify_analysis_result.remove_filter_column = !qualify_actions_chain_node->getChildRequiredOutputColumnsNames().contains(qualify_analysis_result.filter_column_name);
+        expressions_analysis_result.addQualify(std::move(qualify_analysis_result));
+    }
 
     if (sort_analysis_result_optional)
         expressions_analysis_result.addSort(std::move(*sort_analysis_result_optional));

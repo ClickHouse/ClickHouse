@@ -1,4 +1,7 @@
 #include <Common/FrequencyHolder.h>
+
+#if USE_NLP
+
 #include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
@@ -87,3 +90,5 @@ REGISTER_FUNCTION(DetectTonality)
 }
 
 }
+
+#endif

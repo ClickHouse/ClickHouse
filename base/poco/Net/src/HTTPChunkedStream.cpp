@@ -34,7 +34,7 @@ namespace Net {
 
 
 HTTPChunkedStreamBuf::HTTPChunkedStreamBuf(HTTPSession& session, openmode mode):
-	HTTPBasicStreamBuf(HTTPBufferAllocator::BUFFER_SIZE, mode),
+	HTTPBasicStreamBuf(HTTP_DEFAULT_BUFFER_SIZE, mode),
 	_session(session),
 	_mode(mode),
 	_chunk(0)
@@ -49,10 +49,12 @@ HTTPChunkedStreamBuf::~HTTPChunkedStreamBuf()
 
 void HTTPChunkedStreamBuf::close()
 {
-	if (_mode & std::ios::out)
+	if (_mode & std::ios::out && _chunk != std::char_traits<char>::eof())
 	{
 		sync();
 		_session.write("0\r\n\r\n", 5);
+
+        _chunk = std::char_traits<char>::eof();
 	}
 }
 
@@ -181,10 +183,6 @@ HTTPChunkedStreamBuf* HTTPChunkedIOS::rdbuf()
 // HTTPChunkedInputStream
 //
 
-
-Poco::MemoryPool HTTPChunkedInputStream::_pool(sizeof(HTTPChunkedInputStream));
-
-
 HTTPChunkedInputStream::HTTPChunkedInputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::in),
 	std::istream(&_buf)
@@ -196,33 +194,9 @@ HTTPChunkedInputStream::~HTTPChunkedInputStream()
 {
 }
 
-
-void* HTTPChunkedInputStream::operator new(std::size_t size)
-{
-	return _pool.get();
-}
-
-
-void HTTPChunkedInputStream::operator delete(void* ptr)
-{
-	try
-	{
-		_pool.release(ptr);
-	}
-	catch (...)
-	{
-		poco_unexpected();
-	}
-}
-
-
 //
 // HTTPChunkedOutputStream
 //
-
-
-Poco::MemoryPool HTTPChunkedOutputStream::_pool(sizeof(HTTPChunkedOutputStream));
-
 
 HTTPChunkedOutputStream::HTTPChunkedOutputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::out),
@@ -234,25 +208,5 @@ HTTPChunkedOutputStream::HTTPChunkedOutputStream(HTTPSession& session):
 HTTPChunkedOutputStream::~HTTPChunkedOutputStream()
 {
 }
-
-
-void* HTTPChunkedOutputStream::operator new(std::size_t size)
-{
-	return _pool.get();
-}
-
-
-void HTTPChunkedOutputStream::operator delete(void* ptr)
-{
-	try
-	{
-		_pool.release(ptr);
-	}
-	catch (...)
-	{
-		poco_unexpected();
-	}
-}
-
 
 } } // namespace Poco::Net

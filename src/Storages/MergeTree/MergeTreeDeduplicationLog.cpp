@@ -5,12 +5,20 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
+#include <Common/Exception.h>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
 
 namespace
 {
@@ -230,6 +238,11 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
         return std::make_pair(info, false);
     }
 
+    if (stopped)
+    {
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
+    }
+
     chassert(current_writer != nullptr);
 
     /// Create new record
@@ -259,6 +272,11 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// threads and so on.
     if (deduplication_window == 0)
         return;
+
+    if (stopped)
+    {
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
+    }
 
     chassert(current_writer != nullptr);
 
@@ -323,21 +341,21 @@ void MergeTreeDeduplicationLog::shutdown()
     stopped = true;
     if (current_writer)
     {
-        current_writer->finalize();
+        try
+        {
+            current_writer->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         current_writer.reset();
     }
 }
 
 MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
 {
-    try
-    {
-        shutdown();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    shutdown();
 }
 
 }

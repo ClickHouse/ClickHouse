@@ -2,10 +2,8 @@
 
 #if defined(OS_LINUX)
 
-#include <mutex>
 #include <atomic>
 #include <Common/Fiber.h>
-#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
 #include <Common/AsyncTaskExecutor.h>
@@ -54,11 +52,11 @@ private:
 
     struct Task : public AsyncTask
     {
-        Task(RemoteQueryExecutorReadContext & read_context_) : read_context(read_context_) {}
+        explicit Task(RemoteQueryExecutorReadContext & read_context_) : read_context(read_context_) {}
 
         RemoteQueryExecutorReadContext & read_context;
 
-        void run(AsyncCallback async_callback, ResumeCallback suspend_callback) override;
+        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
     std::atomic_bool is_in_progress = false;

@@ -4,6 +4,8 @@
 
 namespace ProfileEvents
 {
+    extern const Event DistributedConnectionTries;
+    extern const Event DistributedConnectionUsable;
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
 }
@@ -20,21 +22,20 @@ namespace ErrorCodes
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
-    IConnectionPool * pool_,
+    ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
-    const Settings * settings_,
-    Poco::Logger * log_,
+    const Settings & settings_,
+    LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : pool(pool_), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_), is_finished(false)
+    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
 {
 }
 
 void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::string & fail_message)
 {
-    is_finished = false;
-    SCOPE_EXIT(is_finished = true);
     try
     {
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
         result.entry = pool->get(*timeouts, settings, /* force_connected = */ false);
         AsyncCallbackSetter async_setter(&*result.entry, std::move(async_callback));
 
@@ -45,6 +46,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             result.entry->forceConnected(*timeouts);
+            ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;
             return;
@@ -65,23 +67,29 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             return;
         }
 
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
         result.is_usable = true;
 
-        UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
+        if (table_status_it->second.is_readonly)
+        {
+            result.is_readonly = true;
+            LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
+        }
+
+        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
         if (!max_allowed_delay)
         {
             result.is_up_to_date = true;
             return;
         }
 
-        UInt32 delay = table_status_it->second.absolute_delay;
-
+        const UInt32 delay = table_status_it->second.absolute_delay;
         if (delay < max_allowed_delay)
             result.is_up_to_date = true;
         else
         {
             result.is_up_to_date = false;
-            result.staleness = delay;
+            result.delay = delay;
 
             LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
@@ -106,17 +114,18 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 #if defined(OS_LINUX)
 
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
-    IConnectionPool * pool_,
+    ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
-    const Settings * settings_,
-    Poco::Logger * log_,
+    const Settings & settings_,
+    LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), connection_establisher(pool_, timeouts_, settings_, log_, table_to_check_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    , connection_establisher(std::move(pool_), timeouts_, settings_, log_, table_to_check_)
 {
     epoll.add(timeout_descriptor.getDescriptor());
 }
 
-void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, ResumeCallback)
+void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, SuspendCallback)
 {
     connection_establisher_async.reset();
     connection_establisher_async.connection_establisher.setAsyncCallback(async_callback);
@@ -165,7 +174,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
 
     epoll_event events[2];
     events[0].data.fd = events[1].data.fd = -1;
-    size_t ready_count = epoll.getManyReady(2, events, false);
+    size_t ready_count = epoll.getManyReady(2, events, 0);
     for (size_t i = 0; i != ready_count; ++i)
     {
         if (events[i].data.fd == socket_fd)
@@ -174,7 +183,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
             is_timeout_alarmed = true;
     }
 
-    if (is_timeout_alarmed && !is_socket_ready)
+    if (is_timeout_alarmed && !is_socket_ready && !haveMoreAddressesToConnect())
     {
         /// In not async case timeout exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
@@ -218,6 +227,11 @@ void ConnectionEstablisherAsync::resetResult()
         result.entry->disconnect();
         result.reset();
     }
+}
+
+bool ConnectionEstablisherAsync::haveMoreAddressesToConnect()
+{
+    return !result.entry.isNull() && result.entry->haveMoreAddressesToConnect();
 }
 
 #endif

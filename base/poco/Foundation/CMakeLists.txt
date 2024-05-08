@@ -55,7 +55,6 @@ set (SRCS
     src/DigestStream.cpp
     src/DirectoryIterator.cpp
     src/DirectoryIteratorStrategy.cpp
-    src/DirectoryWatcher.cpp
     src/Environment.cpp
     src/Error.cpp
     src/ErrorHandler.cpp
@@ -87,7 +86,6 @@ set (SRCS
     src/LoggingRegistry.cpp
     src/LogStream.cpp
     src/MD5Engine.cpp
-    src/MemoryPool.cpp
     src/MemoryStream.cpp
     src/Message.cpp
     src/Mutex.cpp

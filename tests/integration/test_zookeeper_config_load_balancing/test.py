@@ -312,6 +312,96 @@ def test_nearest_hostname(started_cluster):
         change_balancing("nearest_hostname", "random", reload=False)
 
 
+def test_hostname_levenshtein_distance(started_cluster):
+    try:
+        change_balancing("random", "hostname_levenshtein_distance")
+        print(
+            str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo1_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node2.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo2_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+
+        print(
+            str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep ':2181' | grep ESTABLISHED",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            )
+        )
+        assert (
+            "1"
+            == str(
+                node3.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "lsof -a -i4 -i6 -itcp -w | grep 'testzookeeperconfigloadbalancing_zoo3_1.*testzookeeperconfigloadbalancing_default:2181' | grep ESTABLISHED | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
+            ).strip()
+        )
+    finally:
+        change_balancing("hostname_levenshtein_distance", "random", reload=False)
+
+
 def test_round_robin(started_cluster):
     pm = PartitionManager()
     try:

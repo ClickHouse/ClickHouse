@@ -1,7 +1,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/URL/FunctionsURL.h>
+#include <Functions/StringHelpers.h>
 
 
 namespace DB
@@ -74,7 +74,7 @@ struct ExtractNetloc
         Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
-            switch (*pos)
+            switch (*pos) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case '/':
                     if (has_identification)
@@ -154,4 +154,3 @@ REGISTER_FUNCTION(Netloc)
 }
 
 }
-

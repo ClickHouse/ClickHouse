@@ -22,19 +22,22 @@ tuple(x, y, …)
 
 A function that allows getting a column from a tuple.
 
-If the second argument is a number `n`, it is the column index, starting from 1. If the second argument is a string `s`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or element for such name does not exist, the default value returned instead of throw exception. The second and third arguments if provided are always must be constant. There is no cost to execute the function.
+If the second argument is a number `index`, it is the column index, starting from 1. If the second argument is a string `name`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or no element exist for the name, the default value returned instead of throwing an exception. The second and third arguments, if provided, must be constants. There is no cost to execute the function.
 
-The function implements the operator `x.n` and `x.s`.
+The function implements operators `x.index` and `x.name`.
 
 **Syntax**
 
 ``` sql
-tupleElement(tuple, n/s [, default_value])
+tupleElement(tuple, index, [, default_value])
+tupleElement(tuple, name, [, default_value])
 ```
 
 ## untuple
 
 Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
+
+The names of the result columns are implementation-specific and subject to change. Do not assume specific column names after `untuple`.
 
 **Syntax**
 
@@ -85,8 +88,6 @@ Result:
 │    77 │ kl    │
 └───────┴───────┘
 ```
-
-Note: the names are implementation specific and are subject to change. You should not assume specific names of the columns after application of the `untuple`.
 
 Example of using an `EXCEPT` expression:
 
@@ -170,7 +171,8 @@ Result:
 Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
 
 ``` sql
-SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
+SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) AS HammingDistance
+FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
 ```
 
 Result:
@@ -519,45 +521,337 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## dotProduct
+## tupleConcat
 
-Calculates the scalar product of two tuples of the same size.
+Combines tuples passed as arguments.
+
+``` sql
+tupleConcat(tuples)
+```
+
+**Arguments**
+
+- `tuples` – Arbitrary number of arguments of [Tuple](../../sql-reference/data-types/tuple.md) type.
+
+**Example**
+
+``` sql
+SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
+```
+
+``` text
+┌─res──────────────────┐
+│ (1,2,3,4,true,false) │
+└──────────────────────┘
+```
+
+## tupleIntDiv
+
+Does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
 
 **Syntax**
 
 ```sql
-dotProduct(tuple1, tuple2)
+tupleIntDiv(tuple_num, tuple_div)
 ```
 
-Alias: `scalarProduct`.
+**Parameters**
 
-**Arguments**
-
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
 
 **Returned value**
 
-- Scalar product.
+- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
 
-Type: [Int/UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+**Implementation details**
+
+- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+- An error will be thrown for division by 0. 
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDiv((15, 10, 5), (5, 5, 5));
+```
+
+Result:
+
+``` text
+┌─tupleIntDiv((15, 10, 5), (5, 5, 5))─┐
+│ (3,2,1)                             │
+└─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5));
+```
+
+Result:
+
+``` text
+┌─tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))─┐
+│ (2,1,0)                                   │
+└───────────────────────────────────────────┘
+```
+
+## tupleIntDivOrZero
+
+Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
+
+**Syntax**
+
+```sql
+tupleIntDivOrZero(tuple_num, tuple_div)
+```
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+- Returns 0 for quotients where the divisor is 0.
+
+**Implementation details**
+
+- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDiv](#tupleintdiv).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0));
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZero((5, 10, 15), (0, 0, 0))─┐
+│ (0,0,0)                                   │
+└───────────────────────────────────────────┘
+```
+
+## tupleIntDivByNumber
+
+Does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
+
+**Syntax**
+
+```sql
+tupleIntDivByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
+
+**Implementation details**
+
+- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+- An error will be thrown for division by 0. 
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivByNumber((15, 10, 5), 5);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivByNumber((15, 10, 5), 5)─┐
+│ (3,2,1)                             │
+└─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)─┐
+│ (2,1,0)                                     │
+└─────────────────────────────────────────────┘
+```
+
+## tupleIntDivOrZeroByNumber
+
+Like [tupleIntDivByNumber](#tupleintdivbynumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
+
+**Syntax**
+
+```sql
+tupleIntDivOrZeroByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
+- Returns 0 for quotients where the divisor is 0.
+
+**Implementation details**
+
+- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDivByNumber](#tupleintdivbynumber).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZeroByNumber((15, 10, 5), 5)─┐
+│ (3,2,1)                                   │
+└───────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZeroByNumber((15, 10, 5), 0)─┐
+│ (0,0,0)                                   │
+└───────────────────────────────────────────┘
+```
+
+## tupleModulo
+
+Returns a tuple of the moduli (remainders) of division operations of two tuples.
+
+**Syntax**
+
+```sql
+tupleModulo(tuple_num, tuple_mod)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of modulus values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- An error is thrown for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModulo((15, 10, 5), (5, 3, 2));
+```
+
+Result:
+
+``` text
+┌─tupleModulo((15, 10, 5), (5, 3, 2))─┐
+│ (0,1,1)                             │
+└─────────────────────────────────────┘
+```
+
+## tupleModuloByNumber
+
+Returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor.
+
+**Syntax**
+
+```sql
+tupleModuloByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- An error is thrown for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModuloByNumber((15, 10, 5), 2);
+```
+
+Result:
+
+``` text
+┌─tupleModuloByNumber((15, 10, 5), 2)─┐
+│ (1,0,1)                             │
+└─────────────────────────────────────┘
+```
+
+## flattenTuple
+
+Returns a flattened `output` tuple from a nested named `input` tuple. Elements of the `output` tuple are the paths from the original `input` tuple. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
+
+**Syntax**
+
+```sql
+flattenTuple(input)
+```
+
+**Parameters**
+
+- `input`: Nested named tuple to flatten. [Tuple](../data-types/tuple).
+
+**Returned value**
+
+- `output` tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
 
 **Example**
 
 Query:
 
-```sql
-SELECT dotProduct((1, 2), (2, 3));
+``` sql
+CREATE TABLE t_flatten_tuple(t Tuple(t1 Nested(a UInt32, s String), b UInt32, t2 Tuple(k String, v UInt32))) ENGINE = Memory;
+INSERT INTO t_flatten_tuple VALUES (([(1, 'a'), (2, 'b')], 3, ('c', 4)));
+SELECT flattenTuple(t) FROM t_flatten_tuple;
 ```
 
 Result:
 
-```text
-┌─dotProduct((1, 2), (2, 3))─┐
-│                          8 │
-└────────────────────────────┘
+``` text
+┌─flattenTuple(t)───────────┐
+│ ([1,2],['a','b'],3,'c',4) │
+└───────────────────────────┘
 ```
-
 
 ## Distance functions
 

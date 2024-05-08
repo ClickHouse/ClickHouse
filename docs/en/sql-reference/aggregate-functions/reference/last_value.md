@@ -3,15 +3,23 @@ slug: /en/sql-reference/aggregate-functions/reference/last_value
 sidebar_position: 8
 ---
 
-# first_value
+# last_value
 
 Selects the last encountered value, similar to `anyLast`, but could accept NULL.
-
+Mostly it should be used with [Window Functions](../../window-functions/index.md).
+Without Window Functions the result will be random if the source stream is not ordered.
 
 ## examples
 
 ```sql
-insert into test_data (a,b) values (1,null), (2,3), (4, 5), (6,null)
+CREATE TABLE test_data
+(
+    a Int64,
+    b Nullable(Int64)
+)
+ENGINE = Memory;
+
+INSERT INTO test_data (a, b) Values (1,null), (2,3), (4, 5), (6,null)
 ```
 
 ### example1
@@ -48,6 +56,26 @@ select last_value(b) respect nulls from test_data
 ┌─last_value_respect_nulls(b)─┐
 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────┘
+```
+
+### example4
+Stabilized result using the sub-query with `ORDER BY`.
+```sql
+SELECT
+    last_value_respect_nulls(b),
+    last_value(b)
+FROM
+(
+    SELECT *
+    FROM test_data
+    ORDER BY a ASC
+)
+```
+
+```text
+┌─last_value_respect_nulls(b)─┬─last_value(b)─┐
+│                        ᴺᵁᴸᴸ │             5 │
+└─────────────────────────────┴───────────────┘
 ```
 
 

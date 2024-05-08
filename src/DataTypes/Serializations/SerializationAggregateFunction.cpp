@@ -1,19 +1,15 @@
-#include <DataTypes/Serializations/SerializationAggregateFunction.h>
-
-#include <IO/WriteHelpers.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
+#include <DataTypes/Serializations/SerializationAggregateFunction.h>
+#include <Formats/FormatSettings.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-
-#include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -188,10 +184,10 @@ void SerializationAggregateFunction::serializeTextJSON(const IColumn & column, s
 }
 
 
-void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readJSONString(s, istr);
+    readJSONString(s, istr, settings.json);
     deserializeFromString(function, column, s, version);
 }
 

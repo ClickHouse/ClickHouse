@@ -95,15 +95,24 @@ private:
     InitializerFunc initializer_func;
 };
 
-ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(const Names & columns_to_read_,
-                                                     const StorageSnapshotPtr & storage_snapshot_,
-                                                     const size_t num_streams_,
-                                                     const bool delay_read_for_global_sub_queries_) :
-    SourceStepWithFilter(DataStream{.header=storage_snapshot_->getSampleBlockForColumns(columns_to_read_)}),
-    columns_to_read(columns_to_read_),
-    storage_snapshot(storage_snapshot_),
-    num_streams(num_streams_),
-    delay_read_for_global_sub_queries(delay_read_for_global_sub_queries_)
+ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
+    const Names & columns_to_read_,
+    const SelectQueryInfo & query_info_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    const ContextPtr & context_,
+    StoragePtr storage_,
+    const size_t num_streams_,
+    const bool delay_read_for_global_sub_queries_)
+    : SourceStepWithFilter(
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)},
+        columns_to_read_,
+        query_info_,
+        storage_snapshot_,
+        context_)
+    , columns_to_read(columns_to_read_)
+    , storage(std::move(storage_))
+    , num_streams(num_streams_)
+    , delay_read_for_global_sub_queries(delay_read_for_global_sub_queries_)
 {
 }
 
@@ -142,9 +151,9 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
+            [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = current_data;
+                data_to_initialize = assert_cast<const StorageMemory &>(*my_storage).data.get();
             }));
     }
 

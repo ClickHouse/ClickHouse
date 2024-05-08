@@ -11,35 +11,37 @@ namespace DB
   * Example of usage:
   * std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::string> map;
   */
-template <typename QueryTreeNodePtrType>
+template <typename QueryTreeNodePtrType, bool compare_aliases = true, bool compare_types = true>
 struct QueryTreeNodeWithHash
 {
     QueryTreeNodeWithHash(QueryTreeNodePtrType node_) /// NOLINT
         : node(std::move(node_))
-        , hash(node->getTreeHash())
+        , hash(node->getTreeHash({.compare_aliases = compare_aliases, .compare_types = compare_types}))
     {}
 
     QueryTreeNodePtrType node = nullptr;
-    std::pair<UInt64, UInt64> hash;
+    CityHash_v1_0_2::uint128 hash;
 };
 
-template <typename T>
-inline bool operator==(const QueryTreeNodeWithHash<T> & lhs, const QueryTreeNodeWithHash<T> & rhs)
+template <typename T, bool compare_aliases, bool compare_types>
+inline bool operator==(const QueryTreeNodeWithHash<T, compare_aliases, compare_types> & lhs, const QueryTreeNodeWithHash<T, compare_aliases, compare_types> & rhs)
 {
-    return lhs.hash == rhs.hash && lhs.node->isEqual(*rhs.node);
+    return lhs.hash == rhs.hash && lhs.node->isEqual(*rhs.node, {.compare_aliases = compare_aliases, .compare_types = compare_types});
 }
 
-template <typename T>
-inline bool operator!=(const QueryTreeNodeWithHash<T> & lhs, const QueryTreeNodeWithHash<T> & rhs)
+template <typename T, bool compare_aliases, bool compare_types>
+inline bool operator!=(const QueryTreeNodeWithHash<T, compare_aliases, compare_types> & lhs, const QueryTreeNodeWithHash<T, compare_aliases, compare_types> & rhs)
 {
     return !(lhs == rhs);
 }
 
 using QueryTreeNodePtrWithHash = QueryTreeNodeWithHash<QueryTreeNodePtr>;
+using QueryTreeNodePtrWithHashIgnoreTypes = QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ false, /*compare_types*/ false>;
 using QueryTreeNodeRawPtrWithHash = QueryTreeNodeWithHash<IQueryTreeNode *>;
 using QueryTreeNodeConstRawPtrWithHash = QueryTreeNodeWithHash<const IQueryTreeNode *>;
 
 using QueryTreeNodePtrWithHashSet = std::unordered_set<QueryTreeNodePtrWithHash>;
+using QueryTreeNodePtrWithHashIgnoreTypesSet = std::unordered_set<QueryTreeNodePtrWithHashIgnoreTypes>;
 using QueryTreeNodeConstRawPtrWithHashSet = std::unordered_set<QueryTreeNodeConstRawPtrWithHash>;
 
 template <typename Value>
@@ -50,11 +52,11 @@ using QueryTreeNodeConstRawPtrWithHashMap = std::unordered_map<QueryTreeNodeCons
 
 }
 
-template <typename T>
-struct std::hash<DB::QueryTreeNodeWithHash<T>>
+template <typename T, bool compare_aliases, bool compare_types>
+struct std::hash<DB::QueryTreeNodeWithHash<T, compare_aliases, compare_types>>
 {
-    size_t operator()(const DB::QueryTreeNodeWithHash<T> & node_with_hash) const
+    size_t operator()(const DB::QueryTreeNodeWithHash<T, compare_aliases, compare_types> & node_with_hash) const
     {
-        return node_with_hash.hash.first;
+        return node_with_hash.hash.low64;
     }
 };

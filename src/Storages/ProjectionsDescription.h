@@ -106,7 +106,7 @@ struct ProjectionDescription
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
-struct ProjectionsDescription : public IHints<1, ProjectionsDescription>
+struct ProjectionsDescription : public IHints<>
 {
     ProjectionsDescription() = default;
     ProjectionsDescription(ProjectionsDescription && other) = default;

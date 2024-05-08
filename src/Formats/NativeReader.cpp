@@ -120,7 +120,7 @@ Block NativeReader::read()
     if (istr.eof())
     {
         if (use_index)
-            throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Input doesn't contain all data for index.");
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Input doesn't contain all data for index.");
 
         return res;
     }
@@ -148,6 +148,9 @@ Block NativeReader::read()
         columns = index_block_it->num_columns;
         rows = index_block_it->num_rows;
     }
+
+    if (columns == 0 && !header && rows != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
 
     for (size_t i = 0; i < columns; ++i)
     {
@@ -289,6 +292,9 @@ Block NativeReader::read()
 
         res.swap(tmp_res);
     }
+
+    if (res.rows() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after desirialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
 }

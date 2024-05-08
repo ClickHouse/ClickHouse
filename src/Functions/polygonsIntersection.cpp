@@ -26,6 +26,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+
 template <typename Point>
 class FunctionPolygonsIntersection : public IFunction
 {
@@ -107,13 +110,13 @@ public:
     }
 };
 
-
 template <>
 const char * FunctionPolygonsIntersection<CartesianPoint>::name = "polygonsIntersectionCartesian";
 
 template <>
 const char * FunctionPolygonsIntersection<SphericalPoint>::name = "polygonsIntersectionSpherical";
 
+}
 
 REGISTER_FUNCTION(PolygonsIntersection)
 {

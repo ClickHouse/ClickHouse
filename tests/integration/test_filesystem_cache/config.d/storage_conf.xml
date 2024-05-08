@@ -1,0 +1,14 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
+        </disks>
+    </storage_configuration>
+    <filesystem_cache_log>
+            <database>system</database>
+            <table>filesystem_cache_log</table>
+    </filesystem_cache_log>
+</clickhouse>

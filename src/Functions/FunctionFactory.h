@@ -17,11 +17,12 @@ namespace DB
 {
 
 using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
+using FunctionSimpleCreator = std::function<FunctionPtr(ContextPtr)>;
 using FunctionFactoryData = std::pair<FunctionCreator, FunctionDocumentation>;
 
 /** Creates function by name.
-  * Function could use for initialization (take ownership of shared_ptr, for example)
-  *  some dictionaries from Context.
+  * The provided Context is guaranteed to outlive the created function. Functions may use it for
+  * things like settings, current database, permission checks, etc.
   */
 class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<FunctionFactoryData>
 {
@@ -32,15 +33,6 @@ public:
     void registerFunction(FunctionDocumentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         registerFunction<Function>(Function::name, std::move(doc), case_sensitiveness);
-    }
-
-    template <typename Function>
-    void registerFunction(const std::string & name, FunctionDocumentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
-    {
-        if constexpr (std::is_base_of_v<IFunction, Function>)
-            registerFunction(name, &adaptFunctionToOverloadResolver<Function>, std::move(doc), case_sensitiveness);
-        else
-            registerFunction(name, &Function::create, std::move(doc), case_sensitiveness);
     }
 
     /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
@@ -66,6 +58,12 @@ public:
         FunctionDocumentation doc = {},
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
+    void registerFunction(
+        const std::string & name,
+        FunctionSimpleCreator creator,
+        FunctionDocumentation doc = {},
+        CaseSensitiveness case_sensitiveness = CaseSensitive);
+
     FunctionDocumentation getDocumentation(const std::string & name) const;
 
 private:
@@ -74,17 +72,17 @@ private:
     Functions functions;
     Functions case_insensitive_functions;
 
-    template <typename Function>
-    static FunctionOverloadResolverPtr adaptFunctionToOverloadResolver(ContextPtr context)
-    {
-        return std::make_unique<FunctionToOverloadResolverAdaptor>(Function::create(context));
-    }
-
     const Functions & getMap() const override { return functions; }
 
     const Functions & getCaseInsensitiveMap() const override { return case_insensitive_functions; }
 
     String getFactoryName() const override { return "FunctionFactory"; }
+
+    template <typename Function>
+    void registerFunction(const std::string & name, FunctionDocumentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
+    {
+        registerFunction(name, &Function::create, std::move(doc), case_sensitiveness);
+    }
 };
 
 const String & getFunctionCanonicalNameIfAny(const String & name);

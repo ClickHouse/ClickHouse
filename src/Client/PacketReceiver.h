@@ -5,7 +5,6 @@
 #include <variant>
 
 #include <Client/IConnections.h>
-#include <Common/FiberStack.h>
 #include <Common/Fiber.h>
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
@@ -53,11 +52,11 @@ private:
 
     struct Task : public AsyncTask
     {
-        Task(PacketReceiver & receiver_) : receiver(receiver_) {}
+        explicit Task(PacketReceiver & receiver_) : receiver(receiver_) {}
 
         PacketReceiver & receiver;
 
-        void run(AsyncCallback async_callback, ResumeCallback suspend_callback) override;
+        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
     /// When epoll file descriptor is ready, check if it's an expired timeout.

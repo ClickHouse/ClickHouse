@@ -155,7 +155,7 @@ namespace
 
 
 AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_)
-    : access_flags(access_flags_), database(database_), any_database(false)
+    : access_flags(access_flags_), database(database_), parameter(database_), any_database(false), any_parameter(false)
 {
 }
 

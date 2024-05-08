@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
+
 struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
@@ -48,11 +53,30 @@ class IJoin
 public:
     virtual ~IJoin() = default;
 
+    virtual std::string getName() const = 0;
+
     virtual const TableJoin & getTableJoin() const = 0;
+
+    /// Returns true if clone is supported
+    virtual bool isCloneSupported() const
+    {
+        return false;
+    }
+
+    /// Clone underlyhing JOIN algorithm using table join, left sample block, right sample block
+    virtual std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        const Block & left_sample_block_,
+        const Block & right_sample_block_) const
+    {
+        (void)(table_join_);
+        (void)(left_sample_block_);
+        (void)(right_sample_block_);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
+    }
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
-    virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0; /// NOLINT
+    virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
@@ -62,7 +86,7 @@ public:
 
     virtual void checkTypesOfKeys(const Block & block) const = 0;
 
-    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
+    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
@@ -79,7 +103,7 @@ public:
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
 
-    /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
+    /// StorageJoin/Dictionary is already filled. No need to call addBlockToJoin.
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
     virtual JoinPipelineType pipelineType() const { return JoinPipelineType::FillRightFirst; }

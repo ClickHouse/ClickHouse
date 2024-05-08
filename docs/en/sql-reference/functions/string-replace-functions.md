@@ -6,7 +6,7 @@ sidebar_label: Replacing in Strings
 
 # Functions for Replacing in Strings
 
-[General strings functions](string-functions.md) and [functions for searchin in strings](string-search-functions.md) are described separately.
+[General strings functions](string-functions.md) and [functions for searching in strings](string-search-functions.md) are described separately.
 
 ## replaceOne
 
@@ -132,6 +132,40 @@ For more information, see [RE2](https://github.com/google/re2/blob/master/re2/re
 regexpQuoteMeta(s)
 ```
 
+## format
+
+Format the `pattern` string with the values (strings, integers, etc.) listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
+
+**Syntax**
+
+```sql
+format(pattern, s0, s1, …)
+```
+
+**Example**
+
+``` sql
+SELECT format('{1} {0} {1}', 'World', 'Hello')
+```
+
+```result
+┌─format('{1} {0} {1}', 'World', 'Hello')─┐
+│ Hello World Hello                       │
+└─────────────────────────────────────────┘
+```
+
+With implicit numbers:
+
+``` sql
+SELECT format('{} {}', 'Hello', 'World')
+```
+
+```result
+┌─format('{} {}', 'Hello', 'World')─┐
+│ Hello World                       │
+└───────────────────────────────────┘
+```
+
 ## translate
 
 Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings. `from` and `to` must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
@@ -159,3 +193,33 @@ Result:
 ## translateUTF8
 
 Like [translate](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
+
+**Syntax**
+
+``` sql
+translateUTF8(s, from, to)
+```
+
+**Parameters**
+
+- `s`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `from`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `to`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
+```
+
+``` response
+┌─res──────────────┐
+│ Munchener Strase │
+└──────────────────┘
+```

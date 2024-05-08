@@ -2,6 +2,10 @@
 
 SET allow_experimental_analyzer = 1;
 
+-- Too slow
+SET max_bytes_before_external_sort = 0;
+SET max_bytes_before_external_group_by = 0;
+
 -- { echo }
 
 -- just something basic
@@ -474,10 +478,10 @@ select count() over () from numbers(4) where number < 2;
 
 -- floating point RANGE frame
 select
-    count(*) over (order by toFloat32(number) range 5. preceding),
-    count(*) over (order by toFloat64(number) range 5. preceding),
-    count(*) over (order by toFloat32(number) range between current row and 5. following),
-    count(*) over (order by toFloat64(number) range between current row and 5. following)
+    count(*) over (order by toFloat32(number) range 5 preceding),
+    count(*) over (order by toFloat64(number) range 5 preceding),
+    count(*) over (order by toFloat32(number) range between current row and 5 following),
+    count(*) over (order by toFloat64(number) range between current row and 5 following)
 from numbers(7)
 ;
 

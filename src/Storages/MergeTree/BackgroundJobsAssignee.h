@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+
 #include <pcg_random.hpp>
 
 
@@ -66,9 +68,9 @@ public:
     void finish();
 
     bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
-    void scheduleFetchTask(ExecutableTaskPtr fetch_task);
-    void scheduleMoveTask(ExecutableTaskPtr move_task);
-    void scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
+    bool scheduleFetchTask(ExecutableTaskPtr fetch_task);
+    bool scheduleMoveTask(ExecutableTaskPtr move_task);
+    bool scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
 
     /// Just call finish
     ~BackgroundJobsAssignee();

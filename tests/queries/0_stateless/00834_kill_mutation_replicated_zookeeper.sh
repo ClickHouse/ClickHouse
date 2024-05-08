@@ -36,7 +36,7 @@ ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA kill_mutation_r1"
 ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA kill_mutation_r2"
 
 # Should be empty, but in case of problems we will see some diagnostics
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.replication_queue WHERE table like 'kill_mutation_r%'"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.replication_queue WHERE database = '$CLICKHOUSE_DATABASE' AND table like 'kill_mutation_r%'"
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE kill_mutation_r1 DELETE WHERE toUInt32(s) = 1"
 
@@ -56,6 +56,14 @@ done
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation_r1' AND mutation_id = '0000000001' AND is_done = 0"
 
 ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation_r1' AND mutation_id = '0000000001'"
+
+# Wait for the 1st mutation to be actually killed and the 2nd to finish
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
+while [ "$query_result" != "0" ]
+do
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
+    sleep 0.5
+done
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA kill_mutation_r1"
 ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA kill_mutation_r2"

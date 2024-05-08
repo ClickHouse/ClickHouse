@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-merge-tree-settings
+-- For example, it is 4 times slower with --merge_max_block_size=5967 --index_granularity=55 --min_bytes_for_wide_part=847510133
 
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_map;

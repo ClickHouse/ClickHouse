@@ -7,6 +7,7 @@ Contains information about all successful and failed login and logout events.
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
     - `LoginFailure` — Login error.
     - `LoginSuccess` — Successful login.
@@ -28,7 +29,7 @@ Columns:
 - `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of profiles set for all roles and/or users.
 - `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of roles to which the profile is applied.
 - `settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
-- `client_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — The IP address that was used to log in/out.
+- `client_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — The IP address that was used to log in/out.
 - `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to log in/out.
 - `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — The interface from which the login was initiated. Possible values:
     - `TCP`
@@ -57,6 +58,7 @@ Result:
 ``` text
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 type:                    LoginSuccess
 auth_id:                 45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
 session_id:

@@ -29,4 +29,6 @@
             </cached_web>
         </policies>
     </storage_configuration>
+
+    <query_log></query_log>
 </clickhouse>

@@ -507,8 +507,8 @@ public:
 
                 // use executeOnUInt instead of using executeOneString
                 // because the latter one outputs the string in the memory order
-                Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[0], end, false, false);
-                Impl::executeOneUIntOrInt(uuid[i].toUnderType().items[1], end, false, true);
+                Impl::executeOneUIntOrInt(UUIDHelpers::getHighBytes(uuid[i]), end, false, false);
+                Impl::executeOneUIntOrInt(UUIDHelpers::getLowBytes(uuid[i]), end, false, true);
 
                 pos += end - begin;
                 out_offsets[i] = pos;

@@ -1,11 +1,13 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
 SET prefer_localhost_replica = 1;
 
 DROP DATABASE IF EXISTS test_01155_ordinary;
 DROP DATABASE IF EXISTS test_01155_atomic;
 
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
 CREATE DATABASE test_01155_ordinary ENGINE=Ordinary;
 CREATE DATABASE test_01155_atomic ENGINE=Atomic;
 
@@ -70,7 +72,10 @@ RENAME DATABASE test_01155_ordinary TO test_01155_atomic;
 SET check_table_dependencies=1;
 
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
+SET send_logs_level='fatal';
 CREATE DATABASE test_01155_ordinary ENGINE=Ordinary;
+SET send_logs_level='warning';
 SHOW CREATE DATABASE test_01155_atomic;
 
 RENAME TABLE test_01155_atomic.mv1 TO test_01155_ordinary.mv1;

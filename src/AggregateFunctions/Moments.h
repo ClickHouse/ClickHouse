@@ -459,6 +459,10 @@ struct AnalysisOfVarianceMoments
 
     void add(T value, size_t group)
     {
+        if (group == std::numeric_limits<size_t>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups for analysis of variance (should be no more than {}, got {})",
+                MAX_GROUPS_NUMBER, group);
+
         resizeIfNeeded(group + 1);
         xs1[group] += value;
         xs2[group] += value * value;

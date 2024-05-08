@@ -119,7 +119,7 @@ public:
 
             if (!lhs_array->hasEqualOffsets(*rhs_array))
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                    "The argument 1 and argument {} of function {} have different array offsets",
+                    "The argument 2 and argument {} of function {} have different array offsets",
                     i + 1,
                     getName());
 

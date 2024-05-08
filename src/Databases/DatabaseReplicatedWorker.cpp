@@ -74,11 +74,10 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Create "active" node (remove previous one if necessary)
     String active_path = fs::path(database->replica_path) / "active";
     String active_id = toString(ServerUUID::get());
-    zookeeper->handleEphemeralNodeExistence(active_path, active_id);
-    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+    zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+    if (active_node_holder)
+        active_node_holder->setAlreadyRemoved();
     active_node_holder.reset();
-    active_node_holder_zookeeper = zookeeper;
-    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
@@ -96,12 +95,16 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     }
     else
     {
+        LOG_WARNING(log, "Did not find digest in ZooKeeper, creating it");
         /// Database was created by old ClickHouse versions, let's create the node
         std::lock_guard lock{database->metadata_mutex};
         digest = local_digest = database->tables_metadata_digest;
         digest_str = toString(digest);
         zookeeper->create(database->replica_path + "/digest", digest_str, zkutil::CreateMode::Persistent);
     }
+
+    LOG_TRACE(log, "Trying to initialize replication: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
+              our_log_ptr, max_log_ptr, local_digest, digest);
 
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
@@ -123,9 +126,15 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         initializeLogPointer(log_entry_name);
     }
 
-    std::lock_guard lock{database->metadata_mutex};
-    if (!database->checkDigestValid(context))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
+    {
+        std::lock_guard lock{database->metadata_mutex};
+        if (!database->checkDigestValid(context, false))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
+    }
+
+    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+    active_node_holder_zookeeper = zookeeper;
+    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
@@ -157,7 +166,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
         LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
         {
-            return zookeeper->expired() || current_task == max_log || stop_flag;
+            return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
 
         if (!processed)
@@ -204,7 +213,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
             zkutil::KeeperMultiException::check(code, ops, res);
     }
 
-    if (iters == 0)
+    if (counter_path.empty())
         throw Exception(ErrorCodes::UNFINISHED,
                         "Cannot enqueue query, because some replica are trying to enqueue another query. "
                         "It may happen on high queries rate or, in rare cases, after connection loss. Client should retry.");
@@ -352,7 +361,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
                 /// We use tryRemove(...) because multiple hosts (including initiator) may try to do it concurrently.
                 auto code = zookeeper->tryRemove(try_node_path);
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw Coordination::Exception(code, try_node_path);
+                    throw Coordination::Exception::fromPath(code, try_node_path);
 
                 if (!zookeeper->exists(fs::path(entry_path) / "committed"))
                 {

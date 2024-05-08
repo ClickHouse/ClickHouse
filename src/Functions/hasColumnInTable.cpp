@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/getStructureOfRemoteTable.h>
 
 
@@ -137,7 +138,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             treat_local_as_remote,
             treat_local_port_as_remote,
             /* secure= */ false,
-            /* priority= */ 1,
+            /* priority= */ Priority{1},
             /* cluster_name= */ "",
             /* password= */ ""
         };

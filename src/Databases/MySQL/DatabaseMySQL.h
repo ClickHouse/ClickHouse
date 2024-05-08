@@ -58,7 +58,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 
@@ -76,7 +76,7 @@ public:
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
 
-    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 

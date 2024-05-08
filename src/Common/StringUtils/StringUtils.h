@@ -138,6 +138,12 @@ inline bool isPrintableASCII(char c)
     return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
 }
 
+inline bool isCSIFinalByte(char c)
+{
+    uint8_t uc = c;
+    return uc >= 0x40 && uc <= 0x7E; /// ASCII @A–Z[\]^_`a–z{|}~
+}
+
 inline bool isPunctuationASCII(char c)
 {
     uint8_t uc = c;
@@ -317,4 +323,9 @@ inline void trim(std::string & str, char c = ' ')
 {
     trimRight(str, c);
     trimLeft(str, c);
+}
+
+constexpr bool containsGlobs(const std::string & str)
+{
+    return str.find_first_of("*?{") != std::string::npos;
 }

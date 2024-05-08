@@ -21,6 +21,12 @@ In most cases it is recommended to use an appropriate tool or library instead of
 - [ODBC driver](../interfaces/odbc.md)
 - [C++ client library](../interfaces/cpp.md)
 
+ClickHouse server provides embedded visual interfaces for power users:
+
+- Play UI: open `/play` in the browser;
+- Advanced Dashboard: open `/dashboard` in the browser;
+- Binary symbols viewer for ClickHouse engineers: open `/binary` in the browser;
+
 There are also a wide range of third-party libraries for working with ClickHouse:
 
 - [Client libraries](../interfaces/third-party/client-libraries.md)

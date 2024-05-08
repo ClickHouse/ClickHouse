@@ -43,6 +43,16 @@ SELECT JSON_QUERY( '{hello:{"world":"!"}}}', '$.hello'); -- invalid json => defa
 SELECT JSON_QUERY('', '$.hello');
 SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_QUERY('{"1key":1}', '$.1key');
+SELECT JSON_QUERY('{"123":1}', '$.123');
+SELECT JSON_QUERY('{"123":{"123":1}}', '$.123.123');
+SELECT JSON_QUERY('{"123":{"abc":1}}', '$.123.abc');
+SELECT JSON_QUERY('{"abc":{"123":1}}', '$.abc.123');
+SELECT JSON_QUERY('{"123abc":{"123":1}}', '$.123abc.123');
+SELECT JSON_QUERY('{"abc123":{"123":1}}', '$.abc123.123');
+SELECT JSON_QUERY('{"123":1}', '$[123]');
+SELECT JSON_QUERY('{"123":["1"]}', '$.123[0]');
+SELECT JSON_QUERY('{"123abc":["1"]}', '$.123abc[0]');
+SELECT JSON_QUERY('{"123abc":[{"123":"1"}]}', '$.123abc[0].123');
 SELECT JSON_QUERY('{"hello":1}', '$[hello]');
 SELECT JSON_QUERY('{"hello":1}', '$["hello"]');
 SELECT JSON_QUERY('{"hello":1}', '$[\'hello\']');

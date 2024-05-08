@@ -33,7 +33,7 @@ cd /workspace
 
 for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then break ; else sleep 1; fi ; done
 
-cd /sqlancer/sqlancer-master
+cd /sqlancer/sqlancer-main
 
 TIMEOUT=300
 NUM_QUERIES=1000

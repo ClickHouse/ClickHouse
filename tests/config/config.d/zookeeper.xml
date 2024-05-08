@@ -1,10 +1,20 @@
 <clickhouse>
     <zookeeper>
-        <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
+        <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
         <zookeeper_load_balancing>random</zookeeper_load_balancing>
+        <use_compression>1</use_compression>
         <node index="1">
-            <host>localhost</host>
+            <host>127.0.0.1</host>
             <port>9181</port>
         </node>
     </zookeeper>
+    <auxiliary_zookeepers>
+        <zookeeper2>
+            <node index="1">
+                <host>localhost</host>
+                <port>9181</port>
+            </node>
+            <root>/test/chroot/auxiliary_zookeeper2</root>
+        </zookeeper2>
+    </auxiliary_zookeepers>
 </clickhouse>

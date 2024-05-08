@@ -1,7 +1,7 @@
-from time import sleep
 import pytest
 import re
 import os.path
+import random, string
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
@@ -9,7 +9,8 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 main_configs = [
-    "configs/remote_servers.xml",
+    "configs/cluster.xml",
+    "configs/cluster3.xml",
     "configs/replicated_access_storage.xml",
     "configs/replicated_user_defined_sql_objects.xml",
     "configs/backups_disk.xml",
@@ -40,7 +41,6 @@ node2 = cluster.add_instance(
     stay_alive=True,  # Necessary for the "test_stop_other_host_while_backup" test
 )
 
-
 node3 = cluster.add_instance(
     "node3",
     main_configs=main_configs,
@@ -68,6 +68,7 @@ def drop_after_test():
         node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP DATABASE IF EXISTS mydb2 ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
 
 
@@ -163,7 +164,14 @@ def test_replicated_database():
     node2.query("INSERT INTO mydb.tbl VALUES (2, 'count')")
     node1.query("INSERT INTO mydb.tbl VALUES (3, 'your')")
     node2.query("INSERT INTO mydb.tbl VALUES (4, 'chickens')")
+    node1.query("OPTIMIZE TABLE mydb.tbl ON CLUSTER 'cluster' FINAL")
+
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+
+    # check data in sync
+    expect = TSV([[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]])
+    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
+    assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
 
     # Make backup.
     backup_name = new_backup_name()
@@ -178,13 +186,62 @@ def test_replicated_database():
     node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
-    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
-        [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]
+    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
+    assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
+
+
+def test_replicated_database_compare_parts():
+    """
+    stop merges and fetches then write data to two nodes and
+    compare that parts are restored from single node (second) after backup
+    replica is selected by settings replica_num=2, replica_num_in_backup=2
+    """
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
 
-    assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
-        [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]
+    node1.query(
+        "CREATE TABLE mydb.tbl(x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
+
+    node2.query("SYSTEM SYNC DATABASE REPLICA mydb")
+
+    node1.query("SYSTEM STOP MERGES mydb.tbl")
+    node2.query("SYSTEM STOP MERGES mydb.tbl")
+
+    node1.query("SYSTEM STOP FETCHES mydb.tbl")
+    node2.query("SYSTEM STOP FETCHES mydb.tbl")
+
+    node1.query("INSERT INTO mydb.tbl VALUES (1, 'a')")
+    node1.query("INSERT INTO mydb.tbl VALUES (2, 'b')")
+
+    node2.query("INSERT INTO mydb.tbl VALUES (3, 'x')")
+    node2.query("INSERT INTO mydb.tbl VALUES (4, 'y')")
+
+    p2 = node2.query("SELECT * FROM mydb.tbl ORDER BY x")
+
+    # Make backup.
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
+    )
+
+    # Drop table on both nodes.
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
+
+    # Restore from backup on node2.
+    node1.query(
+        f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
+    )
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+
+    # compare parts
+    p1_ = node1.query("SELECT _part, * FROM mydb.tbl ORDER BY x")
+    p2_ = node2.query("SELECT _part, * FROM mydb.tbl ORDER BY x")
+    assert p1_ == p2_
+
+    # compare data
+    assert p2 == node2.query("SELECT * FROM mydb.tbl ORDER BY x")
 
 
 def test_different_tables_on_nodes():
@@ -273,6 +330,37 @@ def test_table_with_parts_in_queue_considered_non_empty():
     assert expected_error in node1.query_and_get_error(
         f"RESTORE DATABASE mydb FROM {backup_name}"
     )
+
+
+def test_replicated_table_with_uuid_in_zkpath():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}','{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (1, 'AA')")
+    node2.query("INSERT INTO tbl VALUES (2, 'BB')")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    # The table `tbl2` is expected to have a different UUID so it's ok to have both `tbl` and `tbl2` at the same time.
+    node2.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
+
+    node1.query("INSERT INTO tbl2 VALUES (3, 'CC')")
+
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
+
+    for instance in [node1, node2]:
+        assert instance.query("SELECT * FROM tbl ORDER BY x") == TSV(
+            [[1, "AA"], [2, "BB"]]
+        )
+        assert instance.query("SELECT * FROM tbl2 ORDER BY x") == TSV(
+            [[1, "AA"], [2, "BB"], [3, "CC"]]
+        )
 
 
 def test_replicated_table_with_not_synced_insert():
@@ -395,7 +483,12 @@ def test_replicated_database_async():
     node1.query("INSERT INTO mydb.tbl VALUES (22)")
     node2.query("INSERT INTO mydb.tbl2 VALUES ('a')")
     node2.query("INSERT INTO mydb.tbl2 VALUES ('bb')")
+
+    node1.query("OPTIMIZE TABLE mydb.tbl ON CLUSTER 'cluster' FINAL")
+    node1.query("OPTIMIZE TABLE mydb.tbl2 ON CLUSTER 'cluster' FINAL")
+
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl2")
 
     backup_name = new_backup_name()
     [id, status] = node1.query(
@@ -425,9 +518,47 @@ def test_replicated_database_async():
     )
 
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl2")
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
+
+
+@pytest.mark.parametrize("special_macro", ["uuid", "database"])
+def test_replicated_database_with_special_macro_in_zk_path(special_macro):
+    zk_path = "/clickhouse/databases/{" + special_macro + "}"
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('"
+        + zk_path
+        + "','{shard}','{replica}')"
+    )
+
+    # ReplicatedMergeTree without arguments means ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+    node1.query("CREATE TABLE mydb.tbl(x Int64) ENGINE=ReplicatedMergeTree ORDER BY x")
+
+    node1.query("INSERT INTO mydb.tbl VALUES (-3)")
+    node1.query("INSERT INTO mydb.tbl VALUES (1)")
+    node1.query("INSERT INTO mydb.tbl VALUES (10)")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name}")
+
+    # RESTORE DATABASE with rename should work here because the new database will have another UUID and thus another zookeeper path.
+    node1.query(
+        f"RESTORE DATABASE mydb AS mydb2 ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    node1.query("INSERT INTO mydb.tbl VALUES (2)")
+
+    node1.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER 'cluster' mydb2")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb2.tbl")
+
+    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
+        [[-3], [1], [2], [10]]
+    )
+
+    assert node1.query("SELECT * FROM mydb2.tbl ORDER BY x") == TSV([[-3], [1], [10]])
+    assert node2.query("SELECT * FROM mydb2.tbl ORDER BY x") == TSV([[-3], [1], [10]])
 
 
 # By default `backup_restore_keeper_value_max_size` is 1 MB, but in this test we'll set it to 50 bytes just to check it works.
@@ -560,7 +691,7 @@ def test_required_privileges():
     node1.query("GRANT CLUSTER ON *.* TO u1")
 
     backup_name = new_backup_name()
-    expected_error = "necessary to have grant BACKUP ON default.tbl"
+    expected_error = "necessary to have the grant BACKUP ON default.tbl"
     assert expected_error in node1.query_and_get_error(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1"
     )
@@ -570,7 +701,7 @@ def test_required_privileges():
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl2"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl2"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
@@ -579,19 +710,21 @@ def test_required_privileges():
     node1.query(
         f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
+    node2.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
 
     assert node2.query("SELECT * FROM tbl2") == "100\n"
 
     node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
     node1.query("REVOKE ALL FROM u1")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
 
     node1.query("GRANT INSERT, CREATE TABLE ON tbl TO u1")
     node1.query(f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1")
+    node2.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     assert node2.query("SELECT * FROM tbl") == "100\n"
 
@@ -604,7 +737,7 @@ def test_system_users():
     node1.query("CREATE USER u2 SETTINGS allow_backup=false")
     node1.query("GRANT CLUSTER ON *.* TO u2")
 
-    expected_error = "necessary to have grant BACKUP ON system.users"
+    expected_error = "necessary to have the grant BACKUP ON system.users"
     assert expected_error in node1.query_and_get_error(
         f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user="u2"
     )
@@ -616,14 +749,16 @@ def test_system_users():
 
     node1.query("DROP USER u1")
 
-    expected_error = "necessary to have grant CREATE USER ON *.*"
+    expected_error = "necessary to have the grant CREATE USER ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
     )
 
     node1.query("GRANT CREATE USER ON *.* TO u2")
 
-    expected_error = "necessary to have grant SELECT ON default.tbl WITH GRANT OPTION"
+    expected_error = (
+        "necessary to have the grant SELECT ON default.tbl WITH GRANT OPTION"
+    )
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
     )
@@ -724,6 +859,58 @@ def test_projection():
         )
         == "2\n"
     )
+
+
+def test_file_deduplication():
+    # Random column name helps finding it in logs.
+    column_name = "".join(random.choice(string.ascii_letters) for x in range(10))
+
+    # Make four replicas in total: 2 on each host.
+    node1.query(
+        f"""
+        CREATE TABLE tbl ON CLUSTER 'cluster' (
+        {column_name} Int32
+        ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{{replica}}')
+        ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0
+        """
+    )
+
+    node1.query(
+        f"""
+        CREATE TABLE tbl2 ON CLUSTER 'cluster' (
+        {column_name} Int32
+        ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{{replica}}-2')
+        ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0
+        """
+    )
+
+    # Unique data.
+    node1.query(
+        f"INSERT INTO tbl VALUES (3556), (1177), (4004), (4264), (3729), (1438), (2158), (2684), (415), (1917)"
+    )
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl2")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl, TABLE tbl2 ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
+
+    # The bin file should be written to the backup once, and skipped three times (because there are four replicas in total).
+    bin_file_writing_log_line = (
+        f"Writing backup for file .*{column_name}.bin .* (disk default)"
+    )
+    bin_file_skip_log_line = f"Writing backup for file .*{column_name}.bin .* skipped"
+
+    num_bin_file_writings = int(node1.count_in_log(bin_file_writing_log_line)) + int(
+        node2.count_in_log(bin_file_writing_log_line)
+    )
+    num_bin_file_skips = int(node1.count_in_log(bin_file_skip_log_line)) + int(
+        node2.count_in_log(bin_file_skip_log_line)
+    )
+
+    assert num_bin_file_writings == 1
+    assert num_bin_file_skips == 3
 
 
 def test_replicated_table_with_not_synced_def():
@@ -999,15 +1186,18 @@ def test_stop_other_host_during_backup(kill):
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
 
     if kill:
-        assert status in ["BACKUP_CREATED", "BACKUP_FAILED"]
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_FAILED"]
     else:
-        assert status == "BACKUP_CREATED"
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_CANCELLED"]
+
+    assert status in expected_statuses
 
     node2.start_clickhouse()
 
     if status == "BACKUP_CREATED":
         node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        node1.query("SYSTEM SYNC REPLICA tbl")
         assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
     elif status == "BACKUP_FAILED":
         assert not os.path.exists(

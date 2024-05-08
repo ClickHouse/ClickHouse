@@ -55,7 +55,7 @@ namespace
     {
         IPAddress addr_v6 = toIPv6(address);
 
-        auto host_addresses = DNSResolver::instance().resolveHostAll(host);
+        auto host_addresses = DNSResolver::instance().resolveHostAllInOriginOrder(host);
 
         for (const auto & addr : host_addresses)
         {
@@ -514,7 +514,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Poco::Logger::get("AddressPatterns"),
+                getLogger("AddressPatterns"),
                 "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
                 client_address.toString(), e.displayText(), e.code());
             return false;
@@ -556,7 +556,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Poco::Logger::get("AddressPatterns"),
+                getLogger("AddressPatterns"),
                 "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
                 client_address.toString(), e.displayText(), e.code());
             return false;

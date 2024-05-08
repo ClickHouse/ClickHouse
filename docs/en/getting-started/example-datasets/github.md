@@ -23,7 +23,6 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
 
 # Table of Contents
 
-- [ClickHouse GitHub data](#clickhouse-github-data)
 - [Table of Contents](#table-of-contents)
 - [Generating the data](#generating-the-data)
 - [Downloading and inserting the data](#downloading-and-inserting-the-data)
@@ -806,7 +805,7 @@ FROM
 31 rows in set. Elapsed: 0.043 sec. Processed 7.54 million rows, 40.53 MB (176.71 million rows/s., 950.40 MB/s.)
 ```
 
-Maybe a little more near the end of the month, but overall we keep a good even distribution. Again this is unrealiable due to the filtering of the docs filter during data insertion.
+Maybe a little more near the end of the month, but overall we keep a good even distribution. Again this is unreliable due to the filtering of the docs filter during data insertion.
 
 ## Authors with the most diverse impact
 
@@ -940,7 +939,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.106 sec. Processed 798.15 thousand rows, 13.97 MB (7.51 million rows/s., 131.41 MB/s.)
 ```
 
-This makes sense because Alexey has been responsible for maintaining the Change log. But what if we use the basename of the file to identify his popular files - this allows for renames and should focus on code contributions.
+This makes sense because Alexey has been responsible for maintaining the Change log. But what if we use the base name of the file to identify his popular files - this allows for renames and should focus on code contributions.
 
 [play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBiYXNlLAogICAgY291bnQoKSBBUyBjCkZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCldIRVJFIChhdXRob3IgPSAnQWxleGV5IE1pbG92aWRvdicpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkKR1JPVVAgQlkgYmFzZW5hbWUocGF0aCkgQVMgYmFzZQpPUkRFUiBCWSBjIERFU0MKTElNSVQgMTA=)
 

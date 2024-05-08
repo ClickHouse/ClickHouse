@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -67,13 +68,15 @@ ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
 {}
 
-ThreadStatus::ThreadStatus()
-    : thread_id{getThreadId()}
+ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
+    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
 {
+    chassert(!current_thread);
+
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
-    log = &Poco::Logger::get("ThreadStatus");
+    log = getLogger("ThreadStatus");
 
     current_thread = this;
 
@@ -93,7 +96,7 @@ ThreadStatus::ThreadStatus()
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = alt_stack.getSize();
+        altstack_description.ss_size = ThreadStack::getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
@@ -121,8 +124,29 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
+void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
+{
+#if !defined(SANITIZER) && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD) && !defined(__APPLE__)
+    try
+    {
+        if (global_profiler_real_time_period > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
+
+        if (global_profiler_cpu_time_period > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
+    }
+    catch (...)
+    {
+        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
+    }
+#endif
+}
+
 ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
+    chassert(current_thread == this);
     return thread_group;
 }
 
@@ -187,6 +211,16 @@ void ThreadStatus::flushUntrackedMemory()
     untracked_memory = 0;
 }
 
+bool ThreadStatus::isQueryCanceled() const
+{
+    if (!thread_group)
+        return false;
+
+    if (local_data.query_is_canceled_predicate)
+        return local_data.query_is_canceled_predicate();
+    return false;
+}
+
 ThreadStatus::~ThreadStatus()
 {
     flushUntrackedMemory();
@@ -199,10 +233,14 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
+    chassert(!check_current_thread_on_destruction || current_thread == this);
+
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
+    else if (check_current_thread_on_destruction)
+        LOG_ERROR(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()

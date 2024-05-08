@@ -76,15 +76,15 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
         - [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 - AutoML
     - [MindsDB](https://mindsdb.com/)
-        - [MindsDB](https://github.com/mindsdb/mindsdb) - Predictive AI layer for ClickHouse database.
+        - [MindsDB](https://github.com/mindsdb/mindsdb) - Integrates with ClickHouse, making data from ClickHouse accessible to a diverse range of AI/ML models.
 
 ## Programming Language Ecosystems {#programming-language-ecosystems}
 
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)
         - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
-    - [pandas](https://pandas.pydata.org)
-        - [pandahouse](https://github.com/kszucs/pandahouse)
+    - [PyArrow/Pandas](https://pandas.pydata.org)
+        - [Ibis](https://github.com/ibis-project/ibis)
 - PHP
     - [Doctrine](https://www.doctrine-project.org/)
         - [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)

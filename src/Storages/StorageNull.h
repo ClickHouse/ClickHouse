@@ -46,7 +46,9 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
+    bool supportsSubcolumns() const override { return true; }
+
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
     {
         return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
     }

@@ -4,6 +4,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/Macros.h>
 #include <Common/MultiVersion.h>
+#include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -44,7 +45,7 @@ struct ClusterConnectionParameters
     bool treat_local_as_remote;
     bool treat_local_port_as_remote;
     bool secure = false;
-    Int64 priority = 1;
+    Priority priority{1};
     String cluster_name;
     String cluster_secret;
 };
@@ -131,7 +132,7 @@ public:
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
-        Int64 priority = 1;
+        Priority priority{1};
 
         Address() = default;
 
@@ -142,12 +143,6 @@ public:
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0);
-
-        Address(
-            const String & host_port_,
-            const ClusterConnectionParameters & params,
-            UInt32 shard_index_,
-            UInt32 replica_index_);
 
         Address(
             const DatabaseReplicaInfo & info,
@@ -222,7 +217,6 @@ public:
         UInt32 shard_num = 0;
         UInt32 weight = 1;
         Addresses local_addresses;
-        Addresses all_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
@@ -278,6 +272,8 @@ public:
     /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
     bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
+    const String & getName() const { return name; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -295,8 +291,14 @@ private:
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
 
-    void addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
-                  ShardInfoInsertPathForInternalReplication && insert_paths = {}, UInt32 weight = 1, bool internal_replication = false);
+    void addShard(
+        const Settings & settings,
+        Addresses addresses,
+        bool treat_local_as_remote,
+        UInt32 current_shard_num,
+        UInt32 weight = 1,
+        ShardInfoInsertPathForInternalReplication insert_paths = {},
+        bool internal_replication = false);
 
     /// Inter-server secret
     String secret;

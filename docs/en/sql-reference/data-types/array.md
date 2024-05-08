@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/array
-sidebar_position: 52
+sidebar_position: 32
 sidebar_label: Array(T)
 ---
 
-# Array(t)
+# Array(T)
 
 An array of `T`-type items, with the starting array index as 1. `T` can be any data type, including an array.
 

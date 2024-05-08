@@ -13,6 +13,12 @@ namespace DB
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_DECOMPRESS;
+    extern const int CORRUPTED_DATA;
+}
+
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
 */
@@ -59,7 +65,10 @@ public:
     CodecMode getDecompressMode() const{ return decompressMode; }
 
     /// if set mode to CodecMode::Asynchronous, must be followed with flushAsynchronousDecompressRequests
-    void setDecompressMode(CodecMode mode){ decompressMode = mode; }
+    void setDecompressMode(CodecMode mode) { decompressMode = mode; }
+
+    /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
+    void setExternalDataFlag() { decompression_error_code = ErrorCodes::CANNOT_DECOMPRESS; }
 
     /// Flush result for previous asynchronous decompression requests.
     /// This function must be called following several requests offload to HW.
@@ -82,10 +91,10 @@ public:
     static constexpr UInt8 getHeaderSize() { return COMPRESSED_BLOCK_HEADER_SIZE; }
 
     /// Read size of compressed block from compressed source
-    static UInt32 readCompressedBlockSize(const char * source);
+    UInt32 readCompressedBlockSize(const char * source) const;
 
     /// Read size of decompressed block from compressed source
-    static UInt32 readDecompressedBlockSize(const char * source);
+    UInt32 readDecompressedBlockSize(const char * source) const;
 
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
@@ -109,6 +118,12 @@ public:
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
 
+    /// Is this the DEFLATE_QPL codec?
+    virtual bool isDeflateQpl() const { return false; }
+
+    /// Is this the ZSTD_QAT codec?
+    virtual bool isZstdQat() const { return false; }
+
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
@@ -127,6 +142,8 @@ protected:
 
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
     void setCodecDescription(const String & name, const ASTs & arguments = {});
+
+    int decompression_error_code = ErrorCodes::CORRUPTED_DATA;
 
 private:
     ASTPtr full_codec_desc;

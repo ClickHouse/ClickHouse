@@ -24,7 +24,7 @@ For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar profuct: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
 
 `a / b` – The `divide(a, b)` function.
 
@@ -353,7 +353,7 @@ For efficiency, the `and` and `or` functions accept any number of arguments. The
 
 ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
-### IS NULL
+### IS NULL {#is_null}
 
 - For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NULL` operator returns:
     - `1`, if the value is `NULL`.
@@ -374,7 +374,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-### IS NOT NULL
+### IS NOT NULL {#is_not_null}
 
 - For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
     - `0`, if the value is `NULL`.

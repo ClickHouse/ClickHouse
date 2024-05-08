@@ -10,6 +10,7 @@ namespace DB
 
 class StorageInput final : public IStorage
 {
+    friend class ReadFromInput;
 public:
     StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);
 
@@ -18,7 +19,8 @@ public:
     /// A table will read from this stream.
     void setPipe(Pipe pipe_);
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -29,5 +31,7 @@ public:
 
 private:
     Pipe pipe;
+    bool was_pipe_initialized = false;
+    bool was_pipe_used = false;
 };
 }

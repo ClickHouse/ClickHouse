@@ -1,15 +1,10 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/copyData.h>
-
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
 
@@ -33,9 +28,10 @@ void HDFSObjectStorage::startup()
 {
 }
 
-std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
-    return getRandomASCIIString(32);
+    /// what ever data_source_description.description value is, consider that key as relative key
+    return ObjectStorageKey::createAsRelative(hdfs_root_path, getRandomASCIIString(32));
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
@@ -64,8 +60,9 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
     auto disk_read_settings = patchSettings(read_settings);
     auto read_buffer_creator =
         [this, disk_read_settings]
-        (const std::string & path, size_t /* read_until_position */) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
+        const auto & path = object_.remote_path;
         size_t begin_of_path = path.find('/', path.find("//") + 2);
         auto hdfs_path = path.substr(begin_of_path);
         auto hdfs_uri = path.substr(0, begin_of_path);
@@ -74,16 +71,14 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
             hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
     };
 
-    auto hdfs_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, disk_read_settings, nullptr);
-    auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl), read_settings);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    return std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator), objects, "hdfs:", disk_read_settings, nullptr, /* use_external_buffer */false);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
     std::optional<ObjectAttributes> attributes,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
@@ -93,11 +88,9 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
-    auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(
+    return std::make_unique<WriteBufferFromHDFS>(
         object.remote_path, config, settings->replication, patchSettings(write_settings), buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
-
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(finalize_callback), object.remote_path);
 }
 
 
@@ -142,6 +135,8 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string &) const
 void HDFSObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (object_to_attributes.has_value())
@@ -149,8 +144,8 @@ void HDFSObjectStorage::copyObject( /// NOLINT
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
-    auto in = readObject(object_from);
-    auto out = writeObject(object_to, WriteMode::Rewrite);
+    auto in = readObject(object_from, read_settings);
+    auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
 }

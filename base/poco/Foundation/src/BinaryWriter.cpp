@@ -271,7 +271,7 @@ BinaryWriter& BinaryWriter::operator << (const std::string& value)
 BinaryWriter& BinaryWriter::operator << (const char* value)
 {
 	poco_check_ptr (value);
-	
+
 	if (_pTextConverter)
 	{
 		std::string converted;
@@ -329,6 +329,15 @@ void BinaryWriter::writeRaw(const std::string& rawData)
 void BinaryWriter::writeRaw(const char* buffer, std::streamsize length)
 {
 	_ostr.write(buffer, length);
+}
+
+
+void BinaryWriter::writeCString(const char* cString, std::streamsize maxLength)
+{
+	const std::size_t len = ::strnlen(cString, maxLength);
+	writeRaw(cString, len);
+	static const char zero = '\0';
+	_ostr.write(&zero, sizeof(zero));
 }
 
 

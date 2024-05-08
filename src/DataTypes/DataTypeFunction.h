@@ -37,6 +37,8 @@ public:
     }
 
     bool equals(const IDataType & rhs) const override;
+
+    bool supportsSparseSerialization() const override { return false; }
 };
 
 }
