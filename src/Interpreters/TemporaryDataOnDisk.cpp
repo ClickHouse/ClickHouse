@@ -228,7 +228,7 @@ struct TemporaryFileStream::InputReader
 {
     InputReader(const String & path_, const Block & header_, size_t size_ = DBMS_DEFAULT_BUFFER_SIZE)
         : path(path_)
-        , size(std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE))
+        , size(size_ ? std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE) : DBMS_DEFAULT_BUFFER_SIZE)
         , header(header_)
     {
         LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
@@ -236,7 +236,7 @@ struct TemporaryFileStream::InputReader
 
     explicit InputReader(const String & path_, size_t size_ = DBMS_DEFAULT_BUFFER_SIZE)
         : path(path_)
-        , size(std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE))
+        , size(size_ ? std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE) : DBMS_DEFAULT_BUFFER_SIZE)
     {
         LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
     }
