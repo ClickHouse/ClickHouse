@@ -2869,7 +2869,7 @@ addMilliseconds(date_time, num)
 - `num`: Number of milliseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` plus `num` milliseconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+- Returns `date_time` plus `num` milliseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2904,7 +2904,7 @@ addMicroseconds(date_time, num)
 - `num`: Number of microseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` plus `num` microseconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+- Returns `date_time` plus `num` microseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2939,7 +2939,7 @@ addNanoseconds(date_time, num)
 - `num`: Number of nanoseconds to add. [(U)Int*](../data-types/int-uint.md), [Float*](../data-types/float.md).
 
 **Returned value**
-- Returns `date_time` plus `num` nanoseconds. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+- Returns `date_time` plus `num` nanoseconds. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -2970,14 +2970,14 @@ addInterval(interval_1, interval_2)
 
 **Parameters**
 
-- `interval_1`: First interval or interval of tuples. [interval](../data-types/special-data-types/interval.md), [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
+- `interval_1`: First interval or tuple of intervals. [interval](../data-types/special-data-types/interval.md), [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 - `interval_2`: Second interval to be added. [interval](../data-types/special-data-types/interval.md).
 
 **Returned value**
 - Returns a tuple of intervals. [tuple](../data-types/tuple.md)([interval](../data-types/special-data-types/interval.md)).
 
 :::note
-If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
+Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(1)` and `toIntervalDay(2)` are passed then the result will be `(3)` rather than `(1,1)`. 
 :::
 
 **Example**
@@ -3027,7 +3027,8 @@ addTupleOfIntervals(interval_1, interval_2)
 Query:
 
 ```sql
-WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 MONTH, INTERVAL 1 YEAR))
+WITH toDate('2018-01-01') AS date 
+SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 MONTH, INTERVAL 1 YEAR))
 ```
 
 Result:
