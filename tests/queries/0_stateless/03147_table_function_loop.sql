@@ -1,7 +1,6 @@
 SELECT * FROM loop(numbers(3)) LIMIT 10;
 SELECT * FROM loop (numbers(3)) LIMIT 10 settings max_block_size = 1;
 
-
 DROP DATABASE IF EXISTS 03147_db;
 CREATE DATABASE 03147_db;
 CREATE TABLE 03147_db.t (n Int8) ENGINE=MergeTree ORDER BY n;
