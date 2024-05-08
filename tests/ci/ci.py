@@ -1745,7 +1745,10 @@ def _upload_build_profile_data(
         profile_data_file = Path(TEMP_PATH) / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
             for profile_source in profiles_dir.iterdir():
-                if profile_source.name not in ('binary_sizes.txt', 'binary_symbols.txt'):
+                if profile_source.name not in (
+                    "binary_sizes.txt",
+                    "binary_symbols.txt",
+                ):
                     with open(profiles_dir / profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
 
