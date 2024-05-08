@@ -114,6 +114,7 @@ template <typename Key, typename Cell, typename Size, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
+    bool use_emplace_to_insert_data = true;
     size_t min = NUM_CELLS - 1;
     size_t max = 0;
 
@@ -172,7 +173,7 @@ protected:
 
             /// Skip empty cells in the main buffer.
             const auto * buf_end = container->buf + container->NUM_CELLS;
-            if (container->min <= container->max)
+            if (container->use_min_max_optimization())
                 buf_end = container->buf + container->max + 1;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
@@ -302,7 +303,7 @@ public:
             return end();
 
         const Cell * ptr = buf;
-        if (min > max)
+        if (!use_min_max_optimization())
         {
             auto buf_end = buf + NUM_CELLS;
             while (ptr < buf_end && ptr->isZero(*this))
@@ -323,7 +324,7 @@ public:
             return end();
 
         Cell * ptr = buf;
-        if (min > max)
+        if (!use_min_max_optimization())
         {
             auto buf_end = buf + NUM_CELLS;
             while (ptr < buf_end && ptr->isZero(*this))
@@ -338,7 +339,7 @@ public:
     const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        if (min > max)
+        if (!use_min_max_optimization())
             return const_iterator(this, buf ? buf + NUM_CELLS: buf);
         else
             return const_iterator(this, buf ? buf + max + 1: buf);
@@ -351,7 +352,7 @@ public:
 
     iterator end()
     {
-        if (min > max)
+        if (!use_min_max_optimization())
             return iterator(this, buf ? buf + NUM_CELLS: buf);
         else
             return iterator(this, buf ? buf + max + 1: buf);
@@ -399,6 +400,10 @@ public:
 
     bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
     bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
+
+    /// Decide if we use the min/max optimization. `max < min` means the FixedHashtable is empty. The flag `use_emplace_to_insert_data`
+    /// will check if the FixedHashTable will use `emplace()` to insert the raw data.
+    bool ALWAYS_INLINE use_min_max_optimization() const {return ((max >= min) && use_emplace_to_insert_data);}
 
     void write(DB::WriteBuffer & wb) const
     {
@@ -456,6 +461,7 @@ public:
             x.read(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
+        use_emplace_to_insert_data = false;
     }
 
     void readText(DB::ReadBuffer & rb)
@@ -478,6 +484,7 @@ public:
             x.readText(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
+        use_emplace_to_insert_data = false;
     }
 
     size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
@@ -516,7 +523,11 @@ public:
     }
 
     const Cell * data() const { return buf; }
-    Cell * data() { return buf; }
+    Cell * data()
+    {
+        use_emplace_to_insert_data = false;
+        return buf;
+    }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     size_t getCollisions() const { return 0; }
