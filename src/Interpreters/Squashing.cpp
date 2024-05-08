@@ -1,4 +1,4 @@
-#include <Interpreters/SquashingTransform.h>
+#include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
 
 
@@ -9,18 +9,18 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
+Squashing::Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
 {
 }
 
-Block SquashingTransform::add(Block && input_block)
+Block Squashing::add(Block && input_block)
 {
     return addImpl<Block &&>(std::move(input_block));
 }
 
-Block SquashingTransform::add(const Block & input_block)
+Block Squashing::add(const Block & input_block)
 {
     return addImpl<const Block &>(input_block);
 }
@@ -32,7 +32,7 @@ Block SquashingTransform::add(const Block & input_block)
  * have to.
  */
 template <typename ReferenceType>
-Block SquashingTransform::addImpl(ReferenceType input_block)
+Block Squashing::addImpl(ReferenceType input_block)
 {
     /// End of input stream.
     if (!input_block)
@@ -80,7 +80,7 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
 
 
 template <typename ReferenceType>
-void SquashingTransform::append(ReferenceType input_block)
+void Squashing::append(ReferenceType input_block)
 {
     if (!accumulated_block)
     {
@@ -101,7 +101,7 @@ void SquashingTransform::append(ReferenceType input_block)
 }
 
 
-bool SquashingTransform::isEnoughSize(const Block & block)
+bool Squashing::isEnoughSize(const Block & block)
 {
     size_t rows = 0;
     size_t bytes = 0;
@@ -120,26 +120,26 @@ bool SquashingTransform::isEnoughSize(const Block & block)
 }
 
 
-bool SquashingTransform::isEnoughSize(size_t rows, size_t bytes) const
+bool Squashing::isEnoughSize(size_t rows, size_t bytes) const
 {
     return (!min_block_size_rows && !min_block_size_bytes)
         || (min_block_size_rows && rows >= min_block_size_rows)
         || (min_block_size_bytes && bytes >= min_block_size_bytes);
 }
 
-NewSquashingTransform::NewSquashingTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
+ApplySquashing::ApplySquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , header(std::move(header_))
 {
 }
 
-Block NewSquashingTransform::add(Chunk && input_chunk)
+Block ApplySquashing::add(Chunk && input_chunk)
 {
     return addImpl(std::move(input_chunk));
 }
 
-Block NewSquashingTransform::addImpl(Chunk && input_chunk)
+Block ApplySquashing::addImpl(Chunk && input_chunk)
 {
     if (!input_chunk.hasChunkInfo())
     {
@@ -159,7 +159,7 @@ Block NewSquashingTransform::addImpl(Chunk && input_chunk)
     }
 }
 
-void NewSquashingTransform::append(Chunk && input_chunk)
+void ApplySquashing::append(Chunk && input_chunk)
 {
     if (input_chunk.getNumColumns() == 0)
         return;
@@ -183,30 +183,31 @@ void NewSquashingTransform::append(Chunk && input_chunk)
     }
 }
 
-const ChunksToSquash* NewSquashingTransform::getInfoFromChunk(const Chunk & chunk)
+const ChunksToSquash* ApplySquashing::getInfoFromChunk(const Chunk & chunk)
 {
     const auto& info = chunk.getChunkInfo();
     const auto * agg_info = typeid_cast<const ChunksToSquash *>(info.get());
 
+    if (!agg_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
+
     return agg_info;
 }
 
-BalanceTransform::BalanceTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
+PlanSquashing::PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , header(std::move(header_))
 {
 }
 
-Chunk BalanceTransform::add(Block && input_block)
+Chunk PlanSquashing::add(Chunk && input_chunk)
 {
-    return addImpl(std::move(input_block));
+    return addImpl(std::move(input_chunk));
 }
 
-Chunk BalanceTransform::addImpl(Block && input_block)
+Chunk PlanSquashing::addImpl(Chunk && input_chunk)
 {
-    Chunk input_chunk(input_block.getColumns(), input_block.rows());
-
     if (!input_chunk)
     {
         Chunk res_chunk = convertToChunk(chunks_to_merge_vec);
@@ -227,7 +228,7 @@ Chunk BalanceTransform::addImpl(Block && input_block)
     return input_chunk;
 }
 
-Chunk BalanceTransform::convertToChunk(std::vector<Chunk> &chunks)
+Chunk PlanSquashing::convertToChunk(std::vector<Chunk> &chunks)
 {
     if (chunks.empty())
         return {};
@@ -241,7 +242,7 @@ Chunk BalanceTransform::convertToChunk(std::vector<Chunk> &chunks)
     return Chunk(header.cloneEmptyColumns(), 0, info);
 }
 
-bool BalanceTransform::isEnoughSize(const std::vector<Chunk> & chunks)
+bool PlanSquashing::isEnoughSize(const std::vector<Chunk> & chunks)
 {
     size_t rows = 0;
     size_t bytes = 0;
@@ -255,7 +256,7 @@ bool BalanceTransform::isEnoughSize(const std::vector<Chunk> & chunks)
     return isEnoughSize(rows, bytes);
 }
 
-bool BalanceTransform::isEnoughSize(size_t rows, size_t bytes) const
+bool PlanSquashing::isEnoughSize(size_t rows, size_t bytes) const
 {
     return (!min_block_size_rows && !min_block_size_bytes)
         || (min_block_size_rows && rows >= min_block_size_rows)

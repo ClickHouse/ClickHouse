@@ -6,7 +6,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
-#include <Interpreters/SquashingTransform.h>
+#include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/Transforms/TTLTransform.h>
@@ -1223,7 +1223,7 @@ private:
     ProjectionNameToItsBlocks projection_parts;
     std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
-    std::vector<SquashingTransform> projection_squashes;
+    std::vector<Squashing> projection_squashes;
     const ProjectionsDescription & projections;
 
     ExecutableTaskPtr merge_projection_parts_task_ptr;

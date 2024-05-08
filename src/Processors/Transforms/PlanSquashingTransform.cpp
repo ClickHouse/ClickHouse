@@ -1,15 +1,15 @@
-#include <Processors/Transforms/BalancingTransform.h>
+#include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/IProcessor.h>
 
 namespace DB
 {
 
-BalancingChunksTransform::BalancingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports)
+PlanSquashingTransform::PlanSquashingTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports)
     : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header)), balance(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
-IProcessor::Status BalancingChunksTransform::prepare()
+IProcessor::Status PlanSquashingTransform::prepare()
 {
     Status status = Status::Ready;
 
@@ -22,7 +22,7 @@ IProcessor::Status BalancingChunksTransform::prepare()
     return status;
 }
 
-IProcessor::Status BalancingChunksTransform::prepareConsume()
+IProcessor::Status PlanSquashingTransform::prepareConsume()
 {
     finished = false;
     bool all_finished = true;
@@ -90,7 +90,7 @@ IProcessor::Status BalancingChunksTransform::prepareConsume()
 
             chunk = input.pull();
             transform(chunk);
-            was_output_processed.assign(inputs.size(), false);
+            was_output_processed.assign(outputs.size(), false);
             if (chunk.hasChunkInfo())
             {
                 has_data = true;
@@ -102,11 +102,11 @@ IProcessor::Status BalancingChunksTransform::prepareConsume()
     return Status::Ready;
 }
 
-void BalancingChunksTransform::transform(Chunk & chunk_)
+void PlanSquashingTransform::transform(Chunk & chunk_)
 {
     if (!finished)
     {
-        Chunk res_chunk = balance.add(getInputPorts().front().getHeader().cloneWithColumns(chunk_.detachColumns()));
+        Chunk res_chunk = balance.add(std::move(chunk_));
         std::swap(res_chunk, chunk_);
     }
     else
@@ -116,7 +116,7 @@ void BalancingChunksTransform::transform(Chunk & chunk_)
     }
 }
 
-IProcessor::Status BalancingChunksTransform::prepareSend()
+IProcessor::Status PlanSquashingTransform::prepareSend()
 {
     bool all_outputs_processed = true;
 

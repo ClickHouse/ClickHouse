@@ -2,7 +2,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -62,7 +62,7 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 
 Block getBlockWithAllStreamData(QueryPipelineBuilder builder)
 {
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(
+    builder.addTransform(std::make_shared<SquashingTransform>(
         builder.getHeader(),
         std::numeric_limits<size_t>::max(),
         std::numeric_limits<size_t>::max()));

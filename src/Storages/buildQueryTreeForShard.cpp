@@ -16,7 +16,7 @@
 #include <Storages/StorageDummy.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -288,7 +288,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     size_t min_block_size_rows = mutable_context->getSettingsRef().min_external_table_block_size_rows;
     size_t min_block_size_bytes = mutable_context->getSettingsRef().min_external_table_block_size_bytes;
-    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
+    auto squashing = std::make_shared<SimpleSquashingTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);
     builder->addTransform(std::move(squashing));

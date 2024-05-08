@@ -2,19 +2,19 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/IProcessor.h>
-#include <Interpreters/SquashingTransform.h>
+#include <Interpreters/Squashing.h>
 
 namespace DB
 {
 
 
-class BalancingChunksTransform : public IProcessor
+class PlanSquashingTransform : public IProcessor
 {
 public:
-    BalancingChunksTransform(
+    PlanSquashingTransform(
         const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports);
 
-    String getName() const override { return "BalancingChunksTransform"; }
+    String getName() const override { return "PlanSquashingTransform"; }
 
     InputPorts & getInputPorts() { return inputs; }
     OutputPorts & getOutputPorts() { return outputs; }
@@ -30,7 +30,7 @@ protected:
 private:
     size_t CalculateBlockSize(const Block & block);
     Chunk chunk;
-    BalanceTransform balance;
+    PlanSquashing balance;
     bool has_data = false;
     std::vector<char> was_output_processed;
 

@@ -27,11 +27,11 @@ struct ChunksToSquash : public ChunkInfo
   *
   * Order of data is kept.
   */
-class SquashingTransform
+class Squashing
 {
 public:
     /// Conditions on rows and bytes are OR-ed. If one of them is zero, then corresponding condition is ignored.
-    SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    Squashing(size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
     /** Add next block and possibly returns squashed block.
       * At end, you need to pass empty block. As the result for last (empty) block, you will get last Result with ready = true.
@@ -55,10 +55,10 @@ private:
     bool isEnoughSize(size_t rows, size_t bytes) const;
 };
 
-class NewSquashingTransform
+class ApplySquashing
 {
 public:
-    NewSquashingTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    ApplySquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
     Block add(Chunk && input_chunk);
 
@@ -79,12 +79,12 @@ private:
     bool isEnoughSize(size_t rows, size_t bytes) const;
 };
 
-class BalanceTransform
+class PlanSquashing
 {
 public:
-    BalanceTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
-    Chunk add(Block && input_block);
+    Chunk add(Chunk && input_chunk);
     bool isDataLeft()
     {
         return !chunks_to_merge_vec.empty();
@@ -97,7 +97,7 @@ private:
 
     const Block header;
 
-    Chunk addImpl(Block && input_block);
+    Chunk addImpl(Chunk && input_chunk);
 
     bool isEnoughSize(const std::vector<Chunk> & chunks);
     bool isEnoughSize(size_t rows, size_t bytes) const;

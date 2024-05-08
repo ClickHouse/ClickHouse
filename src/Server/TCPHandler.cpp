@@ -1,6 +1,6 @@
-#include "Interpreters/AsynchronousInsertQueue.h"
-#include "Interpreters/SquashingTransform.h"
-#include "Parsers/ASTInsertQuery.h"
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/Squashing.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <algorithm>
 #include <exception>
 #include <iterator>
@@ -876,7 +876,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(Asynchro
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery();
-    SquashingTransform squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
+    Squashing squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
 
     while (readDataNext())
     {
