@@ -833,10 +833,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
     size_t max_rows_in_join = table_join->sizeLimits().max_rows;
-    if (!table_join->sizeLimits().hasLimits())
-    {
-        max_bytes_in_join = table_join->defaultMaxBytes();
-    }
 
     if (kind == JoinKind::Cross && tmp_data
         && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
