@@ -437,7 +437,7 @@ void fuzzJSONObject(
         bool first = true;
         for (const auto & ptr : node_list)
         {
-            if (node_count >= config.value_number_limit)
+            if (node_count >= StorageFuzzJSON::Configuration::value_number_limit)
                 break;
 
             WriteBufferFromOwnString child_out;

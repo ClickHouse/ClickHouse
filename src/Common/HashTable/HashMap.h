@@ -296,6 +296,19 @@ public:
         return it->getMapped();
     }
 
+    /// Only inserts the value if key isn't already present
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
+    }
+
     const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
     {
         if (auto it = this->find(x); it != this->end())

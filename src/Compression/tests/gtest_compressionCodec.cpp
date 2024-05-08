@@ -483,7 +483,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     ASSERT_TRUE(EqualByteContainers(test_sequence.data_type->getSizeOfValueInMemory(), source_data, decoded));
 
-    const auto header_size = codec.getHeaderSize();
+    const auto header_size = ICompressionCodec::getHeaderSize();
     const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
 
     if (expected_compression_ratio)

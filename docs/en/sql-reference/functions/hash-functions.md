@@ -594,6 +594,45 @@ Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
+## kostikConsistentHash
+
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
+
+**Syntax**
+
+```sql
+kostikConsistentHash(input, n)
+```
+
+Alias: `yandexConsistentHash` (left for backwards compatibility sake).
+
+**Parameters**
+
+- `input`: A UInt64-type key [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- `n`: Number of buckets. [UInt16](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+- A [UInt16](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+
+**Implementation details**
+
+It is efficient only if n <= 32768. 
+
+**Example**
+
+Query:
+
+```sql
+SELECT kostikConsistentHash(16045690984833335023, 2);
+```
+
+```response
+┌─kostikConsistentHash(16045690984833335023, 2)─┐
+│                                             1 │
+└───────────────────────────────────────────────┘
+```
+
 ## murmurHash2_32, murmurHash2_64
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
@@ -1151,6 +1190,42 @@ Result:
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
+```
+
+## wyHash64
+
+Produces a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.
+
+**Syntax**
+
+```sql
+wyHash64(string)
+```
+
+**Arguments**
+
+- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Hash value.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT wyHash64('ClickHouse') AS Hash;
+```
+
+Result:
+
+```response
+┌─────────────────Hash─┐
+│ 12336419557878201794 │
+└──────────────────────┘
 ```
 
 ## ngramMinHash

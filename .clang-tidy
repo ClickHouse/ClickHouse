@@ -119,7 +119,6 @@ Checks: [
   '-readability-named-parameter',
   '-readability-redundant-declaration',
   '-readability-simplify-boolean-expr',
-  '-readability-static-accessed-through-instance',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',

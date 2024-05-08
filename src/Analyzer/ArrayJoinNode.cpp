@@ -31,13 +31,13 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     getJoinExpressionsNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool ArrayJoinNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ArrayJoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ArrayJoinNode &>(rhs);
     return is_left == rhs_typed.is_left;
 }
 
-void ArrayJoinNode::updateTreeHashImpl(HashState & state) const
+void ArrayJoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_left);
 }

@@ -41,7 +41,6 @@
 #include <IO/VarInt.h>
 
 #include <pcg_random.hpp>
-#include <double-conversion/double-conversion.h>
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
@@ -609,6 +608,9 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
+
+void readStringUntilAmpersand(String & s, ReadBuffer & buf);
+void readStringUntilEquals(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.

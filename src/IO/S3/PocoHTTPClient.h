@@ -51,6 +51,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
+    size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
+    size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
 
     std::function<void(const DB::ProxyConfiguration &)> error_report;
 

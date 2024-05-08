@@ -1056,7 +1056,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
     PrefetchingHelper prefetching;
-    size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
@@ -1077,7 +1077,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
                 {
-                    if (i == row_begin + prefetching.iterationsToMeasure())
+                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
                         prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
                     if (i + prefetch_look_ahead < row_end)
@@ -1163,7 +1163,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
-                if (i == key_start + prefetching.iterationsToMeasure())
+                if (i == key_start + PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
                 if (i + prefetch_look_ahead < row_end)

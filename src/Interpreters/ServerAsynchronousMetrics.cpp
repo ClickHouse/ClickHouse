@@ -53,8 +53,8 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
-    int update_period_seconds,
-    int heavy_metrics_update_period_seconds,
+    unsigned update_period_seconds,
+    unsigned heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)

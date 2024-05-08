@@ -36,7 +36,7 @@ protected:
 
     String getName() const override { return "local"; }
 
-    void printHelpMessage(const OptionsDescription & options_description) override;
+    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
 
     void addOptions(OptionsDescription & options_description) override;
 
@@ -65,6 +65,8 @@ private:
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
+
+    std::unique_ptr<ReadBufferFromFile> input;
 };
 
 }
