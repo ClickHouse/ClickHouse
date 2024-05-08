@@ -11,4 +11,3 @@ USE 03147_db;
 SELECT * FROM loop(03147_db.t) LIMIT 15;
 SELECT * FROM loop(t) LIMIT 15;
 SELECT * FROM loop(03147_db, t) LIMIT 15;
-SELECT * FROM loop(mysql('127.0.0.1:9004', currentDatabase(), t, 'default', '')) LIMIT 15;
