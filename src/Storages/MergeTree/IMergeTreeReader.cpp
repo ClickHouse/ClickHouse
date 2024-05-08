@@ -152,14 +152,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             if (res_columns[pos] == nullptr)
                 continue;
 
-            /// We must take column type from part if it exists. Because at the end of defaults
-            /// calculations we will materialize ALL the columns, not only missing.
-            /// If column doesn't exist in part than it will be substituted with default expression
-            const auto * column_in_part = part_columns.tryGet(name_and_type->name);
-            if (column_in_part != nullptr)
-                additional_columns.insert({res_columns[pos], column_in_part->type, name_and_type->name});
-            else
-                additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+            additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
         auto dag = DB::evaluateMissingDefaults(
@@ -271,7 +264,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         /// Move columns from block.
         name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-            res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
+            if (copy_block.has(name_and_type->name))
+                res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
     }
     catch (Exception & e)
     {
