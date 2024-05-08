@@ -402,9 +402,7 @@ void StorageRabbitMQ::initRabbitMQ()
 
         /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
 
-        initExchange(*rabbit_channel);
         bindExchange(*rabbit_channel);
-
         for (const auto i : collections::range(0, num_queues))
             bindQueue(i + 1, *rabbit_channel);
 
@@ -436,7 +434,7 @@ void StorageRabbitMQ::initRabbitMQ()
 }
 
 
-void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
+void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
 {
     /// Exchange hierarchy:
     /// 1. Main exchange (defined with table settings - rabbitmq_exchange_name, rabbitmq_exchange_type).
@@ -450,6 +448,7 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
     std::string error;
+    int error_code;
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {
@@ -459,6 +458,7 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
         /// 2) with different exchange settings.
         error = "Unable to declare exchange. "
             "Make sure specified exchange is not already declared. Error: " + std::string(message);
+        error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     });
 
     rabbit_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
@@ -467,8 +467,11 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
         connection->getHandler().stopLoop();
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
         if (error.empty())
+        {
             error = fmt::format("Unable to declare bridge exchange ({}). Reason: {}",
                                 bridge_exchange, std::string(message));
+            error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+        }
     });
 
     if (hash_exchange)
@@ -489,8 +492,11 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
             /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
             /// is bad.
             if (error.empty())
+            {
                 error = fmt::format("Unable to declare sharding exchange ({}). Reason: {}",
                                     sharding_exchange, std::string(message));
+                error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+            }
         });
 
         rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
@@ -498,9 +504,12 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
         {
             connection->getHandler().stopLoop();
             if (error.empty())
+            {
                 error = fmt::format(
                     "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}",
                     bridge_exchange, sharding_exchange, std::string(message));
+                error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+            }
         });
 
         consumer_exchange = sharding_exchange;
@@ -510,16 +519,7 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
         consumer_exchange = bridge_exchange;
     }
 
-    connection->getHandler().startBlockingLoop();
-    if (!error.empty())
-        throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "{}", error);
-}
-
-
-void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
-{
     size_t bound_keys = 0;
-    std::string error;
 
     if (exchange_type == AMQP::ExchangeType::headers)
     {
@@ -538,6 +538,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
             connection->getHandler().stopLoop();
             error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
                                 exchange_name, bridge_exchange, std::string(message));
+            error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
         });
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
@@ -548,8 +549,11 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         {
             connection->getHandler().stopLoop();
             if (error.empty())
+            {
                 error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
                                     exchange_name, bridge_exchange, std::string(message));
+                error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
+            }
         });
     }
     else
@@ -567,15 +571,18 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
             {
                 connection->getHandler().stopLoop();
                 if (error.empty())
+                {
                     error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
                                         exchange_name, bridge_exchange, std::string(message));
+                    error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
+                }
             });
         }
     }
 
     connection->getHandler().startBlockingLoop();
     if (!error.empty())
-        throw Exception(ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE, "{}", error);
+        throw Exception(error_code, "{}", error);
 }
 
 
