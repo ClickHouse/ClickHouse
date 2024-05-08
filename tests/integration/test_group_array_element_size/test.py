@@ -63,3 +63,32 @@ def test_max_exement_size(started_cluster):
     node1.restart_clickhouse()
 
     assert node1.query("select length(groupArrayMerge(x)) from tab3") == "21\n"
+
+def test_limit_size(started_cluster):
+    node1.query(
+        "CREATE TABLE tab4 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node1.query("insert into tab4 select groupArrayState([zero]) from zeros(10)")
+    assert node1.query("select length(groupArrayMerge(x)) from tab4") == "10\n"
+
+    node1.replace_in_config(
+        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
+        "false",
+        "true",
+    )
+
+    node1.restart_clickhouse()
+
+    node1.query("insert into tab4 select groupArrayState([zero]) from zeros(100)")
+    assert node1.query("select length(groupArrayMerge(x)) from tab4") == "10\n"
+
+    node1.replace_in_config(
+        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
+        "true",
+        "false",
+    )
+
+    node1.restart_clickhouse()
+
+    with pytest.raises(Exception, match=r"Too large array size"):
+        node1.query("insert into tab4 select groupArrayState([zero]) from zeros(11)")
