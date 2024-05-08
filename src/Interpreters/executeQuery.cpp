@@ -460,6 +460,8 @@ void logQueryFinish(
 
                     processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
                     processor_elem.plan_group = processor->getQueryPlanStepGroup();
+                    processor_elem.processor_uniq_id = processor->getUniqID();
+                    processor_elem.step_uniq_id = processor->getStepUniqID();
 
                     processor_elem.processor_name = processor->getName();
 

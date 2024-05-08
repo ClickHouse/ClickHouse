@@ -1336,7 +1336,14 @@ private:
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 
     /// Throttling
+
+    size_t step_count = 0;
+    size_t processor_count = 0;
 public:
+
+    size_t getStepIndex() const { return const_cast<Context *>(this)->step_count++; }
+    size_t getProcessorIndex() const { return const_cast<Context *>(this)->processor_count++; }
+
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
