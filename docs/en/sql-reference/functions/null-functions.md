@@ -137,6 +137,36 @@ Result:
 └───┘
 ```
 
+## isNotDistinctFrom
+
+Performs null-safe comparison. Used to compare JOIN keys which contain NULL values in the JOIN ON section.
+This function will consider two `NULL` values as identical and will return `true`, which is distinct from the usual
+equals behavior where comparing two `NULL` values would return `NULL`.
+
+:::note
+This function can only be used as part of a JOIN ON section of a query. The function is unimplemented for any other use.
+:::
+
+**Syntax**
+
+``` sql
+isNotDistinctFrom(x, y)
+```
+
+**Arguments**
+
+- `x` — first JOIN key.
+- `y` — second JOIN key.
+
+**Returned value**
+
+- `true` when `x` and `y` are both `NULL`.
+- `false` otherwise.
+
+**Example**
+
+For a complete example see: [NULL values in JOIN keys](../../sql-reference/statements/select/join#null-values-in-join-keys).
+
 ## isZeroOrNull
 
 Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md#null-literal).
