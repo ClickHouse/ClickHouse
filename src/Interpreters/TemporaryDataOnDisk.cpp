@@ -226,30 +226,43 @@ struct TemporaryFileStream::OutputWriter
 
 struct TemporaryFileStream::InputReader
 {
-    InputReader(const String & path, const Block & header_, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
+    InputReader(const String & path_, const Block & header_, size_t size_ = DBMS_DEFAULT_BUFFER_SIZE)
+        : path(path_)
+        , size(std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE))
+        , header(header_)
     {
         LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
     }
 
-    explicit InputReader(const String & path, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
+    explicit InputReader(const String & path_, size_t size_ = DBMS_DEFAULT_BUFFER_SIZE)
+        : path(path_)
+        , size(std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE))
     {
         LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
     }
 
     Block read()
     {
-        return in_reader.read();
+        if (!in_reader)
+        {
+            in_file_buf = std::make_unique<ReadBufferFromFile>(path, size);
+
+            in_compressed_buf = std::make_unique<CompressedReadBuffer>(*in_file_buf);
+            if (header.has_value())
+                in_reader = std::make_unique<NativeReader>(*in_compressed_buf, header.value(), DBMS_TCP_PROTOCOL_VERSION);
+            else
+                in_reader = std::make_unique<NativeReader>(*in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION);
+        }
+        return in_reader->read();
     }
 
-    ReadBufferFromFile in_file_buf;
-    CompressedReadBuffer in_compressed_buf;
-    NativeReader in_reader;
+    const std::string path;
+    const size_t size;
+    const std::optional<Block> header;
+
+    std::unique_ptr<ReadBufferFromFile> in_file_buf;
+    std::unique_ptr<CompressedReadBuffer> in_compressed_buf;
+    std::unique_ptr<NativeReader> in_reader;
 };
 
 TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_)
