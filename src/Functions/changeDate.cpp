@@ -176,7 +176,6 @@ public:
                 else
                     time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
 
-                
                 if (isDate(result_type))
                     result_data[i] = static_cast<UInt16>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
                 else if (isDate32(result_type))
