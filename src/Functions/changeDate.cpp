@@ -173,10 +173,17 @@ public:
             }
             else if constexpr (isDate32<DataType>() && isDateTime64<ResultDataType>())
             {
-                const auto & date_lut = DateLUT::instance();
+                const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
                 Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
 
                 result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 3, 0);
+            }
+            else if constexpr (isDate<DataType>() && isDateTime<ResultDataType>())
+            {
+                const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
+                Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
+
+                result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
             }
             else if constexpr (isDateTime<DataType>())
             {
@@ -196,10 +203,8 @@ public:
 
                 if (isDate(result_type))
                     result_data[i] = static_cast<UInt16>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
-                else if (isDate32(result_type))
-                    result_data[i] = static_cast<Int32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
                 else
-                    result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                    result_data[i] = static_cast<Int32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
             }
         }
 
