@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/null-functions
+slug: /en/sql-reference/functions/functions-for-nulls
 sidebar_position: 135
 sidebar_label: Nullable
 ---
@@ -56,7 +56,7 @@ Result:
 
 ## isNullable
 
-Returns `1` if a column allows null values, `0` otherwise.
+Returns `1` if a column is [Nullable](../data-types/nullable.md) (i.e allows `NULL` values), `0` otherwise.
 
 **Syntax**
 
@@ -78,18 +78,18 @@ isNullable(x)
 Query:
 
 ``` sql
-CREATE TABLE example_table (nullable_column Nullable(UInt32), ordinary_column UInt32) ENGINE = Log;
-INSERT INTO example_table (nullable_column, ordinary_column) VALUES (1,1), (2, 2), (3,3);
-SELECT isNullable(nullable_column), isNullable(ordinary_column) FROM example_table;    
+CREATE TABLE tab (ordinary_col UInt32, nullable_col Nullable(UInt32)) ENGINE = Log;
+INSERT INTO tab (ordinary_col, nullable_col) VALUES (1,1), (2, 2), (3,3);
+SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;    
 ```
 
 Result:
 
 ``` text
-   ┌─isNullable(nullable_column)─┬─isNullable(ordinary_column)─┐
-1. │                           1 │                           0 │
-2. │                           1 │                           0 │
-3. │                           1 │                           0 │
+   ┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
+1. │                           0 │                           1 │
+2. │                           0 │                           1 │
+3. │                           0 │                           1 │
    └─────────────────────────────┴─────────────────────────────┘
 ```
 
@@ -144,7 +144,7 @@ This function will consider two `NULL` values as identical and will return `true
 equals behavior where comparing two `NULL` values would return `NULL`.
 
 :::note
-This function can only be used as part of a JOIN ON section of a query. The function is unimplemented for any other use.
+This function is an internal function used by the implementation of JOIN ON. Please do not use it manually in queries.
 :::
 
 **Syntax**

@@ -212,7 +212,7 @@ SELECT nullIf(1, 2);
 
 ## assumeNotNull {#assumenotnull}
 
-Приводит значение типа [Nullable](../../sql-reference/functions/null-functions.md) к не `Nullable`, если значение не `NULL`.
+Приводит значение типа [Nullable](../../sql-reference/functions/functions-for-nulls.md) к не `Nullable`, если значение не `NULL`.
 
 ``` sql
 assumeNotNull(x)
