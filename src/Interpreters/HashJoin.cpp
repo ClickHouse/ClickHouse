@@ -2427,10 +2427,15 @@ HashJoin::~HashJoin()
 {
     if (!data)
     {
-        LOG_TRACE(log, "{}Join data has been already released", instance_log_id);
+        LOG_TEST(log, "{}Join data has been already released", instance_log_id);
         return;
     }
-    LOG_TRACE(log, "{}Join data is being destroyed, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
+    LOG_TEST(
+        log,
+        "{}Join data is being destroyed, {} bytes and {} rows in hash table",
+        instance_log_id,
+        getTotalByteCount(),
+        getTotalRowCount());
 }
 
 template <typename Mapped>
