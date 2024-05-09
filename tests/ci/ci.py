@@ -32,11 +32,10 @@ from commit_status_helper import (
     RerunHelper,
     format_description,
     get_commit,
-    get_commit_filtered_statuses,
     post_commit_status,
     set_status_comment,
-    trigger_mergeable_check,
     update_mergeable_check,
+    update_upstream_sync_status,
 )
 from digest_helper import DockerDigester, JobDigester
 from env_helper import (
@@ -55,7 +54,7 @@ from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github_helper import GitHub
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, BuildResult, JobReport, get_status
+from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 from version_helper import get_version_from_repo
@@ -2204,30 +2203,19 @@ def main() -> int:
                         and mergeable_status
                         and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
                     ):
-                        pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-                        upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
-                        head_sha = upstream_repo.get_pull(pr_number).head.sha
-                        upstream_commit = upstream_repo.get_commit(head_sha)
-                        post_commit_status(
-                            upstream_commit,
-                            get_status(mergeable_status.state),
-                            "",  # let's won't expose any urls from cloud
-                            mergeable_status.description,
-                            StatusNames.SYNC,
+                        upstream_pr_number = int(
+                            pr_info.head_ref.split("/pr/", maxsplit=1)[1]
                         )
-                        trigger_mergeable_check(
-                            upstream_commit,
-                            get_commit_filtered_statuses(upstream_commit),
-                            True,
+                        update_upstream_sync_status(
+                            upstream_pr_number, pr_info.number, gh, mergeable_status
                         )
-
                         prepared_events = prepare_tests_results_for_clickhouse(
                             pr_info,
                             [],
                             job_report.status,
                             0,
                             job_report.start_time,
-                            f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}",
+                            f"https://github.com/ClickHouse/ClickHouse/pull/{upstream_pr_number}",
                             StatusNames.SYNC,
                         )
                         prepared_events[0]["test_context_raw"] = args.job_name
