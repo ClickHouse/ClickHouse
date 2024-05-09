@@ -130,6 +130,7 @@ Checks: [
   '-readability-redundant-inline-specifier',
   '-readability-redundant-member-init',
   '-bugprone-crtp-constructor-accessibility',
+  '-bugprone-suspicious-stringview-data-usage',
 
   '-zircon-*'
 ]

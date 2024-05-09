@@ -110,17 +110,17 @@ public:
 
     /// Returns the result of loading the object.
     /// The function doesn't load anything, it just returns the current load result as is.
-    template <typename ReturnType = LoadResult, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadResult, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType getLoadResult(const String & name) const;
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
     /// Returns all the load results as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
-    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType getLoadResults() const { return getLoadResults<ReturnType>(FilterByNameFunction{}); }
 
-    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType getLoadResults(const FilterByNameFunction & filter) const;
 
     /// Returns all loaded objects as a map.

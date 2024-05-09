@@ -975,7 +975,7 @@ private:
                     break;
             }
 
-            return result_type->createColumnConst(item_arg->size(), static_cast<ResultType>(current));
+            return result_type->createColumnConst(item_arg->size(), current);
         }
         else
         {

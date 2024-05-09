@@ -454,7 +454,7 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const
 {
     checkNumberOfArguments(arguments.size());
-    return getLambdaArgumentTypesImpl(arguments);
+    getLambdaArgumentTypesImpl(arguments);
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const

@@ -81,7 +81,7 @@ public:
     };
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
 
-    void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); }
+    void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); } // NOLINT
 
     bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
 
