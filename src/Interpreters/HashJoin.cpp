@@ -2342,6 +2342,12 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
                 }
                 process_right_block(block_right);
             }
+
+            /// It means, that we have read all right blocks
+            if (rows_added <= max_joined_block_rows)
+            {
+                reader.reset();
+            }
         }
 
         start_right_block = 0;
