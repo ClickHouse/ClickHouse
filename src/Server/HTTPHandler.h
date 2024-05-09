@@ -1,21 +1,27 @@
 #pragma once
 
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Core/Names.h>
+#include <IO/CascadeWriteBuffer.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <IO/CascadeWriteBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
 
 namespace CurrentMetrics
 {
-    extern const Metric HTTPConnection;
+extern const Metric HTTPConnection;
 }
 
-namespace Poco { class Logger; }
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -31,13 +37,16 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
+    HTTPHandler(
+        IServer & server_,
+        const std::string & name,
+        const std::optional<std::unordered_map<String, String>> & http_response_headers_override_);
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
+    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) { }
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
@@ -77,10 +86,7 @@ private:
         bool exception_is_written = false;
         std::function<void(WriteBuffer &, const String &)> exception_writer;
 
-        inline bool hasDelayed() const
-        {
-            return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
-        }
+        inline bool hasDelayed() const { return out_maybe_delayed_and_compressed != out_maybe_compressed.get(); }
 
         inline void finalize()
         {
@@ -94,10 +100,7 @@ private:
                 out->finalize();
         }
 
-        inline bool isFinalized() const
-        {
-            return finalized;
-        }
+        inline bool isFinalized() const { return finalized; }
     };
 
     IServer & server;
@@ -113,8 +116,8 @@ private:
     /// See settings http_max_fields, http_max_field_name_size, http_max_field_value_size in HTMLForm.
     const Settings & default_settings;
 
-    /// Overrides Content-Type provided by the format of the response.
-    std::optional<String> content_type_override;
+    /// Overrides for response headers.
+    std::optional<std::unordered_map<String, String>> http_response_headers_override;
 
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
@@ -128,10 +131,7 @@ private:
     // Returns false when the user is not authenticated yet, and the 'Negotiate' response is sent,
     //  the session and request_credentials instances are preserved.
     // Throws an exception if authentication failed.
-    bool authenticateUser(
-        HTTPServerRequest & request,
-        HTMLForm & params,
-        HTTPServerResponse & response);
+    bool authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response);
 
     /// Also initializes 'used_output'.
     void processQuery(
@@ -143,17 +143,9 @@ private:
         const ProfileEvents::Event & write_event);
 
     void trySendExceptionToClient(
-        const std::string & s,
-        int exception_code,
-        HTTPServerRequest & request,
-        HTTPServerResponse & response,
-        Output & used_output);
+        const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
 
-    void formatExceptionForClient(
-        int exception_code,
-        HTTPServerRequest & request,
-        HTTPServerResponse & response,
-        Output & used_output);
+    void formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
 
     static void pushDelayedResults(Output & used_output);
 };
@@ -162,12 +154,16 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
+
 public:
-    explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query", const std::optional<String>& content_type_override_ = std::nullopt);
+    explicit DynamicQueryHandler(
+        IServer & server_,
+        const std::string & param_name_ = "query",
+        const std::optional<std::unordered_map<String, String>> & http_response_headers_override_ = std::nullopt);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -177,11 +173,15 @@ private:
     std::string predefined_query;
     CompiledRegexPtr url_regex;
     std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regex;
+
 public:
     PredefinedQueryHandler(
-        IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
-        , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_
-        , const std::optional<std::string> & content_type_override_);
+        IServer & server_,
+        const NameSet & receive_params_,
+        const std::string & predefined_query_,
+        const CompiledRegexPtr & url_regex_,
+        const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+        const std::optional<std::unordered_map<String, String>> & http_response_headers_override_ = std::nullopt);
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 
