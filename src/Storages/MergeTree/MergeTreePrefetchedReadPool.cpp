@@ -384,6 +384,15 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
     }
 }
 
+namespace
+{
+ALWAYS_INLINE inline String getPartNameForLogging(const DataPartPtr & part)
+{
+    return part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPartName()) : part->name;
+}
+}
+
+
 void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_marks)
 {
     if (per_part_infos.empty())
@@ -438,7 +447,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
         LOG_DEBUG(
             log,
             "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
-            parts_ranges[i].data_part->name,
+            getPartNameForLogging(parts_ranges[i].data_part),
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
             settings.filesystem_prefetch_step_bytes,
@@ -522,7 +531,9 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Requested {} marks from part {}, but part has only {} marks",
-                        marks_to_get_from_part, per_part_infos[part_idx]->data_part->name, part_stat.sum_marks);
+                        marks_to_get_from_part,
+                        getPartNameForLogging(per_part_infos[part_idx]->data_part),
+                        part_stat.sum_marks);
                 }
 
                 size_t num_marks_to_get = marks_to_get_from_part;
@@ -598,7 +609,7 @@ std::string MergeTreePrefetchedReadPool::dumpTasks(const TasksPerThread & tasks)
                 result << '\t';
                 result << ++no << ": ";
                 result << "reader future: " << task->isValidReadersFuture() << ", ";
-                result << "part: " << task->read_info->data_part->name << ", ";
+                result << "part: " << getPartNameForLogging(task->read_info->data_part) << ", ";
                 result << "ranges: " << toString(task->ranges);
             }
         }
