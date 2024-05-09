@@ -1,20 +1,28 @@
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
+
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <BridgeHelper/IBridgeHelper.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+
 #include "Functions/ggmlEvaluate/IGgmlModel.h"
 #include "gpt_common.h"
 #include "gptj.h"
 
-#include <Functions/FunctionFactory.h>
-
-#include <Columns/ColumnString.h>
-
 #include <Common/Exception.h>
 #include <Common/re2.h>
-
 #include <DataTypes/DataTypeString.h>
-
-#include <Functions/IFunction.h>
-
-#include <Interpreters/Context.h>
-
+#include "DataTypes/IDataType.h"
 
 namespace DB
 {
@@ -50,10 +58,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 1 argument", getName());
-        if (arguments.size() > 1)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 1 argument", getName());
+        if (arguments.size() < 3)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 3 arguments", getName());
+        if (arguments.size() > 3)
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 3 arguments", getName());
+        std::cout << __FUNCTION__ << " " << arguments[0].type->getName() << ' ' << arguments[1].type->getName() << ' ' << arguments[2].type->getName() << std::endl;
+        // TODO : validate types
         // const auto * name_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         // if (!name_col)
         //     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument of function {} must be a string", getName());
@@ -70,12 +80,35 @@ public:
             return res;
         }
 
-        std::string model_path = "/home/hazy/ggml-model.bin";
+        std::string model_path;
+        {
+            const auto& model_path_arg = *arguments[0].column.get();
+            auto val = model_path_arg[0];
+            if (!val.tryGet(model_path)) {
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "No2");
+            }
+
+            model_path = /* get prefix from config + */ "/home/ArtNext/" + model_path;
+        }
+        std::cout << "Deduced model path to be " << model_path << std::endl;
+        std::tuple<Int32> params;
+        {
+            auto val = (*arguments[1].column.get())[0];
+            Tuple t;
+            if (!val.tryGet(t)) {
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "No2");
+            }
+            UInt64 n_predict = t[0].safeGet<UInt64>();
+            params = { n_predict };
+            std::cout << "Deduced n_predict as " << n_predict << std::endl;
+        }
+        std::cout << "Deduced params to be " << std::get<0>(params) << std::endl;
+
         auto model = getModel(model_path);
 
         std::cout << "loaded\n";
 
-        const auto& vals = *arguments[0].column.get();
+        const auto& vals = *arguments[2].column.get();
         auto col_res = ColumnString::create();
         col_res->reserve(input_rows_count);
         UInt64 totalsize = 0;
@@ -105,13 +138,6 @@ public:
             offset += result_raw[i].size() + 1;
             col_res->getOffsets()[i] = offset;
         }
-
-        // params.n_predict = std::min(params.n_predict, model.hparams.n_ctx - static_cast<int>(embd_inp.size()));
-        // std::vector<GptVocab::id> embd;
-
-        // size_t mem_per_token = 0;
-        // gptj_eval(model, params.n_threads, 0, { 0, 1, 2, 3 }, logits, mem_per_token);
-
 
         std::cout << "Success!!!" << std::endl;
         return col_res;
