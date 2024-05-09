@@ -621,6 +621,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                     function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
             }
 
+            if (function->by_columns) {
+                const auto & by_columns_list = function->by_columns->as<ASTExpressionList>()->children;
+                for (const auto & by_column : by_columns_list)
+                    function_node->getByColumns().getNodes().push_back(buildExpression(by_column, context));
+            }
+
             if (function->is_window_function)
             {
                 if (function->window_definition)

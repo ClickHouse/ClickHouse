@@ -1018,6 +1018,28 @@ public:
                 return mergeElement();
             }
 
+            ParserKeyword by(Keyword::BY);
+            ParserKeyword totals(Keyword::TOTALS);
+
+            if (totals.ignore(pos, expected))
+            {
+                has_totals = true;
+            }
+
+            if (by.ignore(pos, expected))
+            {
+                if (mergeElement()) {
+                    if (!by_columns)
+                        by_columns = std::make_shared<ASTExpressionList>();
+
+                    by_columns->children.emplace_back(std::move(elements.back()));
+                    elements.pop_back();
+
+                    return true;
+                }
+                return false;
+            }
+
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 action = Action::OPERATOR;
@@ -1057,8 +1079,8 @@ public:
                     std::swap(parameters->children, elements);
                     action = Action::OPERAND;
 
-                    /// Parametric aggregate functions cannot have DISTINCT in parameters list.
-                    if (has_distinct)
+                    /// Parametric aggregate functions cannot have DISTINCT, TOTALS, BY in parameters list.
+                    if (has_distinct || has_totals || has_by)
                         return false;
 
                     auto pos_after_bracket = pos;
@@ -1090,6 +1112,10 @@ public:
                         }
                     }
                 }
+                else if (has_totals)
+                {
+                    return false;
+                }
                 else
                 {
                     state = 2;
@@ -1111,6 +1137,19 @@ public:
                 function_node->children.push_back(function_node->parameters);
             }
 
+            if ((has_by && has_totals) || (has_by && !by_columns)) {
+                return false;
+            }
+
+            if (has_totals) {
+                function_node->by_or_totals = true;
+            } else if (has_by && by_columns) {
+                function_node->by_or_totals = true;
+                
+                function_node->by_columns = std::move(by_columns);
+                function_node->children.push_back(function_node->by_columns);
+            }
+            
             ParserKeyword filter(Keyword::FILTER);
             ParserKeyword over(Keyword::OVER);
             ParserKeyword respect_nulls(Keyword::RESPECT_NULLS);
@@ -1158,12 +1197,15 @@ public:
 private:
     bool has_all = false;
     bool has_distinct = false;
+    bool has_totals = false;
+    bool has_by = false;
 
     const char * contents_begin;
     const char * contents_end;
 
     String function_name;
     ASTPtr parameters;
+    ASTPtr by_columns;
 
     bool allow_function_parameters;
     bool is_compound_name;

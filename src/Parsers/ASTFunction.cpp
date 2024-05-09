@@ -79,6 +79,19 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         }
     }
 
+    if (by_columns && by_or_totals) {
+        writeCString(" BY ", ostr);
+        for (auto * it = by_columns->children.begin(); it != by_columns->children.end(); ++it)
+        {
+            if (it != by_columns->children.begin())
+                writeCString(", ", ostr);
+
+            (*it)->appendColumnName(ostr);
+        }
+    } else if (by_or_totals) {
+        writeCString(" TOTALS", ostr);
+    }
+
     writeChar(')', ostr);
 
     if (nulls_action == NullsAction::RESPECT_NULLS)
@@ -141,6 +154,7 @@ ASTPtr ASTFunction::clone() const
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
+    if (by_columns) { res->by_columns = by_columns->clone(); res->children.push_back(res->by_columns); }
 
     if (window_definition)
     {

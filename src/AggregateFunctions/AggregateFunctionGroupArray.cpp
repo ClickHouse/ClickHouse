@@ -353,18 +353,27 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        std::cout << "Start group array insert result" << std::endl;
         const auto & value = this->data(place).value;
+        std::cout << "Check 1" << std::endl;
         size_t size = value.size();
+        std::cout << "Check 2" << size << std::endl;
 
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        std::cout << "Check 3" << size << std::endl;
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
+        std::cout << "Check 4" << size << std::endl;
         offsets_to.push_back(offsets_to.back() + size);
 
+        std::cout << "Check 5" << size << std::endl;
         if (size)
         {
+            std::cout << "Check 6" << size << std::endl;
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            std::cout << "Check 7" << size << std::endl;
             data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+            std::cout << "Check 8" << size << std::endl;
         }
     }
 
@@ -534,6 +543,8 @@ public:
         auto & cur_elems = data(place);
 
         ++cur_elems.total_values;
+
+        std::cout << "total values " << cur_elems.total_values << std::endl;
 
         if constexpr (Trait::sampler == Sampler::NONE)
         {

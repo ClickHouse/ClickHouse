@@ -226,7 +226,8 @@ private:
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
-    static constexpr size_t children_size = window_child_index + 1;
+    static constexpr size_t by_columns_child_index = 3;
+    static constexpr size_t children_size = by_columns_child_index + 1;
 };
 
 }
