@@ -1,5 +1,6 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
@@ -262,6 +263,22 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
             comparator_descending_stable,
             equals_comparator, sort, partial_sort);
     }
+}
+
+template <is_decimal T>
+size_t ColumnDecimal<T>::estimateNumberOfDifferent(const IColumn::Permutation & perm, const EqualRange & range, size_t /*samples*/) const 
+{
+    // TODO: sample random elements
+    size_t range_size = getRangeSize(range);
+    if (range_size <= 1) {
+        return range_size;
+    }
+    HashSet<T> elements;
+    for (size_t i = range.first; i < range.second; ++i)
+    {
+        elements.insert(data[perm[i]]);
+    }
+    return elements.size();
 }
 
 template <is_decimal T>
