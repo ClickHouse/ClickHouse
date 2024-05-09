@@ -14,7 +14,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
 }
@@ -41,7 +41,7 @@ public:
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
         DataTypes accumulator_and_array_types(arguments.size() - 1);
         accumulator_and_array_types[0] = arguments.back();
@@ -64,7 +64,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
         const auto * lambda_function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
         if (!lambda_function_type)

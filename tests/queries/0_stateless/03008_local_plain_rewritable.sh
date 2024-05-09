@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-replicated-database, no-shared-merge-tree
+# Tags: no-random-settings, no-s3-storage, no-replicated-database, no-shared-merge-tree
 # Tag no-random-settings: enable after root causing flakiness
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

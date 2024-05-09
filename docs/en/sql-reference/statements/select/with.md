@@ -88,7 +88,7 @@ WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
 SELECT * FROM test1;
 ```
 
-# Recursive Queries
+## Recursive Queries
 
 The optional RECURSIVE modifier allows for a WITH query to refer to its own output. Example:
 
@@ -159,7 +159,7 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-## Search order
+### Search order
 
 To create a depth-first order, we compute for each result row an array of rows that we have already visited:
 
@@ -211,7 +211,7 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-## Cycle detection
+### Cycle detection
 
 First let's create graph table:
 
@@ -291,7 +291,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-## Infinite queries
+### Infinite queries
 
 It is also possible to use infinite recursive CTE queries if `LIMIT` is used in outer query:
 
