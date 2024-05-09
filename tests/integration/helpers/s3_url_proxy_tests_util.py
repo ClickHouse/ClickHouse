@@ -2,21 +2,26 @@ import os
 import time
 
 
+ALL_HTTP_METHODS = {"POST", "PUT", "GET", "HEAD", "CONNECT"}
+
+
 def check_proxy_logs(
-    cluster, proxy_instance, protocol, bucket, http_methods={"POST", "PUT", "GET"}
+    cluster, proxy_instance, protocol, bucket, requested_http_methods
 ):
     for i in range(10):
         logs = cluster.get_container_logs(proxy_instance)
         # Check with retry that all possible interactions with Minio are present
-        for http_method in http_methods:
+        for http_method in ALL_HTTP_METHODS:
             if (
                 logs.find(http_method + f" {protocol}://minio1:9001/root/data/{bucket}")
                 >= 0
             ):
-                return
+                if http_method not in requested_http_methods:
+                    assert False, f"Found http method {http_method} for bucket {bucket} that should not be found in {proxy_instance} logs"
+            elif http_method in requested_http_methods:
+                assert False, f"{http_method} method not found in logs of {proxy_instance} for bucket {bucket}"
+
             time.sleep(1)
-        else:
-            assert False, f"{http_methods} method not found in logs of {proxy_instance}"
 
 
 def wait_resolver(cluster):
@@ -78,11 +83,35 @@ def perform_simple_queries(node, minio_endpoint):
     )
 
 
-def simple_test(cluster, proxies, protocol, bucket):
+def simple_test(cluster, proxy, protocol, bucket):
     minio_endpoint = build_s3_endpoint(protocol, bucket)
-    node = cluster.instances[f"{bucket}"]
+    node = cluster.instances[bucket]
 
     perform_simple_queries(node, minio_endpoint)
 
-    for proxy in proxies:
-        check_proxy_logs(cluster, proxy, protocol, bucket)
+    check_proxy_logs(cluster, proxy, protocol, bucket, ["PUT", "GET", "HEAD"])
+
+
+def simple_storage_test(cluster, node, proxy, policy):
+    node.query(
+        """
+        CREATE TABLE s3_test (
+            id Int64,
+            data String
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy='{}'
+        """.format(
+            policy
+        )
+    )
+    node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
+    assert (
+        node.query("SELECT * FROM s3_test order by id FORMAT Values")
+        == "(0,'data'),(1,'data')"
+    )
+
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+
+    # not checking for POST because it is in a different format
+    check_proxy_logs(cluster, proxy, "http", policy, ["PUT", "GET"])
