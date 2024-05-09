@@ -151,7 +151,6 @@ public:
 
         for (size_t i = 0; i < result_rows_count; ++i)
         {
-            
             if constexpr (isDateTime64<DataType>())
             {
                 const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
