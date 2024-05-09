@@ -51,6 +51,12 @@ constexpr bool isTimeChange(const ChangeDateFunctionsNames & type)
 }
 
 template <typename DataType>
+constexpr bool isDate()
+{
+    return DataType::type_id == TypeIndex::Date;
+}
+
+template <typename DataType>
 constexpr bool isDate32()
 {
     return DataType::type_id == TypeIndex::Date32;
@@ -67,6 +73,7 @@ constexpr bool isDateTime64()
 {
     return DataType::type_id == TypeIndex::DateTime64;
 }
+
 
 template <typename Traits>
 class FunctionChangeDate : public IFunction
@@ -162,21 +169,21 @@ public:
                 Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i] / deg);
                 Int64 fraction = input_column_data[i] % deg;
 
-                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, scale, fraction);
+                result_data[i] = getChangedDate(time, new_value_column_data[i], input_type, result_type, date_lut, scale, fraction);
             }
             else if constexpr (isDate32<DataType>() && isDateTime64<ResultDataType>())
             {
                 const auto & date_lut = DateLUT::instance();
                 Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
 
-                result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 3, 0);
+                result_data[i] = getChangedDate(time, new_value_column_data[i], input_type, result_type, date_lut, 3, 0);
             }
             else if constexpr (isDateTime<DataType>())
             {
                 const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
                 Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
 
-                result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], input_type, result_type, date_lut));
             }
             else
             {
@@ -188,11 +195,11 @@ public:
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
 
                 if (isDate(result_type))
-                    result_data[i] = static_cast<UInt16>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                    result_data[i] = static_cast<UInt16>(getChangedDate(time, new_value_column_data[i], input_type, result_type, date_lut));
                 else if (isDate32(result_type))
-                    result_data[i] = static_cast<Int32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                    result_data[i] = static_cast<Int32>(getChangedDate(time, new_value_column_data[i], input_type, result_type, date_lut));
                 else
-                    result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
+                    result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], input_type, result_type, date_lut));
             }
         }
 
@@ -202,7 +209,7 @@ public:
         return result_column;
     }
 
-    Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const
+    Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & input_type, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const
     {
         auto year = time / 10'000'000'000;
         auto month = (time % 10'000'000'000) / 100'000'000;
@@ -291,12 +298,20 @@ public:
         if (isDateOrDate32(result_type))
             result = date_lut.makeDayNum(year, month, day);
         else if (isDateTime(result_type))
+        {
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
+            if (isDate(input_type))
+                result += date_lut.timezoneOffset(result);
+        }
         else
+        {
             result = DecimalUtils::decimalFromComponents<DateTime64>(
                 date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
                 static_cast<Int64>(fraction),
                 static_cast<UInt32>(scale));
+            if (isDate32(input_type))
+                result += date_lut.timezoneOffset(result);
+        }
 
         if (result > max_date)
             return max_date;
@@ -341,7 +356,6 @@ struct ChangeSecondTraits
     static constexpr auto Name = "changeSecond";
     static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_SECOND;
 };
-
 
 }
 
