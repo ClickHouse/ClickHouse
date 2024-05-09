@@ -101,7 +101,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
                 WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
                 serializations[column]->serializeText(*columns[column], row, out_serialize, format_settings);
             }
-            if (cut_to_width)
+            if (cut_to_width && format_settings.pretty.preserve_border_for_multiline_string)
                 splitValueAtBreakLine(serialized_value, transferred_row[column], cur_width, cur_width, prefix);
             has_transferred_row |= !transferred_row[column].empty();
 

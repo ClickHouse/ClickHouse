@@ -184,7 +184,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
             WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
             serializations[j]->serializeText(*columns[j], row_num, out_serialize, format_settings);
         }
-        if (cut_to_width)
+        if (cut_to_width && format_settings.pretty.preserve_border_for_multiline_string)
             splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width, cut_to_width, prefix);
         has_transferred_row |= !transferred_row[j].empty();
 
