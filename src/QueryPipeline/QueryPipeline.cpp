@@ -28,6 +28,7 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 
@@ -236,6 +237,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
             continue;
         }
+
+        /// Skip CreatingSetsTransform
+        if (typeid_cast<CreatingSetsTransform *>(processor))
+            continue;
 
         if (limit_processor == processor)
         {
