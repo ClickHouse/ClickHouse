@@ -14,8 +14,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
-from github.CommitStatus import CommitStatus
-
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
@@ -34,11 +32,10 @@ from commit_status_helper import (
     RerunHelper,
     format_description,
     get_commit,
-    get_commit_filtered_statuses,
     post_commit_status,
     set_status_comment,
-    trigger_mergeable_check,
     update_mergeable_check,
+    update_upstream_sync_status,
 )
 from digest_helper import DockerDigester, JobDigester
 from env_helper import (
@@ -57,7 +54,7 @@ from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github_helper import GitHub
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, BuildResult, JobReport, get_status
+from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 from version_helper import get_version_from_repo
@@ -1910,51 +1907,6 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def update_upstream_a_sync(
-    pr_info: PRInfo,
-    gh: GitHub,
-    mergeable_status: CommitStatus,
-) -> None:
-    pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-    upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
-    upstream_pr = upstream_repo.get_pull(pr_number)
-    sync_repo = gh.get_repo(GITHUB_REPOSITORY)
-    sync_pr = sync_repo.get_pull(pr_info.number)
-    # Find the commit that is in both repos, upstream and cloud
-    sync_commits = sync_pr.get_commits().reversed
-    upstream_commits = upstream_pr.get_commits()
-    # Github objects are compared by _url attribute. We can't compare them directly and
-    # should compare commits by SHA1
-    upstream_shas = [uc.sha for uc in upstream_commits]
-    found = False
-    for commit in sync_commits:
-        try:
-            idx = upstream_shas.index(commit.sha)
-            found = True
-            upstream_commit = upstream_commits[idx]
-        except ValueError:
-            continue
-
-    if not found:
-        print(
-            "No same commits found in upstream and sync repo, most probably force-push"
-        )
-        return
-
-    post_commit_status(
-        upstream_commit,
-        get_status(mergeable_status.state),
-        "",  # let's won't expose any urls from cloud
-        mergeable_status.description,
-        StatusNames.SYNC,
-    )
-    trigger_mergeable_check(
-        upstream_commit,
-        get_commit_filtered_statuses(upstream_commit),
-        True,
-    )
-
-
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
     exit_code = 0
@@ -2251,15 +2203,19 @@ def main() -> int:
                         and mergeable_status
                         and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
                     ):
-                        update_upstream_a_sync(pr_info, gh, mergeable_status)
-                        pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
+                        upstream_pr_number = int(
+                            pr_info.head_ref.split("/pr/", maxsplit=1)[1]
+                        )
+                        update_upstream_sync_status(
+                            upstream_pr_number, pr_info.number, gh, mergeable_status
+                        )
                         prepared_events = prepare_tests_results_for_clickhouse(
                             pr_info,
                             [],
                             job_report.status,
                             0,
                             job_report.start_time,
-                            f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}",
+                            f"https://github.com/ClickHouse/ClickHouse/pull/{upstream_pr_number}",
                             StatusNames.SYNC,
                         )
                         prepared_events[0]["test_context_raw"] = args.job_name
