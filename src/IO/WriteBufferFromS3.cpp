@@ -339,7 +339,10 @@ void WriteBufferFromS3::allocateBuffer()
     chassert(0 == hidden_size);
 
     if (buffer_allocation_policy->getBufferNumber() == 1)
-        return allocateFirstBuffer();
+    {
+        allocateFirstBuffer();
+        return;
+    }
 
     memory = Memory(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());

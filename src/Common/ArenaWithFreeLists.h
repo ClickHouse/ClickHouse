@@ -132,7 +132,7 @@ public:
     void free(char * ptr, const size_t size)
     {
         std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::free(ptr, size);
+        ArenaWithFreeLists::free(ptr, size);
     }
 
     /// Size of the allocated pool in bytes

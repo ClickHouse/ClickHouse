@@ -11,6 +11,7 @@
 #include <base/types.h>
 #include <absl/container/flat_hash_map.h>
 
+
 namespace DB
 {
 /// Finite State Transducer is an efficient way to represent term dictionary.
