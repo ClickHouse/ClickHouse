@@ -2083,13 +2083,33 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
-            if (expressions.hasLimitInrangeFrom() || expressions.hasLimitInrangeTo()) {
-                // if (expressions.before_limit_inrange_from)
-                //     executeExpression(query_plan, expressions.before_limit_inrange_from, "Before LIMIT INRANGE FROM");
-                // if (expressions.before_limit_inrange_to)
-                //     executeExpression(query_plan, expressions.before_limit_inrange_to, "Before LIMIT INRANGE TO");
+            if (expressions.hasLimitInrangeFrom() || expressions.hasLimitInrangeTo())
+            {
+                if (expressions.before_limit_inrange_from && expressions.before_limit_inrange_to)
+                {
+                    ActionsDAGPtr first_dag = expressions.before_limit_inrange_from->clone();
+                    ActionsDAGPtr second_dag = expressions.before_limit_inrange_to->clone();
 
-                executeLimitInrange(query_plan, expressions.before_limit_inrange_from, expressions.before_limit_inrange_to, expressions.remove_inrange_filter);
+                    first_dag->mergeInplace(std::move(*second_dag));
+                    auto last_node_name = expressions.before_limit_inrange_from->getNodes().back().result_name;
+
+                    for (const auto & node : first_dag->getNodes())
+                        if (last_node_name == node.result_name)
+                            first_dag->addOrReplaceInOutputs(node);
+                    std::cerr << "Result DAG:\n" << first_dag->dumpDAG() << '\n';
+
+                    executeExpression(query_plan, first_dag, "LIMIT INRANGE FROM expr TO expr");
+                }
+                else if (expressions.before_limit_inrange_from)
+                {
+                    executeExpression(query_plan, expressions.before_limit_inrange_from, "LIMIT INRANGE FROM expr");
+                }
+                else if (expressions.before_limit_inrange_to)
+                {
+                    executeExpression(query_plan, expressions.before_limit_inrange_to, "LIMIT INRANGE TO expr");
+                }
+
+                executeLimitInRange(query_plan, expressions.remove_inrange_filter);
             }
 
             executeWithFill(query_plan);
@@ -3194,21 +3214,13 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     }
 }
 
-void InterpreterSelectQuery::executeLimitInrange(
-    QueryPlan & query_plan, const ActionsDAGPtr & from_expression, const ActionsDAGPtr & to_expression, bool remove_filter_column)
+void InterpreterSelectQuery::executeLimitInRange(QueryPlan & query_plan, bool remove_filter_column)
 {
-    std::cerr << "IN executeLimitInrange\n";
-    if (!from_expression && !to_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT INRANGE expressions are not defined properly");
+    std::cerr << "IN executeLimitInRange\n";
 
-    // executeExpression(query_plan, from_expression, "Executing From expression");
-    // executeExpression(query_plan, to_expression, "Executing To expression");
-    
     remove_filter_column = true;
     auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
         query_plan.getCurrentDataStream(),
-        from_expression,
-        to_expression,
         getSelectQuery().limitInRangeFrom() ? getSelectQuery().limitInRangeFrom()->getColumnName() : "",
         getSelectQuery().limitInRangeTo() ? getSelectQuery().limitInRangeTo()->getColumnName() : "",
         remove_filter_column);

@@ -1,14 +1,9 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
+#include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class ActionsDAG;
 
 /** Implements [LIMIT INRANGE FROM from_expr TO to_expr] operation.
   * Takes from_expr and to_expr, which add to the block two ColumnUInt8 columns containing the filtering conditions.
@@ -19,16 +14,15 @@ class LimitInRangeTransform : public ISimpleTransform
 {
 public:
     LimitInRangeTransform(
-        const Block & header_, ExpressionActionsPtr from_expression_, ExpressionActionsPtr to_expression_, String from_filter_column_name_, String to_filter_column_name_,
-        bool remove_filter_column_, bool on_totals_, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr);
+        const Block & header_,
+        String from_filter_column_name_,
+        String to_filter_column_name_,
+        bool remove_filter_column_,
+        bool on_totals_,
+        std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr);
 
-    static Block transformHeader(
-            Block header,
-            const ActionsDAG * from_expression,
-            const ActionsDAG * to_expression,
-            const String & from_filter_column_name,
-            const String & to_filter_column_name,
-            bool remove_filter_column);
+    static Block
+    transformHeader(Block header, const String & from_filter_column_name, const String & to_filter_column_name, bool remove_filter_column);
 
     String getName() const override { return "LimitInRangeTransform"; }
 
@@ -37,8 +31,6 @@ public:
     void transform(Chunk & chunk) override;
 
 private:
-    ExpressionActionsPtr from_expression;
-    ExpressionActionsPtr to_expression;
     String from_filter_column_name;
     String to_filter_column_name;
     bool remove_filter_column;
@@ -50,6 +42,7 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
     std::atomic<bool> from_index_found;
+    std::atomic<bool> to_index_found;
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
