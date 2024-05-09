@@ -570,11 +570,8 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (params.full_access)
         return true;
 
-    auto access_granted = [&]
+    auto access_granted = []
     {
-        if (trace_log)
-            LOG_TRACE(trace_log, "Access granted: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
-                      (grant_option ? " WITH GRANT OPTION" : ""));
         return true;
     };
 
@@ -582,9 +579,6 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
                                                FormatStringHelper<String, FmtArgs...> fmt_string [[maybe_unused]],
                                                FmtArgs && ...fmt_args [[maybe_unused]])
     {
-        if (trace_log)
-            LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
-                      (grant_option ? " WITH GRANT OPTION" : ""));
         if constexpr (throw_if_denied)
             throw Exception(error_code, std::move(fmt_string), getUserName(), std::forward<FmtArgs>(fmt_args)...);
         return false;

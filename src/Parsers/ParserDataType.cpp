@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -57,6 +58,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     tryGetIdentifierNameInto(identifier, type_name);
 
+    /// Don't accept things like Array(`x.y`).
+    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+    {
+        expected.add(pos, "type name");
+        return false;
+    }
+
     String type_name_upper = Poco::toUpper(type_name);
     String type_name_suffix;
 
@@ -93,9 +101,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (type_name_upper.find("INT") != std::string::npos)
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
-        if (ParserKeyword(Keyword::SIGNED).ignore(pos))
+        if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))
             type_name_suffix = toStringView(Keyword::SIGNED);
-        else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
+        else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos, expected))
             type_name_suffix = toStringView(Keyword::UNSIGNED);
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
@@ -105,9 +113,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (pos->type != TokenType::ClosingRoundBracket)
                return false;
             ++pos;
-            if (ParserKeyword(Keyword::SIGNED).ignore(pos))
+            if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))
                 type_name_suffix = toStringView(Keyword::SIGNED);
-            else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
+            else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos, expected))
                 type_name_suffix = toStringView(Keyword::UNSIGNED);
         }
 
