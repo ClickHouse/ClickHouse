@@ -35,6 +35,7 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
+#include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 #include <boost/container/flat_set.hpp>
 
 #include <Access/Common/SSLCertificateSubjects.h>
@@ -586,10 +587,22 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
+    auto roles = params.getAll("role");
+    if (!roles.empty())
+        context->setCurrentRoles(roles);
 
-    Names reserved_param_suffixes;
+    std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
+    if (!database.empty())
+        context->setCurrentDatabase(database);
+
+    std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
+    if (!default_format.empty())
+        context->setDefaultFormat(default_format);
+
+    /// Anything else beside HTTP POST should be readonly queries.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+
+    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
     auto param_could_be_skipped = [&] (const String & name)
     {
@@ -597,74 +610,36 @@ void HTTPHandler::processQuery(
         if (name.empty())
             return true;
 
+        /// Some parameters (database, default_format, everything used in the code above) do not
+        /// belong to the Settings class.
+        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
+            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
+            "database", "default_format"};
+
         if (reserved_param_names.contains(name))
             return true;
 
-        for (const String & suffix : reserved_param_suffixes)
+        /// For external data we also want settings.
+        if (has_external_data)
         {
-            if (endsWith(name, suffix))
-                return true;
+            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
+            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
+            for (const String & suffix : reserved_param_suffixes)
+            {
+                if (endsWith(name, suffix))
+                    return true;
+            }
         }
 
         return false;
     };
 
-    auto roles = params.getAll("role");
-    if (!roles.empty())
-        context->setCurrentRoles(roles);
-
     /// Settings can be overridden in the query.
-    /// Some parameters (database, default_format, everything used in the code above) do not
-    /// belong to the Settings class.
-
-    /// 'readonly' setting values mean:
-    /// readonly = 0 - any query is allowed, client can change any setting.
-    /// readonly = 1 - only readonly queries are allowed, client can't change settings.
-    /// readonly = 2 - only readonly queries are allowed, client can change any setting except 'readonly'.
-
-    /// In theory if initially readonly = 0, the client can change any setting and then set readonly
-    /// to some other value.
-    const auto & settings = context->getSettingsRef();
-
-    /// Anything else beside HTTP POST should be readonly queries.
-    if (request.getMethod() != HTTPServerRequest::HTTP_POST)
-    {
-        if (settings.readonly == 0)
-            context->setSetting("readonly", 2);
-    }
-
-    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
-
-    if (has_external_data)
-    {
-        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-        reserved_param_suffixes.reserve(3);
-        /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
-        reserved_param_suffixes.emplace_back("_format");
-        reserved_param_suffixes.emplace_back("_types");
-        reserved_param_suffixes.emplace_back("_structure");
-    }
-
-    std::string database = request.get("X-ClickHouse-Database", "");
-    std::string default_format = request.get("X-ClickHouse-Format", "");
-
     SettingsChanges settings_changes;
     for (const auto & [key, value] : params)
     {
-        if (key == "database")
-        {
-            if (database.empty())
-                database = value;
-        }
-        else if (key == "default_format")
-        {
-            if (default_format.empty())
-                default_format = value;
-        }
-        else if (param_could_be_skipped(key))
-        {
-        }
-        else
+        if (!param_could_be_skipped(key))
         {
             /// Other than query parameters are treated as settings.
             if (!customizeQueryParam(context, key, value))
@@ -672,15 +647,9 @@ void HTTPHandler::processQuery(
         }
     }
 
-    if (!database.empty())
-        context->setCurrentDatabase(database);
-
-    if (!default_format.empty())
-        context->setDefaultFormat(default_format);
-
-    /// For external data we also want settings
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
+    const auto & settings = context->getSettingsRef();
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
