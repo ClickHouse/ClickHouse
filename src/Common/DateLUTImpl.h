@@ -1104,8 +1104,7 @@ public:
                 time -= values.amount_of_offset_change();
 
                 /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
-                if (time < values.time_at_offset_change())
-                    time = values.time_at_offset_change();
+                time = std::max<Time>(time, values.time_at_offset_change());
             }
         }
         else
@@ -1250,7 +1249,7 @@ public:
     DateComponents toDateComponents(Time t) const
     {
         const Values & values = getValues(t);
-        return { values.year, values.month, values.day_of_month };
+        return { .year = values.year, .month = values.month, .day = values.day_of_month };
     }
 
     DateTimeComponents toDateTimeComponents(Time t) const
@@ -1350,10 +1349,7 @@ public:
 
         UInt8 days_in_month = daysInMonth(year, month);
 
-        if (day_of_month > days_in_month)
-            day_of_month = days_in_month;
-
-        return day_of_month;
+        return std::min(day_of_month, days_in_month);
     }
 
     template <typename DateOrTime>

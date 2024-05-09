@@ -123,6 +123,14 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
 
+  # These are new in clang-18, and we have to sort them out:
+  '-readability-avoid-nested-conditional-operator',
+  '-modernize-use-designated-initializers',
+  '-performance-enum-size',
+  '-readability-redundant-inline-specifier',
+  '-readability-redundant-member-init',
+  '-bugprone-crtp-constructor-accessibility',
+
   '-zircon-*'
 ]
 

@@ -569,7 +569,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__,
         task.entry.tracing_context,
         this->context->getOpenTelemetrySpanLog());
-    tracing_ctx_holder.root_span.kind = OpenTelemetry::CONSUMER;
+    tracing_ctx_holder.root_span.kind = OpenTelemetry::SpanKind::CONSUMER;
 
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();

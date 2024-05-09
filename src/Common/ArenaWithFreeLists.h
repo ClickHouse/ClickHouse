@@ -87,7 +87,10 @@ public:
     void free(char * ptr, const size_t size)
     {
         if (size > max_fixed_block_size)
-            return Allocator<false>::free(ptr, size);
+        {
+            Allocator<false>::free(ptr, size);
+            return;
+        }
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);

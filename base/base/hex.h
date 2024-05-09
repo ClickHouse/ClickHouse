@@ -146,7 +146,7 @@ namespace impl
             TUInt res;
             if constexpr (sizeof(TUInt) == 1)
             {
-                res = static_cast<UInt8>(unhexDigit(data[0])) * 0x10 + static_cast<UInt8>(unhexDigit(data[1]));
+                res = unhexDigit(data[0]) * 0x10 + unhexDigit(data[1]);
             }
             else if constexpr (sizeof(TUInt) == 2)
             {

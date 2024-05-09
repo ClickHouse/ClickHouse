@@ -873,7 +873,7 @@ namespace
             query_context->getClientInfo().client_trace_context,
             query_context->getSettingsRef(),
             query_context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();

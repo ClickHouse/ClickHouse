@@ -10,7 +10,7 @@ enum class CancellationCode : uint8_t
     QueryIsNotInitializedYet = 1,
     CancelCannotBeSent = 2,
     CancelSent = 3,
-    Unknown
+    Unknown = 255
 };
 
 }
