@@ -49,7 +49,7 @@ class CILabels(metaclass=WithIter):
     CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
-    CI_SET_ANALYZER = "ci_set_analyzer"
+    CI_SET_OLD_ANALYZER = "ci_set_old_analyzer"
     CI_SET_STATLESS = "ci_set_stateless"
     CI_SET_STATEFUL = "ci_set_stateful"
     CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
@@ -78,7 +78,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_COMPAT = "binary_amd64_compat"
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
-    # BINARY_S390X = "binary_s390x" # disabled because s390x refused to build in the migration to OpenSSL
+    BINARY_S390X = "binary_s390x"
     FUZZERS = "fuzzers"
 
 
@@ -98,15 +98,16 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
-    STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE = (
+    STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
         "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
-    # merged into STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE:
-    # STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
+    # merged into STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE:
+    # STATELESS_TEST_OLD_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
     # STATELESS_TEST_DB_REPL_RELEASE = "Stateless tests (release, DatabaseReplicated)"
     # STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
+    STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
 
     STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
@@ -129,10 +130,12 @@ class JobNames(metaclass=WithIter):
     STRESS_TEST_UBSAN = "Stress test (ubsan)"
     STRESS_TEST_MSAN = "Stress test (msan)"
     STRESS_TEST_DEBUG = "Stress test (debug)"
+    STRESS_TEST_AZURE_TSAN = "Stress test (azure, tsan)"
+    STRESS_TEST_AZURE_MSAN = "Stress test (azure, msan)"
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
-    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, old analyzer)"
+    INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
     INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
@@ -242,6 +245,8 @@ class JobConfig:
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
+    # job will run if it's enabled in CI option
+    run_by_ci_option: bool = False
     # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
     random_bucket: str = ""
 
@@ -846,14 +851,14 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST,
             ]
         ),
-        CILabels.CI_SET_ANALYZER: LabelConfig(
+        CILabels.CI_SET_OLD_ANALYZER: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
                 JobNames.FAST_TEST,
                 Build.PACKAGE_RELEASE,
                 Build.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
-                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
+                JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
+                JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
             ]
         ),
         CILabels.CI_SET_STATLESS: LabelConfig(
@@ -1029,13 +1034,12 @@ CI_CONFIG = CIConfig(
             package_type="binary",
             static_binary_name="riscv64",
         ),
-        # disabled because s390x refused to build in the migration to OpenSSL
-        # Build.BINARY_S390X: BuildConfig(
-        #     name=Build.BINARY_S390X,
-        #     compiler="clang-17-s390x",
-        #     package_type="binary",
-        #     static_binary_name="s390x",
-        # ),
+        Build.BINARY_S390X: BuildConfig(
+            name=Build.BINARY_S390X,
+            compiler="clang-17-s390x",
+            package_type="binary",
+            static_binary_name="s390x",
+        ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-17",
@@ -1065,7 +1069,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_DARWIN_AARCH64,
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
-                # Build.BINARY_S390X, # disabled because s390x refused to build in the migration to OpenSSL
+                Build.BINARY_S390X,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
@@ -1193,13 +1197,17 @@ CI_CONFIG = CIConfig(
         JobNames.STATELESS_TEST_AARCH64: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
-        JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
+        JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
             job_config=JobConfig(num_batches=6, **statless_test_common_params),  # type: ignore
+        ),
+        JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
+            Build.PACKAGE_ASAN,
+            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
@@ -1223,6 +1231,12 @@ CI_CONFIG = CIConfig(
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
+        JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
+            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+        ),
+        JobNames.STRESS_TEST_AZURE_MSAN: TestConfig(
+            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+        ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
@@ -1236,7 +1250,7 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_ASAN,
             job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
         ),
-        JobNames.INTEGRATION_TEST_ASAN_ANALYZER: TestConfig(
+        JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: TestConfig(
             Build.PACKAGE_ASAN,
             job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
         ),
@@ -1368,8 +1382,8 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST,
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
-    JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
-    JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
+    JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+    JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
 ]
 
 

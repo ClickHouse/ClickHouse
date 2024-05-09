@@ -780,6 +780,11 @@ BlockIO InterpreterSystemQuery::execute()
             resetCoverage();
             break;
         }
+        case Type::UNLOAD_PRIMARY_KEY:
+        {
+            unloadPrimaryKeys();
+            break;
+        }
 
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
@@ -1157,6 +1162,42 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::unloadPrimaryKeys()
+{
+    if (!table_id.empty())
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        {
+            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
+            merge_tree->unloadPrimaryKeys();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
+        }
+    }
+    else
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "Unloading primary keys for all tables");
+
+        for (auto & database : DatabaseCatalog::instance().getDatabases())
+        {
+            for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
+            {
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                {
+                    merge_tree->unloadPrimaryKeys();
+                }
+            }
+        }
+    }
+}
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1468,6 +1509,14 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
+        case Type::UNLOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_THREAD_FUZZER:

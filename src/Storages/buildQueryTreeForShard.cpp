@@ -366,7 +366,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
             auto subquery_to_execute = in_function_subquery_node;
             if (subquery_to_execute->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context->getQueryContext());
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
                 planner_context->getMutableQueryContext(),

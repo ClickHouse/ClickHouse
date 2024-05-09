@@ -6,8 +6,11 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/noexcept_scope.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Storages/MutationCommands.h>
+#include <base/defines.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 #include <ranges>
@@ -942,7 +945,14 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                         mutations_by_partition.erase(partition_and_block_num.first);
                 }
 
-                it = mutations_by_znode.erase(it);
+                if (!it->second.is_done)
+                {
+                    const auto commands = entry.commands;
+                    it = mutations_by_znode.erase(it);
+                    updateAlterConversionsMutations(commands, alter_conversions_mutations, /* remove= */ true);
+                }
+                else
+                    it = mutations_by_znode.erase(it);
             }
             else
                 ++it;
@@ -991,12 +1001,15 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version))
                     .first->second;
 
-                for (const auto & pair : entry->block_numbers)
-                {
-                    const String & partition_id = pair.first;
-                    Int64 block_num = pair.second;
-                    mutations_by_partition[partition_id].emplace(block_num, &mutation);
-                }
+                updateAlterConversionsMutations(entry->commands, alter_conversions_mutations, /* remove= */ false);
+                NOEXCEPT_SCOPE({
+                    for (const auto & pair : entry->block_numbers)
+                    {
+                        const String & partition_id = pair.first;
+                        Int64 block_num = pair.second;
+                        mutations_by_partition[partition_id].emplace(block_num, &mutation);
+                    }
+                });
                 LOG_TRACE(log, "Adding mutation {} for {} partitions (data versions: {})",
                           entry->znode_name, entry->block_numbers.size(), entry->getBlockNumbersForLogs());
 
@@ -1062,6 +1075,8 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         }
 
         mutations_by_znode.erase(it);
+        /// updateAlterConversionsMutations() will be called in updateMutations()
+
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
@@ -1887,6 +1902,15 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 
 MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
+    int32_t part_metadata_version = part->getMetadataVersion();
+    int32_t metadata_version = storage.getInMemoryMetadataPtr()->getMetadataVersion();
+
+    chassert(alter_conversions_mutations >= 0);
+    /// NOTE: that just checking part_metadata_version is not enough, since we
+    /// need to check for non-metadata mutations as well.
+    if (alter_conversions_mutations == 0 && metadata_version == part_metadata_version)
+        return {};
+
     std::unique_lock lock(state_mutex);
 
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
@@ -1894,12 +1918,17 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
         return {};
 
     Int64 part_data_version = part->info.getDataVersion();
-    Int64 part_metadata_version = part->getMetadataVersion();
-
     MutationCommands result;
 
     bool seen_all_data_mutations = false;
     bool seen_all_metadata_mutations = false;
+
+    auto add_to_result = [&](const ReplicatedMergeTreeMutationEntryPtr & entry)
+    {
+        for (const auto & command : entry->commands | std::views::reverse)
+            if (AlterConversions::supportsMutationCommandType(command.type))
+                result.emplace_back(command);
+    };
 
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
@@ -1911,28 +1940,22 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
 
         auto & entry = mutation_status->entry;
 
-        auto add_to_result = [&] {
-            for (const auto & command : entry->commands | std::views::reverse)
-                if (AlterConversions::supportsMutationCommandType(command.type))
-                    result.emplace_back(command);
-        };
-
         auto alter_version = entry->alter_version;
         if (alter_version != -1)
         {
-            if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
+            if (alter_version > metadata_version)
                 continue;
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                add_to_result();
+                add_to_result(entry);
             else
                 seen_all_metadata_mutations = true;
         }
         else
         {
             if (mutation_version > part_data_version)
-                add_to_result();
+                add_to_result(entry);
             else
                 seen_all_data_mutations = true;
         }
@@ -2019,6 +2042,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                                   "were executed concurrently on different replicas.", znode);
                     mutation.parts_to_do.clear();
                 }
+
+                updateAlterConversionsMutations(mutation.entry->commands, alter_conversions_mutations, /* remove= */ true);
             }
             else if (mutation.parts_to_do.size() == 0)
             {
@@ -2075,6 +2100,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
+                updateAlterConversionsMutations(entry->commands, alter_conversions_mutations, /* remove= */ true);
             }
         }
     }

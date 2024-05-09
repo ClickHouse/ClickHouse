@@ -2499,10 +2499,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_block_size = std::max<UInt64>(1, max_block_limited);
             max_threads_execute_query = max_streams = 1;
         }
+
         if (local_limits.local_limits.size_limits.max_rows != 0)
         {
             if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
                 query_info.limit = max_block_limited;
+            else if (local_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max()) /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
+                query_info.limit = 1 + local_limits.local_limits.size_limits.max_rows;
         }
         else
         {

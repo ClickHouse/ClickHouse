@@ -47,6 +47,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Change it to never return LowCardinality, making it consistent when using groupingForRollup / groupingForforCube
+    /// with __grouping_set
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();

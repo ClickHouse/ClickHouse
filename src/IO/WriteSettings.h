@@ -23,9 +23,7 @@ struct WriteSettings
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     bool s3_allow_parallel_part_upload = true;
-
-    /// Monitoring
-    bool for_object_storage = false; // to choose which profile events should be incremented
+    bool azure_allow_parallel_part_upload = true;
 
     bool operator==(const WriteSettings & other) const = default;
 };

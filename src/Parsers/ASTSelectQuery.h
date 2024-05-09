@@ -83,6 +83,7 @@ public:
 
     ASTPtr clone() const override;
 
+    bool recursive_with = false;
     bool distinct = false;
     bool group_by_all = false;
     bool group_by_with_totals = false;
