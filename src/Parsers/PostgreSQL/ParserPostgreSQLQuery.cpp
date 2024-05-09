@@ -1,43 +1,47 @@
 #include "Parsers/Lexer.h"
+#include "Transform.h"
+#include "examples.h"
 #include <Parsers/PostgreSQL/ParserPostgreSQLQuery.h>
+#include <Parsers/PostgreSQL/Common/Types.h>
+#include <Parsers/PostgreSQL/Common/util/JSONHelpers.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
 
+
+#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 
 #include <string>
 
-#include <pg_query.h>
-
 #include "config.h"
 
-// #include <PostgreSQL.h>
-
 #include <base/scope_guard.h>
+#include <iostream>
 
 namespace DB
 {
 
-bool ParserPostgreSQLQuery::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, [[maybe_unused]] Expected & expected)
+bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & /*ast*/, Expected & /*expected*/)
 {
-    const auto * begin = pos->begin;
-    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
-        ++pos;
-    const auto * end = pos->begin;
-    
-    const auto * begin_char_ptr = begin;
-    const auto * end_char_ptr = end;
-    String res;
-    for (const auto *it = begin_char_ptr; it != end_char_ptr; it++) {
-        res += *it;
+    auto json = examples[0].PGAST;
+    JSON::Element JSONRoot;
+    JSON parser;
+
+    if (!parser.parse(json, JSONRoot))
+    {
+        return false;
     }
-    
-    Poco::Logger * log = &Poco::Logger::get("registerCompressionCodecWithType");
-
-    log->debug("POSTGRESQL RES: {}", res);
-    
-
+    const auto root = PostgreSQL::buildJSONTree(JSONRoot);
+    // PostgreSQL::Transform(root, ast);
+    std::cerr << "___________________________";
+    const auto keys = root->ListChildKeys();
+    std::cerr << "ListChildKeys: ";
+    for (auto key : keys) {
+        std::cerr << key << ' ';
+    }
+    std::cerr << "\n";
+    std::cerr << "___________________________";
     return true;
 }
 }
