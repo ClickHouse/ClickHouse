@@ -2292,18 +2292,12 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
     size_t rows_left = block.rows();
     size_t rows_added = 0;
-
     for (size_t left_row = start_left_row; left_row < rows_left; ++left_row)
     {
         size_t block_number = 0;
 
         auto process_right_block = [&](const Block & block_right)
         {
-            ++block_number;
-            if (block_number < start_right_block)
-                return;
-
-
             size_t rows_right = block_right.rows();
             rows_added += rows_right;
 
@@ -2319,15 +2313,19 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
         for (const Block & compressed_block_right : data->blocks)
         {
+            ++block_number;
+            if (block_number < start_right_block)
+                continue;
+
+            auto block_right = compressed_block_right.decompress();
+            process_right_block(block_right);
             if (rows_added > max_joined_block_rows)
             {
                 break;
             }
-            auto block_right = compressed_block_right.decompress();
-            process_right_block(block_right);
         }
 
-        if (tmp_stream)
+        if (tmp_stream && rows_added <= max_joined_block_rows)
         {
             if (reader == nullptr)
             {
@@ -2336,14 +2334,15 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             }
             while (auto block_right = reader->read())
             {
+                ++block_number;
+                process_right_block(block_right);
                 if (rows_added > max_joined_block_rows)
                 {
                     break;
                 }
-                process_right_block(block_right);
             }
 
-            /// It means, that we have read all right blocks
+            /// It means, that reader->read() returned {}
             if (rows_added <= max_joined_block_rows)
             {
                 reader.reset();
