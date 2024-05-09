@@ -31,6 +31,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+size_t getRangeSize(const EqualRange & range)
+{
+    return range.second - range.first;
+}
+
 String IColumn::dumpStructure() const
 {
     WriteBufferFromOwnString res;
@@ -49,6 +54,17 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
 {
     insert(src[n]);
 }
+
+size_t IColumn::estimateNumberOfDifferent(const IColumn::Permutation & /*perm*/, const EqualRange & range, size_t /*samples*/) const 
+{
+    return getRangeSize(range);
+}
+
+void IColumn::updatePermutationForCompression(IColumn::Permutation & perm, EqualRanges & ranges) const
+{
+    updatePermutation(PermutationSortDirection::Ascending, PermutationSortStability::Unstable, 0, 1, perm, ranges);
+}
+
 
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {

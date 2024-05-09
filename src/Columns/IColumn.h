@@ -40,7 +40,10 @@ class ColumnConst;
  * Represents a set of equal ranges in previous column to perform sorting in current column.
  * Used in sorting by tuples.
  * */
-using EqualRanges = std::vector<std::pair<size_t, size_t> >;
+using EqualRange = std::pair<size_t, size_t>;
+using EqualRanges = std::vector<EqualRange>;
+
+size_t getRangeSize(const EqualRange & range);
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -398,6 +401,10 @@ public:
                         "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
                         "or for Array or Tuple, containing them.");
     }
+
+    virtual size_t estimateNumberOfDifferent(const Permutation & /*perm*/, const EqualRange & range, size_t /*samples*/) const;
+
+    virtual void updatePermutationForCompression(Permutation & /*perm*/, EqualRanges & /*ranges*/) const;
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
