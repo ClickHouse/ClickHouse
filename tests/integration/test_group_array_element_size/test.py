@@ -64,6 +64,7 @@ def test_max_exement_size(started_cluster):
 
     assert node1.query("select length(groupArrayMerge(x)) from tab3") == "21\n"
 
+
 def test_limit_size(started_cluster):
     node1.query(
         "CREATE TABLE tab4 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
