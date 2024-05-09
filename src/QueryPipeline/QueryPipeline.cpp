@@ -19,6 +19,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -243,6 +244,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
             continue;
         }
+
+        /// Skip CreatingSetsTransform
+        if (typeid_cast<CreatingSetsTransform *>(processor))
+            continue;
 
         if (limit_processor == processor)
         {
