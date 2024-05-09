@@ -70,6 +70,7 @@ StorageStreamQueue::StorageStreamQueue(
     : IStorage(table_id_)
     , WithContext(context_)
     , settings(std::move(settings_))
+    , stream_table_id(table_id_)
     , source_table_id(source_table_id_)
     , column_names(column_names_)
     , key_column(key_column_)
@@ -79,6 +80,9 @@ StorageStreamQueue::StorageStreamQueue(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+
+    keeper_path = settings->keeper_path.toString() + stream_table_id.getFullTableName();
+    keeper_key_path = keeper_path + "_keys";
 
     setInMemoryMetadata(storage_metadata);
 
@@ -103,24 +107,13 @@ void StorageStreamQueue::shutdown(bool)
     LOG_TRACE(log, "Shut down storage");
 }
 
-std::string StorageStreamQueue::createZooKeeperPath()
-{
-    return "/storage/stream/queue/test/path";
-}
-
-std::string StorageStreamQueue::createZooKeeperNodeWithKeysPath()
-{
-    return "/storage/stream/queue/test/keys_path";
-}
-
 std::unordered_set<int64_t> StorageStreamQueue::readSetOfKeys()
 {
-    std::string zoo_keeper_node_with_keys_path = createZooKeeperNodeWithKeysPath();
     auto zoo_keeper = getZooKeeper();
-    zoo_keeper->createIfNotExists(zoo_keeper_node_with_keys_path, "");
+    zoo_keeper->createIfNotExists(keeper_key_path, "");
 
     std::stringstream ss;
-    ss << zoo_keeper->get(zoo_keeper_node_with_keys_path);
+    ss << zoo_keeper->get(keeper_key_path);
 
     std::unordered_set<int64_t> result;
     std::string key;
@@ -133,7 +126,6 @@ std::unordered_set<int64_t> StorageStreamQueue::readSetOfKeys()
 
 void StorageStreamQueue::writeSetOfKeys(std::unordered_set<int64_t> keys)
 {
-    std::string zoo_keeper_node_with_keys_path = createZooKeeperNodeWithKeysPath();
     auto zoo_keeper = getZooKeeper();
     std::stringstream ss;
     for (const auto key : keys)
@@ -141,15 +133,14 @@ void StorageStreamQueue::writeSetOfKeys(std::unordered_set<int64_t> keys)
         ss << key << " ";
     }
 
-    zoo_keeper->set(zoo_keeper_node_with_keys_path, ss.str());
+    zoo_keeper->set(keeper_key_path, ss.str());
 }
 
 bool StorageStreamQueue::createZooKeeperNode()
 {
     auto zookeeper = getZooKeeper();
-    auto path = createZooKeeperPath();
-    zookeeper->createAncestors(path);
-    auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
+    zookeeper->createAncestors(keeper_path);
+    auto code = zookeeper->tryCreate(keeper_path, "", zkutil::CreateMode::Ephemeral);
     if (code == Coordination::Error::ZNODEEXISTS)
     {
         return false;

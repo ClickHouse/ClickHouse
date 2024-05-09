@@ -35,8 +35,6 @@ private:
     void startup() override;
     void shutdown(bool is_drop) override;
 
-    std::string createZooKeeperPath();
-    std::string createZooKeeperNodeWithKeysPath();
     std::unordered_set<int64_t> readSetOfKeys();
     void writeSetOfKeys(std::unordered_set<int64_t>);
 
@@ -46,6 +44,7 @@ private:
     void move_data();
 
     std::unique_ptr<StreamQueueSettings> settings;
+    StorageID stream_table_id;
     StorageID source_table_id;
 
     Names column_names;
@@ -55,6 +54,9 @@ private:
     bool shutdown_called = false;
 
     bool downloading = false;
+
+    std::string keeper_path;
+    std::string keeper_key_path;
 
     LoggerPtr log;
 };
