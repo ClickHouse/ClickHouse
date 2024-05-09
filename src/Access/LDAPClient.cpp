@@ -196,7 +196,7 @@ void LDAPClient::handleError(int result_code, String text)
                 }
             });
 
-            ldap_get_option(handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, &raw_message);
+            ldap_get_option(handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, static_cast<void*>(&raw_message));
 
             if (raw_message && *raw_message != '\0')
             {

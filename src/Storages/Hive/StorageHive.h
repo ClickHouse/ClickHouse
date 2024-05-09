@@ -70,10 +70,10 @@ private:
 
     enum class PruneLevel : uint8_t
     {
-        None, /// Do not prune
-        Partition,
-        File,
-        Split,
+        None = 0, /// Do not prune
+        Partition = 1,
+        File = 2,
+        Split = 3,
         Max = Split,
     };
 

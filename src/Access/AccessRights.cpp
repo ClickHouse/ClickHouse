@@ -241,11 +241,11 @@ namespace
 
     enum Level
     {
-        GLOBAL_LEVEL,
-        DATABASE_LEVEL,
+        GLOBAL_LEVEL = 0,
+        DATABASE_LEVEL = 1,
         GLOBAL_WITH_PARAMETER = DATABASE_LEVEL,
-        TABLE_LEVEL,
-        COLUMN_LEVEL,
+        TABLE_LEVEL = 2,
+        COLUMN_LEVEL = 3,
     };
 
     AccessFlags getAllGrantableFlags(Level level)

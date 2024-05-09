@@ -211,7 +211,7 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 
-    fs::remove_all(rocksdb_dir);
+    (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
     initDB();
 }

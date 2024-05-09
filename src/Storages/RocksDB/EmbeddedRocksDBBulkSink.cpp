@@ -100,7 +100,7 @@ EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
     try
     {
         if (fs::exists(insert_directory_queue))
-            fs::remove_all(insert_directory_queue);
+            (void)fs::remove_all(insert_directory_queue);
     }
     catch (...)
     {
@@ -210,7 +210,7 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     if (fs::exists(sst_file_path))
-        fs::remove(sst_file_path);
+        (void)fs::remove(sst_file_path);
 }
 
 void EmbeddedRocksDBBulkSink::onFinish()

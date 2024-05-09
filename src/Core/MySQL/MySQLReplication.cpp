@@ -513,49 +513,49 @@ namespace MySQLReplication
                     {
                         UInt8 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{UInt8{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_SHORT:
                     {
                         UInt16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                        row.push_back(Field{UInt16{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_INT24:
                     {
                         Int32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 3);
-                        row.push_back(Field{Int32{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_LONG:
                     {
                         UInt32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{UInt32{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_LONGLONG:
                     {
                         UInt64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                        row.push_back(Field{UInt64{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_FLOAT:
                     {
                         Float32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{Float32{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_DOUBLE:
                     {
                         Float64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                        row.push_back(Field{Float64{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_TIMESTAMP:
