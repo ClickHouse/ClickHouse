@@ -21,7 +21,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 
-SELECT 'simple_with_analyzer', length(used_dictionaries) as used_dictionaries_qty
+SELECT log_comment, used_dictionaries
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
@@ -40,7 +40,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 
-SELECT 'nested_with_analyzer', length(used_dictionaries) as used_dictionaries_qty
+SELECT log_comment, used_dictionaries
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
@@ -56,7 +56,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 
-SELECT 'simple_without_analyzer', length(used_dictionaries) as used_dictionaries_qty
+SELECT log_comment, used_dictionaries
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
@@ -75,7 +75,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 
-SELECT 'nested_without_analyzer', length(used_dictionaries) as used_dictionaries_qty
+SELECT log_comment, used_dictionaries
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'

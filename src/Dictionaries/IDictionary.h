@@ -69,6 +69,15 @@ public:
         return dictionary_id.getNameForLogs();
     }
 
+    /// Returns fully qualified unquoted dictionary name
+    std::string getQualifiedName() const
+    {
+        std::lock_guard lock{mutex};
+        if (dictionary_id.database_name.empty())
+            return dictionary_id.table_name;
+        return dictionary_id.database_name + "." + dictionary_id.table_name;
+    }
+
     StorageID getDictionaryID() const
     {
         std::lock_guard lock{mutex};
