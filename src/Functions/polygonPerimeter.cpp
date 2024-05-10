@@ -17,17 +17,13 @@
 #include <memory>
 #include <string>
 
-
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 template <typename Point>
 class FunctionPolygonPerimeter : public IFunction
@@ -101,7 +97,6 @@ const char * FunctionPolygonPerimeter<CartesianPoint>::name = "polygonPerimeterC
 template <>
 const char * FunctionPolygonPerimeter<SphericalPoint>::name = "polygonPerimeterSpherical";
 
-}
 
 REGISTER_FUNCTION(PolygonPerimeter)
 {

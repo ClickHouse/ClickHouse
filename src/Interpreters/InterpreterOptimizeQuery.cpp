@@ -2,8 +2,6 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
@@ -95,12 +93,4 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
     return required_access;
 }
 
-void registerInterpreterOptimizeQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterOptimizeQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterOptimizeQuery", create_fn);
-}
 }

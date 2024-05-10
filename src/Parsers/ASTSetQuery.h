@@ -25,7 +25,7 @@ public:
     SettingsChanges changes;
     /// settings that will be reset to default value
     std::vector<String> default_settings;
-    NameToNameVector query_parameters;
+    NameToNameMap query_parameters;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Set"; }
@@ -34,7 +34,7 @@ public:
 
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
 

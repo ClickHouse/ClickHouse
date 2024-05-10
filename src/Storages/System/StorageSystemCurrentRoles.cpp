@@ -11,18 +11,18 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemCurrentRoles::getColumnsDescription()
+NamesAndTypesList StorageSystemCurrentRoles::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"role_name", std::make_shared<DataTypeString>(), "Role name."},
-        {"with_admin_option", std::make_shared<DataTypeUInt8>(), "1 if the role has ADMIN OPTION privilege."},
-        {"is_default", std::make_shared<DataTypeUInt8>(), "1 if role is set to be a default."},
+    NamesAndTypesList names_and_types{
+        {"role_name", std::make_shared<DataTypeString>()},
+        {"with_admin_option", std::make_shared<DataTypeUInt8>()},
+        {"is_default", std::make_shared<DataTypeUInt8>()},
     };
+    return names_and_types;
 }
 
 
-void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     auto roles_info = context->getRolesInfo();
     auto user = context->getUser();

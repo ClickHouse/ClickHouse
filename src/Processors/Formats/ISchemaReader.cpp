@@ -2,7 +2,6 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <boost/algorithm/string.hpp>
@@ -63,14 +62,6 @@ void checkFinalInferredType(
         type = removeNullable(type);
 }
 
-void ISchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    DataTypes types = {type, new_type};
-    auto least_supertype = tryGetLeastSupertype(types);
-    if (least_supertype)
-        type = new_type = least_supertype;
-}
-
 IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
     : ISchemaReader(in_)
     , max_rows_to_read(format_settings_.max_rows_to_read_for_schema_inference)
@@ -81,7 +72,7 @@ IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & fo
 {
 }
 
-void IIRowSchemaReader::setContext(const ContextPtr & context)
+void IIRowSchemaReader::setContext(ContextPtr & context)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, context, hints_parsing_error))
@@ -91,8 +82,13 @@ void IIRowSchemaReader::setContext(const ContextPtr & context)
     }
     else
     {
-        LOG_WARNING(getLogger("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
+        LOG_WARNING(&Poco::Logger::get("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
     }
+}
+
+void IIRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

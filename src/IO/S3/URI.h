@@ -17,7 +17,6 @@ namespace DB::S3
  * The following patterns are allowed:
  * s3://bucket/key
  * http(s)://endpoint/bucket/key
- * http(s)://bucket.<vpce_endpoint_id>.s3.<region>.vpce.amazonaws.com<:port_number>/bucket_name/key
  */
 struct URI
 {
@@ -33,7 +32,6 @@ struct URI
 
     URI() = default;
     explicit URI(const std::string & uri_);
-    void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
 };

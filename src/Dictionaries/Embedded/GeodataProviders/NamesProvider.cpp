@@ -6,9 +6,6 @@
 
 namespace fs = std::filesystem;
 
-namespace DB
-{
-
 bool LanguageRegionsNamesDataSource::isModified() const
 {
     return updates_tracker.isModified();
@@ -22,7 +19,7 @@ size_t LanguageRegionsNamesDataSource::estimateTotalSize() const
 ILanguageRegionsNamesReaderPtr LanguageRegionsNamesDataSource::createReader()
 {
     updates_tracker.fixCurrentVersion();
-    auto file_reader = std::make_shared<ReadBufferFromFile>(path);
+    auto file_reader = std::make_shared<DB::ReadBufferFromFile>(path);
     return std::make_unique<LanguageRegionsNamesFormatReader>(std::move(file_reader));
 }
 
@@ -53,6 +50,4 @@ ILanguageRegionsNamesDataSourcePtr RegionsNamesDataProvider::getLanguageRegionsN
 std::string RegionsNamesDataProvider::getDataFilePath(const std::string & language) const
 {
     return directory + "/regions_names_" + language + ".txt";
-}
-
 }

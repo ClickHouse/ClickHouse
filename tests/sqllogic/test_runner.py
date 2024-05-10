@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import enum
-import io
-import json
 import logging
 import os
+import traceback
+import io
+import json
 
 import test_parser
-from connection import execute_request
 from exceptions import (
-    DataResultDiffer,
     Error,
     ProgramError,
+    DataResultDiffer,
+    StatementExecutionError,
+    StatementSuccess,
     QueryExecutionError,
     QuerySuccess,
     SchemeResultDiffer,
-    StatementExecutionError,
-    StatementSuccess,
 )
+from connection import execute_request
+
 
 logger = logging.getLogger("parser")
 logger.setLevel(logging.DEBUG)
@@ -53,7 +55,6 @@ class Status(str, enum.Enum):
 
 class TestStatus:
     def __init__(self):
-        self.name = None
         self.status = None
         self.file = None
         self.position = None
@@ -154,7 +155,7 @@ class SimpleStats:
             self.success += 1
 
     def get_map(self):
-        result = {}
+        result = dict()
         result["success"] = self.success
         result["fail"] = self.fail
         return result
@@ -186,7 +187,7 @@ class Stats:
         choose.update(status)
 
     def get_map(self):
-        result = {}
+        result = dict()
         result["statements"] = self.statements.get_map()
         result["queries"] = self.queries.get_map()
         result["total"] = self.total.get_map()
@@ -204,7 +205,7 @@ class OneReport:
         self.test_name = test_name
         self.test_file = test_file
         self.stats = Stats()
-        self.requests = {}
+        self.requests = dict()  # type: dict(int, TestStatus)
 
     def update(self, status):
         if not isinstance(status, TestStatus):
@@ -217,11 +218,11 @@ class OneReport:
         return str(self.get_map())
 
     def get_map(self):
-        result = {}
+        result = dict()
         result["test_name"] = self.test_name
         result["test_file"] = self.test_file
         result["stats"] = self.stats.get_map()
-        result["requests"] = {}
+        result["requests"] = dict()
         requests = result["requests"]
         for pos, status in self.requests.items():
             requests[pos] = status.get_map()
@@ -232,7 +233,7 @@ class Report:
     def __init__(self, dbms_name, input_dir=None):
         self.dbms_name = dbms_name
         self.stats = Stats()
-        self.tests = {}
+        self.tests = dict()  # type: dict(str, OneReport)
         self.input_dir = input_dir
         self.output_dir = None
 
@@ -255,7 +256,7 @@ class Report:
         self.output_dir = res_dir
 
     def get_map(self):
-        result = {}
+        result = dict()
         result["dbms_name"] = self.dbms_name
         result["stats"] = self.stats.get_map()
         result["input_dir"] = self.input_dir
@@ -263,7 +264,7 @@ class Report:
             result["input_dir"] = self.input_dir
         if self.output_dir is not None:
             result["output_dir"] = self.output_dir
-        result["tests"] = {}
+        result["tests"] = dict()
         tests = result["tests"]
         for test_name, one_report in self.tests.items():
             tests.update({test_name: one_report.get_map()})
@@ -296,8 +297,8 @@ class Report:
 
     def write_report(self, report_dir):
         report_path = os.path.join(report_dir, "report.json")
-        logger.info("create file %s", report_path)
-        with open(report_path, "w", encoding="utf-8") as stream:
+        logger.info(f"create file {report_path}")
+        with open(report_path, "w") as stream:
             stream.write(json.dumps(self.get_map(), indent=4))
 
 
@@ -433,34 +434,38 @@ class TestRunner:
                                     details=f"expected error: {expected_error}",
                                     parent=exec_res.get_exception(),
                                 )
-                            clogger.debug("errors matched")
-                            raise QuerySuccess()
-                        clogger.debug("missed error")
-                        raise QueryExecutionError(
-                            "query is expected to fail with error",
-                            details=f"expected error: {expected_error}",
-                        )
-                    clogger.debug("success is expected")
-                    if exec_res.has_exception():
-                        clogger.debug("had error")
-                        if self.verify:
-                            clogger.debug("verify mode")
-                            canonic = test_parser.QueryResult.parse_it(
-                                block.get_result(), 10
+                            else:
+                                clogger.debug("errors matched")
+                                raise QuerySuccess()
+                        else:
+                            clogger.debug("missed error")
+                            raise QueryExecutionError(
+                                "query is expected to fail with error",
+                                details="expected error: {}".format(expected_error),
                             )
-                            exception = QueryExecutionError(
-                                "query execution failed with an exception",
-                                parent=exec_res.get_exception(),
-                            )
-                            actual = test_parser.QueryResult.as_exception(exception)
-                            test_parser.QueryResult.assert_eq(canonic, actual)
-                            block.with_result(actual)
-                            raise QuerySuccess()
-                        clogger.debug("completion mode")
-                        raise QueryExecutionError(
-                            "query execution failed with an exception",
-                            parent=exec_res.get_exception(),
-                        )
+                    else:
+                        clogger.debug("success is expected")
+                        if exec_res.has_exception():
+                            clogger.debug("had error")
+                            if self.verify:
+                                clogger.debug("verify mode")
+                                canonic = test_parser.QueryResult.parse_it(
+                                    block.get_result(), 10
+                                )
+                                exception = QueryExecutionError(
+                                    "query execution failed with an exception",
+                                    parent=exec_res.get_exception(),
+                                )
+                                actual = test_parser.QueryResult.as_exception(exception)
+                                test_parser.QueryResult.assert_eq(canonic, actual)
+                                block.with_result(actual)
+                                raise QuerySuccess()
+                            else:
+                                clogger.debug("completion mode")
+                                raise QueryExecutionError(
+                                    "query execution failed with an exception",
+                                    parent=exec_res.get_exception(),
+                                )
 
                     canonic_types = block.get_types()
                     clogger.debug("canonic types %s", canonic_types)
@@ -471,8 +476,9 @@ class TestRunner:
                         if canonic_columns_count != actual_columns_count:
                             raise SchemeResultDiffer(
                                 "canonic and actual columns count differ",
-                                details=f"expected columns {canonic_columns_count}, "
-                                f"actual columns {actual_columns_count}",
+                                details="expected columns {}, actual columns {}".format(
+                                    canonic_columns_count, actual_columns_count
+                                ),
                             )
 
                     actual = test_parser.QueryResult.make_it(
@@ -522,24 +528,13 @@ class TestRunner:
             self.report = Report(self.dbms_name, self._input_dir)
 
         if self.results is None:
-            self.results = {}
-
-        if self.dbms_name == "ClickHouse" and test_name in [
-            "test/select5.test",
-            "test/evidence/slt_lang_createtrigger.test",
-            "test/evidence/slt_lang_replace.test",
-            "test/evidence/slt_lang_droptrigger.test",
-        ]:
-            logger.info("Let's skip test %s for ClickHouse", test_name)
-            return
+            self.results = dict()
 
         with self.connection.with_one_test_scope():
             out_stream = io.StringIO()
             self.results[test_name] = out_stream
 
-            parser = test_parser.TestFileParser(
-                stream, test_name, test_file, self.dbms_name
-            )
+            parser = test_parser.TestFileParser(stream, test_name, test_file)
             for status in self.__statuses(parser, out_stream):
                 self.report.update(status)
 
@@ -559,7 +554,7 @@ class TestRunner:
 
         test_name = os.path.relpath(test_file, start=self._input_dir)
         logger.debug("open file %s", test_name)
-        with open(test_file, "r", encoding="utf-8") as stream:
+        with open(test_file, "r") as stream:
             self.run_one_test(stream, test_name, test_file)
 
     def run_all_tests_from_dir(self, input_dir):
@@ -576,10 +571,10 @@ class TestRunner:
 
         for test_name, stream in self.results.items():
             test_file = os.path.join(dir_path, test_name)
-            logger.info("create file %s", test_file)
+            logger.info(f"create file {test_file}")
             result_dir = os.path.dirname(test_file)
             os.makedirs(result_dir, exist_ok=True)
-            with open(test_file, "w", encoding="utf-8") as output:
+            with open(test_file, "w") as output:
                 output.write(stream.getvalue())
 
     def write_report(self, report_dir):

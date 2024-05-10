@@ -62,42 +62,35 @@ public:
     inline static const String NO_QUERY = String();
     inline static const auto default_locking_timeout_ms = std::chrono::milliseconds(120000);
 
-    /// Returns all query_id owning locks (both read and write) right now.
-    /// !! This function are for debugging and logging purposes only, DO NOT use them for synchronization!
-    std::unordered_map<String, size_t> getOwnerQueryIds() const;
-    String getOwnerQueryIdsDescription() const;
-
 private:
     /// Group of locking requests that should be granted simultaneously
     /// i.e. one or several readers or a single writer
     struct Group
     {
         const Type type;
-        size_t requests = 0;
+        size_t requests;
 
-        bool ownership = false; /// whether this group got ownership? (that means `cv` is notified and the locking requests should stop waiting)
         std::condition_variable cv; /// all locking requests of the group wait on this condvar
 
-        explicit Group(Type type_) : type{type_} {}
+        explicit Group(Type type_) : type{type_}, requests{0} {}
     };
 
     using GroupsContainer = std::list<Group>;
-    using OwnerQueryIds = std::unordered_map<String /* query_id */, size_t /* num_owners */>;
+    using OwnerQueryIds = std::unordered_map<String, size_t>;
 
     mutable std::mutex internal_state_mtx;
 
     GroupsContainer readers_queue;
     GroupsContainer writers_queue;
-    GroupsContainer::iterator rdlock_owner{readers_queue.end()};  /// last group with ownership in readers_queue in read phase
-                                                                  /// or readers_queue.end() in writer phase
+    GroupsContainer::iterator rdlock_owner{readers_queue.end()};  /// equals to readers_queue.begin() in read phase
+                                                                  /// or readers_queue.end() otherwise
     GroupsContainer::iterator wrlock_owner{writers_queue.end()};  /// equals to writers_queue.begin() in write phase
-                                                                  /// or writers_queue.end() in read phase
+                                                                  /// or writers_queue.end() otherwise
     OwnerQueryIds owner_queries;
 
     RWLockImpl() = default;
     void unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept;
-    void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept;
-    void grantOwnership(GroupsContainer::iterator group_it) noexcept;
-    void grantOwnershipToAllReaders() noexcept;
+    /// @param next - notify next after begin, used on writer lock failures
+    void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it, bool next) noexcept;
 };
 }

@@ -4,9 +4,7 @@
 #include <cstring>
 #include <optional>
 #include <base/types.h>
-#include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
-#include <Common/levenshteinDistance.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 
@@ -22,13 +20,15 @@ namespace ErrorCodes
 namespace
 {
 
-struct NetworkInterfaces : public boost::noncopyable
+struct NetworkInterfaces
 {
     ifaddrs * ifaddr;
     NetworkInterfaces()
     {
         if (getifaddrs(&ifaddr) == -1)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getifaddrs");
+        {
+            throwFromErrno("Cannot getifaddrs", ErrorCodes::SYSTEM_ERROR);
+        }
     }
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
@@ -111,8 +111,8 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
         }
     }
 
-    static NetworkInterfaces network_interfaces;
-    return network_interfaces.hasAddress(address);
+    NetworkInterfaces interfaces;
+    return interfaces.hasAddress(address);
 }
 
 
@@ -121,18 +121,15 @@ bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_
     return clickhouse_port == address.port() && isLocalAddress(address.host());
 }
 
-size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::string & host)
+
+size_t getHostNameDifference(const std::string & local_hostname, const std::string & host)
 {
+    /// FIXME should we replace it with Levenstein distance? (we already have it in NamePrompter)
     size_t hostname_difference = 0;
     for (size_t i = 0; i < std::min(local_hostname.length(), host.length()); ++i)
         if (local_hostname[i] != host[i])
             ++hostname_difference;
     return hostname_difference;
-}
-
-size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
-{
-    return levenshteinDistance(local_hostname, host);
 }
 
 }

@@ -33,7 +33,6 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
 }
 
 struct SmallLock
@@ -205,7 +204,7 @@ static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexe
                 else
                 {
                     size_t hash_value = global_map.hash(*it);
-                    size_t bucket = MapTwoLevel::getBucketFromHash(hash_value);
+                    size_t bucket = global_map.getBucketFromHash(hash_value);
 
                     if (mutexes[bucket].try_lock())
                     {
@@ -255,7 +254,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
+    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads);
 
     Source data(n);
 
