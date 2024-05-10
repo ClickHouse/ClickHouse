@@ -4,6 +4,7 @@
 
 import unittest
 from ci import CiOptions
+from pr_info import PRInfo
 
 _TEST_BODY_1 = """
 #### Run only:
@@ -164,7 +165,7 @@ class TestCIOptions(unittest.TestCase):
             }
         }
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params
+            jobs_to_do, jobs_to_skip, job_params, PRInfo()
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -196,7 +197,7 @@ class TestCIOptions(unittest.TestCase):
         jobs_to_skip = []
         job_params = {}
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params
+            jobs_to_do, jobs_to_skip, job_params, PRInfo()
         )
         self.assertCountEqual(
             jobs_to_do,
@@ -231,7 +232,7 @@ class TestCIOptions(unittest.TestCase):
                 job_params[job] = {"run_if_ci_option_include_set": False}
 
         jobs_to_do, jobs_to_skip, job_params = ci_options.apply(
-            jobs_to_do, jobs_to_skip, job_params
+            jobs_to_do, jobs_to_skip, job_params, PRInfo()
         )
         self.assertNotIn(
             "Stateless tests (azure, asan)",

@@ -3302,7 +3302,7 @@ private:
             /// both columns have type UInt8, but we shouldn't use identity wrapper,
             /// because Bool column can contain only 0 and 1.
             auto res_column = to_type->createColumn();
-            const auto & data_from = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get())->getData();
+            const auto & data_from = checkAndGetColumn<ColumnUInt8>(*arguments[0].column).getData();
             auto & data_to = assert_cast<ColumnUInt8 *>(res_column.get())->getData();
             data_to.resize(data_from.size());
             for (size_t i = 0; i != data_from.size(); ++i)
@@ -4853,7 +4853,7 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
         DataTypeFloat32, DataTypeFloat64,
-        DataTypeDate, DataTypeDate32, DataTypeDateTime,
+        DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64,
         DataTypeString>(return_type.get(), [&](auto & type)
         {
             monotonicity = FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
