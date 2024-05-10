@@ -639,7 +639,7 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-    class Call
+    class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
     public:
         Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
