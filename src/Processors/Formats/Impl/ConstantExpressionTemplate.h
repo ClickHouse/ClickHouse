@@ -92,7 +92,6 @@ private:
     bool parseLiteralAndAssertType(
         ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * type, size_t column_idx, const Settings & settings);
 
-private:
     TemplateStructurePtr structure;
     MutableColumns columns;
 

@@ -2,7 +2,6 @@
 
 #if USE_ARROW || USE_PARQUET
 
-// #include <base/Decimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -10,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>

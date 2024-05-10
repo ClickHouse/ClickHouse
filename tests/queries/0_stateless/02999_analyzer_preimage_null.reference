@@ -108,14 +108,14 @@ QUERY id: 0
                 FUNCTION id: 14, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 15, nodes: 2
-                      COLUMN id: 16, column_name: date1, result_type: Date, source_id: 3
-                      CONSTANT id: 17, constant_value: \'1994-01-01\', constant_value_type: String
-          FUNCTION id: 18, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
+                      CONSTANT id: 16, constant_value: \'1994-01-01\', constant_value_type: String
+          FUNCTION id: 17, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 19, nodes: 2
-                COLUMN id: 20, column_name: id, result_type: UInt32, source_id: 3
-                FUNCTION id: 21, function_name: toYear, function_type: ordinary, result_type: UInt16
+              LIST id: 18, nodes: 2
+                COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
+                FUNCTION id: 20, function_name: toYear, function_type: ordinary, result_type: UInt16
                   ARGUMENTS
-                    LIST id: 22, nodes: 1
-                      COLUMN id: 23, column_name: date1, result_type: Date, source_id: 3
+                    LIST id: 21, nodes: 1
+                      COLUMN id: 12, column_name: date1, result_type: Date, source_id: 3
   SETTINGS optimize_time_filter_with_preimage=1

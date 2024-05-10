@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteIntText.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -147,10 +148,11 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals(filelog_settings->handle_error_mode));
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (LoadingStrictnessLevel::ATTACH <= mode)
+        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
@@ -201,6 +203,22 @@ StorageFileLog::StorageFileLog(
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+VirtualColumnsDescription StorageFileLog::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+    }
+
+    return desc;
 }
 
 void StorageFileLog::loadMetaFiles(bool attach)
@@ -449,7 +467,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end);
+            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -1007,21 +1025,6 @@ bool StorageFileLog::updateFileInfos()
     assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
-}
-
-NamesAndTypesList StorageFileLog::getVirtuals() const
-{
-    auto virtuals = NamesAndTypesList{
-        {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_offset", std::make_shared<DataTypeUInt64>()}};
-
-    if (filelog_settings->handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        virtuals.push_back({"_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-    }
-
-    return virtuals;
 }
 
 }

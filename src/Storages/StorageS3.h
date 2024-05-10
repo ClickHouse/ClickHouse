@@ -4,32 +4,28 @@
 
 #if USE_AWS_S3
 
-#include <Core/Types.h>
-
 #include <Compression/CompressionInfo.h>
-
-#include <Storages/IStorage.h>
-#include <Storages/StorageS3Settings.h>
-
-#include <Processors/SourceWithKeyCondition.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Poco/URI.h>
-#include <IO/S3/getObjectInfo.h>
+#include <Core/Types.h>
 #include <IO/CompressionMethod.h>
+#include <IO/S3/BlobStorageLogWriter.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/StorageS3Settings.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Poco/URI.h>
+#include <Common/threadPoolCallbackRunner.h>
 
-namespace Aws::S3
-{
-    class Client;
-}
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -245,7 +241,7 @@ private:
     LoggerPtr log = getLogger("StorageS3Source");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
 
@@ -336,9 +332,6 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
-    NamesAndTypesList getVirtuals() const override;
-    static Names getVirtualColumnNames();
-
     bool supportsPartitionBy() const override;
 
     static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
@@ -359,7 +352,7 @@ public:
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     virtual Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context);
@@ -378,7 +371,6 @@ private:
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
-    NamesAndTypesList virtual_columns;
 
     String name;
     const bool distributed_processing;

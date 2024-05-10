@@ -14,9 +14,6 @@ class ISchedulerConstraint;
 using ResourceCost = Int64;
 constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
 
-/// Timestamps (nanoseconds since epoch)
-using ResourceNs = UInt64;
-
 /*
  * Request for a resource consumption. The main moving part of the scheduling subsystem.
  * Resource requests processing workflow:
@@ -31,7 +28,7 @@ using ResourceNs = UInt64;
  *  3) Scheduler calls ISchedulerNode::dequeueRequest() that returns the request.
  *  4) Callback ResourceRequest::execute() is called to provide access to the resource.
  *  5) The resource consumption is happening outside of the scheduling subsystem.
- *  6) request->constraint->finishRequest() is called when consumption is finished.
+ *  6) ResourceRequest::finish() is called when consumption is finished.
  *
  * Steps (5) and (6) can be omitted if constraint is not used by the resource.
  *
@@ -39,7 +36,10 @@ using ResourceNs = UInt64;
  * Request ownership is done outside of the scheduling subsystem.
  * After (6) request can be destructed safely.
  *
- * Request cancelling is not supported yet.
+ * Request can also be canceled before (3) using ISchedulerQueue::cancelRequest().
+ * Returning false means it is too late for request to be canceled. It should be processed in a regular way.
+ * Returning true means successful cancel and therefore steps (4) and (5) are not going to happen
+ * and step (6) MUST be omitted.
  */
 class ResourceRequest
 {
@@ -48,32 +48,20 @@ public:
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost;
 
-    /// Request outcome
-    /// Should be filled during resource consumption
-    bool successful;
-
     /// Scheduler node to be notified on consumption finish
     /// Auto-filled during request enqueue/dequeue
     ISchedulerConstraint * constraint;
-
-    /// Timestamps for introspection
-    ResourceNs enqueue_ns;
-    ResourceNs execute_ns;
-    ResourceNs finish_ns;
 
     explicit ResourceRequest(ResourceCost cost_ = 1)
     {
         reset(cost_);
     }
 
+    /// ResourceRequest object may be reused again after reset()
     void reset(ResourceCost cost_)
     {
         cost = cost_;
-        successful = true;
         constraint = nullptr;
-        enqueue_ns = 0;
-        execute_ns = 0;
-        finish_ns = 0;
     }
 
     virtual ~ResourceRequest() = default;
@@ -83,6 +71,12 @@ public:
     /// just triggering start of a consumption, not doing the consumption itself
     /// (e.g. setting an std::promise or creating a job in a thread pool)
     virtual void execute() = 0;
+
+    /// Stop resource consumption and notify resource scheduler.
+    /// Should be called when resource consumption is finished by consumer.
+    /// ResourceRequest should not be destructed or reset before calling to `finish()`.
+    /// WARNING: this function MUST not be called if request was canceled.
+    void finish();
 };
 
 }

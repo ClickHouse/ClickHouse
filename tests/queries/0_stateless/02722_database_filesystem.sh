@@ -81,8 +81,6 @@ CREATE DATABASE test2 ENGINE = Filesystem('relative_unknown_dir');
 # FILE_DOESNT_EXIST: unknown file
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp2.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "FILE_DOESNT_EXIST" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
-# BAD_ARGUMENTS: Cannot determine the file format by it's extension
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`${unique_name}/tmp.myext\`;" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
 # Clean
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE test1;"
 rm -rd $tmp_dir

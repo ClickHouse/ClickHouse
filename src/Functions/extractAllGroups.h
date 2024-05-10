@@ -71,8 +71,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
-            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
+            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 

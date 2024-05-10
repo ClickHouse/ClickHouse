@@ -1,4 +1,5 @@
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>

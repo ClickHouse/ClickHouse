@@ -9,10 +9,8 @@
 
 #include "config.h"
 
-#ifdef __clang__
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
 #include <Common/SipHash.h>
@@ -1604,6 +1602,4 @@ using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 }
 
-#ifdef __clang__
-#    pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic pop

@@ -185,9 +185,9 @@ StoragePtr DatabaseMaterializedMySQL::tryGetTable(const String & name, ContextPt
 }
 
 DatabaseTablesIteratorPtr
-DatabaseMaterializedMySQL::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
+DatabaseMaterializedMySQL::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    DatabaseTablesIteratorPtr iterator = DatabaseAtomic::getTablesIterator(context_, filter_by_table_name);
+    DatabaseTablesIteratorPtr iterator = DatabaseAtomic::getTablesIterator(context_, filter_by_table_name, skip_not_loaded);
     if (context_->isInternalQuery())
         return iterator;
     return std::make_unique<DatabaseMaterializedTablesIterator>(std::move(iterator), this);
@@ -201,7 +201,6 @@ void DatabaseMaterializedMySQL::checkIsInternalQuery(ContextPtr context_, const 
 
 void DatabaseMaterializedMySQL::stopReplication()
 {
-    stopLoading();
     materialize_thread.stopSynchronization();
     started_up = false;
 }

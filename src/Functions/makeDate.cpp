@@ -13,6 +13,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
@@ -82,17 +83,17 @@ public:
         if (is_year_month_variant)
         {
             FunctionArgumentDescriptors args{
-                {mandatory_argument_names_year_month_day[0], &isNumber<IDataType>, nullptr, "Number"},
-                {mandatory_argument_names_year_month_day[1], &isNumber<IDataType>, nullptr, "Number"},
-                {mandatory_argument_names_year_month_day[2], &isNumber<IDataType>, nullptr, "Number"}
+                {mandatory_argument_names_year_month_day[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+                {mandatory_argument_names_year_month_day[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+                {mandatory_argument_names_year_month_day[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
             };
             validateFunctionArgumentTypes(*this, arguments, args);
         }
         else
         {
             FunctionArgumentDescriptors args{
-                {mandatory_argument_names_year_dayofyear[0], &isNumber<IDataType>, nullptr, "Number"},
-                {mandatory_argument_names_year_dayofyear[1], &isNumber<IDataType>, nullptr, "Number"}
+                {mandatory_argument_names_year_dayofyear[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+                {mandatory_argument_names_year_dayofyear[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
             };
             validateFunctionArgumentTypes(*this, arguments, args);
         }
@@ -189,7 +190,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {mandatory_argument_names[0], &isNumber<IDataType>, nullptr, "Number"}
+            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, args);
@@ -344,16 +345,16 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[1], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[2], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[3], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[4], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[5], &isNumber<IDataType>, nullptr, "Number"}
+            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[3], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[4], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[5], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
         };
 
         FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], &isString<IDataType>, isColumnConst, "const String"}
+            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -425,18 +426,18 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[1], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[2], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[3], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[4], &isNumber<IDataType>, nullptr, "Number"},
-            {mandatory_argument_names[5], &isNumber<IDataType>, nullptr, "Number"}
+            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[3], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[4], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {mandatory_argument_names[5], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
         };
 
         FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], &isNumber<IDataType>, nullptr, "const Number"},
-            {optional_argument_names[1], &isNumber<IDataType>, isColumnConst, "const Number"},
-            {optional_argument_names[2], &isString<IDataType>, isColumnConst, "const String"}
+            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "const Number"},
+            {optional_argument_names[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), isColumnConst, "const Number"},
+            {optional_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -564,11 +565,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], &isNumber<IDataType>, nullptr, "Number"}
+            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
         };
 
         FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], &isString<IDataType>, isColumnConst, "const String"}
+            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -643,12 +644,12 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], &isNumber<IDataType>, nullptr, "Number"}
+            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
         };
 
         FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], &isNumber<IDataType>, isColumnConst, "const Number"},
-            {optional_argument_names[0], &isString<IDataType>, isColumnConst, "const String"}
+            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), isColumnConst, "const Number"},
+            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);

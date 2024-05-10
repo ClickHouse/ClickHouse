@@ -11,6 +11,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
 #include <Interpreters/DDLTask.h>
@@ -136,6 +137,9 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+
+        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
+
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database
@@ -416,9 +420,9 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 }
 
 DatabaseTablesIteratorPtr
-DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
+DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name);
+    auto base_iter = DatabaseOrdinary::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 

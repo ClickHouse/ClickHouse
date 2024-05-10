@@ -26,7 +26,7 @@ struct BackupSettings
     String password;
 
     /// S3 storage class.
-    String s3_storage_class = "";
+    String s3_storage_class;
 
     /// If this is set to true then only create queries will be written to backup,
     /// without the data of tables.
@@ -47,6 +47,9 @@ struct BackupSettings
     /// Whether base backup to S3 should inherit credentials from the BACKUP query.
     bool use_same_s3_credentials_for_base_backup = false;
 
+    /// Whether a new Azure container should be created if it does not exist (requires permissions at storage account level)
+    bool azure_attempt_to_create_container = true;
+
     /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
     /// but don't put more entries into the cache.
     bool read_from_filesystem_cache = true;
@@ -61,6 +64,12 @@ struct BackupSettings
 
     /// Check checksums of the data parts before writing them to a backup.
     bool check_parts = true;
+
+    /// Check checksums of the projection data parts before writing them to a backup.
+    bool check_projection_parts = true;
+
+    /// Allow to create backup with broken projections.
+    bool allow_backup_broken_projections = false;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

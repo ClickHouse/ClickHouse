@@ -94,7 +94,8 @@ public:
         if (!func_node || func_node->getArguments().getNodes().size() != 1)
             return;
 
-        const auto * column_id = func_node->getArguments().getNodes()[0]->as<ColumnNode>();
+        const auto & argument_node = func_node->getArguments().getNodes()[0];
+        const auto * column_id = argument_node->as<ColumnNode>();
         if (!column_id)
             return;
 
@@ -119,7 +120,7 @@ public:
         if (!preimage_range)
             return;
 
-        const auto new_node = generateOptimizedDateFilter(comparator, *column_id, *preimage_range);
+        const auto new_node = generateOptimizedDateFilter(comparator, argument_node, *preimage_range);
 
         if (!new_node)
             return;
@@ -128,20 +129,22 @@ public:
     }
 
 private:
-    QueryTreeNodePtr
-    generateOptimizedDateFilter(const String & comparator, const ColumnNode & column_node, const std::pair<Field, Field> & range) const
+    QueryTreeNodePtr generateOptimizedDateFilter(
+        const String & comparator, const QueryTreeNodePtr & column_node, const std::pair<Field, Field> & range) const
     {
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
         String start_date_or_date_time;
         String end_date_or_date_time;
 
-        if (isDateOrDate32(column_node.getColumnType().get()))
+        const auto & column_node_typed = column_node->as<ColumnNode &>();
+        const auto & column_type = column_node_typed.getColumnType().get();
+        if (isDateOrDate32(column_type))
         {
             start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
             end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
         }
-        else if (isDateTime(column_node.getColumnType().get()) || isDateTime64(column_node.getColumnType().get()))
+        else if (isDateTime(column_type) || isDateTime64(column_type))
         {
             start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
             end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
@@ -151,69 +154,29 @@ private:
 
         if (comparator == "equals")
         {
-            const auto lhs = std::make_shared<FunctionNode>("greaterOrEquals");
-            lhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
-            lhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(start_date_or_date_time));
-            resolveOrdinaryFunctionNode(*lhs, lhs->getFunctionName());
-
-            const auto rhs = std::make_shared<FunctionNode>("less");
-            rhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
-            rhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
-
-            const auto new_date_filter = std::make_shared<FunctionNode>("and");
-            new_date_filter->getArguments().getNodes() = {lhs, rhs};
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
-
-            return new_date_filter;
+            return createFunctionNode(
+                "and",
+                createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
+                createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
         else if (comparator == "notEquals")
         {
-            const auto lhs = std::make_shared<FunctionNode>("less");
-            lhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
-            lhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(start_date_or_date_time));
-            resolveOrdinaryFunctionNode(*lhs, lhs->getFunctionName());
-
-            const auto rhs = std::make_shared<FunctionNode>("greaterOrEquals");
-            rhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
-            rhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
-
-            const auto new_date_filter = std::make_shared<FunctionNode>("or");
-            new_date_filter->getArguments().getNodes() = {lhs, rhs};
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
-
-            return new_date_filter;
+            return createFunctionNode(
+                "or",
+                createFunctionNode("less", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
+                createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
         else if (comparator == "greater")
         {
-            const auto new_date_filter = std::make_shared<FunctionNode>("greaterOrEquals");
-            new_date_filter->getArguments().getNodes().push_back(
-                std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
-            new_date_filter->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
-
-            return new_date_filter;
+            return createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
         else if (comparator == "lessOrEquals")
         {
-            const auto new_date_filter = std::make_shared<FunctionNode>("less");
-            new_date_filter->getArguments().getNodes().push_back(
-                std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
-            new_date_filter->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
-
-            return new_date_filter;
+            return createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
         else if (comparator == "less" || comparator == "greaterOrEquals")
         {
-            const auto new_date_filter = std::make_shared<FunctionNode>(comparator);
-            new_date_filter->getArguments().getNodes().push_back(
-                std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
-            new_date_filter->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(start_date_or_date_time));
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
-
-            return new_date_filter;
+            return createFunctionNode(comparator, column_node, std::make_shared<ConstantNode>(start_date_or_date_time));
         }
         else [[unlikely]]
         {
@@ -224,10 +187,17 @@ private:
         }
     }
 
-    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    template <typename... Args>
+    QueryTreeNodePtr createFunctionNode(const String & function_name, Args &&... args) const
     {
         auto function = FunctionFactory::instance().get(function_name, getContext());
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+        const auto function_node = std::make_shared<FunctionNode>(function_name);
+        auto & new_arguments = function_node->getArguments().getNodes();
+        new_arguments.reserve(sizeof...(args));
+        (new_arguments.push_back(std::forward<Args>(args)), ...);
+        function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+
+        return function_node;
     }
 };
 

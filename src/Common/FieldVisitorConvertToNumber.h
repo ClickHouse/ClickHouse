@@ -117,4 +117,19 @@ public:
     T operator() (const bool & x) const { return T(x); }
 };
 
+extern template class FieldVisitorConvertToNumber<Int8>;
+extern template class FieldVisitorConvertToNumber<UInt8>;
+extern template class FieldVisitorConvertToNumber<Int16>;
+extern template class FieldVisitorConvertToNumber<UInt16>;
+extern template class FieldVisitorConvertToNumber<Int32>;
+extern template class FieldVisitorConvertToNumber<UInt32>;
+extern template class FieldVisitorConvertToNumber<Int64>;
+extern template class FieldVisitorConvertToNumber<UInt64>;
+extern template class FieldVisitorConvertToNumber<Int128>;
+extern template class FieldVisitorConvertToNumber<UInt128>;
+extern template class FieldVisitorConvertToNumber<Int256>;
+extern template class FieldVisitorConvertToNumber<UInt256>;
+extern template class FieldVisitorConvertToNumber<Float32>;
+extern template class FieldVisitorConvertToNumber<Float64>;
+
 }

@@ -364,7 +364,7 @@ JSONNode & fuzzSingleJSONNode(JSONNode & n, const StorageFuzzJSON::Configuration
 
     if (val.fixed)
         val.fixed = generateRandomFixedValue(config, rnd);
-    else if (val.array && val.array->size() < config.max_array_size && node_count + val.array->size() < config.value_number_limit)
+    else if (val.array && val.array->size() < config.max_array_size && node_count + val.array->size() < StorageFuzzJSON::Configuration::value_number_limit)
     {
         if (val.array->empty())
             val.array->push_back(generateRandomJSONNode(config, rnd, /*with_key*/ false, depth));
@@ -377,7 +377,7 @@ JSONNode & fuzzSingleJSONNode(JSONNode & n, const StorageFuzzJSON::Configuration
         }
         ++node_count;
     }
-    else if (val.object && val.object->size() < config.max_object_size && node_count + val.object->size() < config.value_number_limit)
+    else if (val.object && val.object->size() < config.max_object_size && node_count + val.object->size() < StorageFuzzJSON::Configuration::value_number_limit)
     {
         val.object->push_back(generateRandomJSONNode(config, rnd, /*with_key*/ true, depth));
         ++node_count;
@@ -437,7 +437,7 @@ void fuzzJSONObject(
         bool first = true;
         for (const auto & ptr : node_list)
         {
-            if (node_count >= config.value_number_limit)
+            if (node_count >= StorageFuzzJSON::Configuration::value_number_limit)
                 break;
 
             WriteBufferFromOwnString child_out;
@@ -619,11 +619,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     {
         configuration.max_output_length = collection.get<UInt64>("max_output_length");
 
-        if (configuration.max_output_length < 2 || configuration.max_output_length > configuration.output_length_limit)
+        if (configuration.max_output_length < 2 || configuration.max_output_length > StorageFuzzJSON::Configuration::output_length_limit)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'max_output_length' argument must be within the interval [2, {}.]",
-                configuration.output_length_limit);
+                StorageFuzzJSON::Configuration::output_length_limit);
     }
 
     if (collection.has("max_nesting_level"))
@@ -638,11 +638,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     if (collection.has("max_string_value_length"))
     {
         auto max_string_value_length = collection.get<UInt64>("max_string_value_length");
-        if (max_string_value_length > configuration.output_length_limit)
+        if (max_string_value_length > StorageFuzzJSON::Configuration::output_length_limit)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'max_string_value_length' argument must be at most {}.",
-                configuration.output_length_limit);
+                StorageFuzzJSON::Configuration::output_length_limit);
 
         configuration.max_string_value_length = std::min(max_string_value_length, configuration.max_output_length);
     }
@@ -650,11 +650,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     if (collection.has("max_key_length"))
     {
         auto max_key_length = collection.get<UInt64>("max_key_length");
-        if (max_key_length > configuration.output_length_limit)
+        if (max_key_length > StorageFuzzJSON::Configuration::output_length_limit)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'max_key_length' argument must be less or equal than {}.",
-                configuration.output_length_limit);
+                StorageFuzzJSON::Configuration::output_length_limit);
         configuration.max_key_length = std::min(max_key_length, configuration.max_output_length);
         configuration.min_key_length = std::min(configuration.min_key_length, configuration.max_key_length);
     }

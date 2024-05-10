@@ -1,15 +1,20 @@
 #pragma once
 
-#include <memory>
-
 #include <base/defines.h>
 
-#include <Poco/Channel.h>
+#include <memory>
+
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 
-using LoggerPtr = Poco::LoggerPtr;
+namespace Poco
+{
+class Channel;
+class Logger;
+using LoggerPtr = std::shared_ptr<Logger>;
+}
 
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 using LoggerRawPtr = Poco::Logger *;
 
 /** RAII wrappers around Poco/Logger.h.

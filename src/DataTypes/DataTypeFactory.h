@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
