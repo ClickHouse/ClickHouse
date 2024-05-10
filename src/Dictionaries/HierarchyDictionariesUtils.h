@@ -167,7 +167,7 @@ namespace detail
                 elements.emplace_back(hierarchy_key);
                 ++current_hierarchy_depth;
 
-                std::optional<UInt64> parent_key = std::forward<GetParentKeyFunc>(get_parent_key_func)(hierarchy_key);
+                std::optional<UInt64> parent_key = get_parent_key_func(hierarchy_key);
 
                 if (!parent_key.has_value())
                     break;
