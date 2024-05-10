@@ -88,15 +88,21 @@ def cluster():
 
 
 def test_s3_with_https_proxy_list_no_proxy(cluster):
-    proxy_util.simple_test_assert_no_proxy(cluster, ["proxy1", "proxy2"], "https", "proxy_list_node_no_proxy")
+    proxy_util.simple_test_assert_no_proxy(
+        cluster, ["proxy1", "proxy2"], "https", "proxy_list_node_no_proxy"
+    )
 
 
 def test_s3_with_https_env_no_proxy(cluster):
-    proxy_util.simple_test_assert_no_proxy(cluster, ["proxy1"], "https", "env_node_no_proxy")
+    proxy_util.simple_test_assert_no_proxy(
+        cluster, ["proxy1"], "https", "env_node_no_proxy"
+    )
 
 
 def test_s3_with_https_remote_no_proxy(cluster):
-    proxy_util.simple_test_assert_no_proxy(cluster, ["proxy1"], "https", "remote_proxy_node_no_proxy")
+    proxy_util.simple_test_assert_no_proxy(
+        cluster, ["proxy1"], "https", "remote_proxy_node_no_proxy"
+    )
 
 
 def test_s3_with_https_proxy_list(cluster):

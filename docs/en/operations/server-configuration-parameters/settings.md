@@ -2994,7 +2994,7 @@ It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass
 Example:
 
 The below configuration bypasses proxy requests to `clickhouse.cloud` and all of its subdomains (e.g, `auth.clickhouse.cloud`).
-The same applies to gitlab, even though it has a leading dot. Both `gitlab.com` and `about.gitlab.com` would bypass the proxy.
+The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` and `about.gitlab.com` would bypass the proxy.
 
 ``` xml
 <proxy>
