@@ -1029,9 +1029,9 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
             if (raft_instance->get_srv_config(add->id) != nullptr)
-                return applied();
+                return applied(); // NOLINT
             if (!isLeader())
-                return not_leader();
+                return not_leader(); // NOLINT
             if (!raft_instance->add_srv(static_cast<nuraft::srv_config>(*add))->get_accepted())
                 backoff_on_refusal(i);
         }
@@ -1050,9 +1050,9 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
             if (raft_instance->get_srv_config(remove->id) == nullptr)
-                return applied();
+                return applied(); // NOLINT
             if (!isLeader())
-                return not_leader();
+                return not_leader(); // NOLINT
             if (!raft_instance->remove_srv(remove->id)->get_accepted())
                 backoff_on_refusal(i);
         }

@@ -1637,7 +1637,7 @@ struct StatefulWindowFunction : public WindowFunction
 
     State & getState(const WindowFunctionWorkspace & workspace) const
     {
-        return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));
+        return *reinterpret_cast<State *>(workspace.aggregate_function_state.data());
     }
 };
 

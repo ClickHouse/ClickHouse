@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
@@ -2708,3 +2710,5 @@ String KeeperStorage::generateDigest(const String & userdata)
 
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

@@ -144,7 +144,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    return params.explain(settings.out, settings.offset);
+    params.explain(settings.out, settings.offset);
 }
 
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
