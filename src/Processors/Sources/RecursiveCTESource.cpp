@@ -5,7 +5,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
