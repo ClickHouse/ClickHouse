@@ -6,6 +6,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
@@ -142,7 +143,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity);
-
 
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
