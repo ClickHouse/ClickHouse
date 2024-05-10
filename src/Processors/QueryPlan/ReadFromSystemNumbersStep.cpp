@@ -176,8 +176,9 @@ protected:
     {
         std::lock_guard lock(ranges_state->mutex);
 
-
         UInt64 need = base_block_size_;
+        bool without_block_size_limit = need == 0;
+
         UInt64 size = 0; /// how many item found.
 
         /// find start
@@ -185,14 +186,21 @@ protected:
         end = start;
 
         /// find end
-        while (need != 0)
+        while (without_block_size_limit || need != 0)
         {
             UInt128 can_provide = end.offset_in_ranges == ranges.size() ? static_cast<UInt128>(0)
                                                                         : ranges[end.offset_in_ranges].size - end.offset_in_range;
+
             if (can_provide == 0)
                 break;
 
-            if (can_provide > need)
+            if (without_block_size_limit)
+            {
+                end.offset_in_ranges++;
+                end.offset_in_range = 0;
+                size += static_cast<UInt64>(can_provide);
+            }
+            else if (can_provide > need)
             {
                 end.offset_in_range += need;
                 size += need;
@@ -527,7 +535,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
         checkLimits(size_t(total_size));
 
-        if (total_size / max_block_size < num_streams)
+        if (max_block_size != 0 && total_size / max_block_size < num_streams)
             num_streams = static_cast<size_t>(total_size / max_block_size);
 
         if (num_streams == 0)
