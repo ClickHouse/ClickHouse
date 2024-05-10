@@ -116,7 +116,7 @@ StorageS3Queue::StorageS3Queue(
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
-    , log(getLogger("StorageS3Queue (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageS3Queue (" + table_id_.getFullTableName() + ")"))
 {
     if (configuration.url.key.empty())
     {
@@ -469,7 +469,7 @@ void StorageS3Queue::threadFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_TEST(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
     }
 
     if (!shutdown_called)
@@ -614,7 +614,8 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
         *configuration.client, configuration.url, predicate, getVirtualsList(), local_context,
         /* read_keys */nullptr, configuration.request_settings);
 
-    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
+    return std::make_shared<FileIterator>(
+        files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called, log);
 }
 
 void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
