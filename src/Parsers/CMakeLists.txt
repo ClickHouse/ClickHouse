@@ -12,6 +12,9 @@ target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_
 if (TARGET ch_rust::prql)
     target_link_libraries(clickhouse_parsers PRIVATE ch_rust::prql)
 endif ()
+if (TARGET ch_contrib::libpg_query)
+    target_link_libraries(clickhouse_parsers PRIVATE ch_contrib::libpg_query)
+endif ()
 
 
 if (USE_DEBUG_HELPERS)
