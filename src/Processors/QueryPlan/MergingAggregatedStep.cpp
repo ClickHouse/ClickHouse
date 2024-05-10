@@ -133,8 +133,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     else
     {
         auto num_merge_threads = memory_efficient_merge_threads
-                                 ? static_cast<size_t>(memory_efficient_merge_threads)
-                                 : static_cast<size_t>(max_threads);
+                                 ? memory_efficient_merge_threads
+                                 : max_threads;
 
         pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
     }
