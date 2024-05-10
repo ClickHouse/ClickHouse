@@ -509,7 +509,17 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         const auto & arguments = getArguments(node, nullptr, nullptr);
 
         if (function_name == "and" || function_name == "indexHint")
-            return std::all_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
+        {
+            /// Can't use std::all_of() because we have to call checkDAGUseless() for all arguments
+            /// to populate sets_to_prepare.
+            bool all_useless = true;
+            for (const auto & arg : arguments)
+            {
+                bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
+                all_useless = all_useless && u;
+            }
+            return all_useless;
+        }
         else if (function_name == "or")
             return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
         else if (function_name == "not")
