@@ -2,6 +2,7 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -245,7 +246,10 @@ struct TemporaryFileStream::InputReader
     {
         if (!in_reader)
         {
-            in_file_buf = std::make_unique<ReadBufferFromFile>(path, size);
+            if (fs::exists(path))
+                in_file_buf = std::make_unique<ReadBufferFromFile>(path, size);
+            else
+                in_file_buf = std::make_unique<ReadBufferFromEmptyFile>();
 
             in_compressed_buf = std::make_unique<CompressedReadBuffer>(*in_file_buf);
             if (header.has_value())
@@ -260,7 +264,7 @@ struct TemporaryFileStream::InputReader
     const size_t size;
     const std::optional<Block> header;
 
-    std::unique_ptr<ReadBufferFromFile> in_file_buf;
+    std::unique_ptr<ReadBufferFromFileBase> in_file_buf;
     std::unique_ptr<CompressedReadBuffer> in_compressed_buf;
     std::unique_ptr<NativeReader> in_reader;
 };
