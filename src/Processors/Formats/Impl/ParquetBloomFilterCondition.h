@@ -45,7 +45,10 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    ParquetBloomFilterCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & header_);
+    ParquetBloomFilterCondition(const ActionsDAGPtr & filter_actions_dag,
+                                const IndexToColumnBF & index_to_column_hasher,
+                                ContextPtr context_,
+                                const Block & header_);
 
     bool mayBeTrueOnRowGroup(const IndexToColumnBF & bf);
 
@@ -53,9 +56,13 @@ private:
     const Block & header;
     std::vector<RPNElement> rpn;
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node,
+                             const IndexToColumnBF & index_to_column_hasher,
+                             RPNElement & out);
 
-    bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out);
+    bool traverseFunction(const RPNBuilderTreeNode & node,
+                          const IndexToColumnBF & index_to_column_hasher,
+                          RPNElement & out);
 
     bool traverseTreeIn(
         const String & function_name,
@@ -63,6 +70,7 @@ private:
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
+        const IndexToColumnBF & index_to_column_hasher,
         RPNElement & out);
 
     bool traverseTreeEquals(
@@ -70,6 +78,7 @@ private:
         const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
+        const IndexToColumnBF & index_to_column_hasher,
         RPNElement & out);
 };
 

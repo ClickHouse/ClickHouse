@@ -40,19 +40,42 @@ parquet::ByteArray createByteArray(std::string_view view, TypeIndex type, uint8_
     }
 }
 
-bool maybeTrueOnBloomFilter(const IColumn * data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
+ColumnPtr hash(const auto & data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter)
 {
     static constexpr uint32_t buffer_size = 32;
     uint8_t buffer[buffer_size] = {0};
 
     auto column_size = data_column->size();
 
+    auto hashes_column = ColumnUInt64::create(column_size);
+    ColumnUInt64::Container & hashes_internal_data = hashes_column->getData();
+
     for (size_t i = 0; i < column_size; ++i)
     {
         const auto data_view = data_column->getDataAt(i).toView();
 
         const auto ba = createByteArray(data_view, data_column->getDataType(), buffer, buffer_size);
-        bool found = bloom_filter->FindHash(bloom_filter->Hash(&ba));
+
+        const auto hash = bloom_filter->Hash(&ba);
+
+        hashes_internal_data[i] = hash;
+    }
+
+    return hashes_column;
+}
+
+bool maybeTrueOnBloomFilter2(ColumnPtr hash_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter, bool match_all)
+{
+    const auto * uint64_column = typeid_cast<const ColumnUInt64 *>(hash_column.get());
+
+    if (!uint64_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash column must be UInt64.");
+
+    const ColumnUInt64::Container & hashes = uint64_column->getData();
+
+    for (const auto hash : hashes)
+    {
+        bool found = bloom_filter->FindHash(hash);
 
         if (match_all && !found)
             return false;
@@ -98,7 +121,10 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 }
 
 ParquetBloomFilterCondition::ParquetBloomFilterCondition(
-    const DB::ActionsDAGPtr & filter_actions_dag, DB::ContextPtr context_, const DB::Block & header_)
+    const DB::ActionsDAGPtr & filter_actions_dag,
+    const IndexToColumnBF & index_to_column_hasher,
+    DB::ContextPtr context_,
+    const DB::Block & header_)
 : header(header_)
 {
     if (!filter_actions_dag)
@@ -110,7 +136,7 @@ ParquetBloomFilterCondition::ParquetBloomFilterCondition(
     RPNBuilder<RPNElement> builder(
         filter_actions_dag->getOutputs().at(0),
         context_,
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, index_to_column_hasher, out); });
     rpn = std::move(builder).extractRPN();
 }
 
@@ -144,7 +170,7 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
                 {
                     const auto & filter = column_index_to_bf.at(column_index);
 
-                    match_rows = maybeTrueOnBloomFilter(&*column_ptr,
+                    match_rows = maybeTrueOnBloomFilter2(column_ptr,
                                                         filter,
                                                         match_all);
                 }
@@ -190,7 +216,10 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexToColumnBF & co
     return rpn_stack[0].can_be_true;
 }
 
-bool ParquetBloomFilterCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, ParquetBloomFilterCondition::RPNElement & out)
+bool ParquetBloomFilterCondition::extractAtomFromTree(
+    const RPNBuilderTreeNode & node,
+    const IndexToColumnBF & index_to_column_hasher,
+    ParquetBloomFilterCondition::RPNElement & out)
 {
     {
         Field const_value;
@@ -218,7 +247,7 @@ bool ParquetBloomFilterCondition::extractAtomFromTree(const RPNBuilderTreeNode &
         }
     }
 
-    return traverseFunction(node, out);
+    return traverseFunction(node, index_to_column_hasher, out);
 }
 
 bool ParquetBloomFilterCondition::traverseTreeIn(
@@ -227,6 +256,7 @@ bool ParquetBloomFilterCondition::traverseTreeIn(
     const ConstSetPtr &,
     const DataTypePtr & type,
     const ColumnPtr & column,
+    const IndexToColumnBF & index_to_column_hasher,
     ParquetBloomFilterCondition::RPNElement & out)
 {
     auto key_node_column_name = key_node.getColumnName();
@@ -234,7 +264,13 @@ bool ParquetBloomFilterCondition::traverseTreeIn(
     if (header.has(key_node_column_name))
     {
         size_t position = header.getPositionByName(key_node_column_name);
-        out.predicate.emplace_back(std::make_pair(position, column));
+
+        if (!index_to_column_hasher.contains(position))
+        {
+            return false;
+        }
+
+        out.predicate.emplace_back(std::make_pair(position, hash(column, index_to_column_hasher.at(position))));
 
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
@@ -266,7 +302,7 @@ bool ParquetBloomFilterCondition::traverseTreeIn(
             const auto & sub_data_types = tuple_data_type->getElements();
 
             for (size_t index = 0; index < key_node_function_arguments_size; ++index)
-                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out);
+                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], index_to_column_hasher, out);
 
             return match_with_subtype;
         }
@@ -276,7 +312,9 @@ bool ParquetBloomFilterCondition::traverseTreeIn(
 }
 
 bool ParquetBloomFilterCondition::traverseFunction(
-    const RPNBuilderTreeNode & node, ParquetBloomFilterCondition::RPNElement & out)
+    const RPNBuilderTreeNode & node,
+    const IndexToColumnBF & index_to_column_hasher,
+    ParquetBloomFilterCondition::RPNElement & out)
 {
     bool maybe_useful = false;
 
@@ -289,7 +327,7 @@ bool ParquetBloomFilterCondition::traverseFunction(
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
-            if (traverseFunction(argument, out))
+            if (traverseFunction(argument, index_to_column_hasher, out))
                 maybe_useful = true;
         }
 
@@ -308,7 +346,7 @@ bool ParquetBloomFilterCondition::traverseFunction(
                     if (prepared_set->hasExplicitSetElements())
                     {
                         const auto prepared_info = getPreparedSetInfo(prepared_set);
-                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, index_to_column_hasher, out))
                             maybe_useful = true;
                     }
                 }
@@ -325,12 +363,12 @@ bool ParquetBloomFilterCondition::traverseFunction(
 
             if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out))
+                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, index_to_column_hasher, out))
                     maybe_useful = true;
             }
             else if (lhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out))
+                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, index_to_column_hasher, out))
                     maybe_useful = true;
             }
         }
@@ -344,6 +382,7 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
+    const IndexToColumnBF & index_to_column_hasher,
     ParquetBloomFilterCondition::RPNElement & out)
 {
     auto key_column_name = key_node.getColumnName();
@@ -370,7 +409,13 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
 
         auto column = actual_type->createColumn();
         column->insert(converted_field);
-        out.predicate.emplace_back(position, std::move(column));
+
+        if (!index_to_column_hasher.contains(position))
+        {
+            return false;
+        }
+
+        out.predicate.emplace_back(position, hash(column, index_to_column_hasher.at(position)));
     }
     else if (function_name == "hasAny" || function_name == "hasAll")
     {
@@ -406,7 +451,12 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
                                                  RPNElement::FUNCTION_HAS_ANY :
                                                  RPNElement::FUNCTION_HAS_ALL;
 
-        out.predicate.emplace_back(std::make_pair(position, column));
+        if (!index_to_column_hasher.contains(position))
+        {
+            return false;
+        }
+
+        out.predicate.emplace_back(std::make_pair(position, hash(column, index_to_column_hasher.at(position))));
     }
     else
     {
@@ -422,7 +472,13 @@ bool ParquetBloomFilterCondition::traverseTreeEquals(
 
         auto column = actual_type->createColumn();
         column->insert(converted_field);
-        out.predicate.emplace_back(position, std::move(column));
+
+        if (!index_to_column_hasher.contains(position))
+        {
+            return false;
+        }
+
+        out.predicate.emplace_back(position, hash(column, index_to_column_hasher.at(position)));
     }
 
     return true;
