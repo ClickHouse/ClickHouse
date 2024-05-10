@@ -368,6 +368,78 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
     return names;
 }
 
+namespace
+{
+    /// Находит вызовы функции L2Distance(...) в дереве запроса.
+    class FindL2DistanceVisitor : public ASTVisitor
+    {
+    public:
+        bool visit(ASTPtr & ast, const Data & data) override
+        {
+            if (const auto * func = ast->as<ASTFunction>())
+            {
+                if (func->name == "L2Distance")
+                {
+                    l2_distance_calls.push_back(ast);
+                }
+            }
+            return true;
+        }
+
+        ASTs l2_distance_calls;
+    };
+
+    /// Заменяет вызовы функции L2Distance(...) на sqrt(L2SquaredDistance(...))
+    class ReplaceL2DistanceVisitor : public ASTVisitor
+    {
+    public:
+        explicit ReplaceL2DistanceVisitor(const ASTs & l2_distance_calls)
+            : l2_distance_calls(l2_distance_calls) {}
+
+        bool visit(ASTPtr & ast, const Data & data) override
+        {
+            if (auto * func = ast->as<ASTFunction>())
+            {
+                if (func->name == "L2Distance")
+                {
+                    // Заменяем вызовы L2Distance(...) на sqrt(L2SquaredDistance(...))
+                    func->name = "sqrt";
+                    func->arguments = createL2SquaredDistance(ast->clone());
+                }
+            }
+            return true;
+        }
+
+    private:
+        /// Создает вызов функции L2SquaredDistance(...) с аргументами из вызова L2Distance(...).
+        ASTPtr createL2SquaredDistance(ASTPtr l2_distance_call)
+        {
+            auto arguments = l2_distance_call->as<ASTFunction>()->arguments;
+            auto l2_squared_distance = std::make_shared<ASTFunction>();
+            l2_squared_distance->name = "L2SquaredDistance";
+            l2_squared_distance->arguments = arguments;
+            return l2_squared_distance;
+        }
+
+        const ASTs & l2_distance_calls;
+    };
+
+    /// Применяет оптимизацию к дереву запроса.
+    void applyL2DistanceOptimization(ASTPtr & query)
+    {
+        FindL2DistanceVisitor find_visitor;
+        find_visitor.visit(query);
+
+        if (!find_visitor.l2_distance_calls.empty())
+        {
+            ReplaceL2DistanceVisitor replace_visitor(find_visitor.l2_distance_calls);
+            replace_visitor.visit(query);
+        }
+    }
+}
+
+
+
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
@@ -789,6 +861,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_redundant_functions_in_order_by)
         optimizeRedundantFunctionsInOrderBy(select_query, context);
 
+    applyL2DistanceOptimization(query);
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
         optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns, result);
