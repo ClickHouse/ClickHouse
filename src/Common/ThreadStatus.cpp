@@ -127,6 +127,11 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
 #if !defined(SANITIZER) && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD) && !defined(__APPLE__)
+    /// profilers are useless without trace collector
+    auto global_context_ptr = global_context.lock();
+    if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
+        return;
+
     try
     {
         if (global_profiler_real_time_period > 0)
