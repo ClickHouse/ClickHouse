@@ -118,7 +118,12 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         {
             size_t size = 0;
-            /// Use statistics from column if it was created during merge.
+            /// Check if we can use statistics stored in the column. There are 2 possible sources
+            /// of this statistics:
+            ///   - statistics calculated during merge of some data parts (Statistics::Source::MERGE)
+            ///   - statistics read from the data part during deserialization of Dynamic column (Statistics::Source::READ).
+            /// We can rely only on statistics calculated during the merge, because column with statistics that was read
+            /// during deserialization from some data part could be filtered/limited/transformed/etc and so the statistics can be outdated.
             if (!statistics.data.empty() && statistics.source == ColumnDynamic::Statistics::Source::MERGE)
                 size = statistics.data.at(variant_info.variant_names[i]);
             /// Otherwise we can use only variant sizes from current column.

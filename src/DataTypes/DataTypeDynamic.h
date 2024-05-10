@@ -2,9 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 
-#define DEFAULT_MAX_DYNAMIC_TYPES 32
-
-
 namespace DB
 {
 
@@ -46,6 +43,8 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
 
 private:
+    static constexpr size_t DEFAULT_MAX_DYNAMIC_TYPES = 32;
+
     SerializationPtr doGetDefaultSerialization() const override;
     String doGetName() const override;
 

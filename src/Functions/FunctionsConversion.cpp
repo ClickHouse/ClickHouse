@@ -575,7 +575,7 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 template <typename StringColumnType>
 struct ConvertImplGenericToString
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const FormatSettings & format_settings)
     {
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to serialize to ColumnString or ColumnFixedString");
@@ -596,7 +596,6 @@ struct ConvertImplGenericToString
 
             auto & write_buffer = write_helper.getWriteBuffer();
 
-            FormatSettings format_settings;
             auto serialization = type.getDefaultSerialization();
             for (size_t row = 0; row < size; ++row)
             {
@@ -2299,7 +2298,7 @@ private:
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
         {
             if (from_type->getCustomSerialization())
-                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, context ? getFormatSettings(context) : FormatSettings());
         }
 
         bool done = false;
@@ -2332,7 +2331,7 @@ private:
             /// Generic conversion of any type to String.
             if (std::is_same_v<ToDataType, DataTypeString>)
             {
-                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, context ? getFormatSettings(context) : FormatSettings());
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
@@ -5060,7 +5059,7 @@ private:
                 {
                     ret = [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
                     {
-                        return ConvertImplGenericToString<typename ToDataType::ColumnType>::execute(arguments, result_type, input_rows_count);
+                        return ConvertImplGenericToString<typename ToDataType::ColumnType>::execute(arguments, result_type, input_rows_count, context ? getFormatSettings(context) : FormatSettings());
                     };
                     return true;
                 }

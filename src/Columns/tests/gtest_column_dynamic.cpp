@@ -195,7 +195,7 @@ TEST(ColumnDynamic, InsertFromOverflow1)
 
     column_to->insertFrom(*column_from, 1);
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
     field = (*column_to)[column_to->size() - 1];
     ASSERT_EQ(field, "42.42");
@@ -220,7 +220,7 @@ TEST(ColumnDynamic, InsertFromOverflow2)
     ASSERT_EQ(field, 42);
 
     column_to->insertFrom(*column_from, 1);
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
     field = (*column_to)[column_to->size() - 1];
     ASSERT_EQ(field, "42.42");
@@ -299,7 +299,7 @@ TEST(ColumnDynamic, InsertManyFromOverflow1)
 
     column_to->insertManyFrom(*column_from, 1, 2);
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
     field = (*column_to)[column_to->size() - 2];
     ASSERT_EQ(field, "42.42");
@@ -332,7 +332,7 @@ TEST(ColumnDynamic, InsertManyFromOverflow2)
 
     column_to->insertManyFrom(*column_from, 1, 2);
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
     field = (*column_to)[column_to->size() - 2];
     ASSERT_EQ(field, "42.42");
@@ -406,7 +406,7 @@ TEST(ColumnDynamic, InsertRangeFromOverflow1)
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     auto field = (*column_to)[column_to->size() - 4];
     ASSERT_EQ(field, Field(42));
     field = (*column_to)[column_to->size() - 3];
@@ -429,7 +429,7 @@ TEST(ColumnDynamic, InsertRangeFromOverflow2)
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     auto field = (*column_to)[column_to->size() - 3];
     ASSERT_EQ(field, Field(42));
     field = (*column_to)[column_to->size() - 2];
@@ -451,7 +451,7 @@ TEST(ColumnDynamic, InsertRangeFromOverflow3)
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     auto field = (*column_to)[column_to->size() - 3];
     ASSERT_EQ(field, Field(42));
     field = (*column_to)[column_to->size() - 2];
@@ -470,9 +470,9 @@ TEST(ColumnDynamic, InsertRangeFromOverflow4)
     auto column_to = getDynamicWithManyVariants(254);
     column_to->insertRangeFrom(*column_from, 0, 3);
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     auto field = (*column_to)[column_to->size() - 3];
     ASSERT_EQ(field, Field("42"));
     field = (*column_to)[column_to->size() - 2];
@@ -495,7 +495,7 @@ TEST(ColumnDynamic, InsertRangeFromOverflow5)
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     auto field = (*column_to)[column_to->size() - 4];
     ASSERT_EQ(field, Field(42));
     field = (*column_to)[column_to->size() - 3];
@@ -522,8 +522,8 @@ TEST(ColumnDynamic, InsertRangeFromOverflow6)
     ASSERT_EQ(column_to->getVariantInfo().variant_names.size(), 255);
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Array(Int8)"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Array(Int8)"));
     auto field = (*column_to)[column_to->size() - 5];
 
     ASSERT_EQ(field, Field("44"));
@@ -620,7 +620,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow)
     ASSERT_EQ((*column_from)[column_from->size() - 2], "str");
     ASSERT_EQ((*column_from)[column_from->size() - 1], Null());
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Int8"));
-    ASSERT_TRUE(!column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
 }
 

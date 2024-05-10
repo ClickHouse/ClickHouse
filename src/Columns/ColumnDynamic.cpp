@@ -80,41 +80,14 @@ bool ColumnDynamic::addNewVariant(const DB::DataTypePtr & new_variant)
     DataTypes all_variants = current_variants;
     all_variants.push_back(new_variant);
     auto new_variant_type = std::make_shared<DataTypeVariant>(all_variants);
-    const auto & new_variants = assert_cast<const DataTypeVariant &>(*new_variant_type).getVariants();
-
-    std::vector<ColumnVariant::Discriminator> current_to_new_discriminators;
-    current_to_new_discriminators.resize(variant_info.variant_names.size());
-    Names new_variant_names;
-    new_variant_names.reserve(new_variants.size());
-    std::unordered_map<String, ColumnVariant::Discriminator> new_variant_name_to_discriminator;
-    new_variant_name_to_discriminator.reserve(new_variants.size());
-    std::vector<std::pair<MutableColumnPtr, ColumnVariant::Discriminator>> new_variant_columns_and_discriminators_to_add;
-    new_variant_columns_and_discriminators_to_add.reserve(new_variants.size() - current_variants.size());
-
-    for (ColumnVariant::Discriminator discr = 0; discr != new_variants.size(); ++discr)
-    {
-        String name = new_variants[discr]->getName();
-        new_variant_names.push_back(name);
-        new_variant_name_to_discriminator[name] = discr;
-        auto it = variant_info.variant_name_to_discriminator.find(name);
-        if (it == variant_info.variant_name_to_discriminator.end())
-            new_variant_columns_and_discriminators_to_add.emplace_back(new_variants[discr]->createColumn(), discr);
-        else
-            current_to_new_discriminators[it->second] = discr;
-    }
-
-    variant_info.variant_type = new_variant_type;
-    variant_info.variant_name = new_variant_type->getName();
-    variant_info.variant_names = new_variant_names;
-    variant_info.variant_name_to_discriminator = new_variant_name_to_discriminator;
-    assert_cast<ColumnVariant &>(*variant_column).extend(current_to_new_discriminators, std::move(new_variant_columns_and_discriminators_to_add));
-    variant_mappings_cache.clear();
+    updateVariantInfoAndExpandVariantColumn(new_variant_type);
     return true;
 }
 
 void ColumnDynamic::addStringVariant()
 {
-    addNewVariant(std::make_shared<DataTypeString>());
+    if (!addNewVariant(std::make_shared<DataTypeString>()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add String variant to Dynamic column, it's a bug");
 }
 
 void ColumnDynamic::updateVariantInfoAndExpandVariantColumn(const DB::DataTypePtr & new_variant_type)
@@ -704,13 +677,13 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
         result_variants.reserve(max_dynamic_types);
         /// Add String variant in advance.
         result_variants.push_back(std::make_shared<DataTypeString>());
-        size_t i = 0;
-        while (result_variants.size() != max_dynamic_types && i < variants_with_sizes.size())
+        for (const auto & [_, variant] : variants_with_sizes)
         {
-            const auto & variant = variants_with_sizes[i].second;
+            if (result_variants.size() == max_dynamic_types)
+                break;
+
             if (variant->getName() != "String")
                 result_variants.push_back(variant);
-            ++i;
         }
 
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
