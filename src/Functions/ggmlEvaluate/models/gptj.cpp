@@ -1,14 +1,15 @@
-#include <Common/Exception.h>
-
-#include "Functions/ggmlEvaluate/IGgmlModel.h"
 #include "ggml.h"
 
-#include <Functions/ggmlEvaluate/gpt_common.h>
+#include "gpt_common.h"
+
+#include <Common/Exception.h>
+
+#include <Functions/ggmlEvaluate/IGgmlModel.h>
 #include <Functions/ggmlEvaluate/model_storage.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include <fstream>
 #include <iostream>
+
 
 using namespace Poco;
 using namespace Poco::Util;
@@ -83,26 +84,23 @@ struct GptJModelState {
 
 class GptJModel : public IGgmlModel, protected GptJModelState {
 public:
-    ~GptJModel() override;
-
-    std::string eval(const std::string & input) override;
+    ~GptJModel() override {
+        ggml_free(ctx);
+    }
 
 private:
-    void LoadImpl(ConfigPtr config) override;
+    void loadImpl(ConfigPtr config) override;
+    std::string evalImpl(const std::string & input) override;
 
-    bool EvalImpl(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
+    bool evalInternal(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
     std::vector<GptVocab::id> predict(const std::vector<GptVocab::id> & embd_inp);
 
     GptVocab gpt_vocab;
     GptParams gpt_params;
 };
 
-GptJModel::~GptJModel() {
-    ggml_free(ctx);
-}
-
 // load the model's weights from a file
-void GptJModel::LoadImpl(ConfigPtr config)
+void GptJModel::loadImpl(ConfigPtr config)
 {
     std::cout << "GptJModel::doLoad\n"; // GGMLTODO : remove log
 
@@ -371,7 +369,7 @@ void GptJModel::LoadImpl(ConfigPtr config)
 //
 // The GPT-J model requires about 16MB of memory per input token.
 // NOLINTBEGIN
-bool GptJModel::EvalImpl(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token)
+bool GptJModel::evalInternal(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token)
 {
     const int N = static_cast<int>(embd_inp.size());
 
@@ -594,7 +592,7 @@ bool GptJModel::EvalImpl(int n_threads, int n_past, const std::vector<GptVocab::
 }
 // NOLINTEND
 
-std::string GptJModel::eval(const std::string & input)
+std::string GptJModel::evalImpl(const std::string & input)
 {
     std::vector<GptVocab::id> embd_inp = gpt_tokenize(gpt_vocab, input);
     std::cout << "Tokenized " << input << '\n';
@@ -620,14 +618,14 @@ std::vector<GptVocab::id> GptJModel::predict(const std::vector<GptVocab::id> & e
     int n_predict = std::min(gpt_params.n_predict, hparams.n_ctx - static_cast<int>(embd_inp.size()));
 
     size_t mem_per_token = 0;
-    EvalImpl(gpt_params.n_threads, 0, { 0, 1, 2, 3 }, logits, mem_per_token);
+    evalInternal(gpt_params.n_threads, 0, { 0, 1, 2, 3 }, logits, mem_per_token);
 
     std::string result;
 
     for (size_t i = embd.size(); i < embd_inp.size() + n_predict; i++) {
         // predict
         if (!embd.empty()) {
-            if (!EvalImpl(gpt_params.n_threads, n_past, embd, logits, mem_per_token)) {
+            if (!evalInternal(gpt_params.n_threads, n_past, embd, logits, mem_per_token)) {
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Failed to predict");
             }
         }

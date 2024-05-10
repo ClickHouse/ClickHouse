@@ -2,10 +2,10 @@
 
 #include "IGgmlModel.h"
 
-#include <iostream>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+
 
 namespace DB
 {
@@ -23,7 +23,6 @@ class GgmlModelRegister
 public:
     explicit GgmlModelRegister(std::string_view name)
     {
-        std::cout << "Registered model " << name << '\n';
         GgmlModelBuilders::instance().emplace(name, &GgmlModelRegister<T>::Create);
     }
 

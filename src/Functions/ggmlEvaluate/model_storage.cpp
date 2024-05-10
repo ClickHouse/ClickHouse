@@ -1,5 +1,7 @@
 #include "model_storage.h"
-#include "Common/Exception.h"
+
+#include <Common/Exception.h>
+
 
 namespace DB {
 
@@ -23,7 +25,6 @@ std::shared_ptr<IGgmlModel> GgmlModelStorage::get(const std::string & key)
     auto it = builders.find(key);
     if (it == builders.end())
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No model with name '{}'", key);
-    std::cout << "building model with key " << key;
     return models[key] = it->second();
 }
 

@@ -1,7 +1,8 @@
 #include "gpt_common.h"
 
-#include <Common/re2.h>
 #include <Common/Exception.h>
+#include <Common/re2.h>
+
 
 namespace DB
 {

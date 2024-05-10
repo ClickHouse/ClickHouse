@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 
+
 namespace DB {
 
 using ConfigPtr = Poco::AutoPtr<const Poco::Util::AbstractConfiguration>;
@@ -14,13 +15,13 @@ public:
     virtual ~IGgmlModel() = default;
 
     void load(ConfigPtr config);
-
-    virtual std::string eval(const std::string & input) = 0;
+    std::string eval(const std::string & input);
 
 private:
-    virtual void LoadImpl(ConfigPtr config) = 0;
+    virtual void loadImpl(ConfigPtr config) = 0;
+    virtual std::string evalImpl(const std::string & input) = 0;
 
-    bool loaded{false};
+    bool loaded = false;
     std::mutex load_mutex;
 };
 
