@@ -123,6 +123,8 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
 
+  '-zircon-*'
+
   # These are new in clang-18, and we have to sort them out:
   '-readability-avoid-nested-conditional-operator',
   '-modernize-use-designated-initializers',
@@ -133,8 +135,6 @@ Checks: [
   '-bugprone-suspicious-stringview-data-usage',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-cert-err33-c',
-
-  '-zircon-*'
 ]
 
 WarningsAsErrors: '*'

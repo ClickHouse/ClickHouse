@@ -1,4 +1,5 @@
-// NOLINTBEGIN // clang-tidy-19 crashes
+// NOLINTBEGIN
+// clang-tidy-19 crashes
 
 #include "PolygonDictionaryImplementations.h"
 #include "DictionaryFactory.h"

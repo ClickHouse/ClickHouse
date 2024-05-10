@@ -104,7 +104,7 @@ struct ZkNodeCache
             auto request = zkutil::makeSetRequest(path, value, -1);
             requests.push_back(request);
         }
-        for (auto [_, child] : children)
+        for (const auto & [_, child] : children)
             child->generateRequests(requests);
     }
 };

@@ -2810,9 +2810,9 @@ public:
      * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
      * Implements boost::program_options::ext_parser logic
      */
-    std::pair<std::string, std::string> operator()(const std::string& token) const
+    std::pair<std::string, std::string> operator()(const std::string & token) const
     {
-        if (token.starts_with("--"))
+        if (!token.starts_with("--"))
             return {};
         std::string arg = token.substr(2);
 
