@@ -131,6 +131,7 @@ Checks: [
   '-readability-redundant-member-init',
   '-bugprone-crtp-constructor-accessibility',
   '-bugprone-suspicious-stringview-data-usage',
+  '-bugprone-multi-level-implicit-pointer-conversion',
 
   '-zircon-*'
 ]

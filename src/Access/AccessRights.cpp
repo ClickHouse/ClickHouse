@@ -233,7 +233,7 @@ namespace
 
     /**
      *  Levels:
-     *                    1. GLOBAL
+     *  1. GLOBAL
      *  2. DATABASE_LEVEL          2. GLOBAL_WITH_PARAMETER (parameter example: named collection)
      *  3. TABLE_LEVEL
      *  4. COLUMN_LEVEL
@@ -246,6 +246,7 @@ namespace
         GLOBAL_WITH_PARAMETER = DATABASE_LEVEL,
         TABLE_LEVEL = 2,
         COLUMN_LEVEL = 3,
+        MAX = COLUMN_LEVEL,
     };
 
     AccessFlags getAllGrantableFlags(Level level)
@@ -520,7 +521,7 @@ public:
 
 private:
     AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
-    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level + 1)); }
+    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
 
     Node * tryGetChild(std::string_view name) const
     {

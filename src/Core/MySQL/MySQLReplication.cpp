@@ -580,7 +580,7 @@ namespace MySQLReplication
                     case MYSQL_TYPE_YEAR: {
                         Int16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{UInt16{static_cast<UInt16>(val + 1900)}});
+                        row.push_back(Field{static_cast<UInt16>(val + 1900)});
                         break;
                     }
                     case MYSQL_TYPE_TIME2:
@@ -665,8 +665,9 @@ namespace MySQLReplication
 
                         Int64 time_micro = 0;
                         time_micro = (hh * 3600  + mm * 60 + ss) * 1000000 + std::abs(frac);
-                        if (negative) time_micro = - time_micro;
-                        row.push_back(Field{Int64{time_micro}});
+                        if (negative)
+                            time_micro = - time_micro;
+                        row.push_back(Field{time_micro});
                         break;
                     }
                     case MYSQL_TYPE_DATETIME2:
@@ -812,13 +813,13 @@ namespace MySQLReplication
                         {
                             UInt8 val = 0;
                             payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                            row.push_back(Field{UInt8{val}});
+                            row.push_back(Field{val});
                         }
                         else
                         {
                             UInt16 val = 0;
                             payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                            row.push_back(Field{UInt16{val}});
+                            row.push_back(Field{val});
                         }
                         break;
                     }

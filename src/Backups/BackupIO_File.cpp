@@ -107,7 +107,7 @@ void BackupWriterFile::removeFile(const String & file_name)
 {
     (void)fs::remove(root_path / file_name);
     if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::removeFiles(const Strings & file_names)

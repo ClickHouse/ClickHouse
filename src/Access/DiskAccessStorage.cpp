@@ -574,7 +574,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             return true;
         }
 
-        removeNoLock(id, /* throw_if_not_exists= */ false, write_on_disk);
+        removeNoLock(id, /* throw_if_not_exists= */ false, write_on_disk); // NOLINT
     }
 
     /// Do insertion.

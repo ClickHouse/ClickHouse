@@ -105,7 +105,7 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         }
         for (size_t j = 0; j < idx; ++j)
         {
-            carry += static_cast<UInt8>(dst[j] * 58);
+            carry += dst[j] * 58;
             dst[j] = static_cast<UInt8>(carry & 0xFF);
             carry >>= 8;
         }
