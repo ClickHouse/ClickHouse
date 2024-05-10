@@ -2,8 +2,8 @@ MergeTree compact + horizontal merge
 CollapsingMergeTree
 100000	String
 100000	UInt64
-50000	UInt64
 50000	String
+50000	UInt64
 VersionedCollapsingMergeTree
 100000	String
 100000	UInt64
@@ -11,34 +11,34 @@ VersionedCollapsingMergeTree
 75000	UInt64
 MergeTree wide + horizontal merge
 CollapsingMergeTree
-100000	UInt64
 100000	String
+100000	UInt64
 50000	String
 50000	UInt64
 VersionedCollapsingMergeTree
-100000	UInt64
 100000	String
+100000	UInt64
 75000	String
 75000	UInt64
 MergeTree compact + vertical merge
 CollapsingMergeTree
-100000	UInt64
 100000	String
-50000	UInt64
+100000	UInt64
 50000	String
+50000	UInt64
 VersionedCollapsingMergeTree
-100000	UInt64
 100000	String
-75000	UInt64
+100000	UInt64
 75000	String
+75000	UInt64
 MergeTree wide + vertical merge
 CollapsingMergeTree
-100000	UInt64
 100000	String
+100000	UInt64
 50000	String
 50000	UInt64
 VersionedCollapsingMergeTree
-100000	UInt64
 100000	String
-75000	UInt64
+100000	UInt64
 75000	String
+75000	UInt64
