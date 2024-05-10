@@ -19,7 +19,7 @@ def check_proxy_logs(cluster, proxy_instance, protocol, bucket, requested_http_m
                         False
                     ), f"Found http method {http_method} for bucket {bucket} that should not be found in {proxy_instance} logs"
             elif http_method in requested_http_methods:
-                assert(
+                assert (
                     False
                 ), f"{http_method} method not found in logs of {proxy_instance} for bucket {bucket}"
 
