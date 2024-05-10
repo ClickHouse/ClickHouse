@@ -69,15 +69,12 @@ struct GptJModelState {
 
 class GptJModel : public IGgmlModel, protected GptJModelState {
 public:
-    ~GptJModel() override
-    {
-        ggml_free(ctx);
-    }
+    ~GptJModel() override;
 
     std::string eval(const std::string & input) override;
 
 private:
-    bool LoadImpl(const std::string & fname) override;
+    void LoadImpl(const std::string & fname) override;
 
     bool EvalImpl(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
     std::vector<GptVocab::id> predict(const std::vector<GptVocab::id> & embd_inp);

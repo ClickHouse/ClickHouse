@@ -1,31 +1,23 @@
 #pragma once
 
-#include <cstdint>
-#include <iostream>
-#include <map>
 #include <mutex>
-#include <random>
 #include <string>
-#include <thread>
+
+namespace DB {
 
 class IGgmlModel {
 public:
     virtual ~IGgmlModel() = default;
 
-    bool load(const std::string & fname)
-    {
-        std::lock_guard lock{load_mutex};
-        if (!loaded) {
-            loaded = LoadImpl(fname);
-        }
-        return loaded;
-    }
+    void load(const std::string & fname);
 
     virtual std::string eval(const std::string & input) = 0;
 
 private:
-    virtual bool LoadImpl(const std::string & fname) = 0;
+    virtual void LoadImpl(const std::string & fname) = 0;
 
     bool loaded{false};
     std::mutex load_mutex;
 };
+
+}

@@ -1,6 +1,7 @@
 #include "gptj.h"
 
 #include <Common/Exception.h>
+#include "ggml.h"
 
 #include <Functions/ggmlEvaluate/gpt_common.h>
 
@@ -13,15 +14,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
+    extern const int INCORRECT_DATA;
+    extern const int RECEIVED_EMPTY_DATA;
+}
+
+GptJModel::~GptJModel() {
+    ggml_free(ctx);
 }
 
 // load the model's weights from a file
-bool GptJModel::LoadImpl(const std::string & fname)
+void GptJModel::LoadImpl(const std::string & fname)
 {
-    std::cout << "GptJModel::doLoad\n";
+    std::cout << "GptJModel::doLoad\n"; // GGMLTODO : remove log
     auto fin = std::ifstream(fname, std::ios::binary);
     if (!fin) {
-        return false;
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Unable to open file at '{}'", fname);
     }
 
     // verify magic
@@ -29,11 +38,11 @@ bool GptJModel::LoadImpl(const std::string & fname)
         uint32_t magic;
         fin.read(reinterpret_cast<char*>(&magic), sizeof(magic));
         if (magic != GGML_FILE_MAGIC) {
-            return false;
+            throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "File at '{}' does not match the required format (bad magic)", fname);
         }
     }
 
-    std::cout << "Verified magic\n";
+    std::cout << "Verified magic\n"; // GGMLTODO : remove log
 
     // load hparams
     {
@@ -54,7 +63,7 @@ bool GptJModel::LoadImpl(const std::string & fname)
         fin.read(reinterpret_cast<char*>(&n_vocab), sizeof(n_vocab));
 
         if (n_vocab != hparams.n_vocab) {
-            return false;
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid model file '{}': bad vocab size ({} != {})", fname, n_vocab, hparams.n_vocab);
         }
 
         std::string word;
@@ -77,7 +86,7 @@ bool GptJModel::LoadImpl(const std::string & fname)
     // in order to save memory and also to speed up the computation
     ggml_type wtype = ggml_ftype_to_ggml_type(static_cast<enum ggml_ftype>(hparams.ftype));
     if (wtype == GGML_TYPE_COUNT) {
-        return false;
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid model file '{}' : bad ftype value {}", fname, GGML_TYPE_COUNT);
     }
 
     size_t ctx_size = 0;
@@ -127,7 +136,7 @@ bool GptJModel::LoadImpl(const std::string & fname)
 
         ctx = ggml_init(params);
         if (!ctx) {
-            return false;
+            throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "ggml_init() failed");
         }
     }
 
@@ -233,38 +242,29 @@ bool GptJModel::LoadImpl(const std::string & fname)
             fin.read(nname.data(), length);
 
             if (tensors.find(nname) == tensors.end()) {
-                return false;
+                throw Exception(ErrorCodes::INCORRECT_DATA, "In model file '{}' : unknown tensor name {}", fname, nname);
             }
 
             auto* tensor = tensors[nname];
             if (ggml_nelements(tensor) != nelements) {
-                return false;
+                throw Exception(ErrorCodes::INCORRECT_DATA, "In model file '{}' : tensor {} has wrong size in model file", fname, nname);
             }
 
             if (tensor->ne[0] != ne[0] || tensor->ne[1] != ne[1]) {
-                return false;
+                throw Exception(ErrorCodes::INCORRECT_DATA, "In model file '{}' : tensor {} has wrong shape in model file", fname, nname);
             }
 
             const size_t bpe = ggml_type_size(ggml_type(ttype));
 
             if ((nelements*bpe)/ggml_blck_size(tensor->type) != ggml_nbytes(tensor)) {
-                return false;
+                throw Exception(ErrorCodes::INCORRECT_DATA, "In model file '{}' : tensor {} has wrong size in model file : got {}, expected {}", fname, nname, ggml_nbytes(tensor), nelements * bpe);
             }
 
             fin.read(reinterpret_cast<char *>(tensor->data), ggml_nbytes(tensor));
-
-            // if (++n_tensors % 8 == 0) {
-            //     std::cout << ".";
-            //     std::cout.flush();
-            // }
         }
-
-        // std::cout << "done" << std::endl;
     }
 
     fin.close();
-
-    return true;
 }
 
 // evaluate the transformer

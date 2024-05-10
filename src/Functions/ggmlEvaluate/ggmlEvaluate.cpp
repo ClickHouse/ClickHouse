@@ -62,7 +62,7 @@ public:
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 3 arguments", getName());
         if (arguments.size() > 3)
             throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} expects exactly 3 arguments", getName());
-        std::cout << __FUNCTION__ << " " << arguments[0].type->getName() << ' ' << arguments[1].type->getName() << ' ' << arguments[2].type->getName() << std::endl;
+        std::cout << __FUNCTION__ << " " << arguments[0].type->getName() << ' ' << arguments[1].type->getName() << ' ' << arguments[2].type->getName() << std::endl;  // GGMLTODO : remove log
         // TODO : validate types
         // const auto * name_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         // if (!name_col)
@@ -72,9 +72,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        std::cout << "GGML!!!" << std::endl;
-        std::cout << "input_rows_count is : " << input_rows_count << std::endl;
-        std::cout << "result_type is : " << result_type->getName() << std::endl;
+        std::cout << "GGML!!!" << std::endl;  // GGMLTODO : remove log
+        std::cout << "input_rows_count is : " << input_rows_count << std::endl;  // GGMLTODO : remove log
+        std::cout << "result_type is : " << result_type->getName() << std::endl;  // GGMLTODO : remove log
         if (input_rows_count == 0) {
             ColumnPtr res = arguments[0].column;
             return res;
@@ -90,7 +90,7 @@ public:
 
             model_path = /* get prefix from config + */ "/home/ArtNext/" + model_path;
         }
-        std::cout << "Deduced model path to be " << model_path << std::endl;
+        std::cout << "Deduced model path to be " << model_path << std::endl;  // GGMLTODO : remove log
         std::tuple<Int32> params;
         {
             auto val = (*arguments[1].column.get())[0];
@@ -100,13 +100,13 @@ public:
             }
             UInt64 n_predict = t[0].safeGet<UInt64>();
             params = { n_predict };
-            std::cout << "Deduced n_predict as " << n_predict << std::endl;
+            std::cout << "Deduced n_predict as " << n_predict << std::endl;  // GGMLTODO : remove log
         }
-        std::cout << "Deduced params to be " << std::get<0>(params) << std::endl;
+        std::cout << "Deduced params to be " << std::get<0>(params) << std::endl; // GGMLTODO : remove log
 
         auto model = getModel(model_path);
 
-        std::cout << "loaded\n";
+        std::cout << "loaded\n";  // GGMLTODO : remove log
 
         const auto& vals = *arguments[2].column.get();
         auto col_res = ColumnString::create();
@@ -121,7 +121,7 @@ public:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Nasrali");
             }
             else {
-                std::cout << "Processing " << val << '\n';
+                std::cout << "Processing " << val << '\n';  // GGMLTODO : remove log
                 std::string result = model->eval(val);
                 result_raw[j] = std::move(result);
                 totalsize += result_raw[j].size() + 1;
@@ -139,7 +139,7 @@ public:
             col_res->getOffsets()[i] = offset;
         }
 
-        std::cout << "Success!!!" << std::endl;
+        std::cout << "Success!!!" << std::endl; // GGMLTODO : remove log
         return col_res;
     }
 
@@ -148,10 +148,7 @@ private:
     {
         auto & storage = getContext()->getGgmlModelStorage();
         auto model = storage.get("gptj", []() { return std::make_shared<GptJModel>(); });
-        if (!model->load(path)) {
-            // TODO: more suitable error codes
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Could not load model from {}", path);
-        }
+        model->load(path);
         return model;
     }
 };
