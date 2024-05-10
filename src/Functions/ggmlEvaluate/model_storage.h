@@ -2,6 +2,7 @@
 
 #include "IGgmlModel.h"
 
+#include <iostream>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -9,12 +10,34 @@
 namespace DB
 {
 
+using GgmlModelBuilderFunctionPtr = std::shared_ptr<IGgmlModel> (*) ();
+
+struct GgmlModelBuilders : public std::unordered_map<std::string_view, GgmlModelBuilderFunctionPtr>
+{
+    static GgmlModelBuilders & instance();
+};
+
+template <typename T>
+class GgmlModelRegister
+{
+public:
+    explicit GgmlModelRegister(std::string_view name)
+    {
+        std::cout << "Registered model " << name << '\n';
+        GgmlModelBuilders::instance().emplace(name, &GgmlModelRegister<T>::Create);
+    }
+
+private:
+    static std::shared_ptr<IGgmlModel> Create()
+    {
+        return std::make_shared<T>();
+    }
+};
+
 class GgmlModelStorage
 {
 public:
-    using ModelBuilder = std::function<std::shared_ptr<IGgmlModel>()>;
-
-    std::shared_ptr<IGgmlModel> get(const std::string & key, ModelBuilder builder);
+    std::shared_ptr<IGgmlModel> get(const std::string & key);
 
 private:
     std::unordered_map<std::string, std::shared_ptr<IGgmlModel>> models;

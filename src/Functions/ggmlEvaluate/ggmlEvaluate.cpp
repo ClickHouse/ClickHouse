@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include "Common/Throttler_fwd.h"
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -15,13 +16,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "Functions/ggmlEvaluate/IGgmlModel.h"
-#include "gpt_common.h"
-#include "gptj.h"
+#include "model_storage.h"
 
 #include <Common/Exception.h>
 #include <Common/re2.h>
 #include <DataTypes/DataTypeString.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include "DataTypes/IDataType.h"
 
 namespace DB
@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 /// Evaluate GGML model.
@@ -45,6 +46,7 @@ class FunctionGGMLEvaluate final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "ggmlEvaluate";
+    static constexpr auto ggmlConfigSection = "ggml";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGGMLEvaluate>(context_); }
 
@@ -80,17 +82,15 @@ public:
             return res;
         }
 
-        std::string model_path;
+        std::string model_name;
         {
-            const auto& model_path_arg = *arguments[0].column.get();
-            auto val = model_path_arg[0];
-            if (!val.tryGet(model_path)) {
+            const auto& model_name_arg = *arguments[0].column.get();
+            auto val = model_name_arg[0];
+            if (!val.tryGet(model_name)) {
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "No2");
             }
-
-            model_path = /* get prefix from config + */ "/home/ArtNext/" + model_path;
         }
-        std::cout << "Deduced model path to be " << model_path << std::endl;  // GGMLTODO : remove log
+        // std::cout << "Deduced model path to be " << model_path << std::endl;  // GGMLTODO : remove log
         std::tuple<Int32> params;
         {
             auto val = (*arguments[1].column.get())[0];
@@ -104,7 +104,7 @@ public:
         }
         std::cout << "Deduced params to be " << std::get<0>(params) << std::endl; // GGMLTODO : remove log
 
-        auto model = getModel(model_path);
+        auto model = getModel(model_name);
 
         std::cout << "loaded\n";  // GGMLTODO : remove log
 
@@ -144,11 +144,20 @@ public:
     }
 
 private:
-    std::shared_ptr<IGgmlModel> getModel(const std::string & path) const
+    std::shared_ptr<IGgmlModel> getModel(const std::string & model_name) const
     {
+        std::cout << "getting model " << model_name << '\n';
         auto & storage = getContext()->getGgmlModelStorage();
-        auto model = storage.get("gptj", []() { return std::make_shared<GptJModel>(); });
-        model->load(path);
+        std::cout << "got storage\n";
+        auto model = storage.get(model_name);
+        std::cout << "got model from storage\n";
+
+        if (!getContext()->getConfigRef().has(ggmlConfigSection))
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key 'ggml' in config");
+        ConfigPtr model_config{getContext()->getConfigRef().createView(ggmlConfigSection)};
+
+        std::cout << "loading model\n";
+        model->load(model_config);
         return model;
     }
 };
