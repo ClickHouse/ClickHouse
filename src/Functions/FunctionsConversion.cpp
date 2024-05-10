@@ -3296,7 +3296,7 @@ private:
                     return ConvertImplGenericFromString<false>::execute(arguments, result_type, column_nullable, input_rows_count, context);
                 };
             }
-            
+
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
             {
                 return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, context);
