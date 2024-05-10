@@ -8,6 +8,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
 
+// #include <pg_query.h>
 
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
@@ -33,15 +34,8 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & /*ast*/, Expected 
         return false;
     }
     const auto root = PostgreSQL::buildJSONTree(JSONRoot);
+    PrintDebugInfoRecursive(root);
     // PostgreSQL::Transform(root, ast);
-    std::cerr << "___________________________";
-    const auto keys = root->ListChildKeys();
-    std::cerr << "ListChildKeys: ";
-    for (auto key : keys) {
-        std::cerr << key << ' ';
-    }
-    std::cerr << "\n";
-    std::cerr << "___________________________";
     return true;
 }
 }

@@ -11,8 +11,8 @@ namespace DB::PostgreSQL
     }
     
     NodeType Value::GetType() const 
-    { 
-        return type; 
+    {
+        return type;
     }
     std::optional<Field> Value::GetPrimitive() const 
     { 
@@ -83,6 +83,12 @@ namespace DB::PostgreSQL
         return nullptr;
     }
 
+
+    std::shared_ptr<Node> Node::operator[](const std::string& key_) const 
+    {
+        return GetChildWithKey(key_);
+    }
+
     std::vector<std::string> Node::ListChildKeys() const 
     {
         std::vector<std::string> res;
@@ -116,9 +122,31 @@ namespace DB::PostgreSQL
         return key;
     }
 
+    std::string Node::GetKeyString() const 
+    {
+        const auto& key_ = GetKey();
+        if (key_ == std::nullopt)
+        {
+            return "";
+        }
+        return key_.value();
+    }
+
     std::optional<Value> Node::GetValue() const 
     {
         return value; 
+    }
+
+    NodeArray Node::GetNodeArray() const {
+        assert(GetType() == NodeType::Array || GetType() == NodeType::Object);
+        return value.value().GetArrayOrObject().value();
+    }
+
+    NodeType Node::GetType() const {
+        if (!value.has_value()) {
+            return NodeType::Undefined;
+        }
+        return value.value().GetType();
     }
 
     namespace {
@@ -179,5 +207,50 @@ namespace DB::PostgreSQL
                 std::cerr << "Primitive node\n";
                 return GetPrimitiveValueNode(elem);
         }
+    }
+
+    void PrintDebugInfoRecursive(std::shared_ptr<Node> node) {
+        PrintDebugInfo(node);
+        if (node->GetType() == NodeType::Array || node->GetType() == NodeType::Object) {
+            NodeArray arrayOrObject = node->GetNodeArray();
+            for (const auto& child : arrayOrObject) {
+                PrintDebugInfoRecursive(child);
+            }
+        }
+    }
+
+    void PrintDebugInfo(std::shared_ptr<Node> node) {
+        std::cerr << "___________________________";
+        std::cerr << "Node info\n";
+        if (!node) {
+            std::cerr << "nullptr\n";
+            std::cerr << "___________________________";
+            return;
+        }
+        std::cerr << "Key: " << node->GetKeyString() << std::endl;
+        const auto& valueOpt = node->GetValue();
+        if (valueOpt == std::nullopt) {
+            std::cerr << "Value: nullopt\n";
+            std::cerr << "___________________________";
+            return;
+        }
+        const auto& value = valueOpt.value();
+        if (value.GetType() == NodeType::Primitive) {
+            const auto& primitiveOpt = value.GetPrimitive();
+            if (primitiveOpt == std::nullopt) {
+                std::cerr << "Value: primitive nullopt\n";
+            } else {
+                std::cerr << "Value: " << toString(primitiveOpt.value()) << std::endl;
+            }
+            std::cerr << "___________________________";
+            return;
+        }
+        std::cerr << "Value: array_or_object\n";
+        const auto keys = node->ListChildKeys();
+        std::cerr << "Child Keys: \n";
+        for (auto key : keys) {
+            std::cerr << key << std::endl;
+        }
+        std::cerr << "___________________________";
     }
 }

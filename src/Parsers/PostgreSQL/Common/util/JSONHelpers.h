@@ -13,7 +13,8 @@ namespace DB::PostgreSQL
     enum class NodeType { 
         Primitive = 0, 
         Array = 1, 
-        Object = 2 
+        Object = 2,
+        Undefined = -1,
     };
 
     class Node;
@@ -30,11 +31,10 @@ namespace DB::PostgreSQL
 
         std::optional<Field> GetPrimitive() const;
         std::optional<NodeArray> GetArrayOrObject() const;
-
     private:
         std::optional<Field> primitive;
         std::optional<NodeArray> array_or_object;
-        NodeType type;
+        NodeType type = NodeType::Undefined;
     };
 
     class Node {
@@ -45,11 +45,15 @@ namespace DB::PostgreSQL
 
         bool HasChildWithKey(const std::string& key_) const;
         std::shared_ptr<Node> GetChildWithKey(const std::string& key_) const;
+        std::shared_ptr<Node> operator[](const std::string& key_) const;
 
         std::vector<std::string> ListChildKeys() const;
 
         std::optional<std::string> GetKey() const;
+        std::string GetKeyString() const;
         std::optional<Value> GetValue() const;
+        NodeArray GetNodeArray() const;
+        NodeType GetType() const;
         void SetKey(const std::string& key_);
         void SetValue(const Value& value_);
 
@@ -59,4 +63,7 @@ namespace DB::PostgreSQL
     };
 
     std::shared_ptr<Node> buildJSONTree(const JSON::Element& elem);
+   
+    void PrintDebugInfoRecursive(std::shared_ptr<Node> node);
+    void PrintDebugInfo(std::shared_ptr<Node> node);
 }

@@ -5,23 +5,13 @@
 
 namespace DB::PostgreSQL
 {
-    // void Transform(const JSON::Element& node, const ASTPtr & ast) 
+    // void Transform(const std::shared_ptr<Node> node, const ASTPtr & ast) 
     // {
-    //     if (!node.isObject()) {
-    //         throw Exception(ErrorCodes::UNEXPECTED_AST, "Root should be RapidJson::Object type");
+    //     if (node->GetKeyString() != "stmts") {
+    //         throw Exception(ErrorCodes::UNEXPECTED_AST, "root node should have stmts key");
     //     }
-    //     const auto& obj = node.getObject();
-    //     if (obj.size() != 1) {
-    //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-    //     }
-
-    //     JSON::Array stmts = FindArrayChild(obj, "stmts");
-    //     if (stmts.size() != 1) {
-    //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "No support for multiple statements");
-    //     }
-
-    //     JSON::Object stmt = FindObjectByIndex(stmts, 0);
-    //     TransformStatement(stmt, ast);
+    //     const auto& child = (*node)["stmts"];
+    //     
     // }
 
     // void TransformStatement(const JSON::Object& node, const ASTPtr & ast)
