@@ -133,8 +133,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (d > MAX_DATETIME_DAY_NUM)
-                d = MAX_DATETIME_DAY_NUM;
+            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }

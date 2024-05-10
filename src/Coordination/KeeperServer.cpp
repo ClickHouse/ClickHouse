@@ -1044,7 +1044,8 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
                 "Trying to remove leader node (ourself), so will yield leadership and some other node "
                 "(new leader) will try to remove us. "
                 "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
-            return raft_instance->yield_leadership();
+            raft_instance->yield_leadership();
+            return;
         }
 
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)

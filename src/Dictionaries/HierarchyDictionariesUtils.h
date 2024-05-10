@@ -127,7 +127,7 @@ namespace detail
             auto hierarchy_key = keys[i];
             size_t current_hierarchy_depth = 0;
 
-            bool is_key_valid = std::forward<IsKeyValidFunc>(is_key_valid_func)(hierarchy_key);
+            bool is_key_valid = is_key_valid_func(hierarchy_key);
 
             if (!is_key_valid)
             {

@@ -327,8 +327,7 @@ private:
         for (const auto i : collections::range(0, offsets.size()))
         {
             size_t size = offsets[i] - offsets[i - 1];
-            if (max_size < size)
-                max_size = size;
+            max_size = std::max(max_size, size);
         }
         if (max_size)
             --max_size;

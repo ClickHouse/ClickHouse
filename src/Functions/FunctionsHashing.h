@@ -1392,7 +1392,7 @@ struct URLHierarchyHashImpl
         *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
         *    For the rest, simply return the full URL as the only element of the hierarchy.
         */
-        if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+        if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
         {
             pos = end;
             return 0 == level ? pos - begin : 0;
