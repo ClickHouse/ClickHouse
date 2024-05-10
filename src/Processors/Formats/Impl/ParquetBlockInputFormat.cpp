@@ -435,6 +435,18 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
         pool->wait();
 }
 
+auto make_bloom_filter_condition(
+    auto & bf_reader,
+    const auto & header,
+    const auto & column_name_to_index,
+    const auto & filter_dag,
+    ContextPtr ctx)
+{
+    auto temp = buildColumnIndexToBF(bf_reader, 0, header, column_name_to_index);
+
+    return std::make_unique<ParquetBloomFilterCondition>(filter_dag, temp, ctx, header);
+}
+
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
     if (std::exchange(is_initialized, true))
@@ -463,8 +475,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         column_indices.push_back(index);
     }
 
-    auto bloom_filter_condition = ParquetBloomFilterCondition(filter_dag, ctx, getPort().getHeader());
-
     std::unique_ptr<parquet::arrow::FileReader> file_reader;
 
     parquet::arrow::FileReaderBuilder builder;
@@ -473,6 +483,9 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     THROW_ARROW_NOT_OK(builder.Build(&file_reader));
 
     auto & bf_reader = file_reader->parquet_reader()->GetBloomFilterReader();
+    auto bloom_filter_condition = format_settings.parquet.bloom_filter_push_down
+        ? make_bloom_filter_condition(bf_reader, getPort().getHeader(), column_name_to_index, filter_dag, ctx)
+        : nullptr;
 
     int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
@@ -482,11 +495,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (format_settings.parquet.bloom_filter_push_down)
+        if (bloom_filter_condition)
         {
             const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, getPort().getHeader(), column_name_to_index);
 
-            if (!bloom_filter_condition.mayBeTrueOnRowGroup(column_index_to_bf))
+            if (!bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
             {
                 continue;
             }
