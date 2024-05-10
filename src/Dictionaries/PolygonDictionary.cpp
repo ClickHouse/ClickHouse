@@ -1,3 +1,5 @@
+// NOLINTBEGIN // clang-tidy-19 crashes
+
 #include "PolygonDictionary.h"
 
 #include <cmath>
@@ -682,3 +684,5 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr & column)
 }
 
 }
+
+// NOLINTEND

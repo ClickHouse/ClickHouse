@@ -1,12 +1,12 @@
+// NOLINTBEGIN // clang-tidy-19 crashes
+
 #include "PolygonDictionaryUtils.h"
 
 #include <Common/ThreadPool.h>
 
 #include <Common/logger_useful.h>
-#include <base/sort.h>
 
 #include <algorithm>
-#include <thread>
 #include <numeric>
 
 
@@ -312,3 +312,5 @@ bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
 }
 
 }
+
+// NOLINTEND

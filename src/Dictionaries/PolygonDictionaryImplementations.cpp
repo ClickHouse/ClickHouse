@@ -1,3 +1,5 @@
+// NOLINTBEGIN // clang-tidy-19 crashes
+
 #include "PolygonDictionaryImplementations.h"
 #include "DictionaryFactory.h"
 
@@ -264,3 +266,5 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
 }
 
 }
+
+// NOLINTEND
