@@ -377,7 +377,16 @@ IMergeTreeDataPart::Checksums checkDataPart(
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
-                auto remote_path = data_part_storage.getRemotePath(file_name);
+                const bool is_projection_part = data_part->isProjectionPart();
+                auto remote_path = data_part_storage.getRemotePath(file_name, /* if_exists */is_projection_part);
+                if (remote_path.empty())
+                {
+                    chassert(is_projection_part);
+                    throw Exception(
+                        ErrorCodes::BROKEN_PROJECTION,
+                        "Remote path for {} does not exist for projection path. Projection {} is broken",
+                        file_name, data_part->name);
+                }
                 cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
