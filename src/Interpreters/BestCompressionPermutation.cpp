@@ -4,12 +4,31 @@
 #include <Interpreters/sortBlock.h>
 #include "Columns/IColumn.h"
 #include "base/sort.h"
+#include <Common/PODArray.h>
 
 namespace DB
 {
 
 namespace
 {
+
+bool isEqual(const IColumn & column, size_t lhs, size_t rhs) 
+{
+    return column.compareAt(lhs, rhs, column, 1) == 0;
+}
+
+bool isEqual(const Block & block, const SortDescription & description, size_t lhs, size_t rhs) 
+{
+    for (const auto & column_description : description) 
+    {
+        const auto& column = *block.getByName(column_description.column_name).column;
+        if (!isEqual(column, lhs, rhs)) 
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 void getBestCompressionPermutationImpl(
     const Block & block,
@@ -77,6 +96,21 @@ std::vector<size_t> getNotAlreadySortedColumnsIndex(const Block & block, const S
             not_already_sorted_columns.push_back(i);
     }
     return not_already_sorted_columns;
+}
+
+EqualRanges getEqualRanges(const Block & block, const SortDescription & description, const IColumn::Permutation & permutation) {
+    EqualRanges ranges;
+    const ssize_t rows = block.rows();
+    for (ssize_t i = 0; i < rows; ) 
+    {
+        ssize_t j = i;
+        for (; j < rows && isEqual(block, description, permutation[i], permutation[j]); ++j)
+        {
+        }
+        ranges.push_back({i, j});
+        i = j;
+    }
+    return ranges;
 }
 
 void getBestCompressionPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & permutation)
