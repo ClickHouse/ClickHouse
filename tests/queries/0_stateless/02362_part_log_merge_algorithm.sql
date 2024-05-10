@@ -7,7 +7,7 @@ ORDER BY key;
 INSERT INTO data_horizontal VALUES (1);
 OPTIMIZE TABLE data_horizontal FINAL;
 SYSTEM FLUSH LOGS;
-SELECT table, part_name, event_type, merge_algorithm FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 'data_horizontal' ORDER BY event_time_microseconds;
+SELECT table, part_name, event_type, merge_algorithm FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 'data_horizontal' AND event_type IN ('NewPart', 'MergeParts') ORDER BY event_time_microseconds;
 
 CREATE TABLE data_vertical
 (
@@ -23,4 +23,4 @@ INSERT INTO data_vertical VALUES (1, '1');
 INSERT INTO data_vertical VALUES (2, '2');
 OPTIMIZE TABLE data_vertical FINAL;
 SYSTEM FLUSH LOGS;
-SELECT table, part_name, event_type, merge_algorithm FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 'data_vertical' ORDER BY event_time_microseconds;
+SELECT table, part_name, event_type, merge_algorithm FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 'data_vertical' AND event_type IN ('NewPart', 'MergeParts') ORDER BY event_time_microseconds;
