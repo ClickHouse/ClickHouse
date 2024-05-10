@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettings.h>
-#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
@@ -25,8 +24,6 @@ DECLARE_SETTINGS_TRAITS(memorySettingsTraits, MEMORY_SETTINGS)
 struct MemorySettings : public BaseSettings<memorySettingsTraits>
 {
     void loadFromQuery(ASTStorage & storage_def);
-    ASTPtr getSettingsChangesQuery();
-    void sanityCheck() const;
 };
 
 }

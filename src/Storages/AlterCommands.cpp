@@ -1100,11 +1100,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == FULL_TEXT_INDEX_NAME)
+        if (index.type == INVERTED_INDEX_NAME)
             return true;
     }
     return false;
@@ -1143,7 +1143,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         {
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key.get());
+            FunctionNameNormalizer().visit(partition_key.get());
             auto primary_key_asts = metadata_copy.primary_key.expression_list_ast->children;
             metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
                 metadata_copy.columns, partition_key, minmax_columns, primary_key_asts, context));

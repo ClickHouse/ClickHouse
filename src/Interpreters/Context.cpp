@@ -971,7 +971,7 @@ Strings Context::getWarnings() const
 /// TODO: remove, use `getTempDataOnDisk`
 VolumePtr Context::getGlobalTemporaryVolume() const
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(shared->mutex);
     /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
     /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
     if (shared->root_temp_data_on_disk)
@@ -1044,30 +1044,29 @@ try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    if (fs::exists(path))
+    fs::create_directories(path);
+
+    /// Clearing old temporary files.
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        /// Clearing old temporary files.
-        fs::directory_iterator dir_end;
-        for (fs::directory_iterator it(path); it != dir_end; ++it)
+        if (it->is_regular_file())
         {
-            if (it->is_regular_file())
+            if (startsWith(it->path().filename(), "tmp"))
             {
-                if (startsWith(it->path().filename(), "tmp"))
-                {
-                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-                    fs::remove(it->path());
-                }
-                else
-                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+                LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                fs::remove(it->path());
             }
-            /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
+            else
+                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
         }
+        /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
     }
 }
 catch (...)
 {
     DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setting up temporary path: {}. "
+        "Caught exception while setup temporary path: {}. "
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
@@ -1092,7 +1091,9 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
 
     for (const auto & disk : volume->getDisks())
+    {
         setupTmpPath(shared->log, disk->getPath());
+    }
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
@@ -1615,33 +1616,6 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
-}
-
-void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
-
-    std::lock_guard lock(mutex);
-    auto it = external_tables_mapping.find(table_name);
-    if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exists", backQuoteIfNeed(table_name));
-    it->second = std::move(temporary_table_ptr);
-}
-
-void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
-
-    std::lock_guard lock(mutex);
-    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table_ptr);
-    if (!inserted)
-        it->second = std::move(temporary_table_ptr);
 }
 
 std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
@@ -2498,7 +2472,7 @@ AsyncLoader & Context::getAsyncLoader() const
         shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
                 // IMPORTANT: Pool declaration order should match the order in `PoolId.h` to get the indices right.
                 { // TablesLoaderForegroundPoolId
-                    "ForegroundLoad",
+                    "FgLoad",
                     CurrentMetrics::TablesLoaderForegroundThreads,
                     CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
@@ -2506,7 +2480,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderForegroundPriority
                 },
                 { // TablesLoaderBackgroundLoadPoolId
-                    "BackgroundLoad",
+                    "BgLoad",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
@@ -2514,7 +2488,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderBackgroundLoadPriority
                 },
                 { // TablesLoaderBackgroundStartupPoolId
-                    "BackgrndStartup",
+                    "BgStartup",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
@@ -5282,7 +5256,6 @@ WriteSettings Context::getWriteSettings() const
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
-    res.azure_allow_parallel_part_upload = settings.azure_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();

@@ -329,11 +329,12 @@ void ClientBase::setupSignalHandler()
 }
 
 
-ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error)
+ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
 
+    const auto & settings = global_context->getSettingsRef();
     size_t max_length = 0;
 
     if (!allow_multi_statements)
@@ -342,11 +343,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     const Dialect & dialect = settings.dialect;
 
     if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
+        parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     else
-        parser = std::make_unique<ParserQuery>(end, settings.allow_settings_after_format_in_insert);
+        parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 
     if (is_interactive || ignore_error)
     {
@@ -439,7 +440,8 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
     for (auto & table : external_tables)
         data.emplace_back(table.getData(global_context));
 
-    connection->sendExternalTablesData(data);
+    if (send_external_tables)
+        connection->sendExternalTablesData(data);
 }
 
 
@@ -710,20 +712,11 @@ void ClientBase::adjustSettings()
         settings.input_format_values_allow_data_after_semicolon.changed = false;
     }
 
-    /// Do not limit pretty format output in case of --pager specified.
-    if (!pager.empty())
+    /// If pager is specified then output_format_pretty_max_rows is ignored, this should be handled by pager.
+    if (!pager.empty() && !global_context->getSettingsRef().output_format_pretty_max_rows.changed)
     {
-        if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
-        {
-            settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
-            settings.output_format_pretty_max_rows.changed = false;
-        }
-
-        if (!global_context->getSettingsRef().output_format_pretty_max_value_width.changed)
-        {
-            settings.output_format_pretty_max_value_width = std::numeric_limits<UInt64>::max();
-            settings.output_format_pretty_max_value_width.changed = false;
-        }
+        settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
+        settings.output_format_pretty_max_rows.changed = false;
     }
 
     global_context->setSettings(settings);
@@ -914,11 +907,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
     const char * begin = full_query.data();
-    auto parsed_query = parseQuery(begin, begin + full_query.size(),
-        global_context->getSettingsRef(),
-        /*allow_multi_statements=*/ false,
-        is_interactive,
-        ignore_error);
+    auto parsed_query = parseQuery(begin, begin + full_query.size(), false);
 
     if (!parsed_query)
         return;
@@ -960,8 +949,12 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         processError(full_query);
 }
 
+
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
+    if (fake_drop && parsed_query->as<ASTDropQuery>())
+        return;
+
     auto query = query_to_execute;
 
     /// Rewrite query only when we have query parameters.
@@ -1971,7 +1964,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !is_async_insert_with_inlined_data)
+        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert_with_inlined_data)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -2063,7 +2056,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::QUERIES_END;
 
     // Remove leading empty newlines and other whitespace, because they
-    // are annoying to filter in the query log. This is mostly relevant for
+    // are annoying to filter in query log. This is mostly relevant for
     // the tests.
     while (this_query_begin < all_queries_end && isWhitespaceASCII(*this_query_begin))
         ++this_query_begin;
@@ -2091,13 +2084,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     this_query_end = this_query_begin;
     try
     {
-        parsed_query = parseQuery(this_query_end, all_queries_end,
-            global_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true,
-            is_interactive,
-            ignore_error);
+        parsed_query = parseQuery(this_query_end, all_queries_end, true);
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         current_exception.reset(e.clone());
         return MultiQueryProcessingStage::PARSING_EXCEPTION;
@@ -2122,9 +2111,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // INSERT queries may have the inserted data in the query text
     // that follow the query itself, e.g. "insert into t format CSV 1;2".
     // They need special handling. First of all, here we find where the
-    // inserted data ends. In multi-query mode, it is delimited by a
+    // inserted data ends. In multy-query mode, it is delimited by a
     // newline.
-    // The VALUES format needs even more handling - we also allow the
+    // The VALUES format needs even more handling -- we also allow the
     // data to be delimited by semicolon. This case is handled later by
     // the format parser itself.
     // We can't do multiline INSERTs with inline data, because most
@@ -2476,9 +2465,9 @@ void ClientBase::runInteractive()
     {
         /// Load suggestion data from the server.
         if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
-            suggest->load<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+            suggest->load<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
         else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)
-            suggest->load<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+            suggest->load<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
     }
 
     if (home_path.empty())
@@ -2616,7 +2605,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"), global_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"));
         }
 
         try
@@ -2909,29 +2898,8 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     }
 
     /// Check positional options.
-    for (const auto & op : parsed.options)
-    {
-        if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
-            && !op.original_tokens[0].empty() && !op.value.empty())
-        {
-            /// Two special cases for better usability:
-            /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
-            /// These are relevant for interactive usage - user-friendly, but questionable in general.
-            /// In case of ambiguity or for scripts, prefer using proper options.
-
-            const auto & token = op.original_tokens[0];
-            po::variable_value value(boost::any(op.value), false);
-
-            const char * option;
-            if (token.contains(' '))
-                option = "query";
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
-
-            if (!options.emplace(option, value).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
-        }
-    }
+    if (std::ranges::count_if(parsed.options, [](const auto & op){ return !op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--"); }) > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
 
     po::store(parsed, options);
 }
@@ -2975,8 +2943,7 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Common options for clickhouse-client and clickhouse-local.
     options_description.main_description->add_options()
-        ("help", "print usage summary, combine with --verbose to display all options")
-        ("verbose", "print query and other debugging info")
+        ("help", "produce help message")
         ("version,V", "print version information and exit")
         ("version-clean", "print version in machine-readable format and exit")
 
@@ -2996,10 +2963,10 @@ void ClientBase::init(int argc, char ** argv)
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
-        ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
 
         ("echo", "in batch mode, print query before execution")
+        ("verbose", "print query and other debugging info")
 
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
@@ -3027,8 +2994,6 @@ void ClientBase::init(int argc, char ** argv)
     ;
 
     addOptions(options_description);
-
-    OptionsDescription options_description_non_verbose = options_description;
 
     auto getter = [](const auto & op)
     {
@@ -3064,17 +3029,11 @@ void ClientBase::init(int argc, char ** argv)
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
-    if (options.count("verbose"))
-        config().setBool("verbose", true);
-
     /// Output of help message.
     if (options.count("help")
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
-        if (config().getBool("verbose", false))
-            printHelpMessage(options_description, true);
-        else
-            printHelpMessage(options_description_non_verbose, false);
+        printHelpMessage(options_description);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
@@ -3133,14 +3092,14 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("disable_suggestion"))
         config().setBool("disable_suggestion", true);
-    if (options.count("wait_for_suggestions_to_load"))
-        config().setBool("wait_for_suggestions_to_load", true);
     if (options.count("suggestion_limit"))
         config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     if (options.count("highlight"))
         config().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
         config().setString("history_file", options["history_file"].as<std::string>());
+    if (options.count("verbose"))
+        config().setBool("verbose", true);
     if (options.count("interactive"))
         config().setBool("interactive", true);
     if (options.count("pager"))

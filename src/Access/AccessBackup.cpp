@@ -16,8 +16,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/UUIDGenerator.h>
 #include <base/insertAtEnd.h>
-
-#include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
 namespace fs = std::filesystem;

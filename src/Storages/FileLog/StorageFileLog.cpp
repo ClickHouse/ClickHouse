@@ -152,7 +152,7 @@ StorageFileLog::StorageFileLog(
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
+        if (LoadingStrictnessLevel::ATTACH <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
@@ -467,7 +467,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
+            reader.seekg(0, reader.end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();

@@ -53,8 +53,8 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
-    unsigned update_period_seconds,
-    unsigned heavy_metrics_update_period_seconds,
+    int update_period_seconds,
+    int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
@@ -278,8 +278,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
 
-            // Note that we skip not yet loaded tables, so metrics could possibly be lower than expected on fully loaded database just after server start if `async_load_databases = true`.
-            for (auto iterator = db.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/true); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 if (is_system)
@@ -409,7 +408,7 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
         if (!db.second->canContainMergeTreeTables())
             continue;
 
-        for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
             if (!table)

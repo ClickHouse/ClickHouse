@@ -32,7 +32,6 @@ struct FormatSettings
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
-    bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -177,7 +176,6 @@ struct FormatSettings
         char fields_delimiter = '\x01';
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
-        bool allow_variable_number_of_columns = true;
         Names input_field_names;
     } hive_text{};
 
@@ -195,7 +193,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
     } custom{};
 
-    struct JSON
+    struct
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
@@ -223,8 +221,7 @@ struct FormatSettings
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
-        bool throw_on_bad_escape_sequence = true;
-        bool ignore_unnecessary_fields = true;
+
     } json{};
 
     struct
@@ -283,7 +280,6 @@ struct FormatSettings
         SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
-        bool preserve_border_for_multiline_string = true;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
 
         enum class Charset

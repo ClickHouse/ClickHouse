@@ -105,7 +105,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "MergeTreeRead");
+        callback_runner = threadPoolCallbackRunner<void>(getIOThreadPool().get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()
@@ -128,7 +128,7 @@ struct MergeTreeSource::AsyncReadingState
     }
 
 private:
-    ThreadPoolCallbackRunnerUnsafe<void> callback_runner;
+    ThreadPoolCallbackRunner<void> callback_runner;
     std::shared_ptr<Control> control;
 };
 #endif

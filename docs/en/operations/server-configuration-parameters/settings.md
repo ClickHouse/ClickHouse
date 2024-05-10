@@ -42,19 +42,6 @@ Type: UInt32
 Default: 1
 
 
-## auth_use_forwarded_address
-
-Use originating address for authentication for clients connected through proxy.
-
-:::note
-This setting should be used with extra caution since forwarded address can be easily spoofed - server accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
-:::
-
-Type: Bool
-
-Default: 0
-
-
 ## background_buffer_flush_schedule_pool_size
 
 The maximum number of threads that will be used for performing flush operations for Buffer-engine tables in the background.
@@ -449,7 +436,7 @@ Default: 0
 Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 Default value: 50 GB.
 The value 0 means that you can drop partitions without any restrictions.
 
@@ -523,7 +510,7 @@ See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watche
 
 Type: Double
 
-Default: 0.9
+Default: 0.95
 
 ## max_table_size_to_drop
 
@@ -531,7 +518,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 The value 0 means that you can delete all tables without any restrictions.
@@ -1189,7 +1176,7 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 
 ## include_from {#include_from}
 
-The path to the file with substitutions. Both XML and YAML formats are supported.
+The path to the file with substitutions.
 
 For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
@@ -1367,7 +1354,6 @@ Keys:
 - `count` – The number of archived log files that ClickHouse stores.
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
-- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
 
 Both log and error log file names (only file names, not directories) support date and time format specifiers.
 
@@ -1436,8 +1422,6 @@ Writing to the console can be configured. Config example:
 </logger>
 ```
 
-### syslog
-
 Writing to the syslog is also supported. Config example:
 
 ``` xml
@@ -1461,52 +1445,6 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
 
-### Log formats
-
-You can specify the log format that will be outputted in the console log. Currently, only JSON is supported. Here is an example of an output JSON log:
-
-```json
-{
-  "date_time": "1650918987.180175",
-  "thread_name": "#1",
-  "thread_id": "254545",
-  "level": "Trace",
-  "query_id": "",
-  "logger_name": "BaseDaemon",
-  "message": "Received signal 2",
-  "source_file": "../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()",
-  "source_line": "192"
-}
-```
-To enable JSON logging support, use the following snippet:
-
-```xml
-<logger>
-    <formatting>
-        <type>json</type>
-        <names>
-            <date_time>date_time</date_time>
-            <thread_name>thread_name</thread_name>
-            <thread_id>thread_id</thread_id>
-            <level>level</level>
-            <query_id>query_id</query_id>
-            <logger_name>logger_name</logger_name>
-            <message>message</message>
-            <source_file>source_file</source_file>
-            <source_line>source_line</source_line>
-        </names>
-    </formatting>
-</logger>
-```
-
-**Renaming keys for JSON logs**
-
-Key names can be modified by changing tag values inside the `<names>` tag. For example, to change `DATE_TIME` to `MY_DATE_TIME`, you can use `<date_time>MY_DATE_TIME</date_time>`.
-
-**Omitting keys for JSON logs**
-
-Log properties can be omitted by commenting out the property.  For example, if you do not want your log to print `query_id`, you can comment out the `<query_id>` tag.
-
 ## send_crash_reports {#send_crash_reports}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
@@ -1517,7 +1455,6 @@ The server will need access to the public Internet via IPv4 (at the time of writ
 Keys:
 
 - `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.
-- `send_logical_errors` – `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (default: `false`).
 - `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.
 - `anonymize` - Avoid attaching the server hostname to the crash report.
 - `http_proxy` - Configure HTTP proxy for sending crash reports.
@@ -1584,7 +1521,7 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [DROP](../../sql-reference/statements/drop.md) query or [TRUNCATE](../../sql-reference/statements/truncate.md) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -1602,7 +1539,7 @@ Restriction on dropping partitions.
 
 If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_partition_size_to_drop` (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
 
-This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+This setting does not require a restart of the Clickhouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 Default value: 50 GB.
 
@@ -2860,7 +2797,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
 Possible values:
 

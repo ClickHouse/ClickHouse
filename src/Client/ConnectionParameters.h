@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Common/SSHWrapper.h>
+#include <string>
 #include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
-
-#include <string>
+#include <Common/SSH/Wrappers.h>
 
 namespace Poco::Util
 {
@@ -21,7 +20,7 @@ struct ConnectionParameters
     std::string user;
     std::string password;
     std::string quota_key;
-    SSHKey ssh_private_key;
+    ssh::SSHKey ssh_private_key;
     Protocol::Secure security = Protocol::Secure::Disable;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;

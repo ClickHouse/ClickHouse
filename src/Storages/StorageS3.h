@@ -241,7 +241,7 @@ private:
     LoggerPtr log = getLogger("StorageS3Source");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
 
@@ -352,7 +352,7 @@ public:
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     virtual Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context);

@@ -416,13 +416,13 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         ParserToken open(TokenType::OpeningRoundBracket);
         ParserToken close(TokenType::ClosingRoundBracket);
 
-        if (!open.ignore(pos, expected))
+        if (!open.ignore(pos))
             return false;
 
         if (!kv_pairs_list.parse(pos, value, expected))
             return false;
 
-        if (!close.ignore(pos, expected))
+        if (!close.ignore(pos))
             return false;
 
         with_brackets = true;
@@ -439,21 +439,6 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     ParserList parser(std::make_unique<ParserKeyValuePair>(), std::make_unique<ParserNothing>(), true, 0);
     return parser.parse(pos, node, expected);
-}
-
-namespace
-{
-    /// This wrapper is needed to highlight function names differently.
-    class ParserFunctionName : public IParserBase
-    {
-    protected:
-        const char * getName() const override { return "function name"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            ParserCompoundIdentifier parser(false, true, Highlight::function);
-            return parser.parse(pos, node, expected);
-        }
-    };
 }
 
 
@@ -824,7 +809,6 @@ struct ParserExpressionImpl
 
     static const Operator finish_between_operator;
 
-    ParserFunctionName function_name_parser;
     ParserCompoundIdentifier identifier_parser{false, true};
     ParserNumber number_parser;
     ParserAsterisk asterisk_parser;
@@ -2375,7 +2359,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr identifier;
 
-    if (ParserFunctionName().parse(pos, identifier, expected)
+    if (ParserCompoundIdentifier(false,true).parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
         auto start = getFunctionLayer(identifier, is_table_function, allow_function_parameters);
@@ -2513,7 +2497,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     {
         if (typeid_cast<ViewLayer *>(layers.back().get()) || typeid_cast<KustoLayer *>(layers.back().get()))
         {
-            if (function_name_parser.parse(pos, tmp, expected)
+            if (identifier_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
                 layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
@@ -2645,52 +2629,49 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     {
         layers.back()->pushOperand(std::move(tmp));
     }
-    else
+    else if (identifier_parser.parse(pos, tmp, expected))
     {
-        old_pos = pos;
-        if (function_name_parser.parse(pos, tmp, expected) && pos->type == TokenType::OpeningRoundBracket)
+        if (pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
             layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
             return Action::OPERAND;
         }
-        pos = old_pos;
-
-        if (identifier_parser.parse(pos, tmp, expected))
-        {
-            layers.back()->pushOperand(std::move(tmp));
-        }
-        else if (substitution_parser.parse(pos, tmp, expected))
-        {
-            layers.back()->pushOperand(std::move(tmp));
-        }
-        else if (pos->type == TokenType::OpeningRoundBracket)
-        {
-
-            if (subquery_parser.parse(pos, tmp, expected))
-            {
-                layers.back()->pushOperand(std::move(tmp));
-                return Action::OPERATOR;
-            }
-
-            ++pos;
-            layers.push_back(std::make_unique<RoundBracketsLayer>());
-            return Action::OPERAND;
-        }
-        else if (pos->type == TokenType::OpeningSquareBracket)
-        {
-            ++pos;
-            layers.push_back(std::make_unique<ArrayLayer>());
-            return Action::OPERAND;
-        }
-        else if (mysql_global_variable_parser.parse(pos, tmp, expected))
-        {
-            layers.back()->pushOperand(std::move(tmp));
-        }
         else
         {
-            return Action::NONE;
+            layers.back()->pushOperand(std::move(tmp));
         }
+    }
+    else if (substitution_parser.parse(pos, tmp, expected))
+    {
+        layers.back()->pushOperand(std::move(tmp));
+    }
+    else if (pos->type == TokenType::OpeningRoundBracket)
+    {
+
+        if (subquery_parser.parse(pos, tmp, expected))
+        {
+            layers.back()->pushOperand(std::move(tmp));
+            return Action::OPERATOR;
+        }
+
+        ++pos;
+        layers.push_back(std::make_unique<RoundBracketsLayer>());
+        return Action::OPERAND;
+    }
+    else if (pos->type == TokenType::OpeningSquareBracket)
+    {
+        ++pos;
+        layers.push_back(std::make_unique<ArrayLayer>());
+        return Action::OPERAND;
+    }
+    else if (mysql_global_variable_parser.parse(pos, tmp, expected))
+    {
+        layers.back()->pushOperand(std::move(tmp));
+    }
+    else
+    {
+        return Action::NONE;
     }
 
     return Action::OPERATOR;

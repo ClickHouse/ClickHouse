@@ -346,7 +346,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     }
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
-    return create(res_values, std::move(res_offsets), res_offset);
+    return this->create(res_values, std::move(res_offsets), res_offset);
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)

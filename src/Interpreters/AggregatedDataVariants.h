@@ -1,11 +1,10 @@
 #pragma once
+#include <boost/noncopyable.hpp>
+#include <memory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/ColumnsHashing.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
-
-#include <memory>
-#include <boost/noncopyable.hpp>
-
 
 namespace DB
 {

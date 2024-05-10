@@ -16,8 +16,6 @@ MetadataStorageType metadataTypeFromString(const String & type)
         return MetadataStorageType::Local;
     if (check_type == "plain")
         return MetadataStorageType::Plain;
-    if (check_type == "plain_rewritable")
-        return MetadataStorageType::PlainRewritable;
     if (check_type == "web")
         return MetadataStorageType::StaticWeb;
 

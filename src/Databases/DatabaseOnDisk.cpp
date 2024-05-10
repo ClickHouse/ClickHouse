@@ -68,7 +68,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
+        ApplyWithSubqueryVisitor().visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
@@ -77,7 +77,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true, false);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.getTable(), storage};
@@ -109,7 +109,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
         else
         {
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true, false);
             constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
         }
     }

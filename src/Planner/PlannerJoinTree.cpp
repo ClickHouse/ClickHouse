@@ -225,8 +225,7 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-    if (!storage->supportsTrivialCountOptimization(
-            table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
+    if (!storage->supportsTrivialCountOptimization())
         return false;
 
     auto storage_id = storage->getStorageID();
@@ -263,6 +262,9 @@ bool applyTrivialCountIfPossible(
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
         return false;
 
+    if (storage->hasLightweightDeletedMask())
+        return false;
+
     if (settings.allow_experimental_query_deduplication
         || settings.empty_result_for_aggregation_by_empty_set)
         return false;
@@ -294,7 +296,7 @@ bool applyTrivialCountIfPossible(
 
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
         query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        query_context->setSetting("max_parallel_replicas", UInt64{1});
+        query_context->setSetting("max_parallel_replicas", UInt64{0});
         LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
 
     }
@@ -305,7 +307,7 @@ bool applyTrivialCountIfPossible(
     AggregateDataPtr place = state.data();
     agg_count.create(place);
     SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    AggregateFunctionCount::set(place, num_rows.value());
+    agg_count.set(place, num_rows.value());
 
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
@@ -492,7 +494,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
         throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Parallel replicas processing with custom_key has been requested "
-                "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
+                "(setting 'max_parallel_replcias'), but the table does not have custom_key defined for it "
                 " or it's invalid (setting 'parallel_replicas_custom_key')");
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
@@ -691,9 +693,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
                         table_expression_query_info.limit = max_block_size_limited;
-                    /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
-                    else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
-                        table_expression_query_info.limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
                 }
                 else
                 {
@@ -711,15 +710,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
-        {
-            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; canConvertTo<size_t>(streams_with_ratio))
-                max_streams = static_cast<size_t>(streams_with_ratio);
-            else
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                    "Exceeded limit for `max_streams` with `max_streams_to_max_threads_ratio`. "
-                    "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
-                    streams_with_ratio);
-        }
+            max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
 
         if (table_node)
             table_expression_query_info.table_expression_modifiers = table_node->getTableExpressionModifiers();
@@ -788,7 +779,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         planner_context->getMutableQueryContext()->setSetting(
                             "allow_experimental_parallel_reading_from_replicas", Field(0));
-                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
+                        planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{0});
                         LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
                     }
                     else if (number_of_replicas_to_use < settings.max_parallel_replicas)
@@ -1100,6 +1091,18 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
+    // }
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
+    // }
+
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
     JoinStrictness join_strictness = join_node.getStrictness();
@@ -1315,14 +1318,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 std::swap(table_join_clause.key_names_left.at(asof_condition.key_index), table_join_clause.key_names_left.back());
                 std::swap(table_join_clause.key_names_right.at(asof_condition.key_index), table_join_clause.key_names_right.back());
             }
-        }
-
-        if (join_clauses_and_actions.mixed_join_expressions_actions)
-        {
-            ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-            mixed_join_expression = std::make_shared<ExpressionActions>(
-                join_clauses_and_actions.mixed_join_expressions_actions,
-                ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
         }
     }
     else if (join_node.isUsingJoinExpression())

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-ordinary-database, no-replicated-database
+# Tag no-ordinary-database: TO DO
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

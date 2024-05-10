@@ -147,8 +147,6 @@ public:
         negative_store->merge(other.negative_store.get());
     }
 
-    /// NOLINTBEGIN(readability-static-accessed-through-instance)
-
     void serialize(WriteBuffer& buf) const
     {
         // Write the mapping
@@ -202,8 +200,6 @@ public:
         readBinary(zero_count, buf);
         count = static_cast<Float64>(negative_store->count + zero_count + store->count);
     }
-
-    /// NOLINTEND(readability-static-accessed-through-instance)
 
 private:
     std::unique_ptr<DDSketchLogarithmicMapping> mapping;

@@ -14,7 +14,7 @@ function test4_insert()
     echo "test4 insert"
     $CH_CLIENT -nmq "insert into test select number, NULL from numbers(100000);
 insert into test select number + 100000, number from numbers(100000);
-insert into test select number + 200000, ('str_' || toString(number))::Variant(String) from numbers(100000);
+insert into test select number + 200000, 'str_' || toString(number) from numbers(100000);
 insert into test select number + 300000, ('lc_str_' || toString(number))::LowCardinality(String) from numbers(100000);
 insert into test select number + 400000, tuple(number, number + 1)::Tuple(a UInt32, b UInt32) from numbers(100000);
 insert into test select number + 500000, range(number % 20 + 1)::Array(UInt64) from numbers(100000);"

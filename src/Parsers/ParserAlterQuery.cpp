@@ -495,11 +495,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 command->type = ASTAlterCommand::MOVE_PARTITION;
                 command->part = true;
 
-                if (s_to_disk.ignore(pos, expected))
+                if (s_to_disk.ignore(pos))
                     command->move_destination_type = DataDestinationType::DISK;
-                else if (s_to_volume.ignore(pos, expected))
+                else if (s_to_volume.ignore(pos))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_shard.ignore(pos, expected))
+                else if (s_to_shard.ignore(pos))
                 {
                     command->move_destination_type = DataDestinationType::SHARD;
                 }
@@ -519,11 +519,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::MOVE_PARTITION;
 
-                if (s_to_disk.ignore(pos, expected))
+                if (s_to_disk.ignore(pos))
                     command->move_destination_type = DataDestinationType::DISK;
-                else if (s_to_volume.ignore(pos, expected))
+                else if (s_to_volume.ignore(pos))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_table.ignore(pos, expected))
+                else if (s_to_table.ignore(pos))
                 {
                     if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                         return false;
@@ -584,7 +584,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
-                if (s_from.ignore(pos, expected))
+                if (s_from.ignore(pos))
                 {
                     if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
                         return false;

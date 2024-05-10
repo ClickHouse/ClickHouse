@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#include <Disks/DiskFactory.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
 #include <Common/randomSeed.h>
@@ -223,7 +224,7 @@ static UInt64 getTotalSpaceByName(const String & name, const String & disk_path,
 {
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_frsize;
@@ -247,7 +248,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
     /// available for superuser only and for system purposes
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_frsize;
@@ -580,7 +581,7 @@ try
         auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
-        buf->write(data.data, DiskWriteCheckData::PAGE_SIZE_IN_BYTES);
+        buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->finalize();
         buf->sync();
     }

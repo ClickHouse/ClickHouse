@@ -3,6 +3,7 @@
 #include <base/DayNum.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Core/DecimalFunctions.h>
 
 #include <ctime>
 #include <cassert>
@@ -48,11 +49,6 @@ enum class WeekDayMode
     WeekStartsSunday0 = 2,
     WeekStartsSunday1 = 3
 };
-
-namespace DB
-{
-class DateTime64;
-}
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -597,7 +593,29 @@ public:
         return time % 60;
     }
 
-    unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+    template <typename DateOrTime>
+    unsigned toMillisecond(const DateOrTime & datetime, Int64 scale_multiplier) const
+    {
+        constexpr Int64 millisecond_multiplier = 1'000;
+        constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
+        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
+
+        auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+        if (datetime.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        Int64 fractional = components.fractional;
+        if (scale_multiplier > microsecond_multiplier)
+            fractional = fractional / (scale_multiplier / microsecond_multiplier);
+        else if (scale_multiplier < microsecond_multiplier)
+            fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+        return millisecond;
+    }
 
     unsigned toMinute(Time t) const
     {
