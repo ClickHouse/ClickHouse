@@ -16,7 +16,6 @@
 #include <Storages/StorageAzureBlob.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -81,7 +80,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
 
         if (engine_args.size() == 4)
         {
@@ -208,7 +207,7 @@ void TableFunctionAzureBlobStorage::updateStructureAndFormatArgumentsIfNeeded(AS
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
 
         /// (connection_string, container_name, blobpath)
         if (args.size() == 3)
@@ -349,7 +348,8 @@ bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns(const Context
 
 std::unordered_set<String> TableFunctionAzureBlobStorage::getVirtualsToCheckBeforeUsingStructureHint() const
 {
-    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+    auto virtual_column_names = StorageAzureBlob::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const

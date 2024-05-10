@@ -28,7 +28,7 @@ The CSV file has 10 columns:
 
 ```response
 ┌─name─────────────────┬─type─────────────┐
-│ date                 │ Nullable(Date)   │
+│ date                 │ Nullable(String) │
 │ location_key         │ Nullable(String) │
 │ new_confirmed        │ Nullable(Int64)  │
 │ new_deceased         │ Nullable(Int64)  │

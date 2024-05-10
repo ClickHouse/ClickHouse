@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ struct IntervalKind
     IntervalKind(Kind kind_ = Kind::Second) : kind(kind_) {} /// NOLINT
     operator Kind() const { return kind; } /// NOLINT
 
-    std::string_view toString() const;
+    constexpr std::string_view toString() const { return magic_enum::enum_name(kind); }
 
     /// Returns number of nanoseconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of nanoseconds.

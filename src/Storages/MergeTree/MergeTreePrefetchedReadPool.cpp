@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
@@ -84,22 +83,22 @@ MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 
 MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     RangesInDataParts && parts_,
-    VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
+    const Names & virtual_column_names_,
     const PoolSettings & settings_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
-        std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
         column_names_,
+        virtual_column_names_,
         settings_,
         context_)
     , WithContext(context_)
@@ -349,22 +348,13 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
             update_stat_for_column(column.name);
 
         if (reader_settings.apply_deleted_mask && read_info.data_part->hasLightweightDelete())
-            update_stat_for_column(RowExistsColumn::name);
+            update_stat_for_column(LightweightDeleteDescription::FILTER_COLUMN.name);
 
         for (const auto & pre_columns : read_info.task_columns.pre_columns)
             for (const auto & column : pre_columns)
                 update_stat_for_column(column.name);
     }
 }
-
-namespace
-{
-ALWAYS_INLINE inline String getPartNameForLogging(const DataPartPtr & part)
-{
-    return part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPartName()) : part->name;
-}
-}
-
 
 void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_marks)
 {
@@ -420,7 +410,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
         LOG_DEBUG(
             log,
             "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
-            getPartNameForLogging(parts_ranges[i].data_part),
+            parts_ranges[i].data_part->name,
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
             settings.filesystem_prefetch_step_bytes,
@@ -504,9 +494,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Requested {} marks from part {}, but part has only {} marks",
-                        marks_to_get_from_part,
-                        getPartNameForLogging(per_part_infos[part_idx]->data_part),
-                        part_stat.sum_marks);
+                        marks_to_get_from_part, per_part_infos[part_idx]->data_part->name, part_stat.sum_marks);
                 }
 
                 size_t num_marks_to_get = marks_to_get_from_part;
@@ -582,7 +570,7 @@ std::string MergeTreePrefetchedReadPool::dumpTasks(const TasksPerThread & tasks)
                 result << '\t';
                 result << ++no << ": ";
                 result << "reader future: " << task->isValidReadersFuture() << ", ";
-                result << "part: " << getPartNameForLogging(task->read_info->data_part) << ", ";
+                result << "part: " << task->read_info->data_part->name << ", ";
                 result << "ranges: " << toString(task->ranges);
             }
         }

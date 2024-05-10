@@ -14,9 +14,4 @@ REGISTER_FUNCTION(ScalarSubqueryResult)
     factory.registerFunction<FunctionScalarSubqueryResult>();
 }
 
-REGISTER_FUNCTION(ActionName)
-{
-    factory.registerFunction<FunctionActionName>();
-}
-
 }

@@ -4,7 +4,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
@@ -55,30 +54,6 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
-}
-
-ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
-{
-    if (onlyNull())
-    {
-        auto column = createColumn();
-        column->insert(field);
-        return ColumnConst::create(std::move(column), size);
-    }
-
-    auto column = nested_data_type->createColumn();
-    bool is_null = field.isNull();
-
-    if (is_null)
-        nested_data_type->insertDefaultInto(*column);
-    else
-        column->insert(field);
-
-    auto null_mask = ColumnUInt8::create();
-    null_mask->getData().push_back(is_null ? 1 : 0);
-
-    auto res = ColumnNullable::create(std::move(column), std::move(null_mask));
-    return ColumnConst::create(std::move(res), size);
 }
 
 SerializationPtr DataTypeNullable::doGetDefaultSerialization() const

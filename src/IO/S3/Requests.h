@@ -21,43 +21,11 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/ChecksumAlgorithm.h>
-#include <aws/s3/model/CompletedPart.h>
-#include <aws/core/utils/HashingUtils.h>
-
-#include <base/defines.h>
 
 namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
-
-/// Used only for S3Express
-namespace RequestChecksum
-{
-inline void setPartChecksum(Model::CompletedPart & part, const std::string & checksum)
-{
-    part.SetChecksumCRC32(checksum);
-}
-
-inline void setRequestChecksum(Model::UploadPartRequest & req, const std::string & checksum)
-{
-    req.SetChecksumCRC32(checksum);
-}
-
-inline std::string calculateChecksum(Model::UploadPartRequest & req)
-{
-    chassert(req.GetChecksumAlgorithm() == Aws::S3::Model::ChecksumAlgorithm::CRC32);
-    return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
-}
-
-template <typename R>
-inline void setChecksumAlgorithm(R & request)
-{
-    if constexpr (requires { request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32); })
-        request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32);
-}
-};
 
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
@@ -81,13 +49,11 @@ public:
 
     Aws::String GetChecksumAlgorithmName() const override
     {
-        chassert(!is_s3express_bucket || checksum);
-
         /// Return empty string is enough to disable checksums (see
         /// AWSClient::AddChecksumToRequest [1] for more details).
         ///
         ///   [1]: https://github.com/aws/aws-sdk-cpp/blob/b0ee1c0d336dbb371c34358b68fba6c56aae2c92/src/aws-cpp-sdk-core/source/client/AWSClient.cpp#L783-L839
-        if (!is_s3express_bucket && !checksum)
+        if (!checksum)
             return "";
         return BaseRequest::GetChecksumAlgorithmName();
     }
@@ -118,12 +84,9 @@ public:
     }
 
     /// Disable checksum to avoid extra read of the input stream
-    void disableChecksum() const { checksum = false; }
-
-    void setIsS3ExpressBucket()
+    void disableChecksum() const
     {
-        is_s3express_bucket = true;
-        RequestChecksum::setChecksumAlgorithm(*this);
+        checksum = false;
     }
 
 protected:
@@ -131,7 +94,6 @@ protected:
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
     mutable bool checksum = true;
-    bool is_s3express_bucket = false;
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>

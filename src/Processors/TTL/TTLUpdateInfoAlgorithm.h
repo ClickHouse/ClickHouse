@@ -22,8 +22,8 @@ public:
     TTLUpdateInfoAlgorithm(
         const TTLExpressions & ttl_expressions_,
         const TTLDescription & description_,
-        TTLUpdateField ttl_update_field_,
-        String ttl_update_key_,
+        const TTLUpdateField ttl_update_field_,
+        const String ttl_update_key_,
         const TTLInfo & old_ttl_info_,
         time_t current_time_, bool force_
     );

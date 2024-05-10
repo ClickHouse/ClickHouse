@@ -10,6 +10,7 @@ namespace DB
 
 class Context;
 
+
 /** Implements a table engine for the system table "numbers".
   * The table contains the only column number UInt64.
   * From this table, you can read all natural numbers, starting from 0 (to 2^64 - 1, and then again).
@@ -37,18 +38,11 @@ class Context;
   *  (and result could be out of order). If both multithreaded and limit are specified,
   *  the table could give you not exactly 1..limit range, but some arbitrary 'limit' numbers.
   */
-
 class StorageSystemNumbers final : public IStorage
 {
 public:
     /// Otherwise, streams concurrently increment atomic.
-    StorageSystemNumbers(
-        const StorageID & table_id,
-        bool multithreaded_,
-        const std::string & column_name,
-        std::optional<UInt64> limit_ = std::nullopt,
-        UInt64 offset_ = 0,
-        UInt64 step_ = 1);
+    StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0);
 
     std::string getName() const override { return "SystemNumbers"; }
 
@@ -64,6 +58,7 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
     bool isSystemStorage() const override { return true; }
+
     bool supportsTransactions() const override { return true; }
 
 private:
@@ -72,8 +67,6 @@ private:
     bool multithreaded;
     std::optional<UInt64> limit;
     UInt64 offset;
-    std::string column_name;
-    UInt64 step;
 };
 
 }

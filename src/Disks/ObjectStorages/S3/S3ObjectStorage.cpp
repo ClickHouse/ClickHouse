@@ -1,5 +1,4 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include "Common/ObjectStorageKey.h"
 
 #if USE_AWS_S3
 
@@ -49,7 +48,6 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -121,7 +119,6 @@ private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
-        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
         bool result = false;
         auto outcome = client->ListObjectsV2(request);
@@ -158,7 +155,7 @@ private:
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
     auto settings_ptr = s3_settings.get();
-    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {}, settings_ptr->request_settings);
+    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -174,19 +171,19 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client.get(),
             uri.bucket,
-            object_.remote_path,
+            path,
             uri.version_id,
             settings_ptr->request_settings,
             disk_read_settings,
             /* use_external_buffer */true,
             /* offset */0,
-            /* read_until_position */0,
-            restricted_seek);
+            read_until_position,
+            /* restricted_seek */true);
     };
 
     switch (read_settings.remote_fs_method)
@@ -196,17 +193,16 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
-                "s3:" + uri.bucket + "/",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */false);
+
         }
         case RemoteFSReadMethod::threadpool:
         {
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
-                "s3:" + uri.bucket + "/",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */true);
@@ -249,9 +245,9 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     auto settings_ptr = s3_settings.get();
-    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
+    ThreadPoolCallbackRunner<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
+        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
 
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
@@ -294,7 +290,6 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
-
         outcome = client.get()->ListObjectsV2(request);
         throwIfError(outcome);
 
@@ -328,7 +323,6 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 {
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
     ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
-
     S3::DeleteObjectRequest request;
     request.SetBucket(uri.bucket);
     request.SetKey(object.remote_path);
@@ -425,7 +419,7 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* throw_on_error= */ false);
+    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true, /* throw_on_error= */ false);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -441,7 +435,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true);
+    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true);
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
@@ -464,11 +458,9 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
-        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-
-        try
-        {
+        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+        auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+        try {
             copyS3File(
                 current_client,
                 uri.bucket,
@@ -481,7 +473,8 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 patchSettings(read_settings),
                 BlobStorageLogWriter::create(disk_name),
                 object_to_attributes,
-                scheduler);
+                scheduler,
+                /* for_disk_s3= */ true);
             return;
         }
         catch (S3Exception & exc)
@@ -507,9 +500,8 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings);
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-
+    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
     copyS3File(current_client,
         uri.bucket,
         object_from.remote_path,
@@ -521,7 +513,8 @@ void S3ObjectStorage::copyObject( // NOLINT
         patchSettings(read_settings),
         BlobStorageLogWriter::create(disk_name),
         object_to_attributes,
-        scheduler);
+        scheduler,
+        /* for_disk_s3= */ true);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
@@ -568,11 +561,9 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    if (!key_generator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
-
-    return key_generator->generate(path, /* is_directory */ false);
+    return key_generator->generate(path);
 }
+
 
 }
 

@@ -7,7 +7,6 @@ title: Formats for Input and Output Data
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read a dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
-All format names are case insensitive.
 
 The supported formats are:
 
@@ -79,7 +78,7 @@ The supported formats are:
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
-| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✗     |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔     |
 | [Native](#native)                                                                         | ✔    | ✔     |
 | [Null](#null)                                                                             | ✗    | ✔     |
 | [XML](#xml)                                                                               | ✗    | ✔     |
@@ -91,7 +90,6 @@ The supported formats are:
 | [MySQLDump](#mysqldump)                                                                   | ✔    | ✗     |
 | [DWARF](#dwarf)                                                                           | ✔    | ✗     |
 | [Markdown](#markdown)                                                                     | ✗    | ✔     |
-| [Form](#form)                                                                             | ✔    | ✗     |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -207,7 +205,7 @@ SELECT * FROM nestedt FORMAT TSV
 Differs from `TabSeparated` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the names `TSVRaw`, `Raw`.
+This format is also available under the name `TSVRaw`.
 
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
@@ -242,14 +240,14 @@ This format is also available under the name `TSVWithNamesAndTypes`.
 Differs from `TabSeparatedWithNames` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the names `TSVRawWithNames`, `RawWithNames`.
+This format is also available under the name `TSVRawWithNames`.
 
 ## TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
 Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
 
-This format is also available under the names `TSVRawWithNamesAndNames`, `RawWithNamesAndNames`.
+This format is also available under the name `TSVRawWithNamesAndNames`.
 
 ## Template {#format-template}
 
@@ -1271,13 +1269,12 @@ SELECT * FROM json_each_row_nested
 - [input_format_json_read_arrays_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_arrays_as_strings) - allow to parse JSON arrays as strings in JSON input formats. Default value - `true`.
 - [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `true`.
 - [input_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_named_tuples_as_objects) - parse named tuple columns as JSON objects. Default value - `true`.
-- [input_format_json_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_numbers_from_strings) - try to infer numbers from string fields while schema inference. Default value - `false`.
+- [input_format_json_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_numbers_from_strings) - Try to infer numbers from string fields while schema inference. Default value - `false`.
 - [input_format_json_try_infer_named_tuples_from_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_named_tuples_from_objects) - try to infer named tuple from JSON objects during schema inference. Default value - `true`.
 - [input_format_json_infer_incomplete_types_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_infer_incomplete_types_as_strings) - use type String for keys that contains only Nulls or empty objects/arrays during schema inference in JSON input formats. Default value - `true`.
 - [input_format_json_defaults_for_missing_elements_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_defaults_for_missing_elements_in_named_tuple) - insert default values for missing elements in JSON object while parsing named tuple. Default value - `true`.
-- [input_format_json_ignore_unknown_keys_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_ignore_unknown_keys_in_named_tuple) - ignore unknown keys in json object for named tuples. Default value - `false`.
+- [input_format_json_ignore_unknown_keys_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_ignore_unknown_keys_in_named_tuple) - Ignore unknown keys in json object for named tuples. Default value - `false`.
 - [input_format_json_compact_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_json_compact_allow_variable_number_of_columns) - allow variable number of columns in JSONCompact/JSONCompactEachRow format, ignore extra columns and use default values on missing columns. Default value - `false`.
-- [input_format_json_throw_on_bad_escape_sequence](/docs/en/operations/settings/settings-formats.md/#input_format_json_throw_on_bad_escape_sequence) - throw an exception if JSON string contains bad escape sequence. If disabled, bad escape sequences will remain as is in the data. Default value - `true`.
 - [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_64bit_floats](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
@@ -1488,7 +1485,7 @@ Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 
 - [output_format_pretty_max_value_width](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_max_value_width) - Maximum width of value to display in Pretty formats. If greater - it will be cut. Default value - `10000`.
 - [output_format_pretty_color](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_color) - use ANSI escape sequences to paint colors in Pretty formats. Default value - `true`.
 - [output_format_pretty_grid_charset](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_grid_charset) - Charset for printing grid borders. Available charsets: ASCII, UTF-8. Default value - `UTF-8`.
-- [output_format_pretty_row_numbers](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `true`.
+- [output_format_pretty_row_numbers](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `false`.
 
 ## RowBinary {#rowbinary}
 
@@ -2358,7 +2355,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
 ```
 
-### Arrow format settings {#arrow-format-settings}
+### Arrow format settings {#parquet-format-settings}
 
 - [output_format_arrow_low_cardinality_as_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_low_cardinality_as_dictionary) - enable output ClickHouse LowCardinality type as Dictionary Arrow type. Default value - `false`.
 - [output_format_arrow_use_64_bit_indexes_for_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_use_64_bit_indexes_for_dictionary) - use 64-bit integer type for Dictionary indexes. Default value - `false`.
@@ -2466,7 +2463,7 @@ Result:
 
 ## Npy {#data-format-npy}
 
-This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse:
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse: 
 | Npy type | ClickHouse type |
 |:--------:|:---------------:|
 | b1       |    UInt8        |
@@ -2844,31 +2841,3 @@ FORMAT Markdown
 ```
 
 Markdown table will be generated automatically and can be used on markdown-enabled platforms, like Github. This format is used only for output.
-
-## Form {#form}
-
-The Form format can be used to read or write a single record in the application/x-www-form-urlencoded format in which data is formatted `key1=value1&key2=value2`
-
-Examples:
-
-Given a file `data.tmp` placed in the `user_files` path with some URL encoded data:
-
-```text
-t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
-```
-
-```sql
-SELECT * FROM file(data.tmp, Form) FORMAT vertical;
-```
-
-Result:
-
-```text
-Row 1:
-──────
-t_page:   116
-c.e:      ls7xfkpm
-c.tti.m:  raf
-rt.start: navigation
-rt.bmr:   390,11,10
-```

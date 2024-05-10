@@ -26,42 +26,6 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-namespace
-{
-
-class RedirectRequestHandler : public HTTPRequestHandler
-{
-private:
-    std::string url;
-
-public:
-    explicit RedirectRequestHandler(std::string url_)
-        : url(std::move(url_))
-    {
-    }
-
-    void handleRequest(HTTPServerRequest &, HTTPServerResponse & response, const ProfileEvents::Event &) override
-    {
-        response.redirect(url);
-    }
-};
-
-HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
-{
-    std::string url = config.getString(config_prefix + ".handler.location");
-
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<RedirectRequestHandler>>(
-        [my_url = std::move(url)]() { return std::make_unique<RedirectRequestHandler>(my_url); });
-
-    factory->addFiltersFromConfig(config, config_prefix);
-    return factory;
-}
-
-}
-
-
 static void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
 static void addDefaultHandlersFactory(
     HTTPRequestHandlerFactoryMain & factory,
@@ -108,10 +72,6 @@ static inline auto createHandlersFactoryFromConfig(
             if (handler_type == "static")
             {
                 main_handler_factory->addHandler(createStaticHandlerFactory(server, config, prefix + "." + key));
-            }
-            else if (handler_type == "redirect")
-            {
-                main_handler_factory->addHandler(createRedirectHandlerFactory(config, prefix + "." + key));
             }
             else if (handler_type == "dynamic_query_handler")
             {

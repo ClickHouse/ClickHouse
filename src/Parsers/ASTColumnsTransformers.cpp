@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -180,8 +179,8 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         (*it)->formatImpl(settings, state, frame);
     }
 
-    if (pattern)
-        settings.ostr << quoteString(*pattern);
+    if (!original_pattern.empty())
+        settings.ostr << quoteString(original_pattern);
 
     if (children.size() > 1)
         settings.ostr << ")";
@@ -203,8 +202,8 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
         (*it)->appendColumnName(ostr);
     }
 
-    if (pattern)
-        writeQuotedString(*pattern, ostr);
+    if (!original_pattern.empty())
+        writeQuotedString(original_pattern, ostr);
 
     if (children.size() > 1)
         writeChar(')', ostr);
@@ -213,11 +212,8 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
 void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(is_strict);
-    if (pattern)
-    {
-        hash_state.update(pattern->size());
-        hash_state.update(*pattern);
-    }
+    hash_state.update(original_pattern.size());
+    hash_state.update(original_pattern);
 
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
@@ -225,7 +221,7 @@ void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
-    if (!pattern)
+    if (original_pattern.empty())
     {
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
@@ -247,13 +243,11 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
     else
     {
-        auto regexp = getMatcher();
-
         for (auto * it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
-                if (RE2::PartialMatch(id->shortName(), *regexp))
+                if (isColumnMatching(id->shortName()))
                 {
                     it = nodes.erase(it);
                     continue;
@@ -274,21 +268,23 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
 }
 
-void ASTColumnsExceptTransformer::setPattern(String pattern_)
+void ASTColumnsExceptTransformer::setPattern(String pattern)
 {
-    pattern = std::move(pattern_);
+    original_pattern = std::move(pattern);
+    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
+    if (!column_matcher->ok())
+        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "COLUMNS pattern {} cannot be compiled: {}",
+            original_pattern, column_matcher->error());
 }
 
-std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
+const std::shared_ptr<re2::RE2> & ASTColumnsExceptTransformer::getMatcher() const
 {
-    if (!pattern)
-        return {};
+    return column_matcher;
+}
 
-    auto regexp = std::make_shared<re2::RE2>(*pattern, re2::RE2::Quiet);
-    if (!regexp->ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "COLUMNS pattern {} cannot be compiled: {}", *pattern, regexp->error());
-    return regexp;
+bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const
+{
+    return RE2::PartialMatch(column_name, *column_matcher);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(

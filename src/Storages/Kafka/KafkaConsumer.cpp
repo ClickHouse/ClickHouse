@@ -599,13 +599,23 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
     exceptions_buffer.push_back({enriched_text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
 }
 
+/*
+ * Needed until
+ * https://github.com/mfontanini/cppkafka/pull/309
+ * is merged,
+ * because consumer->get_member_id() contains a leak
+ */
 std::string KafkaConsumer::getMemberId() const
 {
     if (!consumer)
         return "";
 
-    return consumer->get_member_id();
+    char * memberid_ptr = rd_kafka_memberid(consumer->get_handle());
+    std::string memberid_string = memberid_ptr;
+    rd_kafka_mem_free(nullptr, memberid_ptr);
+    return memberid_string;
 }
+
 
 KafkaConsumer::Stat KafkaConsumer::getStat() const
 {

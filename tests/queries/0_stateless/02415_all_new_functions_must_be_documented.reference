@@ -57,7 +57,6 @@ URLPathHierarchy
 UUIDNumToString
 UUIDStringToNum
 _CAST
-__actionName
 __bitBoolMaskAnd
 __bitBoolMaskOr
 __bitSwapLastTwo
@@ -195,7 +194,10 @@ blockSerializedSize
 blockSize
 buildId
 byteSize
+caseWithExpr
 caseWithExpression
+caseWithoutExpr
+caseWithoutExpression
 catboostEvaluate
 cbrt
 ceil
@@ -310,6 +312,7 @@ fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestampInJodaSyntax
+fullHostName
 fuzzBits
 gccMurmurHash
 gcd
@@ -641,6 +644,14 @@ shardNum
 showCertificate
 sigmoid
 sign
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
+sin
 sinh
 sipHash128
 sipHash128Keyed

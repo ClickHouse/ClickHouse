@@ -191,11 +191,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
                 extension);
 
             remote_query_executor->setLogger(log);
-            pipes.emplace_back(std::make_shared<RemoteSource>(
-                remote_query_executor,
-                add_agg_info,
-                current_settings.async_socket_for_remote,
-                current_settings.async_query_sending_for_remote));
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
         }
     }
 

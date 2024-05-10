@@ -164,16 +164,8 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
     auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool
     {
-        try
-        {
-            if (storage.executeFetch(entry, need_to_check_missing_part))
-                return remove_processed_entry();
-        }
-        catch (...)
-        {
-            part_log_writer(ExecutionStatus::fromCurrentException("", true));
-            throw;
-        }
+        if (storage.executeFetch(entry, need_to_check_missing_part))
+            return remove_processed_entry();
 
         return false;
     };
@@ -213,7 +205,8 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             }
             catch (...)
             {
-                part_log_writer(ExecutionStatus::fromCurrentException("", true));
+                if (part_log_writer)
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 
@@ -221,8 +214,17 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         }
         case State::NEED_FINALIZE :
         {
-            if (!finalize(part_log_writer))
-                return execute_fetch(/* need_to_check_missing = */true);
+            try
+            {
+                if (!finalize(part_log_writer))
+                    return execute_fetch(/* need_to_check_missing = */true);
+            }
+            catch (...)
+            {
+                if (part_log_writer)
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
+                throw;
+            }
 
             return remove_processed_entry();
         }
