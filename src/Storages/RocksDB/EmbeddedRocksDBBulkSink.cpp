@@ -204,7 +204,7 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     /// Ingest the SST file
-    static rocksdb::IngestExternalFileOptions ingest_options;
+    rocksdb::IngestExternalFileOptions ingest_options;
     ingest_options.move_files = true; /// The temporary file is on the same disk, so move (or hardlink) file will be faster than copy
     if (auto status = storage.rocksdb_ptr->IngestExternalFile({sst_file_path}, ingest_options); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());

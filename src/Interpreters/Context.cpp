@@ -1044,29 +1044,30 @@ try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    fs::create_directories(path);
-
-    /// Clearing old temporary files.
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    if (fs::exists(path))
     {
-        if (it->is_regular_file())
+        /// Clearing old temporary files.
+        fs::directory_iterator dir_end;
+        for (fs::directory_iterator it(path); it != dir_end; ++it)
         {
-            if (startsWith(it->path().filename(), "tmp"))
+            if (it->is_regular_file())
             {
-                LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-                fs::remove(it->path());
+                if (startsWith(it->path().filename(), "tmp"))
+                {
+                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                    fs::remove(it->path());
+                }
+                else
+                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
             }
-            else
-                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+            /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
-        /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
     }
 }
 catch (...)
 {
     DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setup temporary path: {}. "
+        "Caught exception while setting up temporary path: {}. "
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
@@ -1091,9 +1092,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
 
     for (const auto & disk : volume->getDisks())
-    {
         setupTmpPath(shared->log, disk->getPath());
-    }
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
@@ -2499,7 +2498,7 @@ AsyncLoader & Context::getAsyncLoader() const
         shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
                 // IMPORTANT: Pool declaration order should match the order in `PoolId.h` to get the indices right.
                 { // TablesLoaderForegroundPoolId
-                    "FgLoad",
+                    "ForegroundLoad",
                     CurrentMetrics::TablesLoaderForegroundThreads,
                     CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
@@ -2507,7 +2506,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderForegroundPriority
                 },
                 { // TablesLoaderBackgroundLoadPoolId
-                    "BgLoad",
+                    "BackgroundLoad",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
@@ -2515,7 +2514,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderBackgroundLoadPriority
                 },
                 { // TablesLoaderBackgroundStartupPoolId
-                    "BgStartup",
+                    "BackgrndStartup",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,

@@ -42,14 +42,23 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
-struct statvfs getStatVFS(const String & path)
+struct statvfs getStatVFS(String path)
 {
     struct statvfs fs;
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
             continue;
-        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+
+        /// Sometimes we create directories lazily, so we can request free space in a directory that yet to be created.
+        auto fs_path = std::filesystem::path(path);
+        if (errno == ENOENT && fs_path.has_parent_path())
+        {
+            path = fs_path.parent_path();
+            continue;
+        }
+
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
     }
     return fs;
 }

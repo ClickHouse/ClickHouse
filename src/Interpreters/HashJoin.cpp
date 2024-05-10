@@ -833,9 +833,19 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         if (storage_join_lock)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
-        data->blocks_allocated_size += block_to_save.allocatedBytes();
-
         assertBlocksHaveEqualStructure(data->sample_block, block_to_save, "joined block");
+
+        size_t min_bytes_to_compress = table_join->crossJoinMinBytesToCompress();
+        size_t min_rows_to_compress = table_join->crossJoinMinRowsToCompress();
+
+        if (kind == JoinKind::Cross
+            && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
+                || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
+        {
+            block_to_save = block_to_save.compress();
+        }
+
+        data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
 
@@ -2265,11 +2275,13 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
     for (size_t left_row = start_left_row; left_row < rows_left; ++left_row)
     {
         size_t block_number = 0;
-        for (const Block & block_right : data->blocks)
+        for (const Block & compressed_block_right : data->blocks)
         {
             ++block_number;
             if (block_number < start_right_block)
                 continue;
+
+            auto block_right = compressed_block_right.decompress();
 
             size_t rows_right = block_right.rows();
             rows_added += rows_right;
