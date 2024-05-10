@@ -170,7 +170,7 @@ void SerializationSparse::enumerateStreams(
 
     auto next_data = SubstreamData(nested)
         .withType(data.type)
-        .withColumn(column_sparse ? column_sparse->getValuesPtr() : nullptr)
+        .withColumn(column_sparse ? column_sparse->getValuesPtr() : data.column)
         .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
