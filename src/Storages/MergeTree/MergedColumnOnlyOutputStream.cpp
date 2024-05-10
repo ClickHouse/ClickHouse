@@ -20,11 +20,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
+    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
-    const auto & storage_settings = data_part->storage.getSettings();
+//    const auto & storage_settings = data_part->storage.getSettings();
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
@@ -33,11 +33,16 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
         /* rewrite_primary_key = */ false);
 
-    writer = data_part->getWriter(
+    writer = createMergeTreeDataPartWriter(
+            data_part->getType(),
+            data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+            data_part_storage, data_part->index_granularity_info,
+            storage_settings,
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
         stats_to_recalc_,
+        data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
         index_granularity);

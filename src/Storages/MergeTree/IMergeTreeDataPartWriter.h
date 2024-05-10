@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Disks/IDisk.h>
+#include "Storages/MergeTree/MergeTreeDataPartType.h"
+#include "Storages/MergeTree/MergeTreeSettings.h"
 
 
 namespace DB
@@ -22,7 +24,15 @@ class IMergeTreeDataPartWriter : private boost::noncopyable
 {
 public:
     IMergeTreeDataPartWriter(
-        const MergeTreeMutableDataPartPtr & data_part_,
+//        const MergeTreeMutableDataPartPtr & data_part_,
+
+        const String & data_part_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+
+        const MergeTreeSettingsPtr & storage_settings_,
+
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeWriterSettings & settings_,
@@ -39,10 +49,30 @@ public:
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
+    SerializationPtr getSerialization(const String & column_name) const;
+
+    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+
+    IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
+
 protected:
 
-    const MergeTreeMutableDataPartPtr data_part;
-    const MergeTreeData & storage;
+//    const MergeTreeMutableDataPartPtr data_part;  // TODO: remove
+
+    /// Serializations for every columns and subcolumns by their names.
+    String data_part_name;
+    SerializationByName serializations;
+    MutableDataPartStoragePtr data_part_storage;
+    MergeTreeIndexGranularityInfo index_granularity_info;
+
+
+//    const MergeTreeData & storage; // TODO: remove
+
+    const MergeTreeSettingsPtr storage_settings;
+    const size_t low_cardinality_max_dictionary_size = 0;  // TODO: pass it in ctor
+    const bool low_cardinality_use_single_dictionary_for_part = true;  // TODO: pass it in ctor
+
+
     const StorageMetadataPtr metadata_snapshot;
     const NamesAndTypesList columns_list;
     const MergeTreeWriterSettings settings;
@@ -51,5 +81,26 @@ protected:
 
     MutableColumns index_columns;
 };
+
+using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
+
+MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
+        MergeTreeDataPartType part_type,
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
+
+        const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
+        const String & marks_file_extension,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity);
+
 
 }

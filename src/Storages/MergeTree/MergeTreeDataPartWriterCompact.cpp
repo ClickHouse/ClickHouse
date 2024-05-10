@@ -10,7 +10,14 @@ namespace ErrorCodes
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
-    const MergeTreeMutableDataPartPtr & data_part_,
+//    const MergeTreeMutableDataPartPtr & data_part_,
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
+
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
@@ -19,23 +26,26 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
+    : MergeTreeDataPartWriterOnDisk(
+        data_part_name_, logger_name_, serializations_,
+        data_part_storage_, index_granularity_info_, storage_settings_,
+        columns_list_, metadata_snapshot_,
         indices_to_recalc_, stats_to_recalc, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
-    , plain_file(data_part_->getDataPartStorage().writeFile(
+    , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
             settings_.query_write_settings))
     , plain_hashing(*plain_file)
 {
-    marks_file = data_part_->getDataPartStorage().writeFile(
+    marks_file = getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
             4096,
             settings_.query_write_settings);
 
     marks_file_hashing = std::make_unique<HashingWriteBuffer>(*marks_file);
 
-    if (data_part_->index_granularity_info.mark_type.compressed)
+    if (index_granularity_info.mark_type.compressed)
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
@@ -45,10 +55,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
 
-    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
-        auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
+        auto compression = getCodecDescOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 }
@@ -81,7 +90,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    data_part->getSerialization(column.name)->enumerateStreams(callback, column.type);
+    getSerialization(column.name)->enumerateStreams(callback, column.type);
 }
 
 namespace
@@ -230,7 +239,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
 
             writeColumnSingleGranule(
-                block.getByName(name_and_type->name), data_part->getSerialization(name_and_type->name),
+                block.getByName(name_and_type->name), getSerialization(name_and_type->name),
                 stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream

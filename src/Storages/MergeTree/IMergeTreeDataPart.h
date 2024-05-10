@@ -74,7 +74,7 @@ public:
     using VirtualFields = std::unordered_map<String, Field>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
+//    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
@@ -106,15 +106,16 @@ public:
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
-    virtual MergeTreeWriterPtr getWriter(
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
+////    virtual MergeTreeWriterPtr getWriter(
+////        const NamesAndTypesList & columns_list,
+////        const StorageMetadataPtr & metadata_snapshot,
+////        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+////        const Statistics & stats_to_recalc_,
+////        const CompressionCodecPtr & default_codec_,
+////        const MergeTreeWriterSettings & writer_settings,
+////        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
 
+// TODO: remove?
     virtual bool isStoredOnDisk() const = 0;
 
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -167,6 +168,8 @@ public:
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+
+    const SerializationByName & getSerializations() const { return serializations; }
 
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;

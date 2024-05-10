@@ -47,27 +47,37 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
 
-IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
-    const NamesAndTypesList & columns_list,
-    const StorageMetadataPtr & metadata_snapshot,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
-    const CompressionCodecPtr & default_codec_,
-    const MergeTreeWriterSettings & writer_settings,
-    const MergeTreeIndexGranularity & computed_index_granularity)
+MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
+
+        const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
+        const String & marks_file_extension_,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity)
 {
-    NamesAndTypesList ordered_columns_list;
-    std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
-        [this](const auto & column) { return getColumnPosition(column.name) != std::nullopt; });
-
-    /// Order of writing is important in compact format
-    ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
-        { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
-
+////// TODO: fix the order of columns
+////
+////    NamesAndTypesList ordered_columns_list;
+////    std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
+////        [this](const auto & column) { return getColumnPosition(column.name) != std::nullopt; });
+////
+////    /// Order of writing is important in compact format
+////    ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
+////        { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
+////
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        shared_from_this(), ordered_columns_list, metadata_snapshot,
-        indices_to_recalc, stats_to_recalc_, getMarksFileExtension(),
-        default_codec_, writer_settings, computed_index_granularity);
+            data_part_name_, logger_name_, serializations_, data_part_storage_,
+            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, indices_to_recalc, stats_to_recalc_,
+            marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
 }
 
 
