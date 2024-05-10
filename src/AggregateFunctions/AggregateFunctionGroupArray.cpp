@@ -756,7 +756,7 @@ size_t getMaxArraySize()
 bool isLimitArraySize()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_limit_size;
+        return context->getServerSettings().aggregate_function_group_array_has_limit_size;
 
     return false;
 }
