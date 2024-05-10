@@ -252,7 +252,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , tmp_data(std::make_unique<TemporaryDataOnDisk>(table_join_->getTempDataOnDisk()))
+    , tmp_data(table_join_->getTempDataOnDisk() ? std::make_unique<TemporaryDataOnDisk>(table_join_->getTempDataOnDisk()) : nullptr)
     , right_sample_block(right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
