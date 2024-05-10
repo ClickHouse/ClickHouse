@@ -368,72 +368,47 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
     return names;
 }
 
-
-class FindL2DistanceVisitor : public ASTVisitor
-{
-public:
-        bool visit(ASTPtr & ast, const Data & data) override
-        {
-            if (const auto * func = ast->as<ASTFunction>())
-            {
-                if (func->name == "L2Distance")
-                {
-                    l2_distance_calls.push_back(ast);
-                }
-            }
-            return true;
-        }
-
-        ASTs l2_distance_calls;
-};
-
-    /// Заменяет вызовы функции L2Distance(...) на sqrt(L2SquaredDistance(...))
-class ReplaceL2DistanceVisitor : public ASTVisitor
-{
-public:
-        explicit ReplaceL2DistanceVisitor(const ASTs & l2_distance_calls)
-            : l2_distance_calls(l2_distance_calls) {}
-
-        bool visit(ASTPtr & ast, const Data & data) override
-        {
-            if (auto * func = ast->as<ASTFunction>())
-            {
-                if (func->name == "L2Distance")
-                {
-                    // Заменяем вызовы L2Distance(...) на sqrt(L2SquaredDistance(...))
-                    func->name = "sqrt";
-                    func->arguments = createL2SquaredDistance(ast->clone());
-                }
-            }
-            return true;
-        }
-
-private:
-        /// Создает вызов функции L2SquaredDistance(...) с аргументами из вызова L2Distance(...).
-        ASTPtr createL2SquaredDistance(ASTPtr l2_distance_call)
-        {
-            auto arguments = l2_distance_call->as<ASTFunction>()->arguments;
-            auto l2_squared_distance = std::make_shared<ASTFunction>();
-            l2_squared_distance->name = "L2SquaredDistance";
-            l2_squared_distance->arguments = arguments;
-            return l2_squared_distance;
-        }
-
-        const ASTs & l2_distance_calls;
-};
-
-    /// Применяет оптимизацию к дереву запроса.
 void applyL2DistanceOptimization(ASTPtr & query)
 {
-        FindL2DistanceVisitor find_visitor;
-        find_visitor.visit(query);
+    if (!query)
+        return;
 
-        if (!find_visitor.l2_distance_calls.empty())
-        {
-            ReplaceL2DistanceVisitor replace_visitor(find_visitor.l2_distance_calls);
-            replace_visitor.visit(query);
-        }
+    L2DistanceOptimizer optimizer;
+    query->accept(optimizer);
 }
+
+class L2DistanceOptimizer : public IASTVisitor
+{
+public:
+    void visit(ASTPtr & ast, Data & data) override
+    {
+        if (auto * function_node = ast->as<ASTFunction>())
+        {
+            if (function_node->name == "L2Distance")
+            {
+                replaceL2DistanceWithSqrtL2SquaredDistance(function_node);
+            }
+        }
+
+        for (auto & child : ast->children)
+            child->accept(*this, data);
+    }
+
+private:
+    void replaceL2DistanceWithSqrtL2SquaredDistance(ASTFunction * function_node)
+    {
+        function_node->name = "sqrt";
+        ASTPtr argument = function_node->arguments->children.at(0);
+        ASTFunction * new_function = new ASTFunction();
+        new_function->name = "L2SquaredDistance";
+        new_function->arguments = function_node->arguments;
+        function_node->arguments->children.clear();
+        function_node->arguments->children.push_back(std::make_shared<ASTExpressionList>());
+        function_node->arguments->children.at(0)->children.push_back(argument);
+        function_node->arguments->children.at(0)->children.push_back(std::shared_ptr<ASTFunction>(new_function));
+    }
+};
+
 
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
