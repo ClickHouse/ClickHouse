@@ -1,41 +1,32 @@
+#include "model_storage.h"
+
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
-
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
-#include <BridgeHelper/IBridgeHelper.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include "Common/Throttler_fwd.h"
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
-
-#include "model_storage.h"
 
 #include <Common/Exception.h>
 #include <Common/re2.h>
+
+#include <Columns/ColumnString.h>
+#include <Columns/IColumn.h>
+
 #include <DataTypes/DataTypeString.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include "DataTypes/IDataType.h"
+#include <DataTypes/IDataType.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int FILE_DOESNT_EXIST;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int SYNTAX_ERROR;
-    extern const int LOGICAL_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
