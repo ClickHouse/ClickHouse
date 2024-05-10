@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Functions/ggmlEvaluate/model_storage.h"
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
