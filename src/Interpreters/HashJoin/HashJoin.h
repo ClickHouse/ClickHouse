@@ -345,11 +345,12 @@ public:
 
         size_t blocks_allocated_size = 0;
         size_t blocks_nullmaps_allocated_size = 0;
-
         /// Number of rows of right table to join
         size_t rows_to_join = 0;
         /// Number of keys of right table to join
         size_t keys_to_join = 0;
+        /// Whether the right table reranged by key
+        bool sorted = false;
 
         size_t avgPerKeyRows() const
         {
@@ -465,6 +466,10 @@ private:
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
+
+    void tryRerangeRightTableData() override;
+    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
+    void tryRerangeRightTableDataImpl(Map & map);
 };
 
 }

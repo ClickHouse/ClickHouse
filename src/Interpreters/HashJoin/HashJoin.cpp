@@ -649,7 +649,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     }
     data->keys_to_join = total_rows;
     shrinkStoredBlocksToFit(total_bytes);
-
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
@@ -1359,6 +1358,89 @@ bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table
     if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
         return true;
     return false;
+}
+
+template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
+void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
+{
+    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    if constexpr (join_features.is_all_join && (join_features.left || join_features.inner))
+    {
+        auto merge_rows_into_one_block = [&](BlocksList & blocks, RowRefList & rows_ref)
+        {
+            auto it = rows_ref.begin();
+            if (it.ok())
+            {
+                if (blocks.empty() || blocks.back().rows() > DEFAULT_BLOCK_SIZE)
+                    blocks.emplace_back(it->block->cloneEmpty());
+            }
+            else
+            {
+                return;
+            }
+            auto & block = blocks.back();
+            size_t start_row = block.rows();
+            for (; it.ok(); ++it)
+            {
+                for (size_t i = 0; i < block.columns(); ++i)
+                {
+                    auto & col = *(block.getByPosition(i).column->assumeMutable());
+                    col.insertFrom(*it->block->getByPosition(i).column, it->row_num);
+                }
+            }
+            if (block.rows() > start_row)
+            {
+                RowRefList new_rows_ref(&block, start_row, block.rows() - start_row);
+                rows_ref = std::move(new_rows_ref);
+            }
+        };
+
+        auto visit_rows_map = [&](BlocksList & blocks, MapsAll & rows_map)
+        {
+            switch (data->type)
+            {
+        #define M(TYPE) \
+                case Type::TYPE: \
+                {\
+                    rows_map.TYPE->forEachMapped([&](RowRefList & rows_ref) { merge_rows_into_one_block(blocks, rows_ref); }); \
+                    break; \
+                }
+                APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
+                default:
+                    break;
+            }
+        };
+        BlocksList sorted_blocks;
+        visit_rows_map(sorted_blocks, map);
+        data->blocks.swap(sorted_blocks);
+    }
+}
+
+void HashJoin::tryRerangeRightTableData()
+{
+    if ((kind != JoinKind::Inner && kind != JoinKind::Left) || strictness != JoinStrictness::All || table_join->getMixedJoinExpression())
+        return;
+
+    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1)
+        return;
+
+    if (data->keys_to_join == 0)
+        data->keys_to_join = getTotalRowCount();
+    if (sample_block_with_columns_to_add.columns() == 0 || data->rows_to_join > table_join->sortRightTableRowsThreshold() ||  data->avgPerKeyRows() < table_join->sortRightPerkeyRowsThreshold())
+    {
+        LOG_DEBUG(log, "The joined right table total rows :{}, total keys :{}, columns added:{}",
+            data->rows_to_join, data->keys_to_join, sample_block_with_columns_to_add.columns());
+        return;
+    }
+    std::cout << "sort right table rows" << std::endl;
+    joinDispatch(
+        kind,
+        strictness,
+        data->maps.front(),
+        [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
+    std::cout << "sort right finished" << std::endl;
+    data->sorted = true;
 }
 
 }

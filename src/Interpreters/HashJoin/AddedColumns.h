@@ -196,6 +196,12 @@ private:
         }
     }
 
+     /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
+     */
+    template<bool from_row_list>
+    void buildOutputFromBlocks();
+
     MutableColumns columns;
     bool is_join_get;
     std::vector<size_t> right_indexes;

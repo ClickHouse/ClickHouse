@@ -20,10 +20,13 @@ void AddedColumns<false>::buildOutput() {}
 
 template<>
 void AddedColumns<false>::buildJoinGetOutput() {}
+<<<<<<< HEAD
 
 template<>
 template<bool from_row_list>
 void AddedColumns<false>::buildOutputFromBlocks() {}
+=======
+>>>>>>> add threshold for table rows
 
 template<>
 void AddedColumns<true>::buildOutput()
@@ -32,9 +35,15 @@ void AddedColumns<true>::buildOutput()
         buildOutputFromBlocks<false>();
     else
     {
+<<<<<<< HEAD
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>();
         else
+=======
+        if (join_data_avg_perkey_rows < sort_right_perkey_rows_threshold)
+            buildOutputFromBlocks<true>();
+        else if (join_data_sorted)
+>>>>>>> add threshold for table rows
         {
             for (size_t i = 0; i < this->size(); ++i)
             {
@@ -44,14 +53,19 @@ void AddedColumns<true>::buildOutput()
                     if (row_ref_i)
                     {
                         const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+<<<<<<< HEAD
                         for (auto it = row_ref_list->begin(); it.ok(); ++it)
                             col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+=======
+                        col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
+>>>>>>> add threshold for table rows
                     }
                     else
                         type_name[i].type->insertDefaultInto(*col);
                 }
             }
         }
+<<<<<<< HEAD
     }
 }
 
@@ -74,6 +88,25 @@ void AddedColumns<true>::buildJoinGetOutput()
                 nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
             else
                 col->insertFrom(*column_from_block.column, row_ref->row_num);
+=======
+        else
+        {
+            for (size_t i = 0; i < this->size(); ++i)
+            {
+                auto & col = columns[i];
+                for (auto row_ref_i : lazy_output.row_refs)
+                {
+                    if (row_ref_i)
+                    {
+                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                        for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                            col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+                    }
+                    else
+                        type_name[i].type->insertDefaultInto(*col);
+                }
+            }
+>>>>>>> add threshold for table rows
         }
     }
 }
@@ -82,7 +115,11 @@ template<>
 template<bool from_row_list>
 void AddedColumns<true>::buildOutputFromBlocks()
 {
+<<<<<<< HEAD
     if (this->size() == 0)
+=======
+     if (this->size() == 0)
+>>>>>>> add threshold for table rows
         return;
     std::vector<const Block *> blocks;
     std::vector<UInt32> row_nums;
@@ -123,6 +160,32 @@ void AddedColumns<true>::buildOutputFromBlocks()
                 col->insertFrom(*blocks[j]->getByPosition(right_indexes[i]).column, row_nums[j]);
             else
                 type_name[i].type->insertDefaultInto(*col);
+<<<<<<< HEAD
+=======
+        }
+    }
+}
+
+template<>
+void AddedColumns<true>::buildJoinGetOutput()
+{
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        auto & col = columns[i];
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            if (!row_ref_i)
+            {
+                type_name[i].type->insertDefaultInto(*col);
+                continue;
+            }
+            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
+            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[i]);
+            if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block.column->isNullable())
+                nullable_col->insertFromNotNullable(*column_from_block.column, row_ref->row_num);
+            else
+                col->insertFrom(*column_from_block.column, row_ref->row_num);
+>>>>>>> add threshold for table rows
         }
     }
 }
