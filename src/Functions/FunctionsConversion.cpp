@@ -44,6 +44,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
@@ -5057,7 +5058,7 @@ private:
                 }
                 else if (from_type->getCustomSerialization())
                 {
-                    ret = [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+                    ret = [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
                     {
                         return ConvertImplGenericToString<typename ToDataType::ColumnType>::execute(arguments, result_type, input_rows_count, context ? getFormatSettings(context) : FormatSettings());
                     };
