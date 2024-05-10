@@ -27,6 +27,7 @@ public:
 
     void startup(Coordination::ZooKeeper & zookeeper);
     void cleanup(Coordination::ZooKeeper & zookeeper);
+
 private:
     struct Node
     {
@@ -54,6 +55,7 @@ public:
         std::optional<size_t> concurrency_,
         const std::string & config_path,
         const std::string & input_request_log_,
+        const std::string & setup_nodes_snapshot_path_,
         const Strings & hosts_strings_,
         std::optional<double> max_time_,
         std::optional<double> delay_,
@@ -96,6 +98,7 @@ private:
     std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx);
 
     std::string input_request_log;
+    std::string setup_nodes_snapshot_path;
 
     size_t concurrency = 1;
 

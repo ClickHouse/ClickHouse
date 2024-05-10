@@ -38,6 +38,7 @@ int main(int argc, char *argv[])
             ("help",                                                                         "produce help message")
             ("config",            value<std::string>()->default_value(""),                      "yaml/xml file containing configuration")
             ("input-request-log", value<std::string>()->default_value(""),                      "log of requests that will be replayed")
+            ("setup-nodes-snapshot-path", value<std::string>()->default_value(""),                      "directory containing snapshots with starting state")
             ("concurrency,c",     value<unsigned>(),                                            "number of parallel queries")
             ("report-delay,d",    value<double>(),                                              "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("iterations,i",      value<size_t>(),                                              "amount of queries to be executed")
@@ -60,6 +61,7 @@ int main(int argc, char *argv[])
         Runner runner(valueToOptional<unsigned>(options["concurrency"]),
                       options["config"].as<std::string>(),
                       options["input-request-log"].as<std::string>(),
+                      options["setup-nodes-snapshot-path"].as<std::string>(),
                       options["hosts"].as<Strings>(),
                       valueToOptional<double>(options["time-limit"]),
                       valueToOptional<double>(options["report-delay"]),
