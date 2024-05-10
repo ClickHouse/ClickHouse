@@ -681,8 +681,9 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             return count;
         }
     }
-    while (end > begin && *(--end) == 0)
+    while (end > begin && end[-1] == 0)
     {
+        --end;
         ++count;
     }
     return count;
@@ -715,8 +716,9 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             return count;
         }
     }
-    while (end > begin && *(--end) == 0)
+    while (end > begin && end[-1] == 0)
     {
+        --end;
         ++count;
     }
     return count;
@@ -793,8 +795,9 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     }
 #endif
 
-    while (end > begin && *(--end) == 0)
+    while (end > begin && end[-1] == 0)
     {
+        --end;
         ++count;
     }
     return count;

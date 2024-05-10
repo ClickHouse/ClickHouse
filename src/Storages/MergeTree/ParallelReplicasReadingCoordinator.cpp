@@ -986,7 +986,7 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
         initialize();
     }
 
-    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
+    pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)

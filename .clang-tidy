@@ -132,6 +132,7 @@ Checks: [
   '-bugprone-crtp-constructor-accessibility',
   '-bugprone-suspicious-stringview-data-usage',
   '-bugprone-multi-level-implicit-pointer-conversion',
+  '-cert-err33-c',
 
   '-zircon-*'
 ]

@@ -1356,7 +1356,7 @@ public:
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",
                     getName());
 
-            auto value = static_cast<Int64>(arguments[2].column->getInt(0));
+            Int64 value = arguments[2].column->getInt(0);
             if (value < 0)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",
