@@ -8,8 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/localBackup.h>
-#include <Storages/MergeTree/remoteBackup.h>
+#include <Storages/MergeTree/Backup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
@@ -460,7 +459,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
         disk->createDirectories(to);
 
-    localBackup(
+    Backup(
+        disk,
         disk,
         getRelativePath(),
         fs::path(to) / dir_path,
@@ -512,7 +512,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     else
         dst_disk->createDirectories(to);
 
-    remoteBackup(
+    Backup(
         src_disk,
         dst_disk,
         getRelativePath(),
@@ -521,6 +521,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         write_settings,
         params.make_source_readonly,
         /* max_level= */ {},
+        true,
+        {},
         params.external_transaction);
 
     /// The save_metadata_callback function acts on the target dist.
@@ -545,7 +547,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with("detached/");
+    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
     return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 

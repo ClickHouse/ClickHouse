@@ -1,0 +1,1 @@
+CODEC(ZSTD(1))

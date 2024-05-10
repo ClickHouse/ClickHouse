@@ -2123,14 +2123,15 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         if (replace)
         {
             /// Replace can only work on the same disk
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+            auto [dst_part, part_lock] = cloneAndLoadDataPart(
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
                 my_metadata_snapshot,
                 clone_params,
                 local_context->getReadSettings(),
-                local_context->getWriteSettings());
+                local_context->getWriteSettings(),
+                true/*must_on_same_disk*/);
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
@@ -2144,7 +2145,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 my_metadata_snapshot,
                 clone_params,
                 local_context->getReadSettings(),
-                local_context->getWriteSettings());
+                local_context->getWriteSettings(),
+                false/*must_on_same_disk*/);
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
@@ -2252,14 +2254,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
             src_part,
             TMP_PREFIX,
             dst_part_info,
             dest_metadata_snapshot,
             clone_params,
             local_context->getReadSettings(),
-            local_context->getWriteSettings()
+            local_context->getWriteSettings(),
+            true/*must_on_same_disk*/
         );
 
         dst_parts.emplace_back(std::move(dst_part));
