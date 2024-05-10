@@ -903,7 +903,7 @@ ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
 
 bool isColumnLowCardinalityNullable(const IColumn & column)
 {
-    if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(column))
+    if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(&column))
         return lc_column->nestedIsNullable();
     return false;
 }
