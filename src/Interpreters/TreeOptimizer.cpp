@@ -368,38 +368,6 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
     return names;
 }
 
-void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query, ContextPtr context)
-{
-    // Check if the query is a SELECT query
-    auto *select_query = query->as<ASTSelectQuery>();
-    if (!select_query)
-        return;
-
-    // Check if ORDER BY clause exists
-    if (!select_query->orderBy())
-        return;
-
-    // Iterate through ORDER BY elements to find L2Distance function calls
-    for (auto &order_by_elem : select_query->orderBy()->children)
-    {
-        auto *function_node = order_by_elem->as<ASTFunction>();
-        if (!function_node)
-            continue;
-
-        // Check if the function is L2Distance
-        if (function_node->name == "L2Distance")
-        {
-            // Replace L2Distance with sqrt(L2SquaredDistance)
-            function_node->name = "sqrt";
-            auto argument = std::make_shared<ASTFunction>();
-            argument->name = "L2SquaredDistance";
-            argument->arguments = function_node->arguments;
-            function_node->arguments = std::make_shared<ASTExpressionList>();
-            function_node->arguments->children.push_back(argument);
-        }
-    }
-}
-
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
@@ -703,6 +671,38 @@ void optimizeOrLikeChain(ASTPtr & query)
     ConvertFunctionOrLikeVisitor(data).visit(query);
 }
 
+}
+
+void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query, ContextPtr context)
+{
+    // Check if the query is a SELECT query
+    auto *select_query = query->as<ASTSelectQuery>();
+    if (!select_query)
+        return;
+
+    // Check if ORDER BY clause exists
+    if (!select_query->orderBy())
+        return;
+
+    // Iterate through ORDER BY elements to find L2Distance function calls
+    for (auto &order_by_elem : select_query->orderBy()->children)
+    {
+        auto *function_node = order_by_elem->as<ASTFunction>();
+        if (!function_node)
+            continue;
+
+        // Check if the function is L2Distance
+        if (function_node->name == "L2Distance")
+        {
+            // Replace L2Distance with sqrt(L2SquaredDistance)
+            function_node->name = "sqrt";
+            auto argument = std::make_shared<ASTFunction>();
+            argument->name = "L2SquaredDistance";
+            argument->arguments = function_node->arguments;
+            function_node->arguments = std::make_shared<ASTExpressionList>();
+            function_node->arguments->children.push_back(argument);
+        }
+    }
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
