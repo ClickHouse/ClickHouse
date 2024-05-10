@@ -375,19 +375,6 @@ namespace
     {
     public:
         bool visit(ASTPtr & ast, const Data & data) override;
-        bool visit(ASTPtr & ast, const Data & data) override
-        {
-            if (const auto * func = ast->as<ASTFunction>())
-            {
-                if (func->name == "L2Distance")
-                {
-                    l2_distance_calls.push_back(ast);
-                }
-            }
-            return true;
-        }
-
-        const ASTs l2_distance_calls;
     };
 
     /// Заменяет вызовы функции L2Distance(...) на sqrt(L2SquaredDistance(...))
@@ -395,34 +382,11 @@ namespace
     {
     public:
         explicit ReplaceL2DistanceVisitor(const ASTs & l2_distance_calls);
-        explicit ReplaceL2DistanceVisitor(const ASTs & l2_distance_calls)
-            : l2_distance_calls(l2_distance_calls) {}
-
         bool visit(ASTPtr & ast, const Data & data) override;
-        bool visit(ASTPtr & ast, const Data & data) override
-        {
-            if (auto * func = ast->as<ASTFunction>())
-            {
-                if (func->name == "L2Distance")
-                {
-                    // Заменяем вызовы L2Distance(...) на sqrt(L2SquaredDistance(...))
-                    func->name = "sqrt";
-                    func->arguments = createL2SquaredDistance(ast->clone());
-                }
-            }
-            return true;
-        }
 
     private:
         /// Создает вызов функции L2SquaredDistance(...) с аргументами из вызова L2Distance(...).
-        ASTPtr createL2SquaredDistance(ASTPtr l2_distance_call)
-        {
-            auto arguments = l2_distance_call->as<ASTFunction>()->arguments;
-            auto l2_squared_distance = std::make_shared<ASTFunction>();
-            l2_squared_distance->name = "L2SquaredDistance";
-            l2_squared_distance->arguments = arguments;
-            return l2_squared_distance;
-        }
+        ASTPtr createL2SquaredDistance(ASTPtr l2_distance_call);
 
         const ASTs & l2_distance_calls;
     };
@@ -439,6 +403,44 @@ namespace
             replace_visitor.visit(query);
         }
     }
+}
+
+bool FindL2DistanceVisitor::visit(ASTPtr & ast, const Data & data)
+{
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (func->name == "L2Distance")
+        {
+            l2_distance_calls.push_back(ast);
+        }
+    }
+    return true;
+}
+
+ReplaceL2DistanceVisitor::ReplaceL2DistanceVisitor(const ASTs & l2_distance_calls)
+    : l2_distance_calls(l2_distance_calls) {}
+
+bool ReplaceL2DistanceVisitor::visit(ASTPtr & ast, const Data & data)
+{
+    if (auto * func = ast->as<ASTFunction>())
+    {
+        if (func->name == "L2Distance")
+        {
+            // Заменяем вызовы L2Distance(...) на sqrt(L2SquaredDistance(...))
+            func->name = "sqrt";
+            func->arguments = createL2SquaredDistance(ast->clone());
+        }
+    }
+    return true;
+}
+
+ASTPtr ReplaceL2DistanceVisitor::createL2SquaredDistance(ASTPtr l2_distance_call)
+{
+    auto arguments = l2_distance_call->as<ASTFunction>()->arguments;
+    auto l2_squared_distance = std::make_shared<ASTFunction>();
+    l2_squared_distance->name = "L2SquaredDistance";
+    l2_squared_distance->arguments = arguments;
+    return l2_squared_distance;
 }
 
 
