@@ -1125,7 +1125,7 @@ def test_write_to_globbed_partitioned_path(started_cluster):
 
     assert "DATABASE_ACCESS_DENIED" in error
 
-    
+
 def test_respect_object_existence_on_partitioned_write(started_cluster):
     node = started_cluster.instances["node1"]
 
