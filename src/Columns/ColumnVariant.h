@@ -189,7 +189,7 @@ public:
     void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
     void insertManyFrom(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
 
-    /// Methods for insertrion into a specific variant.
+    /// Methods for insertion into a specific variant.
     void insertIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t n);
     void insertRangeIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t start, size_t length);
     void insertManyIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t position, size_t length);

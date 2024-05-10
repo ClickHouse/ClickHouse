@@ -48,8 +48,8 @@ ColumnDynamic::MutablePtr ColumnDynamic::create(MutableColumnPtr variant_column,
     variant_info.variant_name_to_discriminator.reserve(variants.size());
     for (ColumnVariant::Discriminator discr = 0; discr != variants.size(); ++discr)
     {
-        variant_info.variant_names.push_back(variants[discr]->getName());
-        variant_info.variant_name_to_discriminator[variant_info.variant_names.back()] = discr;
+        const auto & variant_name = variant_info.variant_names.emplace_back(variants[discr]->getName());
+        variant_info.variant_name_to_discriminator[variant_name] = discr;
     }
 
     return create(std::move(variant_column), variant_info, max_dynamic_types_, statistics_);
@@ -133,8 +133,7 @@ void ColumnDynamic::updateVariantInfoAndExpandVariantColumn(const DB::DataTypePt
 
     for (ColumnVariant::Discriminator discr = 0; discr != new_variants.size(); ++discr)
     {
-        String name = new_variants[discr]->getName();
-        new_variant_names.push_back(name);
+        const auto & name = new_variant_names.emplace_back(new_variants[discr]->getName());
         new_variant_name_to_discriminator[name] = discr;
 
         auto current_it = variant_info.variant_name_to_discriminator.find(name);
