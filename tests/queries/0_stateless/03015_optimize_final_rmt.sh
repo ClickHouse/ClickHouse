@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-tsan, no-msan, no-ubsan, no-asan
+# no sanitizers: too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,10 +13,11 @@ for _ in {0..10}; do
 done
 
 # trigger a merge if it is not already running
-${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE 03015_optimize_final_rmt FINAL" &
+# timeout for each individual attempt to wait until queue is drained is receive_timeout/10, so it makes sense to increase its value to not get timeout exception
+${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE 03015_optimize_final_rmt FINAL SETTINGS receive_timeout=3000" &
 
 # this query should wait for the running merges, not just return immediately
-${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE 03015_optimize_final_rmt FINAL"
+${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE 03015_optimize_final_rmt FINAL SETTINGS receive_timeout=3000"
 
 # then at this point we should have a single part
 ${CLICKHOUSE_CLIENT} -q "SELECT COUNT() FROM system.parts WHERE database = currentDatabase() AND table = '03015_optimize_final_rmt' AND active"

@@ -164,7 +164,7 @@ bool ColumnTuple::tryInsert(const Field & x)
         if (!columns[i]->tryInsert(tuple[i]))
         {
             for (size_t j = 0; j != i; ++j)
-                columns[i]->popBack(1);
+                columns[j]->popBack(1);
 
             return false;
         }

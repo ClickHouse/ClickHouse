@@ -315,6 +315,7 @@ protected:
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
 
+public:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -339,8 +340,10 @@ protected:
             return *this;
         }
 
-        void swap(QueryAccessInfo & rhs) noexcept
+        void swap(QueryAccessInfo & rhs) noexcept TSA_NO_THREAD_SAFETY_ANALYSIS
         {
+            /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't support scoped_lock
+            std::scoped_lock lck{mutex, rhs.mutex};
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
@@ -351,19 +354,21 @@ protected:
 
         /// To prevent a race between copy-constructor and other uses of this structure.
         mutable std::mutex mutex{};
-        std::set<std::string> databases{};
-        std::set<std::string> tables{};
-        std::set<std::string> columns{};
-        std::set<std::string> partitions{};
-        std::set<std::string> projections{};
-        std::set<std::string> views{};
+        std::set<std::string> databases TSA_GUARDED_BY(mutex){};
+        std::set<std::string> tables TSA_GUARDED_BY(mutex){};
+        std::set<std::string> columns TSA_GUARDED_BY(mutex){};
+        std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
+        std::set<std::string> projections TSA_GUARDED_BY(mutex){};
+        std::set<std::string> views TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
+protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
     /// Therefore, query_access_info must be a pointer.
     QueryAccessInfoPtr query_access_info;
 
+public:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
@@ -385,19 +390,20 @@ protected:
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
 
-        std::unordered_set<std::string> aggregate_functions;
-        std::unordered_set<std::string> aggregate_function_combinators;
-        std::unordered_set<std::string> database_engines;
-        std::unordered_set<std::string> data_type_families;
-        std::unordered_set<std::string> dictionaries;
-        std::unordered_set<std::string> formats;
-        std::unordered_set<std::string> functions;
-        std::unordered_set<std::string> storages;
-        std::unordered_set<std::string> table_functions;
+        std::unordered_set<std::string> aggregate_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> aggregate_function_combinators TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> database_engines TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> data_type_families TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> dictionaries TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> formats TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> storages TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
     };
 
+protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
@@ -677,6 +683,8 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
@@ -781,11 +789,11 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
-    void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
-    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
-    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
-    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraints(const SettingChange & change, SettingSource source);
+    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -1291,15 +1299,15 @@ private:
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source);
 
-    void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source);
 
-    void checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source);
 
-    void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
-    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 

@@ -493,7 +493,7 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
 
 ## base58Encode(plaintext), base58Decode(encoded_text) {#base58}
 
-Принимает на вход строку или колонку строк и кодирует/раскодирует их с помощью схемы кодирования [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) с использованием стандартного алфавита Bitcoin.
+Принимает на вход строку или колонку строк и кодирует/раскодирует их с помощью схемы кодирования [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) с использованием стандартного алфавита Bitcoin.
 
 **Синтаксис**
 

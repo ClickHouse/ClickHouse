@@ -45,6 +45,9 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         avg_value_size_hints_)
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
+    , read_without_marks(
+        settings.can_read_part_without_marks
+        && all_mark_ranges.isOneRangeForWholePart(data_part_info_for_read->getMarksCount()))
 {
     try
     {
@@ -241,26 +244,37 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
 {
     auto context = data_part_info_for_read->getContext();
     auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
 
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         data_part_info_for_read,
         mark_cache,
-        data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(stream_name),
-        data_part_info_for_read->getMarksCount(),
+        data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(*stream_name),
+        num_marks_in_part,
         data_part_info_for_read->getIndexGranularityInfo(),
         settings.save_marks_in_cache,
         settings.read_settings,
         load_marks_threadpool,
         /*num_columns_in_mark=*/ 1);
 
+    has_any_stream = true;
     auto stream_settings = settings;
     stream_settings.is_low_cardinality_dictionary = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
-    return streams.emplace(stream_name, std::make_unique<MergeTreeReaderStreamSingleColumn>(
-                                      data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
-                                      data_part_info_for_read->getMarksCount(), all_mark_ranges, stream_settings,
-                                      uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-                                      std::move(marks_loader), profile_callback, clock_type)).first;
+    auto create_stream = [&]<typename Stream>()
+    {
+        return std::make_unique<Stream>(
+            data_part_info_for_read->getDataPartStorage(), *stream_name, DATA_FILE_EXTENSION,
+            num_marks_in_part, all_mark_ranges, stream_settings,
+            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION),
+            std::move(marks_loader), profile_callback, clock_type);
+    };
+
+    if (read_without_marks)
+        return streams.emplace(*stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumnWholePart>());
+    
+    marks_loader->startAsyncLoad();
+    return streams.emplace(*stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumn>());
 }
 
 ReadBuffer * MergeTreeReaderWide::getStream(
@@ -339,7 +353,7 @@ void MergeTreeReaderWide::prefetchForColumn(
 
         if (stream_name && !prefetched_streams.contains(*stream_name))
         {
-            bool seek_to_mark = !continue_reading;
+            bool seek_to_mark = !continue_reading && !read_without_marks;
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
             {
                 buf->prefetch(priority);
@@ -374,7 +388,7 @@ void MergeTreeReaderWide::readData(
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool seek_to_mark = !was_prefetched && !continue_reading;
+        bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
             /* seek_to_start = */false, substream_path,

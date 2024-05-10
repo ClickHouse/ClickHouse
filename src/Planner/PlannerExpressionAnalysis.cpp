@@ -51,6 +51,41 @@ FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_no
     return result;
 }
 
+bool isDeterministicConstant(const ConstantNode & root)
+{
+    const auto & source_expression = root.getSourceExpression();
+    if (!source_expression)
+        return true;
+
+    std::stack<const IQueryTreeNode *> nodes;
+    nodes.push(source_expression.get());
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        const auto * constant_node = node->as<ConstantNode>();
+        const auto * function_node = node->as<FunctionNode>();
+        if (constant_node)
+        {
+            if (!isDeterministicConstant(*constant_node))
+                return false;
+        }
+        else if (function_node)
+        {
+            if (!function_node->getFunctionOrThrow()->isDeterministic())
+                return false;
+
+            for (const auto & child : function_node->getArguments())
+                nodes.push(child.get());
+        }
+        else
+            return false;
+    }
+
+    return true;
+}
+
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
   * Actions before aggregation are added into actions chain, if result is not null optional.
   */
@@ -85,6 +120,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef().group_by_use_nulls &&
         (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
+    bool is_secondary_query = planner_context->getQueryContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_distributed_query = planner_context->getQueryContext()->isDistributed();
+    bool check_deterministic_constants = is_secondary_query || is_distributed_query;
+
     if (query_node.hasGroupBy())
     {
         if (query_node.isGroupByWithGroupingSets())
@@ -97,10 +136,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    auto is_constant_key = grouping_set_key_node->as<ConstantNode>() != nullptr;
-                    group_by_with_constant_keys |= is_constant_key;
+                    const auto * constant_key = grouping_set_key_node->as<ConstantNode>();
+                    group_by_with_constant_keys |= (constant_key != nullptr);
 
-                    if (is_constant_key && !aggregates_descriptions.empty())
+                    if (constant_key && !aggregates_descriptions.empty() && (!check_deterministic_constants || isDeterministicConstant(*constant_key)))
                         continue;
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
@@ -149,10 +188,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
         {
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
-                auto is_constant_key = group_by_key_node->as<ConstantNode>() != nullptr;
-                group_by_with_constant_keys |= is_constant_key;
+                const auto * constant_key = group_by_key_node->as<ConstantNode>();
+                group_by_with_constant_keys |= (constant_key != nullptr);
 
-                if (is_constant_key && !aggregates_descriptions.empty())
+                if (constant_key && !aggregates_descriptions.empty() && (!check_deterministic_constants || isDeterministicConstant(*constant_key)))
                     continue;
 
                 auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, group_by_key_node);

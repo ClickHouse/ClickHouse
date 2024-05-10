@@ -1058,7 +1058,7 @@ convertCharset(s, from, to)
 
 ## base58Encode
 
-Encodes a String using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) in the "Bitcoin" alphabet.
+Encodes a String using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -1092,7 +1092,7 @@ Result:
 
 ## base58Decode
 
-Accepts a String and decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
+Accepts a String and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -1147,13 +1147,13 @@ tryBase58Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase58Decode('3dc8KtHrwM') as res;
+SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_invalid;
 ```
 
 ```response
-┌─res─────┐
-│ Encoded │
-└─────────┘
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
 ```
 
 ## base64Encode
@@ -1187,13 +1187,13 @@ tryBase64Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase64Decode('RW5jb2RlZA==') as res;
+SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res_invalid;
 ```
 
 ```response
-┌─res─────┐
-│ Encoded │
-└─────────┘
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
 ```
 
 ## endsWith {#endswith}

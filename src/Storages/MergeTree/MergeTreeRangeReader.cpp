@@ -1007,6 +1007,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 filterColumns(columns, read_result.final_filter);
             }
 
+            /// If columns not empty, then apply on-fly alter conversions if any required
+            if (!prewhere_info || prewhere_info->perform_alter_conversions)
+                merge_tree_reader->performRequiredConversions(columns);
+
             /// If some columns absent in part, then evaluate default values
             if (should_evaluate_missing_defaults)
             {
@@ -1017,10 +1021,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 addDummyColumnWithRowCount(additional_columns, read_result.num_rows);
                 merge_tree_reader->evaluateMissingDefaults(additional_columns, columns);
             }
-
-            /// If columns not empty, then apply on-fly alter conversions if any required
-            if (!prewhere_info || prewhere_info->perform_alter_conversions)
-                merge_tree_reader->performRequiredConversions(columns);
         }
 
         read_result.columns.reserve(read_result.columns.size() + columns.size());
@@ -1046,13 +1046,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             bool should_evaluate_missing_defaults;
             merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, read_result.num_rows);
 
-            /// If some columns absent in part, then evaluate default values
-            if (should_evaluate_missing_defaults)
-                merge_tree_reader->evaluateMissingDefaults({}, columns);
-
             /// If result not empty, then apply on-fly alter conversions if any required
             if (!prewhere_info || prewhere_info->perform_alter_conversions)
                 merge_tree_reader->performRequiredConversions(columns);
+
+            /// If some columns absent in part, then evaluate default values
+            if (should_evaluate_missing_defaults)
+                merge_tree_reader->evaluateMissingDefaults({}, columns);
 
             for (size_t i = 0; i < columns.size(); ++i)
                 read_result.columns[i] = std::move(columns[i]);

@@ -260,23 +260,31 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     /// We need to refresh the access info since dependent views might have added extra information, either during
     /// creation of the view (PushingToViews chain) or while executing its internal SELECT
     const auto & access_info = context_ptr->getQueryAccessInfo();
-    element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
-    element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
-    element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
-    element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
-    element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
-    element.query_views.insert(access_info.views.begin(), access_info.views.end());
+    {
+        std::lock_guard lock(access_info.mutex);
+        element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
+        element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
+        element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
+        element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
+        element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+        element.query_views.insert(access_info.views.begin(), access_info.views.end());
+    }
 
-    const auto factories_info = context_ptr->getQueryFactoriesInfo();
-    element.used_aggregate_functions = factories_info.aggregate_functions;
-    element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
-    element.used_database_engines = factories_info.database_engines;
-    element.used_data_type_families = factories_info.data_type_families;
-    element.used_dictionaries = factories_info.dictionaries;
-    element.used_formats = factories_info.formats;
-    element.used_functions = factories_info.functions;
-    element.used_storages = factories_info.storages;
-    element.used_table_functions = factories_info.table_functions;
+    /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
+    /// after query is finished
+    const auto & factories_info(context_ptr->getQueryFactoriesInfo());
+    {
+        std::lock_guard lock(factories_info.mutex);
+        element.used_aggregate_functions = factories_info.aggregate_functions;
+        element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
+        element.used_database_engines = factories_info.database_engines;
+        element.used_data_type_families = factories_info.data_type_families;
+        element.used_dictionaries = factories_info.dictionaries;
+        element.used_formats = factories_info.formats;
+        element.used_functions = factories_info.functions;
+        element.used_storages = factories_info.storages;
+        element.used_table_functions = factories_info.table_functions;
+    }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
 }
@@ -325,6 +333,7 @@ QueryLogElement logQueryStart(
         if (pipeline.initialized())
         {
             const auto & info = context->getQueryAccessInfo();
+            std::lock_guard lock(info.mutex);
             elem.query_databases = info.databases;
             elem.query_tables = info.tables;
             elem.query_columns = info.columns;
@@ -774,6 +783,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    /// Don't print the original query text because it may contain sensitive data.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
                         formatted1);
@@ -1248,7 +1258,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (!settings.force_optimize_projection_name.value.empty())
         {
             bool found = false;
-            std::set<std::string> projections = context->getQueryAccessInfo().projections;
+            std::set<std::string> projections;
+            {
+                const auto & access_info = context->getQueryAccessInfo();
+                std::lock_guard lock(access_info.mutex);
+                projections = access_info.projections;
+            }
 
             for (const auto &projection : projections)
             {
@@ -1508,8 +1523,15 @@ void executeQuery(
             if (output_format)
                 handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
+        /// The timezone was already set before query was processed,
+        /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+        result_details.timezone = DateLUT::instance().getTimeZone();
         throw;
     }
+
+    /// The timezone was already set before query was processed,
+    /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+    result_details.timezone = DateLUT::instance().getTimeZone();
 
     auto & pipeline = streams.pipeline;
 

@@ -363,6 +363,8 @@ public:
 
     virtual bool isWriteOnce() const { return false; }
 
+    virtual bool supportsHardLinks() const { return true; }
+
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
