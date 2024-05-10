@@ -38,7 +38,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     max_padded_widths.resize_fill(num_columns);
     name_widths.resize(num_columns);
 
-    const bool need_cut_to_width = format_settings.pretty.max_value_width_apply_for_single_value || num_rows != 1 || num_columns != 1 || total_rows != 0;
+    const bool need_cut_to_width = format_settings.pretty.preserve_border_for_multiline_string && (format_settings.pretty.max_value_width_apply_for_single_value || num_rows != 1 || num_columns != 1 || total_rows != 0);
 
     /// Calculate widths of all values.
     String serialized_value;
@@ -333,7 +333,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
                 serializations[j]->serializeText(*columns[j], i, out_serialize, format_settings);
             }
-            if (cut_to_width)
+            if (cut_to_width && format_settings.pretty.preserve_border_for_multiline_string)
                 splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width);
             has_transferred_row |= !transferred_row[j].empty() && cur_width <= cut_to_width;
 
