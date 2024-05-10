@@ -5,9 +5,7 @@ import time
 ALL_HTTP_METHODS = {"POST", "PUT", "GET", "HEAD", "CONNECT"}
 
 
-def check_proxy_logs(
-    cluster, proxy_instance, protocol, bucket, requested_http_methods
-):
+def check_proxy_logs(cluster, proxy_instance, protocol, bucket, requested_http_methods):
     for i in range(10):
         logs = cluster.get_container_logs(proxy_instance)
         # Check with retry that all possible interactions with Minio are present
@@ -17,9 +15,13 @@ def check_proxy_logs(
                 >= 0
             ):
                 if http_method not in requested_http_methods:
-                    assert False, f"Found http method {http_method} for bucket {bucket} that should not be found in {proxy_instance} logs"
+                    assert (
+                        False
+                    ), f"Found http method {http_method} for bucket {bucket} that should not be found in {proxy_instance} logs"
             elif http_method in requested_http_methods:
-                assert False, f"{http_method} method not found in logs of {proxy_instance} for bucket {bucket}"
+                assert
+                    False
+                ), f"{http_method} method not found in logs of {proxy_instance} for bucket {bucket}"
 
             time.sleep(1)
 
