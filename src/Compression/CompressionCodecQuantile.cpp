@@ -16,10 +16,10 @@
 namespace DB
 {
 
-class CompressionCodecQuantile : public ICompressionCodec
+class CompressionCodecPcodec : public ICompressionCodec
 {
 public:
-    CompressionCodecQuantile(UInt8 float_width_, UInt8 level_);
+    CompressionCodecPcodec(UInt8 column_type_width_, UInt8 level_, UInt8 pco_type_);
 
     uint8_t getMethodByte() const override;
 
@@ -27,6 +27,13 @@ public:
 
     static constexpr UInt8 MAX_COMPRESSION_LEVEL = 12;
     static constexpr UInt8 DEFAULT_COMPRESSION_LEVEL = 8;
+
+    static constexpr UInt8 PCO_TYPE_U32 = 1;
+    static constexpr UInt8 PCO_TYPE_U64 = 2;
+    static constexpr UInt8 PCO_TYPE_I32 = 3;
+    static constexpr UInt8 PCO_TYPE_I64 = 4;
+    static constexpr UInt8 PCO_TYPE_F32 = 5;
+    static constexpr UInt8 PCO_TYPE_F64 = 6;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -37,17 +44,14 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
-    bool isFloatingPointTimeSeriesCodec() const override { return true; }
     bool isExperimental() const override { return true; }
 
 private:
-    static constexpr UInt32 HEADER_SIZE = 2;
+    static constexpr UInt32 HEADER_SIZE = 1;
 
-    static constexpr UInt8 PCO_TYPE_F32 = 5;
-    static constexpr UInt8 PCO_TYPE_F64 = 6;
-
-    const UInt8 float_width;
+    const UInt8 column_type_width;
     const UInt8 level;
+    const UInt8 pco_type;
 };
 
 namespace ErrorCodes
@@ -59,160 +63,180 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-CompressionCodecQuantile::CompressionCodecQuantile(UInt8 float_width_, UInt8 level_) : float_width{float_width_}, level{level_}
+CompressionCodecPcodec::CompressionCodecPcodec(UInt8 column_type_width_, UInt8 level_, UInt8 pco_type_)
+    : column_type_width{column_type_width_}, level{level_}, pco_type{pco_type_}
 {
-    setCodecDescription("Quantile", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
+    setCodecDescription("Pcodec", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
-uint8_t CompressionCodecQuantile::getMethodByte() const
+uint8_t CompressionCodecPcodec::getMethodByte() const
 {
-    return static_cast<uint8_t>(CompressionMethodByte::Quantile);
+    return static_cast<uint8_t>(CompressionMethodByte::Pcodec);
 }
 
-void CompressionCodecQuantile::updateHash(SipHash & hash) const
+void CompressionCodecPcodec::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
-UInt32 CompressionCodecQuantile::doCompressData(const char * source, UInt32 source_size, char * dest) const
+UInt32 CompressionCodecPcodec::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    dest[0] = static_cast<char>(float_width);
-    dest[1] = static_cast<char>(level);
-    PcoError compress_error;
+    dest[0] = static_cast<char>(pco_type);
     UInt32 compressed_data_written = 0;
 
-    switch (float_width)
-    {
-        case sizeof(Float32):
-            compress_error = pco_simple_compress(PCO_TYPE_F32, reinterpret_cast<const uint8_t *>(source), source_size, reinterpret_cast<uint8_t *>(dest + HEADER_SIZE), getMaxCompressedDataSize(source_size) - HEADER_SIZE, level, &compressed_data_written);
-            break;
-        case sizeof(Float64):
-            compress_error = pco_simple_compress(PCO_TYPE_F64, reinterpret_cast<const uint8_t *>(source), source_size, reinterpret_cast<uint8_t *>(dest + HEADER_SIZE), getMaxCompressedDataSize(source_size) - HEADER_SIZE, level, &compressed_data_written);
-            break;
-        default:
-            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Float size for Quantile codec can be 4 or 8, given {}", static_cast<UInt32>(float_width));
-    }
+    PcoError compress_error = pco_simple_compress(
+        pco_type,
+        reinterpret_cast<const uint8_t *>(source),
+        source_size,
+        reinterpret_cast<uint8_t *>(dest + HEADER_SIZE),
+        getMaxCompressedDataSize(source_size) - HEADER_SIZE,
+        level,
+        &compressed_data_written);
 
     if (compress_error != PcoError::PcoSuccess)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Quantile codec");
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Pcodec codec");
 
     return HEADER_SIZE + compressed_data_written;
 }
 
-void CompressionCodecQuantile::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+void CompressionCodecPcodec::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < HEADER_SIZE)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Quantile-encoded data. File has wrong header {}", source_size);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Pcodec-encoded data. File has wrong header {}", source_size);
 
-    UInt8 src_float_width = source[0], src_level = source[1];
-    PcoError decompress_error;
-
-    switch (src_float_width)
-    {
-        case sizeof(Float32):
-            decompress_error = pco_simple_decompress(PCO_TYPE_F32, reinterpret_cast<const uint8_t *>(source + HEADER_SIZE), source_size - HEADER_SIZE, reinterpret_cast<uint8_t *>(dest), uncompressed_size);
-            break;
-        case sizeof(Float64):
-            decompress_error = pco_simple_decompress(PCO_TYPE_F64, reinterpret_cast<const uint8_t *>(source + HEADER_SIZE), source_size - HEADER_SIZE, reinterpret_cast<uint8_t *>(dest), uncompressed_size);
-            break;
-        default:
-            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Float size for Quantile codec can be 4 or 8, given {}", static_cast<UInt32>(src_float_width));
-    }
+    UInt8 src_pco_type = source[0];
+    PcoError decompress_error = pco_simple_decompress(
+        src_pco_type,
+        reinterpret_cast<const uint8_t *>(source + HEADER_SIZE),
+        source_size - HEADER_SIZE,
+        reinterpret_cast<uint8_t *>(dest),
+        uncompressed_size);
 
     if (decompress_error != PcoError::PcoSuccess)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with Quantile codec {} {}", static_cast<UInt32>(src_float_width), static_cast<UInt32>(src_level));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with Pcodec codec");
 }
 
-UInt32 CompressionCodecQuantile::getMaxCompressedDataSize(UInt32 uncompressed_size) const
+UInt32 CompressionCodecPcodec::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    UInt32 float_count = (uncompressed_size + float_width - 1) / float_width;
-    UInt32 file_size = 0;
-    PcoError err;
+    UInt32 nums_count = (uncompressed_size + column_type_width - 1) / column_type_width;
+    UInt32 data_size = 0;
 
-    switch (float_width)
-    {
-        case sizeof(Float64):
-            err = pco_file_size(PCO_TYPE_F64, float_count, &file_size);
-            break;
-        case sizeof(Float32):
-            err = pco_file_size(PCO_TYPE_F32, float_count, &file_size);
-            break;
-        default:
-            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Float size for Quantile codec can be 4 or 8, given {}", static_cast<UInt32>(float_width));
-    }
+    PcoError err = pco_file_size(pco_type, nums_count, &data_size);
 
     if (err != PcoError::PcoSuccess)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot get max compressed data size");
 
-    return HEADER_SIZE + file_size;
+    return HEADER_SIZE + data_size;
 }
 
 namespace
 {
 
-UInt8 getFloatBytesSize(const IDataType & column_type)
+UInt8 getPcoType(const IDataType & column_type)
 {
-    if (!WhichDataType(column_type).isFloat())
+    switch (WhichDataType(column_type).idx)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quantile codec is not applicable for {} because the data type is not float",
-                        column_type.getName());
+        case TypeIndex::UInt32:
+            return CompressionCodecPcodec::PCO_TYPE_U32;
+        case TypeIndex::UInt64:
+            return CompressionCodecPcodec::PCO_TYPE_U64;
+        case TypeIndex::Int32:
+            return CompressionCodecPcodec::PCO_TYPE_I32;
+        case TypeIndex::Int64:
+            return CompressionCodecPcodec::PCO_TYPE_I64;
+        case TypeIndex::Float32:
+            return CompressionCodecPcodec::PCO_TYPE_F32;
+        case TypeIndex::Float64:
+            return CompressionCodecPcodec::PCO_TYPE_F64;
+        default:
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Pcodec codec is not applicable for {} because the data type must be one of these: Float32, Float64, UInt32, UInt64, "
+                "Int32, Int64",
+                column_type.getName());
     }
+}
 
-    if (auto float_size = column_type.getSizeOfValueInMemory(); float_size == 4 || float_size == 8)
-    {
-        return static_cast<UInt8>(float_size);
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quantile codec is applicable only for floats of size 4 or 8 bytes. Given type {}",
-                    column_type.getName());
+UInt8 getColumnTypeWidth(const IDataType & column_type)
+{
+    if (!WhichDataType(column_type).isFloat() && !WhichDataType(column_type).isInt32() && !WhichDataType(column_type).isInt64()
+        && !WhichDataType(column_type).isUInt32() && !WhichDataType(column_type).isUInt64())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Pcodec codec is not applicable for {} because the data type must be one of these: Float32, Float64, UInt32, UInt64, Int32, "
+            "Int64",
+            column_type.getName());
+
+    auto value_size = column_type.getSizeOfValueInMemory();
+    if (value_size != 4 && value_size != 8)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Pcodec codec is applicable only for floats or integers of size 4 or 8 bytes. Given type {}",
+            column_type.getName());
+
+    return static_cast<UInt8>(value_size);
 }
 
 }
 
-void registerCodecQuantile(CompressionCodecFactory & factory)
+void registerCodecPcodec(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Quantile);
+    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Pcodec);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 float_width = 4;
-        if (column_type != nullptr)
-            float_width = getFloatBytesSize(*column_type);
+        UInt8 pco_type = CompressionCodecPcodec::PCO_TYPE_U32;
+        UInt8 column_type_width = 4;
 
-        UInt8 level = CompressionCodecQuantile::DEFAULT_COMPRESSION_LEVEL;
+        if (column_type != nullptr)
+        {
+            pco_type = getPcoType(*column_type);
+            column_type_width = getColumnTypeWidth(*column_type);
+        }
+
+        UInt8 level = CompressionCodecPcodec::DEFAULT_COMPRESSION_LEVEL;
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 2)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
-                                "Quantile codec must have from 0 to 2 parameters, given {}", arguments->children.size());
+                throw Exception(
+                    ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
+                    "Pcodec codec must have from 0 to 2 parameters, given {}",
+                    arguments->children.size());
 
             const auto * literal = arguments->children.front()->as<ASTLiteral>();
             if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Quantile codec argument must be unsigned integer");
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Pcodec codec argument must be unsigned integer");
 
             level = literal->value.safeGet<UInt8>();
-            if (level < 1 || level > CompressionCodecQuantile::MAX_COMPRESSION_LEVEL)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Quantile codec level must be between {} and {}",
-                                1, static_cast<int>(CompressionCodecQuantile::MAX_COMPRESSION_LEVEL));
+            if (level < 1 || level > CompressionCodecPcodec::MAX_COMPRESSION_LEVEL)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                    "Pcodec codec level must be between {} and {}",
+                    1,
+                    static_cast<int>(CompressionCodecPcodec::MAX_COMPRESSION_LEVEL));
 
             if (arguments->children.size() == 2)
             {
                 literal = arguments->children[1]->as<ASTLiteral>();
                 if (!literal || !isInt64OrUInt64FieldType(literal->value.getType()))
-                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Quantile codec argument must be unsigned integer");
+                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Pcodec codec argument must be unsigned integer");
 
-                size_t user_float_width = literal->value.safeGet<UInt64>();
-                if (user_float_width != 4 && user_float_width != 8)
-                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Float size for Quantile codec can be 4 or 8, given {}", user_float_width);
-                float_width = static_cast<UInt8>(user_float_width);
+                size_t user_column_type_width = literal->value.safeGet<UInt64>();
+                if (user_column_type_width != 4 && user_column_type_width != 8)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                        "Column type width for Pcodec codec can be 4 or 8, given {}",
+                        user_column_type_width);
+
+                column_type_width = static_cast<UInt8>(user_column_type_width);
             }
         }
 
-        return std::make_shared<CompressionCodecQuantile>(float_width, level);
+        return std::make_shared<CompressionCodecPcodec>(column_type_width, level, pco_type);
     };
-    factory.registerCompressionCodecWithType("Quantile", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("Pcodec", method_code, codec_builder);
 }
 
 }
 
 #endif
 #endif
-

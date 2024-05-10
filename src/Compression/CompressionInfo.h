@@ -49,7 +49,7 @@ enum class CompressionMethodByte : uint8_t
     DeflateQpl      = 0x99,
     GCD             = 0x9a,
     ZSTD_QPL        = 0x9b,
-    Quantile        = 0x9c,
+    Pcodec          = 0x9c,
 };
 
 }

@@ -1,5 +1,5 @@
 --Tags: no-fasttest
--- no-fasttest because Quantile isn't available in fasttest
+-- no-fasttest because Pcodec isn't available in fasttest
 
 DROP TABLE IF EXISTS codecTest;
 
@@ -11,8 +11,8 @@ CREATE TABLE codecTest (
     name     String,
     ref_valueF64 Float64,
     ref_valueF32 Float32,
-    valueF64 Float64  CODEC(Quantile),
-    valueF32 Float32  CODEC(Quantile)
+    valueF64 Float64  CODEC(Pcodec),
+    valueF32 Float32  CODEC(Pcodec)
 ) Engine = MergeTree ORDER BY key;
 
 -- best case - same value
@@ -71,8 +71,8 @@ CREATE TABLE codecTest (
     name     String,
     ref_valueF64 Float64,
     ref_valueF32 Float32,
-    valueF64 Float64  CODEC(Quantile(6)),
-    valueF32 Float32  CODEC(Quantile(6))
+    valueF64 Float64  CODEC(Pcodec(6)),
+    valueF32 Float32  CODEC(Pcodec(6))
 ) Engine = MergeTree ORDER BY key;
 
 -- best case - same value
@@ -122,6 +122,128 @@ WHERE
 	dF32 != 0
 AND
 	c2.key = c1.key - 1
+LIMIT 10;
+
+DROP TABLE IF EXISTS codecTest;
+
+CREATE TABLE codecTest (
+    key      UInt64,
+    name     String,
+    ref_valueU64 UInt64,
+	valueU64 UInt64  CODEC(Pcodec),
+    ref_valueU32 UInt32,
+	valueU32 UInt32  CODEC(Pcodec),
+	ref_valueI64 Int64,
+	valueI64 Int64   CODEC(Pcodec),
+	ref_valueI32 Int32,
+	valueI32 Int32   CODEC(Pcodec),
+) Engine = MergeTree ORDER BY key;
+
+INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
+    SELECT number as n, n * n * n as v, v, v, v, v, v, v, v
+    FROM system.numbers LIMIT 101, 1000;
+
+INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
+    SELECT number as n, n + (rand64() - 9223372036854775807)/1000 as v, v, v, v, v, v, v, v
+    FROM system.numbers LIMIT 3001, 1000;
+
+SELECT 'U64';
+SELECT
+    key,
+    ref_valueU64, valueU64, ref_valueU64 - valueU64 as dU64
+FROM codecTest
+WHERE
+    dU64 != 0
+LIMIT 10;
+
+
+SELECT 'U32';
+SELECT
+    key,
+    ref_valueU32, valueU32, ref_valueU32 - valueU32 as dU32
+FROM codecTest
+WHERE
+    dU32 != 0
+LIMIT 10;
+
+SELECT 'I64';
+SELECT
+    key,
+    ref_valueI64, valueI64, ref_valueI64 - valueI64 as dI64
+FROM codecTest
+WHERE
+    dI64 != 0
+LIMIT 10;
+
+
+SELECT 'I32';
+SELECT
+    key,
+    ref_valueI32, valueI32, ref_valueI32 - valueI32 as dI32
+FROM codecTest
+WHERE
+    dI32 != 0
+LIMIT 10;
+
+DROP TABLE IF EXISTS codecTest;
+
+CREATE TABLE codecTest (
+    key      UInt64,
+    name     String,
+    ref_valueU64 UInt64,
+	valueU64 UInt64  CODEC(Pcodec(11)),
+    ref_valueU32 UInt32,
+	valueU32 UInt32  CODEC(Pcodec(10)),
+	ref_valueI64 Int64,
+	valueI64 Int64   CODEC(Pcodec(2)),
+	ref_valueI32 Int32,
+	valueI32 Int32   CODEC(Pcodec(4)),
+) Engine = MergeTree ORDER BY key;
+
+INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
+    SELECT number as n, n * n * n as v, v, v, v, v, v, v, v
+    FROM system.numbers LIMIT 101, 1000;
+
+INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
+    SELECT number as n, n + (rand64() - 9223372036854775807)/1000 as v, v, v, v, v, v, v, v
+    FROM system.numbers LIMIT 3001, 1000;
+
+SELECT 'U64';
+SELECT
+    key,
+    ref_valueU64, valueU64, ref_valueU64 - valueU64 as dU64
+FROM codecTest
+WHERE
+    dU64 != 0
+LIMIT 10;
+
+
+SELECT 'U32';
+SELECT
+    key,
+    ref_valueU32, valueU32, ref_valueU32 - valueU32 as dU32
+FROM codecTest
+WHERE
+    dU32 != 0
+LIMIT 10;
+
+SELECT 'I64';
+SELECT
+    key,
+    ref_valueI64, valueI64, ref_valueI64 - valueI64 as dI64
+FROM codecTest
+WHERE
+    dI64 != 0
+LIMIT 10;
+
+
+SELECT 'I32';
+SELECT
+    key,
+    ref_valueI32, valueI32, ref_valueI32 - valueI32 as dI32
+FROM codecTest
+WHERE
+    dI32 != 0
 LIMIT 10;
 
 DROP TABLE IF EXISTS codecTest;

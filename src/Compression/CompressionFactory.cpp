@@ -195,7 +195,7 @@ void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
 #ifdef USE_PCO
 #if USE_PCO
-void registerCodecQuantile(CompressionCodecFactory & factory);
+void registerCodecPcodec(CompressionCodecFactory & factory);
 #endif
 #endif
 #endif
@@ -223,7 +223,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGCD(*this);
 #ifdef USE_PCO
 #if USE_PCO
-    registerCodecQuantile(*this);
+    registerCodecPcodec(*this);
 #endif
 #endif
 #endif

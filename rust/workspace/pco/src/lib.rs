@@ -2,6 +2,8 @@ use pco::data_types::{CoreDataType, NumberLike};
 
 use crate::PcoError::{PcoSuccess, PcoCompressionError, PcoInvalidType};
 
+use pco::DEFAULT_MAX_PAGE_N;
+
 #[repr(C)]
 pub enum PcoError {
   PcoSuccess,
@@ -141,7 +143,7 @@ fn _file_size<T: NumberLike>(
   len: u32,
   file_size: *mut u32
 ) -> PcoError {
-  match pco::standalone::guarantee::file_size::<T::L>(len as usize, &pco::PagingSpec::EqualPagesUpTo(len as usize)) {
+  match pco::standalone::guarantee::file_size::<T::L>(len as usize, &pco::PagingSpec::EqualPagesUpTo(DEFAULT_MAX_PAGE_N)) {
     Err(_) => PcoError::PcoInvalidArgument,
     Ok(v) => {
       unsafe { *file_size = v as u32 };
