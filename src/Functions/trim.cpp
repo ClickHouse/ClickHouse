@@ -59,7 +59,7 @@ public:
         {
             execute(reinterpret_cast<const UInt8 *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
 
-            res_data.resize_exact(res_data.size() + length + 1);
+            res_data.resize(res_data.size() + length + 1);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
             res_offset += length + 1;
             res_data[res_offset - 1] = '\0';

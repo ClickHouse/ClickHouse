@@ -240,34 +240,35 @@ namespace
             const auto & chars = strings.getElements();
             bool all_ascii = UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
                 && UTF8::isAllASCII(chars.data(), chars.size());
+            bool is_actually_utf8 = is_utf8 && !all_ascii;
 
-            if (!is_utf8 || all_ascii)
+            if (!is_actually_utf8)
             {
                 PaddingChars<false> padding_chars{pad_string};
                 if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
-                    executeForSourceAndLength<true>(
+                    executeForSourceAndLength<false>(
                         std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
                 else
-                    executeForSourceAndLength<true>(
+                    executeForSourceAndLength<false>(
                         std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
             }
             else
             {
                 PaddingChars<true> padding_chars{pad_string};
                 if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
-                    executeForSourceAndLength<false>(
+                    executeForSourceAndLength<true>(
                         std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
                 else
-                    executeForSourceAndLength<false>(
+                    executeForSourceAndLength<true>(
                         std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
             }
         }
 
-        template <bool all_ascii, typename SourceStrings, typename SourceLengths>
+        template <bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
         void executeForSourceAndLength(
             SourceStrings && strings,
             SourceLengths && lengths,
-            const PaddingChars<!all_ascii> & padding_chars,
+            const PaddingChars<is_actually_utf8> & padding_chars,
             StringSink & res_sink) const
         {
             bool is_const_new_length = lengths.isConst();
@@ -279,7 +280,7 @@ namespace
             for (; !res_sink.isEnd(); res_sink.next(), strings.next(), lengths.next())
             {
                 auto str = strings.getWhole();
-                ssize_t current_length = getLengthOfSlice<!all_ascii>(str);
+                ssize_t current_length = getLengthOfSlice<is_actually_utf8>(str);
 
                 if (!res_sink.rowNum() || !is_const_new_length)
                 {
@@ -309,7 +310,7 @@ namespace
                 }
                 else if (new_length < current_length)
                 {
-                    str = removeSuffixFromSlice<!all_ascii>(str, current_length - new_length);
+                    str = removeSuffixFromSlice<is_actually_utf8>(str, current_length - new_length);
                     writeSlice(str, res_sink);
                 }
                 else if (new_length > current_length)

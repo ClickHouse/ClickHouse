@@ -224,15 +224,13 @@ DECLARE_SSE42_SPECIFIC_CODE(
 /// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-    size_t i = 0;
     __m128i masks = _mm_setzero_si128();
-    if (size >= 16)
+
+    size_t i = 0;
+    for (; i + 16 <= size; i += 16)
     {
-        for (; i <= size - 16; i += 16)
-        {
-            __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i));
-            masks = _mm_or_si128(masks, bytes);
-        }
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i));
+        masks = _mm_or_si128(masks, bytes);
     }
     int mask = _mm_movemask_epi8(masks);
 
@@ -247,15 +245,13 @@ bool isAllASCII(const UInt8 * data, size_t size)
 DECLARE_AVX2_SPECIFIC_CODE(
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-    size_t i = 0;
     __m256i masks = _mm256_setzero_si256();
-    if (size >= 32)
+
+    size_t i = 0;
+    for (; i + 32 <= size; i += 32)
     {
-        for (; i <= size - 32; i += 32)
-        {
-            __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
-            masks = _mm256_or_si256(masks, bytes);
-        }
+        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
+        masks = _mm256_or_si256(masks, bytes);
     }
     int mask = _mm256_movemask_epi8(masks);
 
