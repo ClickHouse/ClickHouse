@@ -404,7 +404,7 @@ private:
         {
             if (!col.type->isNullable())
                 return;
-            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(*col.column);
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(col.column.get());
             if (!nullable_col)
                 nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
             if (!nullable_col)
@@ -421,8 +421,8 @@ private:
             const auto * col = arguments[0].column.get();
             if (arguments[0].type->isNullable())
             {
-                const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
-                col = nullable->getNestedColumnPtr().get();
+                const auto & nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
+                col = nullable.getNestedColumnPtr().get();
             }
 
             if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))

@@ -2,7 +2,7 @@
 slug: /en/engines/table-engines/mergetree-family/invertedindexes
 sidebar_label:  Full-text Indexes
 description: Quickly find search terms in text.
-keywords: [full-text search, text search, inverted, index, indices]
+keywords: [full-text search, text search, index, indices]
 ---
 
 # Full-text Search using Full-text Indexes [experimental]
@@ -52,6 +52,10 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key
 ```
+
+:::note
+In earlier versions of ClickHouse, the corresponding index type name was `inverted`.
+:::
 
 where `N` specifies the tokenizer:
 
