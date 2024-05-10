@@ -1,4 +1,6 @@
+#include <optional>
 #include <Storages/StorageAzureBlob.h>
+#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Formats/FormatFactory.h>
@@ -95,43 +97,62 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "storage_account_url",
 };
 
-bool isConnectionString(const std::string & candidate)
-{
-    return !candidate.starts_with("http");
 }
 
-}
-
-void StorageAzureBlob::processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection)
+void StorageAzureBlob::processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection, const ContextPtr & local_context)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
+    String connection_url;
+    String container_name;
+    std::optional<String> account_name;
+    std::optional<String> account_key;
+
     if (collection.has("connection_string"))
-    {
-        configuration.connection_url = collection.get<String>("connection_string");
-        configuration.is_connection_string = true;
-    }
+        connection_url = collection.get<String>("connection_string");
+    else if (collection.has("storage_account_url"))
+        connection_url = collection.get<String>("storage_account_url");
 
-    if (collection.has("storage_account_url"))
-    {
-        configuration.connection_url = collection.get<String>("storage_account_url");
-        configuration.is_connection_string = false;
-    }
-
-    configuration.container = collection.get<String>("container");
+    container_name = collection.get<String>("container");
     configuration.blob_path = collection.get<String>("blob_path");
 
     if (collection.has("account_name"))
-        configuration.account_name = collection.get<String>("account_name");
+        account_name = collection.get<String>("account_name");
 
     if (collection.has("account_key"))
-        configuration.account_key = collection.get<String>("account_key");
+        account_key = collection.get<String>("account_key");
 
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
     configuration.format = collection.getOrDefault<String>("format", configuration.format);
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    configuration.connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, local_context);
 }
 
+AzureBlobStorage::ConnectionParams StorageAzureBlob::getConnectionParams(
+    const String & connection_url,
+    const String & container_name,
+    const std::optional<String> & account_name,
+    const std::optional<String> & account_key,
+    const ContextPtr & local_context)
+{
+    AzureBlobStorage::ConnectionParams connection_params;
+    auto request_settings = AzureBlobStorage::getRequestSettings(local_context->getSettingsRef());
+
+    if (account_name && account_key)
+    {
+        connection_params.endpoint.storage_account_url = connection_url;
+        connection_params.endpoint.container_name = container_name;
+        connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*account_name, *account_key);
+        connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
+    }
+    else
+    {
+        AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
+        connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
+    }
+
+    return connection_params;
+}
 
 StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine_args, const ContextPtr & local_context)
 {
@@ -144,8 +165,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
-        processNamedCollectionResult(configuration, *named_collection);
-
+        processNamedCollectionResult(configuration, *named_collection, local_context);
         configuration.blobs_paths = {configuration.blob_path};
 
         if (configuration.format == "auto")
@@ -164,11 +184,12 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
 
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
-    configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
-    configuration.is_connection_string = isConnectionString(configuration.connection_url);
+    String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+    String container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
+    configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blob_path");
 
-    configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
-    configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
+    std::optional<String> account_name;
+    std::optional<String> account_key;
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
@@ -198,8 +219,8 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
         }
         else
         {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
         }
     }
     else if (engine_args.size() == 6)
@@ -211,12 +232,13 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
         }
         else
         {
-            configuration.account_name = fourth_arg;
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
 
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
             if (!is_format_arg(sixth_arg))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+
             configuration.format = sixth_arg;
         }
     }
@@ -229,34 +251,25 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
         }
         else
         {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
             if (!is_format_arg(sixth_arg))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+
             configuration.format = sixth_arg;
             configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
         }
     }
 
     configuration.blobs_paths = {configuration.blob_path};
+    configuration.connection_params = getConnectionParams(connection_url, container, account_name, account_key, local_context);
 
     if (configuration.format == "auto")
         configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
 
     return configuration;
-}
-
-
-AzureObjectStorage::SettingsPtr StorageAzureBlob::createSettings(const ContextPtr & local_context)
-{
-    const auto & context_settings = local_context->getSettingsRef();
-    auto settings_ptr = std::make_unique<AzureObjectStorageSettings>();
-    settings_ptr->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
-    settings_ptr->max_single_read_retries = context_settings.azure_max_single_read_retries;
-    settings_ptr->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
-
-    return settings_ptr;
 }
 
 void registerStorageAzureBlob(StorageFactory & factory)
@@ -268,7 +281,8 @@ void registerStorageAzureBlob(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
         auto configuration = StorageAzureBlob::getConfiguration(engine_args, args.getLocalContext());
-        auto client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
+        auto client = AzureBlobStorage::getContainerClient(configuration.connection_params, /*readonly=*/ false);
+
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.
@@ -299,11 +313,11 @@ void registerStorageAzureBlob(StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        auto settings = StorageAzureBlob::createSettings(args.getContext());
+        auto azure_settings = AzureBlobStorage::getRequestSettings(args.getContext()->getSettingsRef());
 
         return std::make_shared<StorageAzureBlob>(
-            std::move(configuration),
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings),configuration.container),
+            configuration,
+            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(azure_settings), configuration.connection_params.getContainer()),
             args.getContext(),
             args.table_id,
             args.columns,
@@ -320,177 +334,6 @@ void registerStorageAzureBlob(StorageFactory & factory)
         .source_access_type = AccessType::AZURE,
     });
 }
-
-static bool containerExists(std::unique_ptr<BlobServiceClient> &blob_service_client, std::string container_name)
-{
-    Azure::Storage::Blobs::ListBlobContainersOptions options;
-    options.Prefix = container_name;
-    options.PageSizeHint = 1;
-
-    auto containers_list_response = blob_service_client->ListBlobContainers(options);
-    auto containers_list = containers_list_response.BlobContainers;
-
-    for (const auto & container : containers_list)
-    {
-        if (container_name == container.Name)
-            return true;
-    }
-    return false;
-}
-
-AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container)
-{
-    AzureClientPtr result;
-
-    if (configuration.is_connection_string)
-    {
-        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-        std::unique_ptr<BlobServiceClient> blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(configuration.connection_url));
-        result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
-
-        if (attempt_to_create_container)
-        {
-            bool container_exists = containerExists(blob_service_client,configuration.container);
-            if (!container_exists)
-            {
-                if (is_read_only)
-                    throw Exception(
-                        ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "AzureBlobStorage container does not exist '{}'",
-                        configuration.container);
-
-                try
-                {
-                    result->CreateIfNotExists();
-                }
-                catch (const Azure::Storage::StorageException & e)
-                {
-                    if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                        && e.ReasonPhrase == "The specified container already exists."))
-                    {
-                        throw;
-                    }
-                }
-            }
-        }
-    }
-    else
-    {
-        std::shared_ptr<Azure::Storage::StorageSharedKeyCredential> storage_shared_key_credential;
-        if (configuration.account_name.has_value() && configuration.account_key.has_value())
-        {
-            storage_shared_key_credential
-                = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*configuration.account_name, *configuration.account_key);
-        }
-
-        std::unique_ptr<BlobServiceClient> blob_service_client;
-        size_t pos = configuration.connection_url.find('?');
-        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential;
-        if (storage_shared_key_credential)
-        {
-            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
-        }
-        else
-        {
-            /// If conneciton_url does not have '?', then its not SAS
-            if (pos == std::string::npos)
-            {
-                auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, workload_identity_credential);
-            }
-            else
-            {
-                managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
-            }
-        }
-
-        std::string final_url;
-        if (pos != std::string::npos)
-        {
-            auto url_without_sas = configuration.connection_url.substr(0, pos);
-            final_url = url_without_sas + (url_without_sas.back() == '/' ? "" : "/") + configuration.container
-                + configuration.connection_url.substr(pos);
-        }
-        else
-            final_url
-                = configuration.connection_url + (configuration.connection_url.back() == '/' ? "" : "/") + configuration.container;
-
-        if (!attempt_to_create_container)
-        {
-            if (storage_shared_key_credential)
-                return std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
-            else
-                return std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
-        }
-
-        bool container_exists = containerExists(blob_service_client,configuration.container);
-        if (container_exists)
-        {
-            if (storage_shared_key_credential)
-                result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
-            else
-            {
-                /// If conneciton_url does not have '?', then its not SAS
-                if (pos == std::string::npos)
-                {
-                    auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-                    result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
-                }
-                else
-                    result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
-            }
-        }
-        else
-        {
-            if (is_read_only)
-                throw Exception(
-                    ErrorCodes::DATABASE_ACCESS_DENIED,
-                    "AzureBlobStorage container does not exist '{}'",
-                    configuration.container);
-            try
-            {
-                result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            }
-            catch (const Azure::Storage::StorageException & e)
-            {
-                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                      && e.ReasonPhrase == "The specified container already exists.")
-                {
-                    if (storage_shared_key_credential)
-                        result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
-                    else
-                    {
-                        /// If conneciton_url does not have '?', then its not SAS
-                        if (pos == std::string::npos)
-                        {
-                            auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-                            result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
-                        }
-                        else
-                            result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
-                    }
-                }
-                else
-                {
-                    throw;
-                }
-            }
-        }
-    }
-
-    return result;
-}
-
-Poco::URI StorageAzureBlob::Configuration::getConnectionURL() const
-{
-    if (!is_connection_string)
-        return Poco::URI(connection_url);
-
-    auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(connection_url);
-    return Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
-}
-
 
 StorageAzureBlob::StorageAzureBlob(
     const Configuration & configuration_,
@@ -513,7 +356,8 @@ StorageAzureBlob::StorageAzureBlob(
 {
     if (configuration.format != "auto")
         FormatFactory::instance().checkFormatName(configuration.format);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration.getConnectionURL());
+
+    context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(configuration.connection_params.getConnectionURL()));
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
@@ -850,13 +694,13 @@ void ReadFromAzureBlob::createIterator(const ActionsDAG::Node * predicate)
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-            storage->object_storage.get(), configuration.container, configuration.blob_path,
+            storage->object_storage.get(), configuration.connection_params.getContainer(), configuration.blob_path,
             predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
-            storage->object_storage.get(), configuration.container, configuration.blobs_paths,
+            storage->object_storage.get(), configuration.connection_params.getContainer(), configuration.blobs_paths,
             predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
 }
@@ -879,8 +723,8 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
             max_block_size,
             configuration.compression_method,
             storage->object_storage.get(),
-            configuration.container,
-            configuration.connection_url,
+            configuration.connection_params.getContainer(),
+            configuration.connection_params.endpoint.storage_account_url,
             iterator_wrapper,
             need_only_count));
     }
@@ -1455,7 +1299,8 @@ namespace
             if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure)
                 return;
 
-            String source = fs::path(configuration.connection_url) / configuration.container / current_path_with_metadata.relative_path;
+            const auto & params = configuration.connection_params;
+            String source = fs::path(params.getConnectionURL()) / params.getContainer() / current_path_with_metadata.relative_path;
             auto key = getKeyForSchemaCache(source, *format, format_settings, getContext());
             StorageAzureBlob::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
@@ -1466,7 +1311,8 @@ namespace
                 || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
                 return;
 
-            String source = fs::path(configuration.connection_url) / configuration.container / current_path_with_metadata.relative_path;
+            const auto & params = configuration.connection_params;
+            String source = fs::path(params.getConnectionURL()) / params.getContainer() / current_path_with_metadata.relative_path;
             auto key = getKeyForSchemaCache(source, *format, format_settings, getContext());
             StorageAzureBlob::getSchemaCache(getContext()).addColumns(key, columns);
         }
@@ -1477,7 +1323,9 @@ namespace
                 || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
                 return;
 
-            auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
+            const auto & params = configuration.connection_params;
+            auto host_and_bucket = params.getConnectionURL() + '/' + params.getContainer();
+
             Strings sources;
             sources.reserve(read_keys.size());
             std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
@@ -1520,8 +1368,10 @@ namespace
                     return std::nullopt;
                 };
 
-                auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
+                const auto & params = configuration.connection_params;
+                auto host_and_bucket = params.getConnectionURL() + '/' + params.getContainer();
                 String source = host_and_bucket + '/' + it->relative_path;
+
                 if (format)
                 {
                     auto cache_key = getKeyForSchemaCache(source, *format, format_settings, context);
@@ -1573,12 +1423,12 @@ std::pair<ColumnsDescription, String> StorageAzureBlob::getTableStructureAndForm
     if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-            object_storage, configuration.container, configuration.blob_path, nullptr, NamesAndTypesList{}, ctx, &read_keys);
+            object_storage, configuration.connection_params.getContainer(), configuration.blob_path, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
     else
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::KeysIterator>(
-            object_storage, configuration.container, configuration.blobs_paths, nullptr, NamesAndTypesList{}, ctx, &read_keys);
+            object_storage, configuration.connection_params.getContainer(), configuration.blobs_paths, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
 
     ReadBufferIterator read_buffer_iterator(file_iterator, object_storage, format, configuration, format_settings, read_keys, ctx);

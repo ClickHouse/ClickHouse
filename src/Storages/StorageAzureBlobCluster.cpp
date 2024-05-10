@@ -1,4 +1,5 @@
 #include "Storages/StorageAzureBlobCluster.h"
+#include <Poco/URI.h>
 
 #include "config.h"
 
@@ -41,7 +42,7 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
     , configuration{configuration_}
     , object_storage(std::move(object_storage_))
 {
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.getConnectionURL());
+    context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(configuration_.connection_params.getConnectionURL()));
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
@@ -79,7 +80,7 @@ void StorageAzureBlobCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, cons
 RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-        object_storage.get(), configuration.container, configuration.blob_path,
+        object_storage.get(), configuration.connection_params.getContainer(), configuration.blob_path,
         predicate, getVirtualsList(), context, nullptr);
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next().relative_path; });

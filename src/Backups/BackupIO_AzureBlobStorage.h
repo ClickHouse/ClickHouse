@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -16,7 +17,7 @@ namespace DB
 class BackupReaderAzureBlobStorage : public BackupReaderDefault
 {
 public:
-    BackupReaderAzureBlobStorage(StorageAzureBlob::Configuration configuration_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
+    BackupReaderAzureBlobStorage(const AzureBlobStorage::ConnectionParams & connection_params_, const String & blob_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
     ~BackupReaderAzureBlobStorage() override;
 
     bool fileExists(const String & file_name) override;
@@ -29,15 +30,16 @@ public:
 private:
     const DataSourceDescription data_source_description;
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureBlob::Configuration configuration;
+    AzureBlobStorage::ConnectionParams connection_params;
+    String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<const AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
 };
 
 class BackupWriterAzureBlobStorage : public BackupWriterDefault
 {
 public:
-    BackupWriterAzureBlobStorage(StorageAzureBlob::Configuration configuration_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_, bool attempt_to_create_container);
+    BackupWriterAzureBlobStorage(const AzureBlobStorage::ConnectionParams & connection_params_, const String & blob_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_, bool attempt_to_create_container);
     ~BackupWriterAzureBlobStorage() override;
 
     bool fileExists(const String & file_name) override;
@@ -58,9 +60,10 @@ private:
     void removeFilesBatch(const Strings & file_names);
     const DataSourceDescription data_source_description;
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
-    StorageAzureBlob::Configuration configuration;
+    AzureBlobStorage::ConnectionParams connection_params;
+    String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<const AzureObjectStorageSettings> settings;
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
 };
 
 }

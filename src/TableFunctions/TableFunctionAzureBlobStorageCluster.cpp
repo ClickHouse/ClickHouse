@@ -1,3 +1,4 @@
+#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -31,30 +32,30 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
         columns = structure_hint;
     }
 
-    auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
-    auto settings = StorageAzureBlob::createSettings(context);
+    auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
+    auto client = AzureBlobStorage::getContainerClient(configuration.connection_params, !is_insert_query);
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageAzureBlob>(
             configuration,
-            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
+            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.connection_params.getContainer()),
             context,
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            /* comment */String{},
-            /* format_settings */std::nullopt, /// No format_settings
-            /* distributed_processing */ true,
-            /*partition_by_=*/nullptr);
+            /*comment=*/ String{},
+            /*format_settings=*/ std::nullopt, /// No format_settings
+            /*distributed_processing=*/ true,
+            /*partition_by=*/ nullptr);
     }
     else
     {
         storage = std::make_shared<StorageAzureBlobCluster>(
             cluster_name,
             configuration,
-            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
+            std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.connection_params.getContainer()),
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},

@@ -9,7 +9,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
@@ -105,7 +105,7 @@ private:
 
 AzureObjectStorage::AzureObjectStorage(
     const String & name_,
-    AzureClientPtr && client_,
+    ClientPtr && client_,
     SettingsPtr && settings_,
     const String & object_namespace_)
     : name(name_)
@@ -397,20 +397,37 @@ void AzureObjectStorage::copyObject( /// NOLINT
 
 void AzureObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
-    auto new_settings = getAzureBlobStorageSettings(config, config_prefix, context);
+    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+    bool is_client_for_disk = client.get()->GetClickhouseOptions().IsClientForDisk;
+
+    AzureBlobStorage::ConnectionParams params
+    {
+        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+        .client_options = AzureBlobStorage::getClientOptions(*new_settings, is_client_for_disk),
+    };
+
+    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
+
     settings.set(std::move(new_settings));
-    /// We don't update client
+    client.set(std::move(new_client));
 }
 
 
 std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
-    return std::make_unique<AzureObjectStorage>(
-        name,
-        getAzureBlobContainerClient(config, config_prefix),
-        getAzureBlobStorageSettings(config, config_prefix, context),
-        object_namespace
-    );
+    auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+    bool is_client_for_disk = client.get()->GetClickhouseOptions().IsClientForDisk;
+
+    AzureBlobStorage::ConnectionParams params
+    {
+        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+        .client_options = AzureBlobStorage::getClientOptions(*new_settings, is_client_for_disk),
+    };
+
+    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
+    return std::make_unique<AzureObjectStorage>(name, std::move(new_client), std::move(new_settings), object_namespace);
 }
 
 }

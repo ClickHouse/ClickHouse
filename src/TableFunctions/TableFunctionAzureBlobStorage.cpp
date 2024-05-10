@@ -35,16 +35,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-bool isConnectionString(const std::string & candidate)
-{
-    return !candidate.starts_with("http");
-}
-
-}
-
 void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const ContextPtr & local_context)
 {
     /// Supported signatures:
@@ -54,7 +44,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
-        StorageAzureBlob::processNamedCollectionResult(configuration, *named_collection);
+        StorageAzureBlob::processNamedCollectionResult(configuration, *named_collection, local_context);
 
         configuration.blobs_paths = {configuration.blob_path};
 
@@ -74,14 +64,14 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
 
         std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
-        configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
-        configuration.is_connection_string = isConnectionString(configuration.connection_url);
-
-        configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
+        String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        String container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
         configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
-        auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
+        std::optional<String> account_name;
+        std::optional<String> account_key;
+
+        auto is_format_arg = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
 
         if (engine_args.size() == 4)
         {
@@ -105,8 +95,8 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
             }
             else
             {
-                configuration.account_name = fourth_arg;
-                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+                account_name = fourth_arg;
+                account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
             }
         }
         else if (engine_args.size() == 6)
@@ -120,8 +110,9 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
             }
             else
             {
-                configuration.account_name = fourth_arg;
-                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+                account_name = fourth_arg;
+                account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+
                 auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name/structure");
                 if (is_format_arg(sixth_arg))
                     configuration.format = sixth_arg;
@@ -132,28 +123,33 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         else if (engine_args.size() == 7)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
             if (!is_format_arg(sixth_arg))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+
             configuration.format = sixth_arg;
             configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
         }
         else if (engine_args.size() == 8)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
             if (!is_format_arg(sixth_arg))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+
             configuration.format = sixth_arg;
             configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
             configuration.structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
         }
 
         configuration.blobs_paths = {configuration.blob_path};
+        configuration.connection_params = StorageAzureBlob::getConnectionParams(connection_url, container, account_name, account_key, local_context);
 
         if (configuration.format == "auto")
             configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
@@ -330,12 +326,19 @@ ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(Contex
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
-        auto settings = StorageAzureBlob::createSettings(context);
 
-        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings), configuration.container);
+        auto client = AzureBlobStorage::getContainerClient(configuration.connection_params, !is_insert_query);
+        auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
+
+        auto object_storage = std::make_unique<AzureObjectStorage>(
+            "AzureBlobStorageTableFunction",
+            std::move(client),
+            std::move(settings),
+            configuration.connection_params.getContainer());
+
         if (configuration.format == "auto")
             return StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, std::nullopt, context).first;
+
         return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
     }
 
@@ -354,8 +357,8 @@ std::unordered_set<String> TableFunctionAzureBlobStorage::getVirtualsToCheckBefo
 
 StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
-    auto settings = StorageAzureBlob::createSettings(context);
+    auto client = AzureBlobStorage::getContainerClient(configuration.connection_params, !is_insert_query);
+    auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -365,7 +368,7 @@ StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_funct
 
     StoragePtr storage = std::make_shared<StorageAzureBlob>(
         configuration,
-        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
+        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.connection_params.getContainer()),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

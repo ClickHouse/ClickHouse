@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
+#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -37,21 +39,13 @@ public:
 
         bool withWildcard() const
         {
-            static const String PARTITION_ID_WILDCARD = "{_partition_id}";
+            static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
 
-        Poco::URI getConnectionURL() const;
-
-        std::string connection_url;
-        bool is_connection_string;
-
-        std::optional<std::string> account_name;
-        std::optional<std::string> account_key;
-
-        std::string container;
         std::string blob_path;
         std::vector<String> blobs_paths;
+        AzureBlobStorage::ConnectionParams connection_params;
     };
 
     StorageAzureBlob(
@@ -67,16 +61,10 @@ public:
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container = true);
+    static AzureBlobStorage::ConnectionParams getConnectionParams(const String & connection_url, const String & container_name, const std::optional<String> & account_name, const std::optional<String> & account_key, const ContextPtr & local_context);
+    static void processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection, const ContextPtr & local_context);
 
-    static AzureObjectStorage::SettingsPtr createSettings(const ContextPtr & local_context);
-
-    static void processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection);
-
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     void read(
         QueryPlan & query_plan,

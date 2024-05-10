@@ -26,7 +26,7 @@ struct WriteBufferFromAzureBlobStorage::PartData
     std::string block_id;
 };
 
-BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureObjectStorageSettings & settings)
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
@@ -44,7 +44,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     const String & blob_path_,
     size_t buf_size_,
     const WriteSettings & write_settings_,
-    std::shared_ptr<const AzureObjectStorageSettings> settings_,
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
