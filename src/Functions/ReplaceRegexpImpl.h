@@ -36,7 +36,8 @@ static constexpr ReplaceStringTraits::Replace convertToReplaceStringTraits(Repla
         case ReplaceRegexpTraits::Replace::All:
             return ReplaceStringTraits::Replace::All;
     }
-    UNREACHABLE();
+
+    std::unreachable();
 }
 
 /** Replace all matches of regexp 'needle' to string 'replacement'.
