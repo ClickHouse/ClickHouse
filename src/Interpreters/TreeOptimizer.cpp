@@ -371,9 +371,10 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
 namespace
 {
     /// Находит вызовы функции L2Distance(...) в дереве запроса.
-    class FindL2DistanceVisitor : public ASTVisitor
+    struct FindL2DistanceVisitor : public ASTVisitor
     {
     public:
+        bool visit(ASTPtr & ast, const Data & data) override;
         bool visit(ASTPtr & ast, const Data & data) override
         {
             if (const auto * func = ast->as<ASTFunction>())
@@ -386,16 +387,18 @@ namespace
             return true;
         }
 
-        ASTs l2_distance_calls;
+        const ASTs l2_distance_calls;
     };
 
     /// Заменяет вызовы функции L2Distance(...) на sqrt(L2SquaredDistance(...))
-    class ReplaceL2DistanceVisitor : public ASTVisitor
+    struct ReplaceL2DistanceVisitor : public ASTVisitor
     {
     public:
+        explicit ReplaceL2DistanceVisitor(const ASTs & l2_distance_calls);
         explicit ReplaceL2DistanceVisitor(const ASTs & l2_distance_calls)
             : l2_distance_calls(l2_distance_calls) {}
 
+        bool visit(ASTPtr & ast, const Data & data) override;
         bool visit(ASTPtr & ast, const Data & data) override
         {
             if (auto * func = ast->as<ASTFunction>())
