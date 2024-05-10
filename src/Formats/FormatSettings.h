@@ -32,6 +32,7 @@ struct FormatSettings
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
+    bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -282,6 +283,7 @@ struct FormatSettings
         SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
+        bool preserve_border_for_multiline_string = true;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
 
         enum class Charset
