@@ -207,7 +207,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
-        String field;
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
