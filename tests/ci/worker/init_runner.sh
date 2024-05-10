@@ -300,20 +300,44 @@ list_children () {
     echo "$children"
 }
 
-# https://github.com/actions/runner/issues/3266
-# We're unable to know if the runner is failed to start.
 # There's possibility that it fails because the runner's version is outdated,
 # so after the first failure we'll try to launch it with enabled autoupdate.
 #
 # We'll fail and terminate after 10 consequent failures.
 ATTEMPT=0
+# In `kill` 0 means "all processes in process group", -1 is "all but PID 1"
+# We use `-2` to get an error
+RUNNER_PID=-2
 
 while true; do
-    runner_pid=$(pgrep Runner.Listener)
-    echo "Got runner pid '$runner_pid'"
+    # Does not send signal, but checks that the process $RUNNER_PID is running
+    if kill -0 -- $RUNNER_PID; then
+        ATTEMPT=0
+        echo "Runner is working with pid $RUNNER_PID, checking the metadata in background"
+        check_proceed_spot_termination
 
-    if [ -z "$runner_pid" ]; then
-        echo Attempt $((++ATTEMPT)) to start the runner
+        if ! is_job_assigned; then
+            RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$RUNNER_PID" 2>/dev/null || date +%s) ))
+            echo "The runner is launched $RUNNER_AGE seconds ago and still has hot received the job"
+            if (( 60 < RUNNER_AGE )); then
+                echo "Attempt to delete the runner for a graceful shutdown"
+                sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)" \
+                    || continue
+                echo "Runner didn't launch or have assigned jobs after ${RUNNER_AGE} seconds, shutting down"
+                terminate_and_exit
+            fi
+        fi
+    else
+        if [ "$RUNNER_PID" != "-2" ]; then
+            wait $RUNNER_PID \
+                && echo "Runner with PID $RUNNER_PID successfully finished" \
+                || echo "Attempt $((++ATTEMPT)) to start the runner"
+        fi
+        if (( ATTEMPT > 10 )); then
+            echo "The runner has failed to start after $ATTEMPT attempt. Give up and terminate it"
+            terminate_and_exit
+        fi
+
         cd $RUNNER_HOME || terminate_and_exit
         detect_delayed_termination
         # If runner is not active, check that it needs to terminate itself
@@ -321,8 +345,6 @@ while true; do
         no_terminating_metadata || terminate_on_event
         check_spot_instance_is_old && terminate_and_exit
         check_proceed_spot_termination force
-        # There were some failures to start the Job because of trash in _work
-        rm -rf _work
 
         echo "Going to configure runner"
         token_args=(--token "$(get_runner_token)")
@@ -346,32 +368,29 @@ while true; do
         check_spot_instance_is_old && terminate_and_exit
         check_proceed_spot_termination force
 
+        # There were some failures to start the Job because of trash in _work
+        rm -rf _work
+
+        # https://github.com/actions/runner/issues/3266
+        # We're unable to know if the runner is failed to start.
+        echo 'Monkey-patching run helpers to get genuine exit code of the runner'
+        for script in run.sh run-helper.sh.template; do
+            # shellcheck disable=SC2016
+            grep -q 'exit 0$' "$script" && \
+                sed 's/exit 0/exit $returnCode/' -i "$script" && \
+                echo "Script $script is patched"
+        done
+
         echo "Run"
         sudo -u ubuntu \
           ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/actions-hooks/pre-run.sh \
           ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/tmp/actions-hooks/post-run.sh \
           ./run.sh &
-        sleep 10
-    elif (( ATTEMPT > 10 )); then
-        echo "The runner has failed to start after $ATTEMPT attempt. Give up and terminate it"
-        terminate_and_exit
-    else
-        ATTEMPT=0
-        echo "Runner is working with pid $runner_pid, checking the metadata in background"
-        check_proceed_spot_termination
+        RUNNER_PID=$!
 
-        if ! is_job_assigned; then
-            RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$runner_pid" 2>/dev/null || date +%s) ))
-            echo "The runner is launched $RUNNER_AGE seconds ago and still has hot received the job"
-            if (( 60 < RUNNER_AGE )); then
-                echo "Attempt to delete the runner for a graceful shutdown"
-                sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)" \
-                    || continue
-                echo "Runner didn't launch or have assigned jobs after ${RUNNER_AGE} seconds, shutting down"
-                terminate_and_exit
-            fi
-        fi
+        sleep 10
     fi
+
     sleep 5
 done
 
