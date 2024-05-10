@@ -49,13 +49,13 @@ public:
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
+protected:
     SerializationPtr getSerialization(const String & column_name) const;
 
     ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
-protected:
 
 //    const MergeTreeMutableDataPartPtr data_part;  // TODO: remove
 
