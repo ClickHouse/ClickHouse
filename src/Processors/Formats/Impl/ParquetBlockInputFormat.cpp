@@ -45,7 +45,10 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (::arrow::Status _s = (status); !_s.ok())                   \
-            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+        {                                                              \
+            throw Exception::createDeprecated(_s.ToString(),           \
+                _s.IsOutOfMemory() ? ErrorCodes::CANNOT_ALLOCATE_MEMORY : ErrorCodes::INCORRECT_DATA); \
+        }                                                              \
     } while (false)
 
 /// Decode min/max value from column chunk statistics.
@@ -440,9 +443,10 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
 {
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
-    parquet::ArrowReaderProperties properties;
-    properties.set_use_threads(false);
-    properties.set_batch_size(format_settings.parquet.max_block_size);
+    parquet::ArrowReaderProperties arrow_properties;
+    parquet::ReaderProperties reader_properties(ArrowMemoryPool::instance());
+    arrow_properties.set_use_threads(false);
+    arrow_properties.set_batch_size(format_settings.parquet.max_block_size);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
@@ -460,11 +464,11 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     //
     // This adds one unnecessary copy. We should probably do coalescing and prefetch scheduling on
     // our side instead.
-    properties.set_pre_buffer(true);
+    arrow_properties.set_pre_buffer(true);
     auto cache_options = arrow::io::CacheOptions::LazyDefaults();
     cache_options.hole_size_limit = min_bytes_for_seek;
     cache_options.range_size_limit = 1l << 40; // reading the whole row group at once is fine
-    properties.set_cache_options(cache_options);
+    arrow_properties.set_cache_options(cache_options);
 
     // Workaround for a workaround in the parquet library.
     //
@@ -477,13 +481,12 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     // other, failing an assert. So we disable pre-buffering in this case.
     // That version is >10 years old, so this is not very important.
     if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
-        properties.set_pre_buffer(false);
+        arrow_properties.set_pre_buffer(false);
 
     parquet::arrow::FileReaderBuilder builder;
-    THROW_ARROW_NOT_OK(
-        builder.Open(arrow_file, /* not to be confused with ArrowReaderProperties */ parquet::default_reader_properties(), metadata));
-    builder.properties(properties);
-    // TODO: Pass custom memory_pool() to enable memory accounting with non-jemalloc allocators.
+    THROW_ARROW_NOT_OK(builder.Open(arrow_file, reader_properties, metadata));
+    builder.properties(arrow_properties);
+    builder.memory_pool(ArrowMemoryPool::instance());
     THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
 
     THROW_ARROW_NOT_OK(

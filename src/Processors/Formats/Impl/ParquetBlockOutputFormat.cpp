@@ -327,7 +327,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
 
         auto result = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
-            arrow::default_memory_pool(),
+            ArrowMemoryPool::instance(),
             sink,
             builder.build(),
             writer_props_builder.build());
