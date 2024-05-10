@@ -86,7 +86,7 @@ private:
         return config_stor.emplace_back(std::make_pair(k, v));
     }
 
-    hdfsBuilder * hdfs_builder;
+    hdfsBuilder * hdfs_builder = nullptr;
     std::vector<std::pair<String, String>> config_stor;
 
     #if USE_KRB5

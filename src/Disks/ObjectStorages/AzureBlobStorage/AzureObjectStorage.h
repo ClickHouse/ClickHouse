@@ -164,6 +164,9 @@ public:
     }
 
 private:
+    using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
+    void removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists);
+
     const String name;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;

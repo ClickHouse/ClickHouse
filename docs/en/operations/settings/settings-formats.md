@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 

@@ -368,7 +368,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     DB::ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
-    config_processor.registerEmbeddedConfig("config.xml", "<clickhouse/>");
+    ConfigProcessor::registerEmbeddedConfig("config.xml", "<clickhouse/>");
     auto clickhouse_config = config_processor.loadConfig();
 
     Poco::Util::AbstractConfiguration::Keys keys;

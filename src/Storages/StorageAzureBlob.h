@@ -33,8 +33,6 @@ public:
 
         bool update(const ContextPtr & context);
 
-        void connect(const ContextPtr & context);
-
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
         bool withWildcard() const
@@ -330,7 +328,7 @@ private:
     LoggerPtr log = getLogger("StorageAzureBlobSource");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.

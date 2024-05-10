@@ -2,7 +2,10 @@
 
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
+#include <Access/AccessControl.h>
 #include <Access/ExternalAuthenticators.h>
+#include <Access/Role.h>
+#include <Access/User.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -104,6 +107,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int UNKNOWN_TYPE_OF_QUERY;
+    extern const int UNKNOWN_ROLE;
     extern const int NO_ELEMENTS_IN_CONFIG;
 
     extern const int QUERY_IS_TOO_LARGE;
@@ -115,6 +119,7 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
     extern const int AUTHENTICATION_FAILED;
+    extern const int SET_NON_GRANTED_ROLE;
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
@@ -140,7 +145,7 @@ bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
                     LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
                 else
                     response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                                    config.getString("http_options_response." + config_key + ".value", ""));
+                                 config.getString("http_options_response." + config_key + ".value", ""));
 
             }
         }
@@ -192,7 +197,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     }
     else if (exception_code == ErrorCodes::UNKNOWN_USER ||
              exception_code == ErrorCodes::WRONG_PASSWORD ||
-             exception_code == ErrorCodes::AUTHENTICATION_FAILED)
+             exception_code == ErrorCodes::AUTHENTICATION_FAILED ||
+             exception_code == ErrorCodes::SET_NON_GRANTED_ROLE)
     {
         return HTTPResponse::HTTP_FORBIDDEN;
     }
@@ -235,7 +241,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_FORMAT ||
              exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY ||
+             exception_code == ErrorCodes::UNKNOWN_ROLE)
     {
         return HTTPResponse::HTTP_NOT_FOUND;
     }
@@ -357,12 +364,12 @@ bool HTTPHandler::authenticateUser(
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
     bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
+    bool has_auth_headers = !user.empty() || !password.empty() || has_ssl_certificate_auth;
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
     bool has_http_credentials = request.hasCredentials();
-    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
+    bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
     std::string certificate_common_name;
@@ -428,15 +435,12 @@ bool HTTPHandler::authenticateUser(
         {
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
-
-        quota_key = params.get("quota_key", "");
     }
     else
     {
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
-        quota_key = params.get("quota_key", "");
     }
 
     if (!certificate_common_name.empty())
@@ -486,6 +490,16 @@ bool HTTPHandler::authenticateUser(
 
         basic_credentials->setUserName(user);
         basic_credentials->setPassword(password);
+    }
+
+    if (params.has("quota_key"))
+    {
+        if (!quota_key.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid authentication: it is not allowed "
+                            "to use quota key as HTTP header and as parameter simultaneously");
+
+        quota_key = params.get("quota_key");
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
@@ -704,7 +718,7 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
+    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
         "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
 
     Names reserved_param_suffixes;
@@ -726,6 +740,23 @@ void HTTPHandler::processQuery(
 
         return false;
     };
+
+    auto roles = params.getAll("role");
+    if (!roles.empty())
+    {
+        const auto & access_control = context->getAccessControl();
+        const auto & user = context->getUser();
+        std::vector<UUID> roles_ids(roles.size());
+        for (size_t i = 0; i < roles.size(); i++)
+        {
+            auto role_id = access_control.getID<Role>(roles[i]);
+            if (user->granted_roles.isGranted(role_id))
+                roles_ids[i] = role_id;
+            else
+                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", roles[i].get());
+        }
+        context->setCurrentRoles(roles_ids);
+    }
 
     /// Settings can be overridden in the query.
     /// Some parameters (database, default_format, everything used in the code above) do not

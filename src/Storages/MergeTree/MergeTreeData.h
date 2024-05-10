@@ -790,6 +790,9 @@ public:
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
+    /// Moves partition to specified Table
+    void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
+
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
@@ -839,7 +842,7 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info,
@@ -990,10 +993,11 @@ public:
     static const Names virtuals_useful_for_filter;
 
     /// Construct a sample block of virtual columns.
-    Block getHeaderWithVirtualsForFilter() const;
+    Block getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const;
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
-    Block getBlockWithVirtualsForFilter(const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
+    Block getBlockWithVirtualsForFilter(
+        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1085,6 +1089,8 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+
+    void unloadPrimaryKeys();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1703,5 +1709,9 @@ struct CurrentlySubmergingEmergingTagger
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
 }
+
+/// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
+/// Return true if the counter had been updated
+bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove);
 
 }

@@ -320,15 +320,6 @@ public:
         {}
     };
 
-    virtual void getRemotePathsRecursive(
-        const String &, std::vector<LocalPathWithObjectStoragePaths> &, const std::function<bool(const String &)> & /* skip_predicate */)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getRemotePathsRecursive() not implemented for disk: {}`",
-            getDataSourceDescription().toString());
-    }
-
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
@@ -371,6 +362,8 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool isWriteOnce() const { return false; }
+
+    virtual bool supportsHardLinks() const { return true; }
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }

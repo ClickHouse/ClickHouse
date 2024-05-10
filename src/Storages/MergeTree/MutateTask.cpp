@@ -22,7 +22,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexInverted.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -652,8 +652,8 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
-        // Skip all inverted index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexInverted *>(index.get()))
+        // Skip all full-text index files, for they will be rebuilt
+        if (dynamic_cast<const MergeTreeIndexFullText *>(index.get()))
         {
             auto index_filename = index->getFileName();
             files_to_skip.insert(index_filename + ".gin_dict");
@@ -731,7 +731,7 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* is inverted index
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index (aka. full-text-index)
 
             for (const auto & suffix : suffixes)
             {
@@ -2146,7 +2146,7 @@ bool MutateTask::prepare()
         scope_guard lock;
 
         {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
+            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
                 ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);

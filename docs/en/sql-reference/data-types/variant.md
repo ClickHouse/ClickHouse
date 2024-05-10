@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/variant
-sidebar_position: 55
-sidebar_label: Variant
+sidebar_position: 40
+sidebar_label: Variant(T1, T2, ...)
 ---
 
-# Variant(T1, T2, T3, ...)
+# Variant(T1, T2, ...)
 
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).

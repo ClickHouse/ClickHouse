@@ -1538,9 +1538,9 @@ ColumnPtr FunctionArrayElement::executeMap2(const ColumnsWithTypeAndName & argum
         return nullptr;
 
     const ColumnArray * col_map_nested = &col_map->getNestedColumn();
-    const ColumnTuple * col_map_kv = checkAndGetColumn<ColumnTuple>(col_map_nested->getDataPtr().get());
-    ColumnPtr col_map_keys = col_map_kv->getColumnPtr(0);
-    ColumnPtr col_map_values = col_map_kv->getColumnPtr(1);
+    const ColumnTuple & col_map_kv = checkAndGetColumn<ColumnTuple>(*col_map_nested->getDataPtr());
+    ColumnPtr col_map_keys = col_map_kv.getColumnPtr(0);
+    ColumnPtr col_map_values = col_map_kv.getColumnPtr(1);
 
     const DataTypeMap & map_type
         = typeid_cast<const DataTypeMap &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType());

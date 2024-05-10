@@ -68,6 +68,8 @@ namespace
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
+        client_configuration.http_keep_alive_timeout = S3::DEFAULT_KEEP_ALIVE_TIMEOUT;
+        client_configuration.http_keep_alive_max_requests = S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS;
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
@@ -192,7 +194,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 read_settings,
                 blob_storage_log,
                 object_attributes,
-                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
                 /* for_disk_s3= */ true);
 
             return file_size;
@@ -261,7 +263,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 read_settings,
                 blob_storage_log,
                 {},
-                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
             return; /// copied!
         }
     }
@@ -285,14 +287,14 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         read_settings,
         blob_storage_log,
         {},
-        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup,
                      s3_settings.request_settings, blob_storage_log, {},
-                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+                     threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
 BackupWriterS3::~BackupWriterS3() = default;
@@ -327,7 +329,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         s3_settings.request_settings,
         blob_storage_log,
         std::nullopt,
-        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
         write_settings);
 }
 

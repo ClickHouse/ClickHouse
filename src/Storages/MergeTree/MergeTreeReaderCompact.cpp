@@ -205,7 +205,6 @@ void MergeTreeReaderCompact::readPrefix(
         else
             serialization = getSerializationInPart(name_and_type);
 
-
         deserialize_settings.getter = buffer_getter;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name]);
     }

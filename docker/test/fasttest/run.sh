@@ -150,6 +150,7 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
+            contrib/expected
             contrib/simdjson
             contrib/liburing
             contrib/libfiu

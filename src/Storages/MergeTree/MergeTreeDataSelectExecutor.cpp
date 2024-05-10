@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexInverted.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -383,7 +383,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             if (has_lower_limit)
             {
                 if (!key_condition.addCondition(
-                        sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable())))
+                        sampling_key.column_names[0],
+                        Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -401,7 +402,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             if (has_upper_limit)
             {
                 if (!key_condition.addCondition(
-                        sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable())))
+                        sampling_key.column_names[0],
+                        Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -473,6 +475,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
 }
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
+    const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
     const ActionsDAGPtr & filter_dag,
@@ -481,12 +484,12 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     if (!filter_dag)
         return {};
 
-    auto sample = data.getHeaderWithVirtualsForFilter();
+    auto sample = data.getHeaderWithVirtualsForFilter(metadata_snapshot);
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample);
     if (!dag)
         return {};
 
-    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(parts);
+    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
     VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
@@ -1018,8 +1021,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes key_types;
     for (size_t i : key_indices)
     {
-        if (i < index.size())
-            index_columns->emplace_back(index[i], primary_key.data_types[i], primary_key.column_names[i]);
+        if (i < index->size())
+            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
         else
             index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
 
@@ -1294,7 +1297,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     PostingsCacheForStore cache_in_store;
 
-    if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
+    if (dynamic_cast<const MergeTreeIndexFullText *>(&*index_helper) != nullptr)
         cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
 
     for (size_t i = 0; i < ranges.size(); ++i)
@@ -1331,7 +1334,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             }
 
             bool result = false;
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
             if (!gin_filter_condition)
                 result = condition->mayBeTrueOnGranule(granule);
             else

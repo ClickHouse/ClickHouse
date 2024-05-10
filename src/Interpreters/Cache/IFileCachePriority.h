@@ -137,6 +137,8 @@ public:
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::Lock &) = 0;
 
+    /// Collect eviction candidates sufficient to free `size` bytes
+    /// and `elements` elements from cache.
     virtual bool collectCandidatesForEviction(
         size_t size,
         size_t elements,
@@ -146,7 +148,23 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) = 0;
 
-    virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
+    /// Collect eviction candidates sufficient to have `desired_size`
+    /// and `desired_elements_num` as current cache state.
+    /// Collect no more than `max_candidates_to_evict` elements.
+    /// Return `true` if the first condition is satisfied.
+    virtual bool collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & candidates,
+        const CachePriorityGuard::Lock &) = 0;
+
+    virtual bool modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CachePriorityGuard::Lock &) = 0;
 
     /// A space holder implementation, which allows to take hold of
     /// some space in cache given that this space was freed.

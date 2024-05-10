@@ -81,6 +81,43 @@ Result:
 │ 2.23606797749979 │
 └──────────────────┘
 ```
+## L2SquaredNorm
+
+Calculates the square root of the sum of the squares of the vector values (the [L2Norm](#l2norm)) squared.
+
+**Syntax**
+
+```sql
+L2SquaredNorm(vector)
+```
+
+Alias: `normL2Squared`.
+
+***Arguments**
+
+- `vector` — [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+- L2-norm squared.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L2SquaredNorm((1, 2));
+```
+
+Result:
+
+```text
+┌─L2SquaredNorm((1, 2))─┐
+│                     5 │
+└───────────────────────┘
+```
 
 ## LinfNorm
 

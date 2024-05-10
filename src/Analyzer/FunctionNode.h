@@ -208,9 +208,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

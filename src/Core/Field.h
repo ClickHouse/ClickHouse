@@ -898,11 +898,13 @@ NearestFieldType<std::decay_t<T>> & Field::get()
 template <typename T>
 auto & Field::safeGet()
 {
-    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
-    if (which != requested)
+    /// We allow converting int64 <-> uint64, int64 <-> bool, uint64 <-> bool in safeGet().
+    if (target != which
+           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)))
         throw Exception(ErrorCodes::BAD_GET,
-            "Bad get: has {}, requested {}", getTypeName(), requested);
+            "Bad get: has {}, requested {}", getTypeName(), target);
 
     return get<T>();
 }

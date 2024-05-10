@@ -20,11 +20,10 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 
 ## DROP TABLE
 
-Deletes the table.
-In case when `IF EMPTY` clause is specified server will check if table is empty only on replica that received initial query.  
+Deletes one or more tables.
 
 :::tip
-Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
+To undo the deletion of a table, please see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
 :::
 
 Syntax:
@@ -33,7 +32,9 @@ Syntax:
 DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...] [ON CLUSTER cluster] [SYNC]
 ```
 
-Note that deleting multiple tables at the same time is a non-atomic deletion. If a table fails to be deleted, subsequent tables will not be deleted.
+Limitations:
+- If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.  
+- Deleting multiple tables at once is not an atomic operation, i.e. if the deletion of a table fails, subsequent tables will not be deleted.
 
 ## DROP DICTIONARY
 

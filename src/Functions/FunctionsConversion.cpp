@@ -279,7 +279,7 @@ struct ToDate32Transform32Or64Signed
 
     static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
+        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -794,7 +794,7 @@ inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer &
     if (isNativeNumber(result_type) && !(result_type.getName() == "IPv4" || result_type.getName() == "IPv6"))
         message_buf << ". Note: there are to" << result_type.getName() << "OrZero and to" << result_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
 
-    throw Exception(PreformattedMessage{message_buf.str(), "Cannot parse string {} as {}: syntax error {}"}, ErrorCodes::CANNOT_PARSE_TEXT);
+    throw Exception(PreformattedMessage{message_buf.str(), "Cannot parse string {} as {}: syntax error {}", {String(read_buffer.buffer().begin(), read_buffer.buffer().size()), result_type.getName()}}, ErrorCodes::CANNOT_PARSE_TEXT);
 }
 
 
@@ -1092,7 +1092,7 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
                     {
-                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
+                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()); /// NOLINT(readability-static-accessed-through-instance)
                     }
                     else
                     {
@@ -3302,7 +3302,7 @@ private:
             /// both columns have type UInt8, but we shouldn't use identity wrapper,
             /// because Bool column can contain only 0 and 1.
             auto res_column = to_type->createColumn();
-            const auto & data_from = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get())->getData();
+            const auto & data_from = checkAndGetColumn<ColumnUInt8>(*arguments[0].column).getData();
             auto & data_to = assert_cast<ColumnUInt8 *>(res_column.get())->getData();
             data_to.resize(data_from.size());
             for (size_t i = 0; i != data_from.size(); ++i)
@@ -4853,7 +4853,7 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
         DataTypeFloat32, DataTypeFloat64,
-        DataTypeDate, DataTypeDate32, DataTypeDateTime,
+        DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64,
         DataTypeString>(return_type.get(), [&](auto & type)
         {
             monotonicity = FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;

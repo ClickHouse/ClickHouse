@@ -622,6 +622,20 @@ Chunk SystemZooKeeperSource::generate()
         ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
             [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
 
+        /// Add children count to query total rows. We can not get total rows in advance,
+        /// because it is too heavy to get row count for non exact paths.
+        /// Please be aware that there might be minor setbacks in the query progress,
+        /// but overall it should reflect the advancement of the query.
+        size_t children_count = 0;
+        for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
+        {
+            auto & res = get_responses[i];
+            if (res.error == Coordination::Error::ZNONODE)
+                continue; /// Node was deleted meanwhile.
+            children_count += res.stat.numChildren;
+        }
+        addTotalRowsApprox(children_count);
+
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {
             auto & res = get_responses[i];
