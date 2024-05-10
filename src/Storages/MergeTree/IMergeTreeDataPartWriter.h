@@ -69,8 +69,6 @@ protected:
 //    const MergeTreeData & storage; // TODO: remove
 
     const MergeTreeSettingsPtr storage_settings;
-    const size_t low_cardinality_max_dictionary_size = 0;  // TODO: pass it in ctor
-    const bool low_cardinality_use_single_dictionary_for_part = true;  // TODO: pass it in ctor
 
 
     const StorageMetadataPtr metadata_snapshot;
