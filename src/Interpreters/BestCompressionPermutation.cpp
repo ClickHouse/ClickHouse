@@ -101,14 +101,21 @@ std::vector<size_t> getNotAlreadySortedColumnsIndex(const Block & block, const S
 EqualRanges getEqualRanges(const Block & block, const SortDescription & description, const IColumn::Permutation & permutation) {
     EqualRanges ranges;
     const ssize_t rows = block.rows();
-    for (ssize_t i = 0; i < rows; ) 
+    if (description.empty())
     {
-        ssize_t j = i;
-        for (; j < rows && isEqual(block, description, permutation[i], permutation[j]); ++j)
+        ranges.push_back({0, rows});
+    }
+    else 
+    {
+        for (ssize_t i = 0; i < rows; )
         {
+            ssize_t j = i;
+            for (; j < rows && isEqual(block, description, permutation[i], permutation[j]); ++j)
+            {
+            }
+            ranges.push_back({i, j});
+            i = j;
         }
-        ranges.push_back({i, j});
-        i = j;
     }
     return ranges;
 }
