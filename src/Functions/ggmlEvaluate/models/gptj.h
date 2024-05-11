@@ -73,7 +73,7 @@ struct GptJModelState {
 class GptJModel : public IGgmlModel, protected GptJModelState {
 public:
     ~GptJModel() override {
-        ggml_free(ctx);
+        ggml_free(ctx); // GGMLTODO : bullshit
     }
 
 private:

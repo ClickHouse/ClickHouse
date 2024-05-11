@@ -175,4 +175,18 @@ GptVocab::id gpt_sample_top_k_top_p(
     return logits_id[idx].second;
 }
 
+std::string getPathFromConfig(const DB::ConfigPtr& config) {
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config->keys(keys);
+
+    if (!config->has("gptj"))
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key 'gptj' set in ggml config");
+    ConfigPtr gptj_config{config->createView("gptj")};
+
+    if (!gptj_config->has("path"))
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key 'path' set in ggml.gptj config");
+
+    return gptj_config->getString("path");
+}
+
 }

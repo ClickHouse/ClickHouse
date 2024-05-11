@@ -6,7 +6,6 @@
 #include <mutex>
 #include <string>
 
-
 namespace DB {
 
 using ConfigPtr = Poco::AutoPtr<const Poco::Util::AbstractConfiguration>;
@@ -20,7 +19,7 @@ public:
 
 private:
     virtual void loadImpl(ConfigPtr config) = 0;
-    virtual std::string evalImpl(std::tuple<Int32> param, const std::string & input) = 0;
+    virtual std::string evalImpl(std::tuple<Int32> params, const std::string & input) = 0;
 
     bool loaded = false;
     std::mutex load_mutex;
