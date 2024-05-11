@@ -220,7 +220,7 @@ namespace
         {
             size_t res_offset = res_data.size();
             res_data.resize(res_offset + res_ref.size + 1);
-            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data, res_ref.size);
+            memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
             res_offset += res_ref.size;
             res_data[res_offset] = 0;
             ++res_offset;
