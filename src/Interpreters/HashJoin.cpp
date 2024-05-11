@@ -947,7 +947,6 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
             if (!flag_per_row && !is_inserted)
             {
-                LOG_INFO(log, "LOL\n\n\n\n\n\n");
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->blocks_allocated_size -= stored_block->allocatedBytes();
                 data->blocks.pop_back();
