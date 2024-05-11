@@ -1,30 +1,24 @@
 -- Tags: no-fasttest, no-ordinary-database
 
--- Tests vector search in ClickHouse, i.e. Usearch indexes. Both index types share similarities in implementation and usage,
--- therefore they are tested in a single file.
-
--- This file contains tests for various bugs and special cases
+-- Tests for various bugs and special cases for vector indexes.
 
 SET allow_experimental_usearch_index = 1;
-
 SET allow_experimental_analyzer = 1; -- 0 vs. 1 produce slightly different error codes, make it future-proof
 
 DROP TABLE IF EXISTS tab;
 
+
 SELECT 'Issue #52258: Empty Arrays or Arrays with default values are rejected';
 
-SELECT '- Usearch';
-
-CREATE TABLE tab (id UInt64, vec Array(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree() ORDER BY (id);
+CREATE TABLE tab (id UInt64, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE usearch());
 INSERT INTO tab VALUES (1, []); -- { serverError INCORRECT_DATA }
 INSERT INTO tab (id) VALUES (1); -- { serverError INCORRECT_DATA }
 DROP TABLE tab;
 
+
 SELECT 'It is possible to create parts with different Array vector sizes but there will be an error at query time';
 
-SELECT '- Usearch';
-
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE usearch());
 SYSTEM STOP MERGES tab;
 INSERT INTO tab values (0, [2.2, 2.3]) (1, [3.1, 3.2]);
 INSERT INTO tab values (2, [2.2, 2.3, 2.4]) (3, [3.1, 3.2, 3.3]);
@@ -37,11 +31,10 @@ LIMIT 3; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 DROP TABLE tab;
 
+
 SELECT 'Correctness of index with > 1 mark';
 
-SELECT '- Usearch';
-
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity=8192; -- disable adaptive granularity due to bug
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX vec_idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity=8192; -- disable adaptive granularity due to bug
 INSERT INTO tab SELECT number, [toFloat32(number), 0.0] from numbers(10000);
 
 WITH [1.0, 0.0] AS reference_vec
