@@ -23,7 +23,7 @@
 namespace DB
 {
 
-bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & /*ast*/, Expected & /*expected*/)
+bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & ast, Expected & /*expected*/)
 {
     auto json = examples[0].PGAST;
     JSON::Element JSONRoot;
@@ -34,8 +34,8 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & /*ast*/, Expected 
         return false;
     }
     const auto root = PostgreSQL::buildJSONTree(JSONRoot);
-    PrintDebugInfoRecursive(root);
-    // PostgreSQL::Transform(root, ast);
+    // PrintDebugInfoRecursive(root);
+    ast = PostgreSQL::Transform(root);
     return true;
 }
 }

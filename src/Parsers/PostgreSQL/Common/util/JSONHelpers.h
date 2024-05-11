@@ -45,6 +45,7 @@ namespace DB::PostgreSQL
 
         bool HasChildWithKey(const std::string& key_) const;
         std::shared_ptr<Node> GetChildWithKey(const std::string& key_) const;
+        std::shared_ptr<Node> GetOnlyChild() const;
         
         size_t Size() const;
         std::shared_ptr<Node> operator[](const std::string& key_) const;
@@ -54,8 +55,14 @@ namespace DB::PostgreSQL
 
         std::optional<std::string> GetKey() const;
         std::string GetKeyString() const;
+        std::string GetValueString() const;
         std::optional<Value> GetValue() const;
         NodeArray GetNodeArray() const;
+        Field GetPrimitiveValue() const;
+        Int64 GetInt64Value() const;
+        double GetDoubleValue() const;
+        bool GetBoolValue() const;
+        String GetStringValue() const;
         NodeType GetType() const;
         void SetKey(const std::string& key_);
         void SetValue(const Value& value_);

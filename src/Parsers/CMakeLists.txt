@@ -9,8 +9,10 @@ add_headers_and_sources(clickhouse_parsers ./Access)
 add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_headers_and_sources(clickhouse_parsers ./Kusto)
 
-add_headers_and_sources(clickhouse_parsers ./PostgreSQL/Common/util)
 add_headers_and_sources(clickhouse_parsers ./PostgreSQL/Common)
+add_headers_and_sources(clickhouse_parsers ./PostgreSQL/Common/util)
+add_headers_and_sources(clickhouse_parsers ./PostgreSQL/Values)
+add_headers_and_sources(clickhouse_parsers ./PostgreSQL/Targets)
 add_headers_and_sources(clickhouse_parsers ./PostgreSQL/Statements)
 add_headers_and_sources(clickhouse_parsers ./PostgreSQL)
 

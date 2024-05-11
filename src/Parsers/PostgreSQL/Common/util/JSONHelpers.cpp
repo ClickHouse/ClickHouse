@@ -1,5 +1,8 @@
 #include "JSONHelpers.h"
 
+#include <Parsers/PostgreSQL/Common/Errors.h>
+#include <Common/Exception.h>
+
 namespace DB::PostgreSQL
 {
     Value::Value() {}
@@ -38,10 +41,10 @@ namespace DB::PostgreSQL
     }
 
     Node::Node() {}
-    Node::Node(const std::string& key_, const Value& value_) : key(key_), value(value_) {}
+    Node::Node(const String& key_, const Value& value_) : key(key_), value(value_) {}
     Node::Node(const Value& value_) : value(value_) {}
 
-    bool Node::HasChildWithKey(const std::string& key_) const 
+    bool Node::HasChildWithKey(const String& key_) const 
     {
         std::optional<NodeArray> arrayOrObject = value->GetArrayOrObject();
         if (arrayOrObject == std::nullopt) 
@@ -62,7 +65,7 @@ namespace DB::PostgreSQL
         return false;
     }
 
-    std::shared_ptr<Node> Node::GetChildWithKey(const std::string& key_) const 
+    std::shared_ptr<Node> Node::GetChildWithKey(const String& key_) const 
     {
         std::optional<NodeArray> arrayOrObject = value->GetArrayOrObject();
         if (arrayOrObject == std::nullopt) 
@@ -83,6 +86,11 @@ namespace DB::PostgreSQL
         return nullptr;
     }
 
+    std::shared_ptr<Node> Node::GetOnlyChild() const 
+    {
+        return GetNodeArray()[0];
+    }
+
 
     size_t Node::Size() const
     {
@@ -90,28 +98,38 @@ namespace DB::PostgreSQL
         return arr.size();
     }
 
-    std::shared_ptr<Node> Node::operator[](const std::string& key_) const 
+    std::shared_ptr<Node> Node::operator[](const String& key_) const 
     {
-        return GetChildWithKey(key_);
+        auto res = GetChildWithKey(key_);
+        if (!res) 
+        {
+            throw Exception(ErrorCodes::KEY_NOT_FOUND, "Key {} not found", key_);
+        }
+        return res;
     }
 
     std::shared_ptr<Node> Node::operator[](const size_t& idx) const
     {
         const auto& arr = GetNodeArray();
-        assert(arr.size() > idx);
+        if (arr.size() <= idx)
+        {
+            throw Exception(ErrorCodes::INDEX_OUT_OF_RANGE, "Index {} out of range", idx);
+        }
         return arr[idx];
     }
 
-    std::vector<std::string> Node::ListChildKeys() const 
+    std::vector<String> Node::ListChildKeys() const 
     {
-        std::vector<std::string> res;
+        std::vector<String> res;
         std::optional<NodeArray> arrayOrObject = value->GetArrayOrObject();
         if (arrayOrObject == std::nullopt) 
         {
             return res;
         }
-        if (arrayOrObject.has_value()) {
-            for (const auto& childNode : arrayOrObject.value()) {
+        if (arrayOrObject.has_value()) 
+        {
+            for (const auto& childNode : arrayOrObject.value()) 
+            {
                 if (childNode->GetKey().has_value()) 
                 {
                     res.push_back(childNode->GetKey().value());
@@ -121,7 +139,7 @@ namespace DB::PostgreSQL
         return res;
     }
 
-    void Node::SetKey(const std::string& key_) 
+    void Node::SetKey(const String& key_) 
     {
         key = key_; 
     }
@@ -130,12 +148,12 @@ namespace DB::PostgreSQL
         value = value_; 
     }
 
-    std::optional<std::string> Node::GetKey() const 
+    std::optional<String> Node::GetKey() const 
     {
         return key;
     }
 
-    std::string Node::GetKeyString() const 
+    String Node::GetKeyString() const 
     {
         const auto& key_ = GetKey();
         if (key_ == std::nullopt)
@@ -145,18 +163,62 @@ namespace DB::PostgreSQL
         return key_.value();
     }
 
+    String Node::GetValueString() const 
+    {
+        return toString(GetPrimitiveValue());
+    }
+
     std::optional<Value> Node::GetValue() const 
     {
         return value; 
     }
 
-    NodeArray Node::GetNodeArray() const {
+    NodeArray Node::GetNodeArray() const 
+    {
         assert(GetType() == NodeType::Array || GetType() == NodeType::Object);
-        return value.value().GetArrayOrObject().value();
+        assert(value != std::nullopt);
+        auto value_ = value.value();
+        assert(value_.GetArrayOrObject() != std::nullopt);
+        return value_.GetArrayOrObject().value();
     }
 
-    NodeType Node::GetType() const {
-        if (!value.has_value()) {
+    Field Node::GetPrimitiveValue() const 
+    {
+        assert(GetType() == NodeType::Primitive);
+        assert(value != std::nullopt);
+        auto value_ = value.value();
+        assert(value_.GetPrimitive() != std::nullopt);
+        return value_.GetPrimitive().value();
+    }
+
+    Int64 Node::GetInt64Value() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.get<Int64>();
+    }
+    
+    double Node::GetDoubleValue() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.get<double>();
+    }
+
+    bool Node::GetBoolValue() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.get<bool>();
+    }
+    
+    String Node::GetStringValue() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.get<String>();
+    }
+
+    NodeType Node::GetType() const 
+    {
+        if (!value.has_value()) 
+        {
             return NodeType::Undefined;
         }
         return value.value().GetType();
@@ -165,22 +227,28 @@ namespace DB::PostgreSQL
     namespace {
         std::shared_ptr<Node> GetPrimitiveValueNode(const JSON::Element& elem) {
             Value value;
-            if (elem.isInt64()) {
+            if (elem.isInt64()) 
+            {
                 Field field = Field(elem.getInt64());
                 value = Value(field);
-            } else if (elem.isUInt64()) {
+            } else if (elem.isUInt64()) 
+            {
                 Field field = Field(elem.getUInt64());
                 value = Value(field);
-            } else if (elem.isDouble()) {
+            } else if (elem.isDouble()) 
+            {
                 Field field = Field(elem.getDouble());
                 value = Value(field);
-            } else if (elem.isString()) {
+            } else if (elem.isString()) 
+            {
                 Field field = Field(elem.getString());
                 value = Value(field);
-            } else if (elem.isBool()) {
+            } else if (elem.isBool()) 
+            {
                 Field field = Field(elem.getBool());
                 value = Value(field);
-            } else if (elem.isNull()) {
+            } else if (elem.isNull()) 
+            {
                 value = Value(Field());
             }
             std::shared_ptr<Node> node = std::make_shared<Node>(value);
@@ -198,7 +266,7 @@ namespace DB::PostgreSQL
                     const auto& obj = elem.getObject();
                     for (const auto [key, value] : obj) {
                         children.push_back(buildJSONTree(value));
-                        children.back()->SetKey(std::string(key));
+                        children.back()->SetKey(String(key));
                     }
                     Value value(children, NodeType::Object);
                     return std::make_shared<Node>(value);
@@ -219,48 +287,58 @@ namespace DB::PostgreSQL
         }
     }
 
-    void PrintDebugInfoRecursive(std::shared_ptr<Node> node) {
+    void PrintDebugInfoRecursive(std::shared_ptr<Node> node) 
+    {
         PrintDebugInfo(node);
-        if (node->GetType() == NodeType::Array || node->GetType() == NodeType::Object) {
+        if (node->GetType() == NodeType::Array || node->GetType() == NodeType::Object) 
+        {
             NodeArray arrayOrObject = node->GetNodeArray();
-            for (const auto& child : arrayOrObject) {
+            for (const auto& child : arrayOrObject) 
+            {
                 PrintDebugInfoRecursive(child);
             }
         }
     }
 
-    void PrintDebugInfo(std::shared_ptr<Node> node) {
-        std::cerr << "___________________________";
+    void PrintDebugInfo(std::shared_ptr<Node> node) 
+    {
+        std::cerr << "___________________________\n";
         std::cerr << "Node info\n";
-        if (!node) {
+        if (!node) 
+        {
             std::cerr << "nullptr\n";
-            std::cerr << "___________________________";
+            std::cerr << "___________________________\n";
             return;
         }
         std::cerr << "Key: " << node->GetKeyString() << std::endl;
         const auto& valueOpt = node->GetValue();
-        if (valueOpt == std::nullopt) {
+        if (valueOpt == std::nullopt) 
+        {
             std::cerr << "Value: nullopt\n";
-            std::cerr << "___________________________";
+            std::cerr << "___________________________\n";
             return;
         }
         const auto& value = valueOpt.value();
-        if (value.GetType() == NodeType::Primitive) {
+        if (value.GetType() == NodeType::Primitive) 
+        {
             const auto& primitiveOpt = value.GetPrimitive();
-            if (primitiveOpt == std::nullopt) {
+            if (primitiveOpt == std::nullopt) 
+            {
                 std::cerr << "Value: primitive nullopt\n";
-            } else {
+            } else 
+            {
                 std::cerr << "Value: " << toString(primitiveOpt.value()) << std::endl;
             }
-            std::cerr << "___________________________";
+            std::cerr << "___________________________\n";
             return;
         }
         std::cerr << "Value: array_or_object\n";
         const auto keys = node->ListChildKeys();
         std::cerr << "Child Keys: \n";
-        for (auto key : keys) {
+        for (auto key : keys) 
+        {
             std::cerr << key << std::endl;
         }
-        std::cerr << "___________________________";
+        std::cerr << "___________________________\n";
     }
 }
