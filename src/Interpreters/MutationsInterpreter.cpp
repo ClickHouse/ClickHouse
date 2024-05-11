@@ -1321,7 +1321,7 @@ void MutationsInterpreter::validate()
 
             if (nondeterministic_func_data.nondeterministic_function_name)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
+                    "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                     "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
         }
     }

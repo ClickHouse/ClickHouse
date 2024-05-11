@@ -37,11 +37,13 @@ public:
 
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
-        bool withWildcard() const
+        bool withPartitionWildcard() const
         {
             static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
+
+        bool withGlobsIgnorePartitionWildcard() const;
 
         std::string blob_path;
         std::vector<String> blobs_paths;

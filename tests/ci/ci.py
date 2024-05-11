@@ -32,11 +32,10 @@ from commit_status_helper import (
     RerunHelper,
     format_description,
     get_commit,
-    get_commit_filtered_statuses,
     post_commit_status,
     set_status_comment,
-    trigger_mergeable_check,
     update_mergeable_check,
+    update_upstream_sync_status,
 )
 from digest_helper import DockerDigester, JobDigester
 from env_helper import (
@@ -55,7 +54,7 @@ from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github_helper import GitHub
 from pr_info import PRInfo
-from report import ERROR, SUCCESS, BuildResult, JobReport, get_status
+from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
 from synchronizer_utils import SYNC_BRANCH_PREFIX
 from version_helper import get_version_from_repo
@@ -854,6 +853,7 @@ class CiOptions:
         jobs_to_do: List[str],
         jobs_to_skip: List[str],
         jobs_params: Dict[str, Dict[str, Any]],
+        pr_info: PRInfo,
     ) -> Tuple[List[str], List[str], Dict[str, Dict[str, Any]]]:
         """
         Applies specified options on CI Run Config
@@ -953,7 +953,8 @@ class CiOptions:
                     jobs_params[job] = {
                         "batches": list(range(num_batches)),
                         "num_batches": num_batches,
-                        "run_if_ci_option_include_set": job_config.run_by_ci_option,
+                        "run_if_ci_option_include_set": job_config.run_by_ci_option
+                        and pr_info.is_pr,
                     }
 
         # 4. Handle "batch_" tags
@@ -1444,7 +1445,8 @@ def _configure_jobs(
             jobs_params[job] = {
                 "batches": batches_to_do,
                 "num_batches": num_batches,
-                "run_if_ci_option_include_set": job_config.run_by_ci_option,
+                "run_if_ci_option_include_set": job_config.run_by_ci_option
+                and pr_info.is_pr,
             }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
@@ -1469,7 +1471,7 @@ def _configure_jobs(
                 ]
 
     jobs_to_do, jobs_to_skip, jobs_params = ci_options.apply(
-        jobs_to_do, jobs_to_skip, jobs_params
+        jobs_to_do, jobs_to_skip, jobs_params, pr_info
     )
 
     return {
@@ -1745,7 +1747,10 @@ def _upload_build_profile_data(
         profile_data_file = Path(TEMP_PATH) / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
             for profile_source in profiles_dir.iterdir():
-                if profile_source.name != "binary_sizes.txt":
+                if profile_source.name not in (
+                    "binary_sizes.txt",
+                    "binary_symbols.txt",
+                ):
                     with open(profiles_dir / profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
 
@@ -1787,7 +1792,42 @@ def _upload_build_profile_data(
         try:
             ch_helper.insert_file(url, auth, query, binary_sizes_file)
         except InsertException:
-            logging.error("Failed to insert binary_size_file for the build, continue")
+            logging.error("Failed to insert binary_sizes_file for the build, continue")
+
+        query = f"""INSERT INTO binary_symbols
+            (
+                pull_request_number,
+                commit_sha,
+                check_start_time,
+                check_name,
+                instance_type,
+                instance_id,
+                file,
+                address,
+                size,
+                type,
+                symbol,
+            )
+            SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}',
+                file, reinterpretAsUInt64(reverse(unhex(address))), reinterpretAsUInt64(reverse(unhex(size))), type, symbol
+            FROM input('file String, address String, size String, type String, symbol String')
+            SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
+            FORMAT Regexp"""
+
+        binary_symbols_file = profiles_dir / "binary_symbols.txt"
+
+        print(
+            "::notice ::Log Uploading binary symbols data, path: %s, size: %s, query: %s",
+            binary_symbols_file,
+            binary_symbols_file.stat().st_size,
+            query,
+        )
+        try:
+            ch_helper.insert_file(url, auth, query, binary_symbols_file)
+        except InsertException:
+            logging.error(
+                "Failed to insert binary_symbols_file for the build, continue"
+            )
 
 
 def _add_build_to_version_history(
@@ -2163,30 +2203,19 @@ def main() -> int:
                         and mergeable_status
                         and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
                     ):
-                        pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-                        upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
-                        head_sha = upstream_repo.get_pull(pr_number).head.sha
-                        upstream_commit = upstream_repo.get_commit(head_sha)
-                        post_commit_status(
-                            upstream_commit,
-                            get_status(mergeable_status.state),
-                            "",  # let's won't expose any urls from cloud
-                            mergeable_status.description,
-                            StatusNames.SYNC,
+                        upstream_pr_number = int(
+                            pr_info.head_ref.split("/pr/", maxsplit=1)[1]
                         )
-                        trigger_mergeable_check(
-                            upstream_commit,
-                            get_commit_filtered_statuses(upstream_commit),
-                            True,
+                        update_upstream_sync_status(
+                            upstream_pr_number, pr_info.number, gh, mergeable_status
                         )
-
                         prepared_events = prepare_tests_results_for_clickhouse(
                             pr_info,
                             [],
                             job_report.status,
                             0,
                             job_report.start_time,
-                            f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}",
+                            f"https://github.com/ClickHouse/ClickHouse/pull/{upstream_pr_number}",
                             StatusNames.SYNC,
                         )
                         prepared_events[0]["test_context_raw"] = args.job_name
