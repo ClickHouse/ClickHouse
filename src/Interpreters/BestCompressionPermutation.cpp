@@ -51,10 +51,17 @@ void getBestCompressionPermutationImpl(
 
     ::sort(order.begin(), order.end(), comparator);
 
+    std::cerr << "MYLOG estimate_unique_count = ";
+    for (auto i : estimate_unique_count) {
+        std::cerr << i << ", ";
+    }
+    std::cerr << std::endl;
+
     std::vector<EqualRange> equal_ranges{range};
     for (size_t i : order)
     {
         const size_t column_id = not_already_sorted_columns[i];
+        std::cerr << "MYLOG column_id = " << column_id << std::endl;
         const auto column = block.getByPosition(column_id).column;
         column->updatePermutationForCompression(permutation, equal_ranges);
     }
@@ -121,8 +128,13 @@ EqualRanges getEqualRanges(const Block & block, const SortDescription & descript
 }
 
 void getBestCompressionPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & permutation)
-{
+{  
     const auto equal_ranges = getEqualRanges(block, description, permutation);
+    std::cerr << "MYLOG: equal_ranges = ";
+    for (auto [l, r] : equal_ranges) {
+        std::cerr << "(l = " << l << ", r = " << r << "), ";
+    }
+    std::cerr << std::endl;
     const auto not_already_sorted_columns = getNotAlreadySortedColumnsIndex(block, description);
     for (const auto & range : equal_ranges)
     {
