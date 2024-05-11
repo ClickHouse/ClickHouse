@@ -1,10 +1,11 @@
-#include <numeric>
 #include <Interpreters/BestCompressionPermutation.h>
 
-#include <Interpreters/sortBlock.h>
-#include "Columns/IColumn.h"
-#include "base/sort.h"
+#include <base/sort.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
+#include <Interpreters/sortBlock.h>
+
+#include <numeric>
 
 namespace DB
 {
@@ -12,20 +13,18 @@ namespace DB
 namespace
 {
 
-bool isEqual(const IColumn & column, size_t lhs, size_t rhs) 
+bool isEqual(const IColumn & column, size_t lhs, size_t rhs)
 {
     return column.compareAt(lhs, rhs, column, 1) == 0;
 }
 
-bool isEqual(const Block & block, const SortDescription & description, size_t lhs, size_t rhs) 
+bool isEqual(const Block & block, const SortDescription & description, size_t lhs, size_t rhs)
 {
-    for (const auto & column_description : description) 
+    for (const auto & column_description : description)
     {
-        const auto& column = *block.getByName(column_description.column_name).column;
-        if (!isEqual(column, lhs, rhs)) 
-        {
+        const auto & column = *block.getByName(column_description.column_name).column;
+        if (!isEqual(column, lhs, rhs))
             return false;
-        }
     }
     return true;
 }
@@ -51,17 +50,10 @@ void getBestCompressionPermutationImpl(
 
     ::sort(order.begin(), order.end(), comparator);
 
-    std::cerr << "MYLOG estimate_unique_count = ";
-    for (auto i : estimate_unique_count) {
-        std::cerr << i << ", ";
-    }
-    std::cerr << std::endl;
-
     std::vector<EqualRange> equal_ranges{range};
     for (size_t i : order)
     {
         const size_t column_id = not_already_sorted_columns[i];
-        std::cerr << "MYLOG column_id = " << column_id << std::endl;
         const auto column = block.getByPosition(column_id).column;
         column->updatePermutationForCompression(permutation, equal_ranges);
     }
@@ -105,16 +97,17 @@ std::vector<size_t> getNotAlreadySortedColumnsIndex(const Block & block, const S
     return not_already_sorted_columns;
 }
 
-EqualRanges getEqualRanges(const Block & block, const SortDescription & description, const IColumn::Permutation & permutation) {
+EqualRanges getEqualRanges(const Block & block, const SortDescription & description, const IColumn::Permutation & permutation)
+{
     EqualRanges ranges;
     const ssize_t rows = block.rows();
     if (description.empty())
     {
         ranges.push_back({0, rows});
     }
-    else 
+    else
     {
-        for (ssize_t i = 0; i < rows; )
+        for (ssize_t i = 0; i < rows;)
         {
             ssize_t j = i;
             for (; j < rows && isEqual(block, description, permutation[i], permutation[j]); ++j)
@@ -128,13 +121,8 @@ EqualRanges getEqualRanges(const Block & block, const SortDescription & descript
 }
 
 void getBestCompressionPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & permutation)
-{  
+{
     const auto equal_ranges = getEqualRanges(block, description, permutation);
-    std::cerr << "MYLOG: equal_ranges = ";
-    for (auto [l, r] : equal_ranges) {
-        std::cerr << "(l = " << l << ", r = " << r << "), ";
-    }
-    std::cerr << std::endl;
     const auto not_already_sorted_columns = getNotAlreadySortedColumnsIndex(block, description);
     for (const auto & range : equal_ranges)
     {
