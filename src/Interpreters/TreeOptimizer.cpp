@@ -680,7 +680,8 @@ void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query)
         return;
 
     // Обработка SELECT
-    if (auto *select_expr_list = select_query->select())
+    ASTPtr select_expr_list = select_query->select();
+    if (select_expr_list)
     {
         for (auto &select_elem : select_expr_list->children)
         {
@@ -735,7 +736,6 @@ void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query)
         }
     }
 }
-
 
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
