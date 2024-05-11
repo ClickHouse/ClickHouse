@@ -679,7 +679,7 @@ void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query)
     if (!select_query)
         return;
 
-    auto *order_by = select_query->orderBy();
+    auto order_by = select_query->orderBy();
     if (!order_by)
         return;
 
@@ -707,6 +707,7 @@ void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query)
         }
     }
 }
+
 
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
