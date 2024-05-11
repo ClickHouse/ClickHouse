@@ -6,13 +6,13 @@ SET allow_experimental_usearch_index = 1;
 
 -- After CREATE TABLE
 DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx(vec) TYPE vector_similarity);
+CREATE TABLE tab (id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx(vec) TYPE vector_similarity('hnsw', 'L2Distance'));
 SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab' AND name = 'vec_idx';
 
 -- After ALTER TABLE
 DROP TABLE tab;
 CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id);
-ALTER TABLE tab ADD INDEX vec_idx(vec) TYPE vector_similarity;
+ALTER TABLE tab ADD INDEX vec_idx(vec) TYPE vector_similarity('hnsw', 'L2Distance');
 SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab' AND name = 'vec_idx';
 
 DROP TABLE tab;
