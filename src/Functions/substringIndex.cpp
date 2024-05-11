@@ -147,7 +147,7 @@ namespace
                 else
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
-                appendToResultColumn(res_ref, res_data, res_offsets);
+                appendToResultColumn<true>(res_ref, res_data, res_offsets);
             }
         }
 
@@ -179,7 +179,7 @@ namespace
                 else
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
-                appendToResultColumn(res_ref, res_data, res_offsets);
+                appendToResultColumn<true>(res_ref, res_data, res_offsets);
             }
         }
 
@@ -212,15 +212,21 @@ namespace
                 else
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
-                appendToResultColumn(res_ref, res_data, res_offsets);
+                appendToResultColumn<false>(res_ref, res_data, res_offsets);
             }
         }
 
+        template <bool padded>
         static void appendToResultColumn(const StringRef & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
             res_data.resize(res_offset + res_ref.size + 1);
-            memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
+
+            if constexpr (padded)
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data, res_ref.size);
+            else
+                memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
+
             res_offset += res_ref.size;
             res_data[res_offset] = 0;
             ++res_offset;
