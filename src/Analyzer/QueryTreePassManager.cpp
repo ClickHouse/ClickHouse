@@ -147,7 +147,7 @@ private:
                     continue;
 
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} expects {} argument to have {} type but receives {} after running {} pass",
+                    "Function {} expects argument {} to have {} type but receives {} after running {} pass",
                     function->toAST()->formatForErrorMessage(),
                     i + 1,
                     expected_argument_type->getName(),
