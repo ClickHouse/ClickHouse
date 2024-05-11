@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -216,6 +218,9 @@ public:
 
     void setVirtuals(VirtualColumnsDescription virtuals_)
     {
+        // StorageMerge handles _table virtual column by itself.
+        if (!virtuals_.tryGet("_table"))
+            virtuals_.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
         virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
     }
 

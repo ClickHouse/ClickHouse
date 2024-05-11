@@ -32,6 +32,7 @@ IStorage::IStorage(StorageID storage_id_)
     , metadata(std::make_unique<StorageInMemoryMetadata>())
     , virtuals(std::make_unique<VirtualColumnsDescription>())
 {
+    setVirtuals({});
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
