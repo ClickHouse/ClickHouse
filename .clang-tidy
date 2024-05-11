@@ -123,7 +123,7 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
 
-  '-zircon-*'
+  '-zircon-*',
 
   # These are new in clang-18, and we have to sort them out:
   '-readability-avoid-nested-conditional-operator',
