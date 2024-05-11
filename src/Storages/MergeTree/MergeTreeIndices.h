@@ -231,8 +231,8 @@ MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
 #ifdef ENABLE_USEARCH
-MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
-void usearchIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription& index);
+void vectorSimilarityIndexValidator(const IndexDescription& index, bool attach);
 #endif
 
 MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription& index);

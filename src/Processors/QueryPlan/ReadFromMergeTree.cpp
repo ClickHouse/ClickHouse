@@ -24,7 +24,7 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
@@ -1476,8 +1476,8 @@ static void buildIndexes(
                 if (index_helper->isVectorSearch())
                 {
 #ifdef ENABLE_USEARCH
-                    if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
-                        condition = usearch->createIndexCondition(query_info, context);
+                    if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
+                        condition = vector_similarity_index->createIndexCondition(query_info, context);
 #endif
                     if (!condition)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);

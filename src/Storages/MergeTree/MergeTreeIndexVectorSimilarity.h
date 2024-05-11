@@ -2,7 +2,7 @@
 
 #ifdef ENABLE_USEARCH
 
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+#include <Storages/MergeTree/VectorSimilarityCommon.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
@@ -31,12 +31,11 @@ using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSeriali
 
 
 template <unum::usearch::metric_kind_t Metric>
-struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranularityVectorSimilarity final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_);
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_, USearchIndexWithSerializationPtr<Metric> index_);
-
-    ~MergeTreeIndexGranuleUSearch() override = default;
+    MergeTreeIndexGranularityVectorSimilarity(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexGranularityVectorSimilarity(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_, USearchIndexWithSerializationPtr<Metric> index_);
+    ~MergeTreeIndexGranularityVectorSimilarity() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -51,10 +50,10 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 
 
 template <unum::usearch::metric_kind_t Metric>
-struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block, unum::usearch::scalar_kind_t scalar_kind_);
-    ~MergeTreeIndexAggregatorUSearch() override = default;
+    MergeTreeIndexAggregatorVectorSimilarity(const String & index_name_, const Block & index_sample_block, unum::usearch::scalar_kind_t scalar_kind_);
+    ~MergeTreeIndexAggregatorVectorSimilarity() override = default;
 
     bool empty() const override { return !index || index->size() == 0; }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
@@ -67,16 +66,15 @@ struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionUSearch final : public IMergeTreeIndexConditionApproximateNearestNeighbor
+class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexConditionVectorSimilarity
 {
 public:
-    MergeTreeIndexConditionUSearch(
+    MergeTreeIndexConditionVectorSimilarity(
         const IndexDescription & index_description,
         const SelectQueryInfo & query,
         const String & distance_function,
         ContextPtr context);
-
-    ~MergeTreeIndexConditionUSearch() override = default;
+    ~MergeTreeIndexConditionVectorSimilarity() override = default;
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
@@ -86,22 +84,22 @@ private:
     template <unum::usearch::metric_kind_t Metric>
     std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
 
-    const ApproximateNearestNeighborCondition ann_condition;
+    const VectorSimilarityCondition condition;
     const String distance_function;
 };
 
 
-class MergeTreeIndexUSearch : public IMergeTreeIndex
+class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_);
-
-    ~MergeTreeIndexUSearch() override = default;
+    MergeTreeIndexVectorSimilarity(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_);
+    ~MergeTreeIndexVectorSimilarity() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAGPtr &, ContextPtr) const override;
+
     bool isVectorSearch() const override { return true; }
 
 private:
