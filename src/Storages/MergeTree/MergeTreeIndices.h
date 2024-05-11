@@ -230,11 +230,6 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
-#ifdef ENABLE_ANNOY
-MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
-void annoyIndexValidator(const IndexDescription & index, bool attach);
-#endif
-
 #ifdef ENABLE_USEARCH
 MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
 void usearchIndexValidator(const IndexDescription& index, bool attach);
