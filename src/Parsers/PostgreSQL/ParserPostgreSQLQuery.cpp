@@ -1,6 +1,6 @@
 #include "Parsers/Lexer.h"
 #include "Transform.h"
-#include "examples.h"
+#include <Parsers/PostgreSQL/test/TestData/Select.h>
 #include <Parsers/PostgreSQL/ParserPostgreSQLQuery.h>
 #include <Parsers/PostgreSQL/Common/Types.h>
 #include <Parsers/PostgreSQL/Common/util/JSONHelpers.h>
@@ -28,10 +28,7 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & ast, Expected & /*
 {
     String json;
 
-    // json = ExampleSelectInt.PGAST;
-    // json = ExampleSelectFloat.PGAST;
-    // json = ExampleSelectBool.PGAST;
-    json = ExampleSelect1UnionAllSelect2.PGAST;
+    json = PostgreSQL::Testing::SelectInt.PGAST;
 
     JSON::Element JSONRoot;
     JSON parser;
