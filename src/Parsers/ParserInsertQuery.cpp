@@ -12,7 +12,7 @@
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 #include "Parsers/IAST_fwd.h"
-#include <ParserInsertDefaultValue.h>
+#include <Parsers/ParserInsertDefaultValue.h>
 
 
 namespace DB
@@ -59,6 +59,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr settings_ast;
     ASTPtr partition_by_expr;
     ASTPtr compression;
+    ASTPtr defaulted;
 
     /// Insertion data
     const char * data = nullptr;
@@ -273,12 +274,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (table)
             query->children.push_back(table);
     }
-    for(auto & col : columns) {
+    /*for(auto & col : columns) {
         if(col.getName() == "defaulted") {
             //push back (??) and replace with name from DefaultedColumn
             col = col->name;
         }
-    }
+    }*/
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
