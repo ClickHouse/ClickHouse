@@ -2,8 +2,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 TEST_QUERY_ID = "test_trace_log_build_id_query_{}"
-OLD_TEST_QUERY_ID = TEST_QUERY_ID.format('0')
-NEW_TEST_QUERY_ID = TEST_QUERY_ID.format('1')
+OLD_TEST_QUERY_ID = TEST_QUERY_ID.format("0")
+NEW_TEST_QUERY_ID = TEST_QUERY_ID.format("1")
 ACTIVE_TRACE_LOG_TABLE = "trace_log"
 RENAMED_TRACE_LOG_TABLE = "trace_log_0"
 
@@ -37,7 +37,6 @@ def test_trace_log_build_id(started_cluster):
     # We make queries to create entries in trace_log, then restart with new version and verify if the old
     # trace_log table is renamed and a new trace_log table is created.
 
-
     query_for_table_name = "EXISTS TABLE system.{table}"
 
     node.query(
@@ -45,8 +44,12 @@ def test_trace_log_build_id(started_cluster):
         query_id=OLD_TEST_QUERY_ID,
     )
     node.query("SYSTEM FLUSH LOGS")
-    assert node.query(query_for_table_name.format(table=ACTIVE_TRACE_LOG_TABLE)) == "1\n"
-    assert node.query(query_for_table_name.format(table=RENAMED_TRACE_LOG_TABLE)) == "0\n"
+    assert (
+        node.query(query_for_table_name.format(table=ACTIVE_TRACE_LOG_TABLE)) == "1\n"
+    )
+    assert (
+        node.query(query_for_table_name.format(table=RENAMED_TRACE_LOG_TABLE)) == "0\n"
+    )
 
     node.restart_with_latest_version()
 
@@ -63,7 +66,28 @@ def test_trace_log_build_id(started_cluster):
         query_id=NEW_TEST_QUERY_ID,
     )
     node.query("SYSTEM FLUSH LOGS")
-    assert node.query(query_for_test_query_id.format(table=ACTIVE_TRACE_LOG_TABLE, query_id=OLD_TEST_QUERY_ID)) == "0\n"
-    assert node.query(query_for_test_query_id.format(table=ACTIVE_TRACE_LOG_TABLE, query_id=NEW_TEST_QUERY_ID)) == "1\n"
-    assert node.query(query_for_test_query_id.format(table=RENAMED_TRACE_LOG_TABLE, query_id=OLD_TEST_QUERY_ID)) == "1\n"
+    assert (
+        node.query(
+            query_for_test_query_id.format(
+                table=ACTIVE_TRACE_LOG_TABLE, query_id=OLD_TEST_QUERY_ID
+            )
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            query_for_test_query_id.format(
+                table=ACTIVE_TRACE_LOG_TABLE, query_id=NEW_TEST_QUERY_ID
+            )
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            query_for_test_query_id.format(
+                table=RENAMED_TRACE_LOG_TABLE, query_id=OLD_TEST_QUERY_ID
+            )
+        )
+        == "1\n"
+    )
 
