@@ -90,4 +90,3 @@ def test_trace_log_build_id(started_cluster):
         )
         == "1\n"
     )
-
