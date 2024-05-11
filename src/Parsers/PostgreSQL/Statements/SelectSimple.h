@@ -11,20 +11,17 @@ namespace DB::PostgreSQL
 {
     ASTPtr TransformSelectSimpleStatement(const std::shared_ptr<Node> node) 
     {
-
-        std::cerr << "TransformSelectSimpleStatement\n";
-        PrintDebugInfo(node);
         auto ast = std::make_shared<ASTSelectQuery>();
         auto exprList = std::make_shared<ASTExpressionList>();
 
         auto targets = ((*node)["targetList"])->GetNodeArray();
         if (targets.size() > 1) 
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TransformSelectSimpleStatement not implemented");
         }
         auto targetAst = TransformTarget(targets[0]->GetOnlyChild());
         exprList->children.push_back(targetAst);
-        ast->children.push_back(exprList);
+        ast->setExpression(ASTSelectQuery::Expression::SELECT, exprList);
         return ast;
     }
 }

@@ -10,7 +10,6 @@ namespace DB::PostgreSQL
 {
     ASTPtr TransformResTarget(const std::shared_ptr<Node> node)
     {
-        std::cerr << "TransformResTarget\n";
         auto val = (*node)["val"];
         if (val->HasChildWithKey("A_Const"))
         {
@@ -18,7 +17,7 @@ namespace DB::PostgreSQL
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TransformResTarget not implemented");
         }
     }
 }

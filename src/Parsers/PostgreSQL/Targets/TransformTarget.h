@@ -10,15 +10,13 @@ namespace DB::PostgreSQL
 {
     ASTPtr TransformTarget(const std::shared_ptr<Node> node)
     {
-        std::cerr << "TransformTarget\n";
-        PrintDebugInfo(node);
         if (node->GetKey() == "ResTarget")
         {
             return TransformResTarget(node);
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TransformTarget not implemented");
         }
     }
 }

@@ -9,7 +9,6 @@ namespace DB::PostgreSQL
 {
     ASTPtr TransformConstTarget(const std::shared_ptr<Node> node)
     {
-        std::cerr << "TransformConstTarget\n";
         if (node->HasChildWithKey("ival"))
         {
             return TransformIVal((*node)["ival"]);

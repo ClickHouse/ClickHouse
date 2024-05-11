@@ -9,13 +9,16 @@ namespace DB::PostgreSQL
 {
     ASTPtr TransformSelectStatement(const std::shared_ptr<Node> node)
     {
-        PrintDebugInfo(node);
         auto ast = std::make_shared<ASTSelectWithUnionQuery>();
-        auto exprList = std::make_shared<ASTExpressionList>();
+        ast->list_of_selects = std::make_shared<ASTExpressionList>();
         if ((*node)["op"]->GetValueString() == "SETOP_NONE") {
-            auto simpleSelect = TransformSelectSimpleStatement(node);
+            ast->list_of_selects->children.push_back(TransformSelectSimpleStatement(node));
         }
-        ast->children.push_back(exprList);
+        else
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TransformSelectStatement not implemented");
+        }
+        ast->children.push_back(ast->list_of_selects);
         return ast;
     }
 

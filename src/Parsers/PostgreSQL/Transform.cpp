@@ -16,8 +16,6 @@ namespace DB::PostgreSQL
             throw Exception(DB::ErrorCodes::UNEXPECTED_AST, "Expected exactly one statement");
         }
         const auto& stmt = stmts[0];
-        std::cerr << "Stmt node\n";
-        PrintDebugInfo(stmt);
         return TransformStatement((*stmt)["stmt"]->GetOnlyChild());
     }
 }

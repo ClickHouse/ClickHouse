@@ -7,6 +7,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/iostream_debug_helpers.h>
 
 // #include <pg_query.h>
 
@@ -36,6 +37,7 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & ast, Expected & /*
     const auto root = PostgreSQL::buildJSONTree(JSONRoot);
     // PrintDebugInfoRecursive(root);
     ast = PostgreSQL::Transform(root);
+    assert(ast);
     return true;
 }
 }
