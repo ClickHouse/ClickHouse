@@ -1,6 +1,3 @@
-// NOLINT
-// clang-tidy-19 crashes
-
 #include "PolygonDictionaryUtils.h"
 
 #include <Common/ThreadPool.h>

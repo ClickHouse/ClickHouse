@@ -135,6 +135,9 @@ Checks: [
   '-bugprone-suspicious-stringview-data-usage',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-cert-err33-c',
+
+  # This is a good check, but clang-tidy crashes, see https://github.com/llvm/llvm-project/issues/91872
+  '-modernize-use-constraints',
 ]
 
 WarningsAsErrors: '*'

@@ -1,6 +1,3 @@
-// NOLINT
-// clang-tidy-19 crashes
-
 #include "PolygonDictionaryImplementations.h"
 #include "DictionaryFactory.h"
 
@@ -169,7 +166,6 @@ DictionaryPtr createLayout(const std::string & ,
                            ContextPtr global_context,
                            bool /*created_from_ddl*/)
 {
-    const String database = config.getString(config_prefix + ".database", "");
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)
