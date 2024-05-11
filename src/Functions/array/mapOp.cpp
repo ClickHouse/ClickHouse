@@ -104,7 +104,7 @@ private:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Each tuple in {} arguments should consist of two arrays",
                     getName());
 
-            auto result_type = v->getNestedType();
+            const auto & result_type = v->getNestedType();
             if (!result_type->canBePromoted())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Values to be summed are expected to be Numeric, Float or Decimal.");
 

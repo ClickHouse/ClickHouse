@@ -1,3 +1,6 @@
+// NOLINT
+// clang-tidy-19 crashes
+
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>

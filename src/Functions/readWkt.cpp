@@ -1,3 +1,6 @@
+// NOLINT
+// clang-tidy-19 crashes
+
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 #include <Functions/FunctionFactory.h>

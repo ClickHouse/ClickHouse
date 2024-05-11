@@ -1,3 +1,6 @@
+// NOLINT
+// clang-tidy-19 crashes
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 

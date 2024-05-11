@@ -1,4 +1,4 @@
-// NOLINTBEGIN
+// NOLINT
 // clang-tidy-19 crashes
 
 #include "PolygonDictionaryUtils.h"
@@ -313,5 +313,3 @@ bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
 }
 
 }
-
-// NOLINTEND

@@ -161,8 +161,7 @@ public:
         readBinaryLittleEndian(total_values, buf);
 
         /// Compatibility with old versions.
-        if (size > total_values)
-            size = total_values;
+        size = std::min(size, total_values);
 
         static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
         if (unlikely(size > MAX_RESERVOIR_SIZE))

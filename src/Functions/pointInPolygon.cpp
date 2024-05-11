@@ -1,3 +1,6 @@
+// NOLINT
+// clang-tidy-19 crashes
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/PolygonUtils.h>
 #include <Functions/FunctionHelpers.h>
@@ -7,15 +10,12 @@
 #include <boost/geometry/geometries/polygon.hpp>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
