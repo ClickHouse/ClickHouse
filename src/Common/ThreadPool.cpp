@@ -494,8 +494,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
+template class ThreadFromGlobalPoolImpl<false, false>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
