@@ -113,7 +113,7 @@ public:
             }
             else {
                 std::cout << "Processing " << val << '\n';  // GGMLTODO : remove log
-                std::string result = model->eval(val);
+                std::string result = model->eval(params, val);
                 result_raw[j] = std::move(result);
                 totalsize += result_raw[j].size() + 1;
             }
