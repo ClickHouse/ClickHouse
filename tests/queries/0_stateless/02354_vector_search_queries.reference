@@ -19,7 +19,7 @@ Expression ((Projection + Before ORDER BY))
           Granules: 1/1
         Skip
           Name: vec_idx
-          Description: usearch GRANULARITY 100000000
+          Description: vector_similarity GRANULARITY 100000000
           Parts: 1/1
           Granules: 1/1
 - ORDER-BY-type, EXPLAIN
@@ -35,7 +35,7 @@ Expression (Projection)
             Granules: 1/1
           Skip
             Name: vec_idx
-            Description: usearch GRANULARITY 100000000
+            Description: vector_similarity GRANULARITY 100000000
             Parts: 1/1
             Granules: 1/1
 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
@@ -59,7 +59,7 @@ Expression ((Projection + Before ORDER BY))
           Granules: 4/4
         Skip
           Name: vec_idx
-          Description: usearch GRANULARITY 2
+          Description: vector_similarity GRANULARITY 2
           Parts: 1/1
           Granules: 1/4
 - ORDER-BY-type, EXPLAIN
@@ -75,7 +75,7 @@ Expression (Projection)
             Granules: 4/4
           Skip
             Name: vec_idx
-            Description: usearch GRANULARITY 2
+            Description: vector_similarity GRANULARITY 2
             Parts: 1/1
             Granules: 2/4
 Special cases

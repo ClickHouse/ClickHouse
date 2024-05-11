@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+#include <Storages/MergeTree/VectorSimilarityCommon.h>
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -23,7 +23,7 @@ namespace
 {
 
 template <typename Literal>
-void extractReferenceVectorFromLiteral(ApproximateNearestNeighborInformation::Embedding & reference_vector, Literal literal)
+void extractReferenceVectorFromLiteral(VectorSimilarityInfo::Embedding & reference_vector, Literal literal)
 {
     Float64 float_element_of_reference_vector;
     Int64 int_element_of_reference_vector;
@@ -39,26 +39,26 @@ void extractReferenceVectorFromLiteral(ApproximateNearestNeighborInformation::Em
     }
 }
 
-ApproximateNearestNeighborInformation::Metric stringToMetric(std::string_view metric)
+VectorSimilarityInfo::Metric stringToMetric(std::string_view metric)
 {
     if (metric == "L2Distance")
-        return ApproximateNearestNeighborInformation::Metric::L2;
+        return VectorSimilarityInfo::Metric::L2;
     else if (metric == "LpDistance")
-        return ApproximateNearestNeighborInformation::Metric::Lp;
+        return VectorSimilarityInfo::Metric::Lp;
     else
-        return ApproximateNearestNeighborInformation::Metric::Unknown;
+        return VectorSimilarityInfo::Metric::Unknown;
 }
 
 }
 
-ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info, ContextPtr context)
+VectorSimilarityCondition::VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context)
     : block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context))
     , index_granularity(context->getMergeTreeSettings().index_granularity)
     , max_limit_for_ann_queries(context->getSettings().max_limit_for_ann_queries)
     , index_is_useful(checkQueryStructure(query_info))
 {}
 
-bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric) const
+bool VectorSimilarityCondition::alwaysUnknownOrTrue(String metric) const
 {
     if (!index_is_useful)
         return true; // Query isn't supported
@@ -66,64 +66,64 @@ bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric) con
     return !(stringToMetric(metric) == query_information->metric);
 }
 
-float ApproximateNearestNeighborCondition::getComparisonDistanceForWhereQuery() const
+float VectorSimilarityCondition::getComparisonDistanceForWhereQuery() const
 {
     if (index_is_useful && query_information.has_value()
-        && query_information->type == ApproximateNearestNeighborInformation::Type::Where)
+        && query_information->type == VectorSimilarityInfo::Type::Where)
         return query_information->distance;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported method for this query type");
 }
 
-UInt64 ApproximateNearestNeighborCondition::getLimit() const
+UInt64 VectorSimilarityCondition::getLimit() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->limit;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No LIMIT section in query, not supported");
 }
 
-std::vector<float> ApproximateNearestNeighborCondition::getReferenceVector() const
+std::vector<float> VectorSimilarityCondition::getReferenceVector() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->reference_vector;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Reference vector was requested for useless or uninitialized index.");
 }
 
-size_t ApproximateNearestNeighborCondition::getDimensions() const
+size_t VectorSimilarityCondition::getDimensions() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->reference_vector.size();
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of dimensions was requested for useless or uninitialized index.");
 }
 
-String ApproximateNearestNeighborCondition::getColumnName() const
+String VectorSimilarityCondition::getColumnName() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->column_name;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
 }
 
-ApproximateNearestNeighborInformation::Metric ApproximateNearestNeighborCondition::getMetricType() const
+VectorSimilarityInfo::Metric VectorSimilarityCondition::getMetricType() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->metric;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
 }
 
-float ApproximateNearestNeighborCondition::getPValueForLpDistance() const
+float VectorSimilarityCondition::getPValueForLpDistance() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->p_for_lp_dist;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
 }
 
-ApproximateNearestNeighborInformation::Type ApproximateNearestNeighborCondition::getQueryType() const
+VectorSimilarityInfo::Type VectorSimilarityCondition::getQueryType() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->type;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
 }
 
-bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryInfo & query)
+bool VectorSimilarityCondition::checkQueryStructure(const SelectQueryInfo & query)
 {
     /// RPN-s for different sections of the query
     RPN rpn_prewhere_clause;
@@ -132,9 +132,9 @@ bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryI
     RPNElement rpn_limit;
     UInt64 limit;
 
-    ApproximateNearestNeighborInformation prewhere_info;
-    ApproximateNearestNeighborInformation where_info;
-    ApproximateNearestNeighborInformation order_by_info;
+    VectorSimilarityInfo prewhere_info;
+    VectorSimilarityInfo where_info;
+    VectorSimilarityInfo order_by_info;
 
     /// Build rpns for query sections
     const auto & select = query.query->as<ASTSelectQuery &>();
@@ -192,7 +192,7 @@ bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryI
     return query_information.has_value();
 }
 
-void ApproximateNearestNeighborCondition::traverseAST(const ASTPtr & node, RPN & rpn)
+void VectorSimilarityCondition::traverseAST(const ASTPtr & node, RPN & rpn)
 {
     // If the node is ASTFunction, it may have children nodes
     if (const auto * func = node->as<ASTFunction>())
@@ -211,7 +211,7 @@ void ApproximateNearestNeighborCondition::traverseAST(const ASTPtr & node, RPN &
     rpn.emplace_back(std::move(element));
 }
 
-bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
+bool VectorSimilarityCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
 {
     /// Match Functions
     if (const auto * function = node->as<ASTFunction>())
@@ -254,7 +254,7 @@ bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, R
     return tryCastToConstType(node, out);
 }
 
-bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
+bool VectorSimilarityCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
 {
     Field const_value;
     DataTypePtr const_type;
@@ -305,18 +305,18 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
     return false;
 }
 
-void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node, RPN & rpn)
+void VectorSimilarityCondition::traverseOrderByAST(const ASTPtr & node, RPN & rpn)
 {
     if (const auto * expr_list = node->as<ASTExpressionList>())
         if (const auto * order_by_element = expr_list->children.front()->as<ASTOrderByElement>())
             traverseAST(order_by_element->children.front(), rpn);
 }
 
-/// Returns true and stores ApproximateNearestNeighborInformation if the query has valid WHERE clause
-bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
+/// Returns true and stores VectorSimilarityInfo if the query has valid WHERE clause
+bool VectorSimilarityCondition::matchRPNWhere(RPN & rpn, VectorSimilarityInfo & vector_similarity_info)
 {
     /// Fill query type field
-    ann_info.type = ApproximateNearestNeighborInformation::Type::Where;
+    vector_similarity_info.type = VectorSimilarityInfo::Type::Where;
 
     /// WHERE section must have at least 5 expressions
     /// Operator->Distance(float)->DistanceFunc->Column->ArrayFunc(ReferenceVector(floats))
@@ -339,9 +339,9 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
         if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL)
             return false;
 
-        ann_info.distance = getFloatOrIntLiteralOrPanic(iter);
-        if (ann_info.distance < 0)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", ann_info.distance);
+        vector_similarity_info.distance = getFloatOrIntLiteralOrPanic(iter);
+        if (vector_similarity_info.distance < 0)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", vector_similarity_info.distance);
 
         ++iter;
 
@@ -350,17 +350,17 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
         return false;
 
     auto end = rpn.end();
-    if (!matchMainParts(iter, end, ann_info))
+    if (!matchMainParts(iter, end, vector_similarity_info))
         return false;
 
     if (greater_case)
     {
-        if (ann_info.reference_vector.size() < 2)
+        if (vector_similarity_info.reference_vector.size() < 2)
             return false;
-        ann_info.distance = ann_info.reference_vector.back();
-        if (ann_info.distance < 0)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", ann_info.distance);
-        ann_info.reference_vector.pop_back();
+        vector_similarity_info.distance = vector_similarity_info.reference_vector.back();
+        if (vector_similarity_info.distance < 0)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Distance can't be negative. Got {}", vector_similarity_info.distance);
+        vector_similarity_info.reference_vector.pop_back();
     }
 
     /// query is ok
@@ -368,10 +368,10 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
 }
 
 /// Returns true and stores ANNExpr if the query has valid ORDERBY clause
-bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
+bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo & vector_similarity_info)
 {
     /// Fill query type field
-    ann_info.type = ApproximateNearestNeighborInformation::Type::OrderBy;
+    vector_similarity_info.type = VectorSimilarityInfo::Type::OrderBy;
 
     // ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
@@ -380,11 +380,11 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
     auto iter = rpn.begin();
     auto end = rpn.end();
 
-    return ApproximateNearestNeighborCondition::matchMainParts(iter, end, ann_info);
+    return VectorSimilarityCondition::matchMainParts(iter, end, vector_similarity_info);
 }
 
 /// Returns true and stores Length if we have valid LIMIT clause in query
-bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
+bool VectorSimilarityCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
 {
     if (rpn.function == RPNElement::FUNCTION_INT_LITERAL)
     {
@@ -396,7 +396,7 @@ bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64
 }
 
 /// Matches dist function, referencer vector, column name
-bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info)
+bool VectorSimilarityCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, VectorSimilarityInfo & vector_similarity_info)
 {
     bool identifier_found = false;
 
@@ -404,22 +404,22 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
-    ann_info.metric = stringToMetric(iter->func_name);
+    vector_similarity_info.metric = stringToMetric(iter->func_name);
     ++iter;
 
-    if (ann_info.metric == ApproximateNearestNeighborInformation::Metric::Lp)
+    if (vector_similarity_info.metric == VectorSimilarityInfo::Metric::Lp)
     {
         if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
             iter->function != RPNElement::FUNCTION_INT_LITERAL)
             return false;
-        ann_info.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
+        vector_similarity_info.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
         ++iter;
     }
 
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
     {
         identifier_found = true;
-        ann_info.column_name = std::move(iter->identifier.value());
+        vector_similarity_info.column_name = std::move(iter->identifier.value());
         ++iter;
     }
 
@@ -428,7 +428,7 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
-        extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
+        extractReferenceVectorFromLiteral(vector_similarity_info.reference_vector, iter->array_literal);
         ++iter;
     }
 
@@ -443,7 +443,7 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
         ++iter;
         if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
-            extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
+            extractReferenceVectorFromLiteral(vector_similarity_info.reference_vector, iter->array_literal);
             ++iter;
         }
         else
@@ -454,12 +454,12 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     {
         if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
             iter->function == RPNElement::FUNCTION_INT_LITERAL)
-            ann_info.reference_vector.emplace_back(getFloatOrIntLiteralOrPanic(iter));
+            vector_similarity_info.reference_vector.emplace_back(getFloatOrIntLiteralOrPanic(iter));
         else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
         {
             if (identifier_found)
                 return false;
-            ann_info.column_name = std::move(iter->identifier.value());
+            vector_similarity_info.column_name = std::move(iter->identifier.value());
             identifier_found = true;
         }
         else
@@ -469,11 +469,11 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
     }
 
     /// Final checks of correctness
-    return identifier_found && !ann_info.reference_vector.empty();
+    return identifier_found && !vector_similarity_info.reference_vector.empty();
 }
 
 /// Gets float or int from AST node
-float ApproximateNearestNeighborCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
+float VectorSimilarityCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
 {
     if (iter->float_literal.has_value())
         return iter->float_literal.value();

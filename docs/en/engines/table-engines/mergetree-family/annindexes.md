@@ -17,7 +17,7 @@ In terms of SQL, the nearest neighborhood problem can be expressed as follows:
 
 ``` sql
 SELECT *
-FROM table_with_ann_index
+FROM table
 ORDER BY Distance(vectors, Point)
 LIMIT N
 ```
@@ -31,7 +31,7 @@ An alternative formulation of the nearest neighborhood search problem looks as f
 
 ``` sql
 SELECT *
-FROM table_with_ann_index
+FROM table
 WHERE Distance(vectors, Point) < MaxDistance
 LIMIT N
 ```
@@ -44,20 +44,51 @@ With brute force search, both queries are expensive (linear in the number of poi
 `Point` must be computed. To speed this process up, Approximate Nearest Neighbor Search Indexes (ANN indexes) store a compact representation
 of the search space (using clustering, search trees, etc.) which allows to compute an approximate answer much quicker (in sub-linear time).
 
-# Creating and Using ANN Indexes {#creating_using_ann_indexes}
+# Creating and Using Vector Similarity Indexes
 
-Syntax to create an ANN index over an [Array(Float32)](../../../sql-reference/data-types/array.md) column:
+Syntax to create a vector similarity index over an [Array(Float32)](../../../sql-reference/data-types/array.md) column:
 
 ```sql
-CREATE TABLE table_with_ann_index
+CREATE TABLE table
 (
-  `id` Int64,
-  `vectors` Array(Float32),
-  INDEX [ann_index_name vectors TYPE [ann_index_type]([ann_index_parameters]) [GRANULARITY [N]]
+  id Int64,
+  vec Array(Float32),
+  INDEX index_name vec TYPE vector_similarity([Distance[, ScalarKind]]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
+
+Vector similarity indexes are based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
+algorithm](https://arxiv.org/abs/1603.09320), i.e., a hierarchical graph where each point represents a vector and the edges represent
+similarity. Such hierarchical structures can be very efficient on large collections. They may often fetch 0.05% or less data from the
+overall dataset, while still providing 99% recall. This is especially useful when working with high-dimensional vectors, that are expensive
+to load and compare. The library also has several hardware-specific SIMD optimizations to accelerate further distance computations on modern
+Arm (NEON and SVE) and x86 (AVX2 and AVX-512) CPUs and OS-specific optimizations to allow efficient navigation around immutable persistent
+files, without loading them into RAM.
+
+Vector similarity indexes currently support two distance functions:
+- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
+  ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
+- `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
+  ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
+
+Vector similarity indexes allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16` or `i8`.
+If no scalar kind was specified during index creation, `f16` is used as default.
+
+For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
+distance function was specified during index creation, `L2Distance` is used as default.
+
+:::note
+All arrays must have same length. To avoid errors, you can use a
+[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
+length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported.
+:::
+
+:::note
+The vector similarity index currently does not work with per-table, non-default `index_granularity` settings (see
+[here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
+:::
 
 ANN indexes are built during column insertion and merge. As a result, `INSERT` and `OPTIMIZE` statements will be slower than for ordinary
 tables. ANNIndexes are ideally used only with immutable or rarely changed data, respectively when are far more read requests than write
@@ -69,7 +100,7 @@ ANN indexes support two types of queries:
 
   ``` sql
   SELECT *
-  FROM table_with_ann_index
+  FROM table
   [WHERE ...]
   ORDER BY Distance(vectors, Point)
   LIMIT N
@@ -79,7 +110,7 @@ ANN indexes support two types of queries:
 
    ``` sql
    SELECT *
-   FROM table_with_ann_index
+   FROM table
    WHERE Distance(vectors, Point) < MaxDistance
    LIMIT N
    ```
@@ -89,7 +120,7 @@ To avoid writing out large vectors, you can use [query
 parameters](/docs/en/interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters), e.g.
 
 ```bash
-clickhouse-client --param_vec='hello' --query="SELECT * FROM table_with_ann_index WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
+clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
 ```
 :::
 
@@ -122,67 +153,3 @@ brute-force distance calculation over all rows of the granules. With a small `GR
 equally good, only the processing performance differs. It is generally recommended to use a large `GRANULARITY` for ANN indexes and fall
 back to a smaller `GRANULARITY` values only in case of problems like excessive memory consumption of the ANN structures. If no `GRANULARITY`
 was specified for ANN indexes, the default value is 100 million.
-
-
-# Available ANN Indexes {#available_ann_indexes}
-
-- [USearch](/docs/en/engines/table-engines/mergetree-family/annindexes.md#usearch-usearch)
-
-## USearch {#usearch}
-
-This type of ANN index is based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
-algorithm](https://arxiv.org/abs/1603.09320), i.e., builds a hierarchical graph where each point represents a vector and the edges represent
-similarity. Such hierarchical structures can be very efficient on large collections. They may often fetch 0.05% or less data from the
-overall dataset, while still providing 99% recall. This is especially useful when working with high-dimensional vectors,
-that are expensive to load and compare. The library also has several hardware-specific SIMD optimizations to accelerate further
-distance computations on modern Arm (NEON and SVE) and x86 (AVX2 and AVX-512) CPUs and OS-specific optimizations to allow efficient
-navigation around immutable persistent files, without loading them into RAM.
-
-<div class='vimeo-container'>
-  <iframe src="//www.youtube.com/embed/UMrhB3icP9w"
-    width="640"
-    height="360"
-    frameborder="0"
-    allow="autoplay;
-    fullscreen;
-    picture-in-picture"
-    allowfullscreen>
-  </iframe>
-</div>
-
-Syntax to create an USearch index over an [Array](../../../sql-reference/data-types/array.md) column:
-
-```sql
-CREATE TABLE table_with_usearch_index
-(
-  id Int64,
-  vectors Array(Float32),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-USearch currently supports two distance functions:
-- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
-  ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
-- `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
-  ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
-
-USearch allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16` or `i8`. If no scalar kind
-was specified during index creation, `f16` is used as default.
-
-For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
-distance function was specified during index creation, `L2Distance` is used as default.
-
-:::note
-All arrays must have same length. To avoid errors, you can use a
-[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
-length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported.
-:::
-
-:::note
-The USearch index currently does not work with per-table, non-default `index_granularity` settings (see
-[here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
-:::
-

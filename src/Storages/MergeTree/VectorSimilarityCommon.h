@@ -12,7 +12,7 @@ namespace DB
 static constexpr auto DISTANCE_FUNCTION_L2 = "L2Distance";
 static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
 
-/// Approximate Nearest Neighbour queries have a similar structure:
+/// Approximate nearest neighbour (vector similarity) queries have a similar structure:
 /// - reference vector from which all distances are calculated
 /// - metric name (e.g L2Distance, LpDistance, etc.)
 /// - name of column with embeddings
@@ -24,7 +24,7 @@ static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
 /// - distance to compare with (only for where queries)
 ///
 /// This struct holds all these components.
-struct ApproximateNearestNeighborInformation
+struct VectorSimilarityInfo
 {
     using Embedding = std::vector<float>;
     Embedding reference_vector;
@@ -52,8 +52,8 @@ struct ApproximateNearestNeighborInformation
 };
 
 
-// Class ANNCondition, is responsible for recognizing if the query is an ANN queries which can utilize ANN indexes. It parses the SQL query
-/// and checks if it matches ANNIndexes. Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
+/// Class VectorSimilarityCondition, is responsible for recognizing if the query can utilize vector similarity indexes.
+/// Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
 /// only one argument, the name of the metric with which index was built. Two main patterns of queries are supported
 ///
 /// - 1. WHERE queries:
@@ -66,7 +66,8 @@ struct ApproximateNearestNeighborInformation
 /// If the query is both of type 1. and 2., than we can't use the index and alwaysUnknownOrTrue returns true.
 /// reference_vector should have float coordinates, e.g. (0.2, 0.1, .., 0.5)
 ///
-/// If the query matches one of these two types, then this class extracts the main information needed for ANN indexes from the query.
+/// If the query matches one of these two types, then this class extracts the main information needed for vector similarity indexes from the
+/// query.
 ///
 /// From matching query it extracts
 /// - referenceVector
@@ -79,12 +80,12 @@ struct ApproximateNearestNeighborInformation
 /// - queryHasOrderByClause and queryHasWhereClause return true if query matches the type
 ///
 /// Search query type is also recognized for PREWHERE clause
-class ApproximateNearestNeighborCondition
+class VectorSimilarityCondition
 {
 public:
-    ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info, ContextPtr context);
+    VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
-    /// Returns false if query can be speeded up by an ANN index, true otherwise.
+    /// Returns false if query can be speeded up by a vector similarity index, true otherwise.
     bool alwaysUnknownOrTrue(String metric) const;
 
     /// Returns the distance to compare with for search query
@@ -98,12 +99,12 @@ public:
 
     String getColumnName() const;
 
-    ApproximateNearestNeighborInformation::Metric getMetricType() const;
+    VectorSimilarityInfo::Metric getMetricType() const;
 
     /// The P- value if the metric is 'LpDistance'
     float getPValueForLpDistance() const;
 
-    ApproximateNearestNeighborInformation::Type getQueryType() const;
+    VectorSimilarityInfo::Type getQueryType() const;
 
     UInt64 getIndexGranularity() const { return index_granularity; }
 
@@ -179,16 +180,16 @@ private:
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
     /// Returns true and stores ANNExpr if the query has valid WHERE section
-    static bool matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & ann_info);
+    static bool matchRPNWhere(RPN & rpn, VectorSimilarityInfo & vector_similarity_info);
 
     /// Returns true and stores ANNExpr if the query has valid ORDERBY section
-    static bool matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info);
+    static bool matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo & vector_similarity_info);
 
     /// Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
     /* Matches dist function, reference vector, column name */
-    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info);
+    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, VectorSimilarityInfo & vector_similarity_info);
 
     /// Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(const RPN::iterator& iter);
@@ -196,7 +197,7 @@ private:
     Block block_with_constants;
 
     /// true if we have one of two supported query types
-    std::optional<ApproximateNearestNeighborInformation> query_information;
+    std::optional<VectorSimilarityInfo> query_information;
 
     // Get from settings ANNIndex parameters
     const UInt64 index_granularity;
@@ -208,8 +209,8 @@ private:
 };
 
 
-/// Common interface of ANN indexes.
-class IMergeTreeIndexConditionApproximateNearestNeighbor : public IMergeTreeIndexCondition
+/// Common interface of vector similarity indexes
+class IMergeTreeIndexConditionVectorSimilarity : public IMergeTreeIndexCondition
 {
 public:
     /// Returns vector of indexes of ranges in granule which are useful for query.

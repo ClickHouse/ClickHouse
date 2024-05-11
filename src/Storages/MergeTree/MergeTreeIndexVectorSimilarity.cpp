@@ -1,9 +1,6 @@
 #ifdef ENABLE_USEARCH
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wpass-failed"
-
-#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
@@ -86,7 +83,7 @@ size_t USearchIndexWithSerialization<Metric>::getDimensions() const
 }
 
 template <unum::usearch::metric_kind_t Metric>
-MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
+MergeTreeIndexGranularityVectorSimilarity<Metric>::MergeTreeIndexGranularityVectorSimilarity(
     const String & index_name_,
     const Block & index_sample_block_,
     unum::usearch::scalar_kind_t scalar_kind_)
@@ -98,7 +95,7 @@ MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
 }
 
 template <unum::usearch::metric_kind_t Metric>
-MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
+MergeTreeIndexGranularityVectorSimilarity<Metric>::MergeTreeIndexGranularityVectorSimilarity(
     const String & index_name_,
     const Block & index_sample_block_,
     unum::usearch::scalar_kind_t scalar_kind_,
@@ -111,7 +108,7 @@ MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
 }
 
 template <unum::usearch::metric_kind_t Metric>
-void MergeTreeIndexGranuleUSearch<Metric>::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranularityVectorSimilarity<Metric>::serializeBinary(WriteBuffer & ostr) const
 {
     /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
@@ -120,7 +117,7 @@ void MergeTreeIndexGranuleUSearch<Metric>::serializeBinary(WriteBuffer & ostr) c
 }
 
 template <unum::usearch::metric_kind_t Metric>
-void MergeTreeIndexGranuleUSearch<Metric>::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+void MergeTreeIndexGranularityVectorSimilarity<Metric>::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
     UInt64 dimension;
     readIntBinary(dimension, istr);
@@ -129,7 +126,7 @@ void MergeTreeIndexGranuleUSearch<Metric>::deserializeBinary(ReadBuffer & istr, 
 }
 
 template <unum::usearch::metric_kind_t Metric>
-MergeTreeIndexAggregatorUSearch<Metric>::MergeTreeIndexAggregatorUSearch(
+MergeTreeIndexAggregatorVectorSimilarity<Metric>::MergeTreeIndexAggregatorVectorSimilarity(
     const String & index_name_,
     const Block & index_sample_block_,
     unum::usearch::scalar_kind_t scalar_kind_)
@@ -140,15 +137,15 @@ MergeTreeIndexAggregatorUSearch<Metric>::MergeTreeIndexAggregatorUSearch(
 }
 
 template <unum::usearch::metric_kind_t Metric>
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorUSearch<Metric>::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity<Metric>::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleUSearch<Metric>>(index_name, index_sample_block, scalar_kind, index);
+    auto granule = std::make_shared<MergeTreeIndexGranularityVectorSimilarity<Metric>>(index_name, index_sample_block, scalar_kind, index);
     index = nullptr;
     return granule;
 }
 
 template <unum::usearch::metric_kind_t Metric>
-void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorVectorSimilarity<Metric>::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -225,27 +222,27 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
     *pos += rows_read;
 }
 
-MergeTreeIndexConditionUSearch::MergeTreeIndexConditionUSearch(
+MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity(
     const IndexDescription & /*index_description*/,
     const SelectQueryInfo & query,
     const String & distance_function_,
     ContextPtr context)
-    : ann_condition(query, context)
+    : condition(query, context)
     , distance_function(distance_function_)
 {
 }
 
-bool MergeTreeIndexConditionUSearch::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
+bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for ANN skip indexes");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for vector indexes");
 }
 
-bool MergeTreeIndexConditionUSearch::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
 {
-    return ann_condition.alwaysUnknownOrTrue(distance_function);
+    return condition.alwaysUnknownOrTrue(distance_function);
 }
 
-std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
+std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
     if (distance_function == DISTANCE_FUNCTION_L2)
         return getUsefulRangesImpl<unum::usearch::metric_kind_t::l2sq_k>(idx_granule);
@@ -255,29 +252,29 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeInd
 }
 
 template <unum::usearch::metric_kind_t Metric>
-std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const
+std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const
 {
-    const UInt64 limit = ann_condition.getLimit();
-    const UInt64 index_granularity = ann_condition.getIndexGranularity();
-    const std::optional<float> comparison_distance = ann_condition.getQueryType() == ApproximateNearestNeighborInformation::Type::Where
-        ? std::optional<float>(ann_condition.getComparisonDistanceForWhereQuery())
+    const UInt64 limit = condition.getLimit();
+    const UInt64 index_granularity = condition.getIndexGranularity();
+    const std::optional<float> comparison_distance = condition.getQueryType() == VectorSimilarityInfo::Type::Where
+        ? std::optional<float>(condition.getComparisonDistanceForWhereQuery())
         : std::nullopt;
 
     if (comparison_distance && comparison_distance.value() < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
 
-    const std::vector<float> reference_vector = ann_condition.getReferenceVector();
+    const std::vector<float> reference_vector = condition.getReferenceVector();
 
-    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleUSearch<Metric>>(idx_granule);
+    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranularityVectorSimilarity<Metric>>(idx_granule);
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
     const USearchIndexWithSerializationPtr<Metric> index = granule->index;
 
-    if (ann_condition.getDimensions() != index->dimensions())
+    if (condition.getDimensions() != index->dimensions())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
             "does not match the dimension in the index ({})",
-            ann_condition.getDimensions(), index->dimensions());
+            condition.getDimensions(), index->dimensions());
 
     auto result = index->search(reference_vector.data(), limit);
 
@@ -305,42 +302,42 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTre
     return granules;
 }
 
-MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_)
+MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_)
     : IMergeTreeIndex(index_)
     , distance_function(distance_function_)
     , scalar_kind(scalar_kind_)
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexUSearch::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() const
 {
     if (distance_function == DISTANCE_FUNCTION_L2)
-        return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexGranularityVectorSimilarity<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
     else if (distance_function == DISTANCE_FUNCTION_COSINE)
-        return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexGranularityVectorSimilarity<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block, scalar_kind);
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     if (distance_function == DISTANCE_FUNCTION_L2)
-        return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
     else if (distance_function == DISTANCE_FUNCTION_COSINE)
-        return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block, scalar_kind);
+        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block, scalar_kind);
     std::unreachable();
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionUSearch>(index, query, distance_function, context);
+    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(index, query, distance_function, context);
 };
 
-MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const ActionsDAGPtr &, ContextPtr) const
+MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAGPtr &, ContextPtr) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexAnnoy cannot be created with ActionsDAG");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexVectorSimilarity cannot be created with ActionsDAG");
 }
 
-MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 {
     static constexpr auto default_distance_function = DISTANCE_FUNCTION_L2;
     String distance_function = default_distance_function;
@@ -352,37 +349,32 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
     if (index.arguments.size() > 1)
         scalar_kind = nameToScalarKind.at(index.arguments[1].get<String>());
 
-    return std::make_shared<MergeTreeIndexUSearch>(index, distance_function, scalar_kind);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, distance_function, scalar_kind);
 }
 
-void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    /// Check number and type of USearch index arguments:
-
+    /// Check number and type of arguments:
     if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index must not have more than one parameters");
-
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector index must not have more than one parameters");
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of USearch index (distance function) must be of type String");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector index (distance function) must be of type String");
     if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of USearch index (scalar type) must be of type String");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector index (scalar type) must be of type String");
 
     /// Check that the index is created on a single column
-
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "USearch indexes must be created on a single column");
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Vector indexes must be created on a single column");
 
     /// Check that a supported metric was passed as first argument
-
     if (!index.arguments.empty())
     {
         String distance_name = index.arguments[0].get<String>();
         if (distance_name != DISTANCE_FUNCTION_L2 && distance_name != DISTANCE_FUNCTION_COSINE)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "USearch index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Vector index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
     }
 
     /// Check that a supported kind was passed as a second argument
-
     if (index.arguments.size() > 1 && !nameToScalarKind.contains(index.arguments[1].get<String>()))
     {
         String supported_kinds;
@@ -392,28 +384,21 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
                 supported_kinds += ", ";
             supported_kinds += name;
         }
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized scalar kind (second argument) for USearch index. Supported kinds are: {}", supported_kinds);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized scalar kind (second argument) for vector index. Supported kinds are: {}", supported_kinds);
     }
 
-    /// Check data type of indexed column:
-
-    auto throw_unsupported_underlying_column_exception = []()
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "USearch indexes can only be created on columns of type Array(Float32))");
-    };
-
+    /// Check data type of the indexed column:
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
-
     if (const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
-            throw_unsupported_underlying_column_exception();
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector indexes can only be created on columns of type Array(Float32))");
     }
     else
-        throw_unsupported_underlying_column_exception();
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector indexes can only be created on columns of type Array(Float32))");
+    }
 }
 
 }

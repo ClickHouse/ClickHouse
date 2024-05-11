@@ -46,7 +46,7 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+#include <Storages/MergeTree/VectorSimilarityCommon.h>
 
 namespace CurrentMetrics
 {
@@ -1312,11 +1312,11 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 reader.read(granule);
 
-            auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
-            if (ann_condition != nullptr)
+            auto vector_similarity_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionVectorSimilarity>(condition);
+            if (vector_similarity_condition != nullptr)
             {
                 // vector of indexes of useful ranges
-                auto result = ann_condition->getUsefulRanges(granule);
+                auto result = vector_similarity_condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {
