@@ -1389,14 +1389,15 @@ struct URLHierarchyHashImpl
             ++pos;
 
         /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
-        *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
-        *    For the rest, simply return the full URL as the only element of the hierarchy.
-        */
+          * (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
+          * For the rest, simply return the full URL as the only element of the hierarchy.
+          */
         if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
         {
-            pos = end;
-            return 0 == level ? pos - begin : 0;
+            return 0 == level ? end - begin : 0;
         }
+        else
+            pos += 3;
 
         /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -1518,12 +1519,8 @@ private:
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
-        if (!isColumnConst(*level_col))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
-
-        const auto level = level_col->get64(0);
-
         const auto * col_untyped = arguments.front().column.get();
+
         if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
@@ -1537,7 +1534,7 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 out[i] = URLHierarchyHashImpl::apply(
-                    level,
+                    level_col->getUInt(i),
                     reinterpret_cast<const char *>(&chars[current_offset]),
                     offsets[i] - current_offset - 1);
 

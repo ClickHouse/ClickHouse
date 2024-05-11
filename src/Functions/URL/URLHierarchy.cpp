@@ -72,6 +72,8 @@ public:
                 pos = end;
                 return false;
             }
+            else
+                pos += 3;
 
             /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or `?` or `#`
             while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
