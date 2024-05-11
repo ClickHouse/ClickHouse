@@ -8,7 +8,7 @@ public:
     ASTPtr expression;
     ASTPtr name;
 
-    String getID(char) const override { return "DefaultedColumn"};
+    String getID(char) const override { return "DefaultedColumn"; }
 
     ASTPtr clone() const override;
 
