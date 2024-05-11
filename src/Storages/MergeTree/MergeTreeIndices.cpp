@@ -125,12 +125,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
-
     registerValidator("hypothesis", hypothesisIndexValidator);
-#ifdef ENABLE_ANNOY
-    registerCreator("annoy", annoyIndexCreator);
-    registerValidator("annoy", annoyIndexValidator);
-#endif
 
 #ifdef ENABLE_USEARCH
     registerCreator("usearch", usearchIndexCreator);

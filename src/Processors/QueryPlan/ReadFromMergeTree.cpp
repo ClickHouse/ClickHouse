@@ -24,7 +24,6 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 #include <Storages/MergeTree/MergeTreeIndexUSearch.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
@@ -1477,10 +1476,6 @@ static void buildIndexes(
                 MergeTreeIndexConditionPtr condition;
                 if (index_helper->isVectorSearch())
                 {
-#ifdef ENABLE_ANNOY
-                    if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
-                        condition = annoy->createIndexCondition(query_info, context);
-#endif
 #ifdef ENABLE_USEARCH
                     if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
                         condition = usearch->createIndexCondition(query_info, context);

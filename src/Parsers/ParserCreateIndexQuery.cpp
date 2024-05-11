@@ -89,9 +89,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     else
     {
         auto index_type = index->getType();
-        if (index_type && index_type->name == "annoy")
-            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type && index_type->name == "usearch")
+        if (index_type && index_type->name == "usearch")
             index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;

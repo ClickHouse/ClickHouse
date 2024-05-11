@@ -126,80 +126,7 @@ was specified for ANN indexes, the default value is 100 million.
 
 # Available ANN Indexes {#available_ann_indexes}
 
-- [Annoy](/docs/en/engines/table-engines/mergetree-family/annindexes.md#annoy-annoy)
-
 - [USearch](/docs/en/engines/table-engines/mergetree-family/annindexes.md#usearch-usearch)
-
-## Annoy {#annoy}
-
-Annoy indexes are currently experimental, to use them you first need to `SET allow_experimental_annoy_index = 1`. They are also currently
-disabled on ARM due to memory safety problems with the algorithm.
-
-This type of ANN index is based on the [Annoy library](https://github.com/spotify/annoy) which recursively divides the space into random
-linear surfaces (lines in 2D, planes in 3D etc.).
-
-<div class='vimeo-container'>
-  <iframe src="//www.youtube.com/embed/QkCCyLW0ehU"
-    width="640"
-    height="360"
-    frameborder="0"
-    allow="autoplay;
-    fullscreen;
-    picture-in-picture"
-    allowfullscreen>
-  </iframe>
-</div>
-
-Syntax to create an Annoy index over an [Array(Float32)](../../../sql-reference/data-types/array.md) column:
-
-```sql
-CREATE TABLE table_with_annoy_index
-(
-  id Int64,
-  vectors Array(Float32),
-  INDEX [ann_index_name] vectors TYPE annoy([Distance[, NumTrees]]) [GRANULARITY N]
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-Annoy currently supports two distance functions:
-- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
-  ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
-- `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
-  ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
-
-For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
-distance function was specified during index creation, `L2Distance` is used as default.
-
-Parameter `NumTrees` is the number of trees which the algorithm creates (default if not specified: 100). Higher values of `NumTree` mean
-more accurate search results but slower index creation / query times (approximately linearly) as well as larger index sizes.
-
-:::note
-All arrays must have same length. To avoid errors, you can use a
-[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
-length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported.
-:::
-
-The creation of Annoy indexes (whenever a new part is build, e.g. at the end of a merge) is a relatively slow process. You can increase
-setting `max_threads_for_annoy_index_creation` (default: 4) which controls how many threads are used to create an Annoy index. Please be
-careful with this setting, it is possible that multiple indexes are created in parallel in which case there can be overparallelization.
-
-Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many tree nodes are inspected during SELECTs. Larger
-values mean more accurate results at the cost of longer query runtime:
-
-```sql
-SELECT *
-FROM table_name
-ORDER BY L2Distance(vectors, Point)
-LIMIT N
-SETTINGS annoy_index_search_k_nodes=100;
-```
-
-:::note
-The Annoy index currently does not work with per-table, non-default `index_granularity` settings (see
-[here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
-:::
 
 ## USearch {#usearch}
 
@@ -247,3 +174,15 @@ was specified during index creation, `f16` is used as default.
 
 For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
 distance function was specified during index creation, `L2Distance` is used as default.
+
+:::note
+All arrays must have same length. To avoid errors, you can use a
+[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
+length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported.
+:::
+
+:::note
+The USearch index currently does not work with per-table, non-default `index_granularity` settings (see
+[here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
+:::
+

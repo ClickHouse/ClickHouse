@@ -607,10 +607,6 @@ endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
-if (TARGET ch_contrib::annoy)
-    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
-endif()
-
 if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
 endif()
