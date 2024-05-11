@@ -22,23 +22,8 @@ namespace DB
 void GptJModel::loadImpl(ConfigPtr config)
 {
     std::cout << "GptJModel::doLoad\n"; // GGMLTODO : remove log
-
-    AbstractConfiguration::Keys keys;
-    config->keys(keys);
-    for (const auto & key : keys)
-        std::cout << key << "; ";
-    std::cout << '\n';
-
-    if (!config->has("gptj"))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key 'gptj' set in ggml config");
-    ConfigPtr gptj_config{config->createView("gptj")};
-
-    if (!gptj_config->has("path"))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "no key 'path' set in ggml.gptj config");
-    std::string fname = gptj_config->getString("path");
-
-    std::cout << "Extracted path from config: " << fname << '\n';
-
+    auto fname = getPathFromConfig(config);
+    std::cout << "Extracted path from config: " << fname << '\n'; // GGMLTODO : remove log
     auto fin = std::ifstream(fname, std::ios::binary);
     if (!fin) {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Unable to open file at '{}'", fname);
