@@ -15,6 +15,8 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     checkHyperscanRegexp.cpp
     array/has.cpp
     CastOverloadResolver.cpp
+    # Provides dependency for cast - createFunctionBaseCast()
+    FunctionsConversion.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     IFunction.h
