@@ -207,7 +207,7 @@ if (ARCH_S390X)
 endif()
 add_contrib (annoy-cmake annoy)
 
-option(ENABLE_USEARCH "Enable USearch (Approximate Neighborhood Search, HNSW) support" ${ENABLE_LIBRARIES})
+option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
     add_contrib (robin-map-cmake robin-map)
