@@ -675,35 +675,39 @@ void optimizeOrLikeChain(ASTPtr & query)
 
 void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query)
 {
-    // Check if the query is a SELECT query
     auto *select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         return;
 
-    // Check if ORDER BY clause exists
-    if (!select_query->orderBy())
+    auto *order_by = select_query->orderBy();
+    if (!order_by)
         return;
 
-    // Iterate through ORDER BY elements to find L2Distance function calls
-    for (auto &order_by_elem : select_query->orderBy()->children)
+    for (auto &order_by_elem : order_by->children)
     {
         auto *function_node = order_by_elem->as<ASTFunction>();
         if (!function_node)
             continue;
 
-        // Check if the function is L2Distance
         if (function_node->name == "L2Distance")
         {
-            // Replace L2Distance with sqrt(L2SquaredDistance)
-            function_node->name = "sqrt";
+            // Создание нового узла функции sqrt(L2SquaredDistance)
+            auto sqrt_function_node = std::make_shared<ASTFunction>();
+            sqrt_function_node->name = "sqrt";
+
             auto argument = std::make_shared<ASTFunction>();
             argument->name = "L2SquaredDistance";
             argument->arguments = function_node->arguments;
-            function_node->arguments = std::make_shared<ASTExpressionList>();
-            function_node->arguments->children.push_back(argument);
+
+            sqrt_function_node->arguments = std::make_shared<ASTExpressionList>();
+            sqrt_function_node->arguments->children.push_back(argument);
+
+            // Замена функции L2Distance на sqrt(L2SquaredDistance)
+            order_by_elem = sqrt_function_node;
         }
     }
 }
+
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
 {
