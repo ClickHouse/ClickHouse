@@ -5,19 +5,28 @@
 
 namespace DB::PostgreSQL
 {
-    // void Transform(const std::shared_ptr<Node> node, const ASTPtr & ast) 
-    // {
-    //     if (node->GetKeyString() != "stmts") {
-    //         throw Exception(ErrorCodes::UNEXPECTED_AST, "root node should have stmts key");
-    //     }
-    //     const auto& child = (*node)["stmts"];
-    //     
-    // }
+    ASTPtr Transform(const std::shared_ptr<Node> node) 
+    {
+        if (node->GetKeyString() != "stmts") {
+            throw Exception(ErrorCodes::UNEXPECTED_AST, "root node should have stmts key");
+        }
+        const auto& stmts = (*node)["stmts"]->GetNodeArray();
+        if (stmts.size() != 1)
+        {
+            throw Exception(ErrorCodes::UNEXPECTED_AST, "Expected one statement");
+        }
+        return TransformStatement(stmts[0]);
+    }
 
-    // void TransformStatement(const JSON::Object& node, const ASTPtr & ast)
-    // {
-    //     if (node.size() != 1) {
-    //         throw Exception(ErrorCodes::UNEXPECTED_AST, "stmnt should have exactly one child");
-    //     }
-    // }
+    ASTPtr TransformStatement(const std::shared_ptr<Node> node)
+    {
+        if (node->GetKeyString() == "SelectStmt")
+        {
+            return TransformSelectStatement(node);
+        } 
+        else
+        {
+            throw Exception(ErrorCodes::UNEXPECTED_AST, "Expected statement type");
+        }
+    }
 }

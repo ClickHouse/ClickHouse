@@ -4,6 +4,6 @@
 
 namespace DB::PostgreSQL
 {
-    // void Transform(const std::shared_ptr<Node> node, const ASTPtr & ast);
-    // void TransformStatement(const std::shared_ptr<Node>, const ASTPtr & ast);
+    ASTPtr Transform(const std::shared_ptr<Node> node);
+    ASTPtr TransformStatement(const std::shared_ptr<Node>);
 }

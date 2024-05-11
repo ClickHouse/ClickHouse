@@ -84,9 +84,22 @@ namespace DB::PostgreSQL
     }
 
 
+    size_t Node::Size() const
+    {
+        const auto& arr = GetNodeArray();
+        return arr.size();
+    }
+
     std::shared_ptr<Node> Node::operator[](const std::string& key_) const 
     {
         return GetChildWithKey(key_);
+    }
+
+    std::shared_ptr<Node> Node::operator[](const size_t& idx) const
+    {
+        const auto& arr = GetNodeArray();
+        assert(arr.size() > idx);
+        return arr[idx];
     }
 
     std::vector<std::string> Node::ListChildKeys() const 
@@ -181,7 +194,6 @@ namespace DB::PostgreSQL
         {
             case ElementType::OBJECT:
                 {
-                    std::cerr << "Object node\n";
                     NodeArray children;
                     const auto& obj = elem.getObject();
                     for (const auto [key, value] : obj) {
@@ -193,7 +205,6 @@ namespace DB::PostgreSQL
                 }
             case ElementType::ARRAY:
                 {
-                    std::cerr << "Array node\n";
                     NodeArray children;
                     const auto arr = elem.getArray();
                     for (const auto a : arr)
@@ -204,7 +215,6 @@ namespace DB::PostgreSQL
                     return std::make_shared<Node>(value);
                 }
             default:
-                std::cerr << "Primitive node\n";
                 return GetPrimitiveValueNode(elem);
         }
     }

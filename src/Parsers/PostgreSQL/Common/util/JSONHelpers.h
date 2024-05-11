@@ -45,7 +45,10 @@ namespace DB::PostgreSQL
 
         bool HasChildWithKey(const std::string& key_) const;
         std::shared_ptr<Node> GetChildWithKey(const std::string& key_) const;
+        
+        size_t Size() const;
         std::shared_ptr<Node> operator[](const std::string& key_) const;
+        std::shared_ptr<Node> operator[](const size_t& idx) const;
 
         std::vector<std::string> ListChildKeys() const;
 
