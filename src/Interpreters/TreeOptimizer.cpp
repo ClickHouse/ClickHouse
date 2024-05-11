@@ -679,31 +679,59 @@ void TreeOptimizer::optimizeL2DistanceSubstitution(ASTPtr & query)
     if (!select_query)
         return;
 
-    auto order_by = select_query->orderBy();
-    if (!order_by)
-        return;
-
-    for (auto &order_by_elem : order_by->children)
+    // Обработка SELECT
+    if (auto *select_expr_list = select_query->select())
     {
-        auto *function_node = order_by_elem->as<ASTFunction>();
-        if (!function_node)
-            continue;
-
-        if (function_node->name == "L2Distance")
+        for (auto &select_elem : select_expr_list->children)
         {
-            // Создание нового узла функции sqrt(L2SquaredDistance)
-            auto sqrt_function_node = std::make_shared<ASTFunction>();
-            sqrt_function_node->name = "sqrt";
+            auto *function_node = select_elem->as<ASTFunction>();
+            if (!function_node)
+                continue;
 
-            auto argument = std::make_shared<ASTFunction>();
-            argument->name = "L2SquaredDistance";
-            argument->arguments = function_node->arguments;
+            if (function_node->name == "L2Distance")
+            {
+                // Создание нового узла функции sqrt(L2SquaredDistance)
+                auto sqrt_function_node = std::make_shared<ASTFunction>();
+                sqrt_function_node->name = "sqrt";
 
-            sqrt_function_node->arguments = std::make_shared<ASTExpressionList>();
-            sqrt_function_node->arguments->children.push_back(argument);
+                auto argument = std::make_shared<ASTFunction>();
+                argument->name = "L2SquaredDistance";
+                argument->arguments = function_node->arguments;
 
-            // Замена функции L2Distance на sqrt(L2SquaredDistance)
-            order_by_elem = sqrt_function_node;
+                sqrt_function_node->arguments = std::make_shared<ASTExpressionList>();
+                sqrt_function_node->arguments->children.push_back(argument);
+
+                // Замена функции L2Distance на sqrt(L2SquaredDistance)
+                select_elem = sqrt_function_node;
+            }
+        }
+    }
+
+    // Обработка ORDER BY
+    if (auto order_by = select_query->orderBy())
+    {
+        for (auto &order_by_elem : order_by->children)
+        {
+            auto *function_node = order_by_elem->as<ASTFunction>();
+            if (!function_node)
+                continue;
+
+            if (function_node->name == "L2Distance")
+            {
+                // Создание нового узла функции sqrt(L2SquaredDistance)
+                auto sqrt_function_node = std::make_shared<ASTFunction>();
+                sqrt_function_node->name = "sqrt";
+
+                auto argument = std::make_shared<ASTFunction>();
+                argument->name = "L2SquaredDistance";
+                argument->arguments = function_node->arguments;
+
+                sqrt_function_node->arguments = std::make_shared<ASTExpressionList>();
+                sqrt_function_node->arguments->children.push_back(argument);
+
+                // Замена функции L2Distance на sqrt(L2SquaredDistance)
+                order_by_elem = sqrt_function_node;
+            }
         }
     }
 }
