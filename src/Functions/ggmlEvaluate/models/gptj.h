@@ -1,19 +1,10 @@
-#include <map>
-#include <Functions/ggmlEvaluate/IGgmlModel.h>
 #include "ggml/ggml.h"
+
 #include "gpt_common.h"
 
-namespace DB {
+#include <Functions/ggmlEvaluate/IGgmlModel.h>
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
-    extern const int INCORRECT_DATA;
-    extern const int RECEIVED_EMPTY_DATA;
-    extern const int NO_ELEMENTS_IN_CONFIG;
-}
+namespace DB {
 
 // default hparams (GPT-J 6B)
 struct GptJHparams {
@@ -78,10 +69,10 @@ public:
 
 private:
     void loadImpl(ConfigPtr config) override;
-    std::string evalImpl(std::tuple<Int32> param, const std::string & input) override;
+    std::string evalImpl(GgmlModelParams params, const std::string & input) override;
 
     bool evalInternal(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
-    std::vector<GptVocab::id> predict(std::tuple<Int32> param, const std::vector<GptVocab::id> & embd_inp);
+    std::vector<GptVocab::id> predict(GgmlModelParams params, const std::vector<GptVocab::id> & embd_inp);
 
     GptVocab gpt_vocab;
     GptParams gpt_params;

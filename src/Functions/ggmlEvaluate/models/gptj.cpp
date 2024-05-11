@@ -18,16 +18,22 @@ using namespace Poco::Util;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
+    extern const int INCORRECT_DATA;
+    extern const int RECEIVED_EMPTY_DATA;
+}
+
 // load the model's weights from a file
 void GptJModel::loadImpl(ConfigPtr config)
 {
-    std::cout << "GptJModel::doLoad\n"; // GGMLTODO : remove log
     auto fname = getPathFromConfig(config);
-    std::cout << "Extracted path from config: " << fname << '\n'; // GGMLTODO : remove log
     auto fin = std::ifstream(fname, std::ios::binary);
-    if (!fin) {
+    if (!fin)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Unable to open file at '{}'", fname);
-    }
 
     // verify magic
     {
@@ -37,8 +43,6 @@ void GptJModel::loadImpl(ConfigPtr config)
             throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "File at '{}' does not match the required format (bad magic)", fname);
         }
     }
-
-    std::cout << "Verified magic\n"; // GGMLTODO : remove log
 
     // load hparams
     {
@@ -496,21 +500,19 @@ bool GptJModel::evalInternal(int n_threads, int n_past, const std::vector<GptVoc
 }
 // NOLINTEND
 
-std::string GptJModel::evalImpl(std::tuple<Int32> params, const std::string & input)
+std::string GptJModel::evalImpl(GgmlModelParams params, const std::string & input)
 {
     std::vector<GptVocab::id> embd_inp = gpt_tokenize(gpt_vocab, input);
-    std::cout << "Tokenized " << input << '\n';
     std::vector<GptVocab::id> embd = predict(params, embd_inp);
 
     std::string result;
     for (auto id : embd) {
         result += gpt_vocab.id_to_token[id];
     }
-    std::cout << "Predicted " << result << '\n';
     return result;
 }
 
-std::vector<GptVocab::id> GptJModel::predict(std::tuple<Int32> params, const std::vector<GptVocab::id> & embd_inp)
+std::vector<GptVocab::id> GptJModel::predict(GgmlModelParams params, const std::vector<GptVocab::id> & embd_inp)
 {
     std::vector<GptVocab::id> total_embd;
     std::vector<GptVocab::id> embd;
