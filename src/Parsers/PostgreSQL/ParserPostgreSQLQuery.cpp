@@ -24,9 +24,26 @@
 namespace DB
 {
 
+static int ex = 0;
+
 bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & ast, Expected & /*expected*/)
 {
-    auto json = examples[0].PGAST;
+    String json;
+
+    if (ex == 0) {
+        json = ExampleSelectInt.PGAST;
+    }
+    if (ex == 1) {
+        json = ExampleSelectFloat.PGAST;
+    }
+    if (ex == 2) {
+        json = ExampleSelectBool.PGAST;
+    }
+    if (ex == 3) {
+        json = ExampleSelect1UnionAllSelect2.PGAST;
+    }
+    ex++;
+
     JSON::Element JSONRoot;
     JSON parser;
 

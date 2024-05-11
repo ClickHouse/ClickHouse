@@ -1,4 +1,6 @@
-#include <Parsers/PostgreSQL/Values/IValue.h>
+#include <Parsers/PostgreSQL/Values/IntValue.h>
+#include <Parsers/PostgreSQL/Values/BoolValue.h>
+#include <Parsers/PostgreSQL/Values/FloatValue.h>
 #include <Parsers/PostgreSQL/Common/util/JSONHelpers.h>
 #include <Parsers/PostgreSQL/Common/Errors.h>
 #include <Common/Exception.h>
@@ -12,6 +14,14 @@ namespace DB::PostgreSQL
         if (node->HasChildWithKey("ival"))
         {
             return TransformIVal((*node)["ival"]);
+        }
+        else if (node->HasChildWithKey("fval"))
+        {
+            return TransformFVal((*node)["fval"]);
+        }
+        else if (node->HasChildWithKey("boolval"))
+        {
+            return TransformBoolVal((*node)["boolval"]);
         }
         else
         {

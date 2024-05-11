@@ -197,10 +197,10 @@ namespace DB::PostgreSQL
         return f.get<Int64>();
     }
     
-    double Node::GetDoubleValue() const
+    Float64 Node::GetFloat64Value() const
     {
         auto f = GetPrimitiveValue();
-        return f.get<double>();
+        return f.get<Float64>();
     }
 
     bool Node::GetBoolValue() const
@@ -222,6 +222,30 @@ namespace DB::PostgreSQL
             return NodeType::Undefined;
         }
         return value.value().GetType();
+    }
+    
+    bool Node::IsInt64Value() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.getType() == Field::Types::Int64;
+    }
+
+    bool Node::IsFloat64Value() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.getType() == Field::Types::Float64;
+    }
+
+    bool Node::IsBoolValue() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.getType() == Field::Types::Bool;
+    }
+
+    bool Node::IsStringValue() const
+    {
+        auto f = GetPrimitiveValue();
+        return f.getType() == Field::Types::String;
     }
 
     namespace {

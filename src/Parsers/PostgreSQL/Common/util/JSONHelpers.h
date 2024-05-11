@@ -60,10 +60,16 @@ namespace DB::PostgreSQL
         NodeArray GetNodeArray() const;
         Field GetPrimitiveValue() const;
         Int64 GetInt64Value() const;
-        double GetDoubleValue() const;
+        Float64 GetFloat64Value() const;
         bool GetBoolValue() const;
         String GetStringValue() const;
         NodeType GetType() const;
+
+        bool IsInt64Value() const;
+        bool IsFloat64Value() const;
+        bool IsBoolValue() const;
+        bool IsStringValue() const;
+        
         void SetKey(const std::string& key_);
         void SetValue(const Value& value_);
 
