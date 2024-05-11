@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMerge.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -42,6 +43,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPlan/AddingTableNameVirtualColumnStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -664,6 +666,78 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     return alias_column_step;
 }
 
+bool extractRequiredNonTableColumnsFromStorage(
+    const Names & columns_names,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const QueryProcessingStage::Enum processed_stage,
+    SelectQueryInfo & modified_query_info,
+    ContextPtr context,
+    Names & extracted_column_names)
+{
+    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+    {
+        bool has_table_virtual_column = false;
+        for (const auto & column_name : columns_names)
+        {
+            if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
+            {
+                has_table_virtual_column = true;
+                break;
+            }
+        }
+
+        if (!has_table_virtual_column)
+            return false;
+
+        const auto & table_name = storage->getStorageID().table_name;
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+        if (storage_snapshot->storage.supportsSubcolumns())
+            get_column_options.withSubcolumns();
+
+        std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+
+        if (!storage_snapshot->tryGetColumn(get_column_options, "_table"))
+        {
+            auto table_name_node = std::make_shared<ConstantNode>(table_name);
+            auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
+
+            auto function_node = std::make_shared<FunctionNode>("__actionName");
+            function_node->getArguments().getNodes().push_back(std::move(table_name_node));
+            function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+
+            column_name_to_node.emplace("_table", function_node);
+        }
+
+        if (!column_name_to_node.empty())
+            replaceColumns(modified_query_info.query_tree,
+                modified_query_info.table_expression,
+                column_name_to_node);
+        return false;
+    }
+
+    if (processed_stage != QueryProcessingStage::FetchColumns)
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        return false;
+
+    bool has_table_virtual_column = false;
+    for (const auto & column_name : columns_names)
+    {
+        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            extracted_column_names.push_back(column_name);
+    }
+
+    if (has_table_virtual_column && extracted_column_names.empty())
+        extracted_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
+    return has_table_virtual_column;
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -914,6 +988,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 from_stage = storage->getQueryProcessingStage(
                     query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
+                Names extracted_column_names;
+                const auto has_table_virtual_column
+                    = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, from_stage,
+                                                                table_expression_query_info, query_context, extracted_column_names);
+
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                 /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
@@ -926,7 +1005,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                     storage->read(
                         query_plan,
-                        columns_names,
+                        has_table_virtual_column ? extracted_column_names : columns_names,
                         storage_snapshot,
                         table_expression_query_info,
                         std::move(mutable_context),
@@ -938,7 +1017,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     storage->read(
                         query_plan,
-                        columns_names,
+                        has_table_virtual_column ? extracted_column_names : columns_names,
                         storage_snapshot,
                         table_expression_query_info,
                         query_context,
@@ -1102,6 +1181,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+                if (has_table_virtual_column && query_plan.isInitialized())
+                {
+                    const auto & data_header = query_plan.getCurrentHeader();
+                    if (!data_header.findByName("_table"))
+                    {
+                        const auto & table_name = storage->getStorageID().getTableName();
+                        auto adding_table_name_virtual_column_step = std::make_unique<AddingTableNameVirtualColumnStep>(data_header, table_name);
+                        query_plan.addStep(std::move(adding_table_name_virtual_column_step));
+                    }
+                }
+
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
                 {
                     auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
