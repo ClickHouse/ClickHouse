@@ -1,5 +1,4 @@
 set allow_experimental_variant_type=1;
-set allow_experimental_analyzer=0; -- It's currently doesn't work with analyzer because of the way it works with constants, but it will be refactored and fixed in future
 
 select NULL::Variant(String, UInt64);
 select 42::UInt64::Variant(String, UInt64);
