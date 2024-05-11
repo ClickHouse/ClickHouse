@@ -180,8 +180,12 @@ void LimitInRangeTransform::removeFilterIfNeed(Chunk & chunk) const
     {
         if (!from_filter_column_name.empty())
             chunk.erase(from_filter_column_position);
+
         if (!to_filter_column_name.empty())
-            chunk.erase(to_filter_column_position);
+        {
+            size_t adjusted_position = !from_filter_column_name.empty() ? to_filter_column_position - 1 : to_filter_column_position;
+            chunk.erase(adjusted_position);
+        }
     }
 }
 

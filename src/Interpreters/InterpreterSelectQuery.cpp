@@ -2090,13 +2090,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     ActionsDAGPtr first_dag = expressions.before_limit_inrange_from->clone();
                     ActionsDAGPtr second_dag = expressions.before_limit_inrange_to->clone();
 
-                    first_dag->mergeInplace(std::move(*second_dag));
-                    auto last_node_name = expressions.before_limit_inrange_from->getNodes().back().result_name;
-
+                    first_dag->mergeNodes(std::move(*second_dag));
+                    auto last_node_name = expressions.before_limit_inrange_to->getNodes().back().result_name;
                     for (const auto & node : first_dag->getNodes())
                         if (last_node_name == node.result_name)
                             first_dag->addOrReplaceInOutputs(node);
-                    std::cerr << "Result DAG:\n" << first_dag->dumpDAG() << '\n';
 
                     executeExpression(query_plan, first_dag, "LIMIT INRANGE FROM expr TO expr");
                 }
