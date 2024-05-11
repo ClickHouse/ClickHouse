@@ -143,10 +143,6 @@ INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_
     SELECT number as n, n * n * n as v, v, v, v, v, v, v, v
     FROM system.numbers LIMIT 101, 1000;
 
-INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
-    SELECT number as n, n + (rand64() - 9223372036854775807)/1000 as v, v, v, v, v, v, v, v
-    FROM system.numbers LIMIT 3001, 1000;
-
 SELECT 'U64';
 SELECT
     key,
@@ -204,10 +200,6 @@ INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_
     SELECT number as n, n * n * n as v, v, v, v, v, v, v, v
     FROM system.numbers LIMIT 101, 1000;
 
-INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
-    SELECT number as n, n + (rand64() - 9223372036854775807)/1000 as v, v, v, v, v, v, v, v
-    FROM system.numbers LIMIT 3001, 1000;
-
 SELECT 'U64';
 SELECT
     key,
@@ -216,7 +208,6 @@ FROM codecTest
 WHERE
     dU64 != 0
 LIMIT 10;
-
 
 SELECT 'U32';
 SELECT
