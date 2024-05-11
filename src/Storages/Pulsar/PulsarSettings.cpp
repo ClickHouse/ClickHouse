@@ -1,7 +1,7 @@
-#include <Storages/Pulsar/PulsarSettings.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/Pulsar/PulsarSettings.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SETTING;
+extern const int UNKNOWN_SETTING;
 }
 
 IMPLEMENT_SETTINGS_TRAITS(PulsarSettingsTraits, LIST_OF_PULSAR_SETTINGS);

@@ -8,25 +8,33 @@ namespace DB
 {
 class ASTStorage;
 
-// const auto KAFKA_RESCHEDULE_MS = 500;
-// const auto KAFKA_CLEANUP_TIMEOUT_MS = 3000;
-// once per minute leave do reschedule (we can't lock threads in pool forever)
-// const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
-// 10min
-// const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
+const auto PULSAR_RESCHEDULE_MS = 500;
+const auto PULSAR_MAX_THREAD_WORK_DURATION_MS = 60'000;
 
 #define PULSAR_RELATED_SETTINGS(M, ALIAS) \
-    M(String, pulsar_host_port, "", "A host of broker for Pulsar engine.", 0) \
+    M(String, pulsar_broker_address, "", "A broker address for Pulsar engine.", 0) \
     M(String, pulsar_topic_list, "", "A list of Pulsar topics.", 0) \
     M(UInt64, pulsar_num_consumers, 1, "The number of consumers per table for Pulsar engine.", 0) \
+    M(String, pulsar_format, "", "The message format for Pulsar engine.", 0) \
+    M(UInt64, pulsar_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Pulsar.", 0) \
+    M(Milliseconds, pulsar_poll_timeout_ms, 0, "Timeout for single poll from Pulsar.", 0) \
+    M(UInt64, pulsar_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Pulsar poll.", 0) \
+    M(Milliseconds, pulsar_flush_interval_ms, 0, "Timeout for flushing data from Pulsar.", 0) \
+    M(StreamingHandleErrorMode, \
+      pulsar_handle_error_mode, \
+      StreamingHandleErrorMode::DEFAULT, \
+      "How to handle errors for Pulsar engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken " \
+      "messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", \
+      0) \
+    M(UInt64, pulsar_max_rows_per_message, 1, "The maximum number of rows produced in one Pulsar message for row-based formats.", 0)
 
-#define OBSOLETE_PULSAR_SETTINGS(M, ALIAS) \
-    MAKE_OBSOLETE(M, Char, pulsar_row_delimiter, '\0') \
 
-#define LIST_OF_PULSAR_SETTINGS(M, ALIAS)  \
-    PULSAR_RELATED_SETTINGS(M, ALIAS)      \
-    OBSOLETE_PULSAR_SETTINGS(M, ALIAS)     \
-    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
+#define OBSOLETE_PULSAR_SETTINGS(M, ALIAS) MAKE_OBSOLETE(M, Char, pulsar_row_delimiter, '\0')
+
+#define LIST_OF_PULSAR_SETTINGS(M, ALIAS) \
+    PULSAR_RELATED_SETTINGS(M, ALIAS) \
+    OBSOLETE_PULSAR_SETTINGS(M, ALIAS) \
+    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(PulsarSettingsTraits, LIST_OF_PULSAR_SETTINGS)
 

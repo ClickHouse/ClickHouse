@@ -27,11 +27,12 @@ file(GLOB_RECURSE SRCS
     DEPENDS ${LIBRARY_DIR}/lib/PulsarApi.pb.h ${LIBRARY_DIR}/lib/PulsarApi.pb.cc
 )
 
-add_library(_pulsar ${SRCS} )
+add_library(_pulsar ${SRCS})
 
 add_dependencies(_pulsar protoc)
 
-target_include_directories(_pulsar SYSTEM PUBLIC "${LIBRARY_DIR}/lib" "${LIBRARY_DIR}/include" "${LIBRARY_DIR}")
+target_include_directories(_pulsar SYSTEM PRIVATE "${LIBRARY_DIR}/lib" "${LIBRARY_DIR}")
+target_include_directories(_pulsar SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 
 target_link_libraries(_pulsar
   PUBLIC
@@ -40,7 +41,8 @@ target_link_libraries(_pulsar
     boost::filesystem
     ch_contrib::zlib
     ch_contrib::zstd
-    OpenSSL::Crypto OpenSSL::SSL
+    OpenSSL::Crypto
+    OpenSSL::SSL
     ch_contrib::curl
     ch_contrib::snappy
     ch_contrib::protobuf
