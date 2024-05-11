@@ -27,6 +27,11 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
             value = literal->value.get<Int64>();
             return true;
         }
+        if (literal->value.getType() == Field::Types::Null)
+        {
+            value = false;
+            return true;
+        }
     }
 
     /// cast of numeric constant in condition to UInt8
