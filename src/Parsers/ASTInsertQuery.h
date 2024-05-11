@@ -65,8 +65,8 @@ public:
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
-        if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression);
-        if (defaulted) {res->defaulted = defaulted->clone(); res->children.push_back(res->defaulted)}   }
+        if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression);}
+        if (defaulted) {res->defaulted = defaulted->clone(); res->children.push_back(res->defaulted);}
 
         return res;
     }
