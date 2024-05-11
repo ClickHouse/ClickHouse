@@ -90,10 +90,10 @@ public:
 
 private:
     void loadImpl(ConfigPtr config) override;
-    std::string evalImpl(const std::string & input) override;
+    std::string evalImpl(std::tuple<Int32> param, const std::string & input) override;
 
     bool evalInternal(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
-    std::vector<GptVocab::id> predict(const std::vector<GptVocab::id> & embd_inp);
+    std::vector<GptVocab::id> predict(std::tuple<Int32> param, const std::vector<GptVocab::id> & embd_inp);
 
     GptVocab gpt_vocab;
     GptParams gpt_params;
@@ -592,11 +592,11 @@ bool GptJModel::evalInternal(int n_threads, int n_past, const std::vector<GptVoc
 }
 // NOLINTEND
 
-std::string GptJModel::evalImpl(const std::string & input)
+std::string GptJModel::evalImpl(std::tuple<Int32> params, const std::string & input)
 {
     std::vector<GptVocab::id> embd_inp = gpt_tokenize(gpt_vocab, input);
     std::cout << "Tokenized " << input << '\n';
-    std::vector<GptVocab::id> embd = predict(embd_inp);
+    std::vector<GptVocab::id> embd = predict(params, embd_inp);
 
     std::string result;
     for (auto id : embd) {
@@ -606,7 +606,7 @@ std::string GptJModel::evalImpl(const std::string & input)
     return result;
 }
 
-std::vector<GptVocab::id> GptJModel::predict(const std::vector<GptVocab::id> & embd_inp)
+std::vector<GptVocab::id> GptJModel::predict(std::tuple<Int32> params, const std::vector<GptVocab::id> & embd_inp)
 {
     std::vector<GptVocab::id> total_embd;
     std::vector<GptVocab::id> embd;
@@ -615,7 +615,7 @@ std::vector<GptVocab::id> GptJModel::predict(const std::vector<GptVocab::id> & e
     int n_past = 0;
     std::vector<float> logits;
 
-    int n_predict = std::min(gpt_params.n_predict, hparams.n_ctx - static_cast<int>(embd_inp.size()));
+    int n_predict = std::min(std::get<0>(params), hparams.n_ctx - static_cast<int>(embd_inp.size()));
 
     size_t mem_per_token = 0;
     evalInternal(gpt_params.n_threads, 0, { 0, 1, 2, 3 }, logits, mem_per_token);

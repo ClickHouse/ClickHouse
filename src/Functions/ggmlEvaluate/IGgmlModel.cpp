@@ -12,9 +12,9 @@ void IGgmlModel::load(ConfigPtr config)
     }
 }
 
-std::string IGgmlModel::eval(const std::string & input)
+std::string IGgmlModel::eval(std::tuple<Int32> params, const std::string & input)
 {
-    return evalImpl(input);
+    return evalImpl(params, input);
 }
 
 }
