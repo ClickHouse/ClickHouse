@@ -1123,19 +1123,31 @@ public:
 
     size_t size() const { return columns.size(); }
 
-    void buildOutput(void (AddedColumns<lazy>::*func)(MutableColumnPtr & dst, const ColumnPtr & src, uint32_t row_num));
+    void buildOutput(void (AddedColumns<lazy>::*func)(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index));
 
-    void buildOutputInternal(MutableColumnPtr & dst, const ColumnPtr & src, uint32_t row_num)
+    void buildOutputFromRowRef(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index)
     {
-        dst->insertFrom(*src, row_num);
+        const auto & src = row_ref->block->getByPosition(src_col_index);
+        dst->insertFrom(*src.column, row_ref->row_num);
     }
 
-    void buildJoinGetOutputInternal(MutableColumnPtr & dst, const ColumnPtr & src, uint32_t row_num)
+    void buildOutputFromRowRefList(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index)
     {
-        if (auto * nullable_col = typeid_cast<ColumnNullable *>(dst.get()); nullable_col && !src->isNullable())
-            nullable_col->insertFromNotNullable(*src, row_num);
+        const RowRefList * row_ref_list = static_cast<const RowRefList *>(row_ref);
+        for (auto it = row_ref_list->begin(); it.ok(); ++it)
+        {
+            const auto & src = it->block->getByPosition(src_col_index);
+            dst->insertFrom(*src.column, it->row_num);
+        }
+    }
+
+    void buildJoinGetOutput(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index)
+    {
+        const auto & src = row_ref->block->getByPosition(src_col_index);
+        if (auto * nullable_col = typeid_cast<ColumnNullable *>(dst.get()); nullable_col && !src.column->isNullable())
+            nullable_col->insertFromNotNullable(*src.column, row_ref->row_num);
         else
-            dst->insertFrom(*src, row_num);
+            dst->insertFrom(*src.column, row_ref->row_num);
     }
 
     ColumnWithTypeAndName moveColumn(size_t i)
@@ -1151,7 +1163,7 @@ public:
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    // constexpr bool isLazy() const { return lazy; }
+    constexpr bool isLazy() const { return lazy; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -1161,6 +1173,7 @@ public:
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
+    bool flag_per_row = true;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -1232,9 +1245,9 @@ private:
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
-template<> void AddedColumns<false>::buildOutput(void (AddedColumns<false>::*)(MutableColumnPtr &, const ColumnPtr &, uint32_t)) {}
+template<> void AddedColumns<false>::buildOutput(void (AddedColumns<false>::*)(MutableColumnPtr &, const RowRef *, size_t)) {}
 
-template<> void AddedColumns<true>::buildOutput(void (AddedColumns<true>::* func)(MutableColumnPtr & dst, const ColumnPtr & src, uint32_t row_num))
+template<> void AddedColumns<true>::buildOutput(void (AddedColumns<true>::* func)(MutableColumnPtr &, const RowRef *, size_t))
 {
     for (size_t i = 0; i < this->size(); ++i)
     {
@@ -1256,14 +1269,8 @@ template<> void AddedColumns<true>::buildOutput(void (AddedColumns<true>::* func
                 continue;
             }
             apply_default();
-            // const auto * row_ref_list = reinterpret_cast<const RowRefList *>(lazy_output.row_refs[j]);
-            // for (auto it = row_ref_list->begin(); it.ok(); ++it)
-            // {
             const auto * row_ref = reinterpret_cast<const RowRef *>(lazy_output.row_refs[j]);
-            const auto & column_from_block = row_ref->block->getByPosition(right_indexes[i]);
-            /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
-            (this->*func)(col, column_from_block.column, row_ref->row_num);
-            // }
+            (this->*func)(col, row_ref, right_indexes[i]);
         }
         apply_default();
     }
@@ -1479,11 +1486,11 @@ void addFoundRowAll(
             known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
         }
     }
-    // else if (added.isLazy())
-    // {
-    //     added.appendFromBlock(&mapped, false);
-    //     current_offset += mapped.rows;
-    // }
+    else if (added.isLazy())
+    {
+        added.appendFromBlock(&mapped, false);
+        current_offset += mapped.rows;
+    }
     else
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
@@ -1639,7 +1646,7 @@ class PreSelectedRows : public std::vector<RowRef>
 {
 public:
     void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(*row_ref); }
-    // bool isLazy() const { return false; }
+    bool isLazy() const { return false; }
 };
 
 /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
@@ -1838,10 +1845,10 @@ NO_INLINE size_t joinRightColumns(
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
-
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
+    added_columns.flag_per_row = (STRICTNESS != JoinStrictness::All || flag_per_row);
 
     Arena pool;
 
@@ -2177,10 +2184,11 @@ Block HashJoin::joinBlockImpl(
     added_columns.join_on_keys.clear();
     Block remaining_block = sliceBlock(block, num_joined);
     
-    void (AddedColumns<!join_features.is_any_join>::*func)(MutableColumnPtr &, const ColumnPtr &, uint32_t);
+    void (AddedColumns<!join_features.is_any_join>::*func)(MutableColumnPtr &, const RowRef *, size_t);
     func = is_join_get ? 
-        &AddedColumns<!join_features.is_any_join>::buildJoinGetOutputInternal :
-        &AddedColumns<!join_features.is_any_join>::buildOutputInternal;
+        &AddedColumns<!join_features.is_any_join>::buildJoinGetOutput : !added_columns.flag_per_row ?
+        &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRefList :
+        &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRef;
     added_columns.buildOutput(func);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
