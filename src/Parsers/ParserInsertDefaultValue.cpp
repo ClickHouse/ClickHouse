@@ -1,3 +1,4 @@
+#include <Parsers/ASTDefaultedColumn.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
@@ -19,6 +20,7 @@ bool ParserDefaultValue::parseImpl(DB::IParser::Pos & pos, DB::ASTPtr & node, DB
     {
         DefaultElement->expression = expression;
         DefaultElement->name = name;
+        node = DefaultElement;
         return true;
     }
     return false;
