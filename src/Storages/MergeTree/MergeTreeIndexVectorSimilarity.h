@@ -12,6 +12,13 @@
 namespace DB
 {
 
+struct UsearchHnswParams
+{
+    size_t m = unum::usearch::default_connectivity();
+    size_t ef_construction = unum::usearch::default_expansion_add();
+    size_t ef_search = unum::usearch::default_expansion_search();
+};
+
 using USearchIndexImpl = unum::usearch::index_dense_gt</*key_at*/ uint32_t, /*compressed_slot_at*/ uint32_t>;
 
 class USearchIndexWithSerialization : public USearchIndexImpl
@@ -19,7 +26,11 @@ class USearchIndexWithSerialization : public USearchIndexImpl
     using Base = USearchIndexImpl;
 
 public:
-    USearchIndexWithSerialization(size_t dimensions,  unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind);
+    USearchIndexWithSerialization(
+            size_t dimensions,
+            unum::usearch::metric_kind_t metric_kind,
+            unum::usearch::scalar_kind_t scalar_kind,
+            UsearchHnswParams usearch_hnsw_params);
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
 };
@@ -29,8 +40,19 @@ using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSeriali
 
 struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleVectorSimilarity(const String & index_name_, const Block & index_sample_block_, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind_);
-    MergeTreeIndexGranuleVectorSimilarity(const String & index_name_, const Block & index_sample_block_, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind_, USearchIndexWithSerializationPtr index_);
+    MergeTreeIndexGranuleVectorSimilarity(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        unum::usearch::metric_kind_t metric_kind,
+        unum::usearch::scalar_kind_t scalar_kind_,
+        UsearchHnswParams usearch_hnsw_params_);
+    MergeTreeIndexGranuleVectorSimilarity(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        unum::usearch::metric_kind_t metric_kind,
+        unum::usearch::scalar_kind_t scalar_kind_,
+        UsearchHnswParams usearch_hnsw_params_,
+        USearchIndexWithSerializationPtr index_);
     ~MergeTreeIndexGranuleVectorSimilarity() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -42,13 +64,19 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     const Block index_sample_block;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
+    const UsearchHnswParams usearch_hnsw_params;
     USearchIndexWithSerializationPtr index;
 };
 
 
 struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorVectorSimilarity(const String & index_name_, const Block & index_sample_block, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexAggregatorVectorSimilarity(
+        const String & index_name_,
+        const Block & index_sample_block,
+        unum::usearch::metric_kind_t metric_kind_,
+        unum::usearch::scalar_kind_t scalar_kind_,
+        UsearchHnswParams usearch_hnsw_params_);
     ~MergeTreeIndexAggregatorVectorSimilarity() override = default;
 
     bool empty() const override { return !index || index->size() == 0; }
@@ -59,6 +87,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
     const Block index_sample_block;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
+    const UsearchHnswParams usearch_hnsw_params;
     USearchIndexWithSerializationPtr index;
 };
 
@@ -86,7 +115,11 @@ private:
 class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexVectorSimilarity(const IndexDescription & index_, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexVectorSimilarity(
+            const IndexDescription & index_,
+            unum::usearch::metric_kind_t metric_kind_,
+            unum::usearch::scalar_kind_t scalar_kind_,
+            UsearchHnswParams usearch_hnsw_params);
     ~MergeTreeIndexVectorSimilarity() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
@@ -99,6 +132,7 @@ public:
 private:
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
+    const UsearchHnswParams usearch_hnsw_params;
 };
 
 }

@@ -53,11 +53,21 @@ CREATE TABLE table
 (
   id Int64,
   vec Array(Float32),
-  INDEX index_name vec TYPE vector_similarity([Distance[, ScalarKind]]) [GRANULARITY N]
+  INDEX index_name vec TYPE vector_similarity(method, distance_function[, quantization, connectivity, expansion_add, expansion_search]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
+
+Parameters:
+- `method`: Supports currently only `hnsw`.
+- `distance_function`: either `L2Distance` (the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) - the length of a
+  line between two points in Euclidean space), or `cosineDistance` (the [cosine
+  distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)- the angle between two non-zero vectors).
+- `quantization`: either `f32`, `f16`, or `i8` for storing the vector with reduced precision (optional, default: `f32`)
+- `m`: the number of neighbors per graph node (optional, default: 16)
+- `ef_construction`: (optional, default: 128)
+- `ef_search`: (optional, default: 64)
 
 Vector similarity indexes are based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
 algorithm](https://arxiv.org/abs/1603.09320), i.e., a hierarchical graph where each point represents a vector and the edges represent
@@ -67,17 +77,7 @@ to load and compare. The library also has several hardware-specific SIMD optimiz
 Arm (NEON and SVE) and x86 (AVX2 and AVX-512) CPUs and OS-specific optimizations to allow efficient navigation around immutable persistent
 files, without loading them into RAM.
 
-Vector similarity indexes currently support two distance functions:
-- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
-  ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
-- `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
-  ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
-
-Vector similarity indexes allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16` or `i8`.
-If no scalar kind was specified during index creation, `f16` is used as default.
-
-For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
-distance function was specified during index creation, `L2Distance` is used as default.
+For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale.
 
 :::note
 All arrays must have same length. To avoid errors, you can use a

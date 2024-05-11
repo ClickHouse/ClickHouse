@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS tab;
 
 SELECT 'Issue #52258: Empty Arrays or Arrays with default values are rejected';
 
-CREATE TABLE tab (id UInt64, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity());
+CREATE TABLE tab (id UInt64, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance'));
 INSERT INTO tab VALUES (1, []); -- { serverError INCORRECT_DATA }
 INSERT INTO tab (id) VALUES (1); -- { serverError INCORRECT_DATA }
 DROP TABLE tab;
@@ -18,7 +18,7 @@ DROP TABLE tab;
 
 SELECT 'It is possible to create parts with different Array vector sizes but there will be an error at query time';
 
-CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity());
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance'));
 SYSTEM STOP MERGES tab;
 INSERT INTO tab values (0, [2.2, 2.3]) (1, [3.1, 3.2]);
 INSERT INTO tab values (2, [2.2, 2.3, 2.4]) (3, [3.1, 3.2, 3.3]);
@@ -34,7 +34,7 @@ DROP TABLE tab;
 
 SELECT 'Correctness of index with > 1 mark';
 
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX vec_idx vec TYPE vector_similarity()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity=8192; -- disable adaptive granularity due to bug
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity=8192; -- disable adaptive granularity due to bug
 INSERT INTO tab SELECT number, [toFloat32(number), 0.0] from numbers(10000);
 
 WITH [1.0, 0.0] AS reference_vec
