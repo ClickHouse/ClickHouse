@@ -1,0 +1,9 @@
+fn main() {
+    let mut build = cxx_build::bridge("src/lib.rs");
+    for flag in " --gcc-toolchain=/home/omgronny/study/ClickHouse/cmake/linux/../../contrib/sysroot/linux-x86_64 -fdiagnostics-color=always -Xclang -fuse-ctor-homing -Wno-enum-constexpr-conversion -fsized-deallocation  -gdwarf-aranges -pipe -mssse3 -msse4.1 -msse4.2 -mpclmul -mpopcnt -fasynchronous-unwind-tables -falign-functions=32 -mbranches-within-32B-boundaries  -fdiagnostics-absolute-paths -fstrict-vtable-pointers -Wall -Wextra -Weverything -Wpedantic -Wno-zero-length-array -Wno-c++98-compat-pedantic -Wno-c++98-compat -Wno-c++20-compat -Wno-sign-conversion -Wno-implicit-int-conversion -Wno-implicit-int-float-conversion -Wno-ctad-maybe-unsupported -Wno-disabled-macro-expansion -Wno-documentation-unknown-command -Wno-double-promotion -Wno-exit-time-destructors -Wno-float-equal -Wno-global-constructors -Wno-missing-prototypes -Wno-missing-variable-declarations -Wno-padded -Wno-switch-enum -Wno-undefined-func-template -Wno-unused-template -Wno-vla -Wno-weak-template-vtables -Wno-weak-vtables -Wno-thread-safety-negative -Wno-enum-constexpr-conversion -Wno-unsafe-buffer-usage -isystem /home/omgronny/study/ClickHouse/contrib/llvm-project/libcxx/include -nostdinc++ --sysroot /home/omgronny/study/ClickHouse/cmake/linux/../../contrib/sysroot/linux-x86_64/x86_64-linux-gnu/libc -Wno-dollar-in-identifier-extension -Wno-unused-macros".split(' ') {
+        build.flag(flag);
+    }
+    build.compile("skim");
+    println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=.cargo/config.toml");
+}

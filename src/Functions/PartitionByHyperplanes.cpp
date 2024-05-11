@@ -37,17 +37,16 @@ namespace
 class FunctionPartitionByHyperplanes : public IFunction
 {
 private:
-    static size_t constexpr tile_size = 4;
+    static size_t constexpr tile_size = 16;
 #if defined(__AMX_BF16__)
     static std::array<double, tile_size * tile_size> temp_tile;
 #endif
 
-    template <class ColumnType, class ResultColumnType>
     static void multiplyTileScalar(
-        const ColumnType & nested_vectors_data,
-        const ColumnType & nested_normals_data,
+        const ColumnFloat32 & nested_vectors_data,
+        const ColumnFloat32 & nested_normals_data,
         const IColumn * nested_offsets_data,
-        ResultColumnType & col_res,
+        ColumnFloat32 & col_res,
         size_t input_rows_count,
         size_t dimension,
         size_t vectors_data_index,
@@ -67,9 +66,8 @@ private:
     }
 
 #if defined(__AMX_BF16__)
-    template <class ColumnType>
     static void subVectorOffsetTile(
-        const ColumnType & nested_vectors_data,
+        const ColumnFloat32 & nested_vectors_data,
         const IColumn * nested_offsets_data,
         size_t input_rows_count,
         size_t dimension,
@@ -87,15 +85,6 @@ private:
             }
     }
 
-    template <class ColumnType>
-    static void amxTileMultiply()
-    {
-        if constexpr (std::is_same_v<ColumnType, ColumnFloat32>)
-            _tile_dpbf16ps(0, 1, 2);
-        else if (std::is_same_v<ColumnType, ColumnInt8>)
-            _tile_dpbssd(0, 1, 2);
-    }
-
     struct TileConfig
     {
         uint8_t palette_id;
@@ -105,12 +94,11 @@ private:
         uint8_t rows[16]; 
     };
 
-    template <class ColumnType, class ResultColumnType>
     static void multiplyTileAMX(
-        const ColumnType & nested_vectors_data,
-        const ColumnType & nested_normals_data,
+        const ColumnFloat32 & nested_vectors_data,
+        const ColumnFloat32 & nested_normals_data,
         const IColumn * nested_offsets_data,
-        ResultColumnType & col_res,
+        ColumnFloat32 & col_res,
         size_t input_rows_count,
         size_t dimension,
         size_t vectors_data_index,
@@ -152,7 +140,7 @@ private:
             2,
             nested_normals_data.getData().data() + normals_data_index * dimension + coordinate_index,
             dimension * nested_normals_data.sizeOfValueIfFixed());
-        amxTileMultiply<ColumnType>();
+        _tile_dpbf16ps(0, 1, 2);
         _tile_stored(
             0,
             col_res.getData().data() + vectors_data_index * input_rows_count + normals_data_index,
@@ -161,12 +149,11 @@ private:
     }
 #endif
 
-    template <class ColumnType, class ResultColumnType>
     static void multiplyTile(
-        const ColumnType & nested_vectors_data,
-        const ColumnType & nested_normals_data,
+        const ColumnFloat32 & nested_vectors_data,
+        const ColumnFloat32 & nested_normals_data,
         const IColumn * nested_offsets_data,
-        ResultColumnType & col_res,
+        ColumnFloat32 & col_res,
         size_t input_rows_count,
         size_t dimension,
         size_t vectors_data_index,
@@ -201,14 +188,13 @@ private:
             coordinate_index);
     }
 
-    template <class ColumnType, class ResultColumnType>
     static void executeInternal(
-        const ColumnType & nested_vectors_data,
-        const ColumnType & nested_normals_data,
+        const ColumnFloat32 & nested_vectors_data,
+        const ColumnFloat32 & nested_normals_data,
         const IColumn * nested_offsets_data,
         size_t input_rows_count,
         size_t dimension,
-        ResultColumnType & col_res)
+        ColumnFloat32 & col_res)
     {
         for (size_t i = 0; i < input_rows_count; i += tile_size)
         {
@@ -324,14 +310,17 @@ public:
 
 REGISTER_FUNCTION(partitionByHyperplanes)
 {
-    factory.registerFunction<FunctionPartitionByHyperplanes>(FunctionDocumentation{
+        factory.registerFunction<FunctionPartitionByHyperplanes>(FunctionDocumentation{
         .description=R"(
-Given a vector and a hyperplanes, represented as vectors of normals and optioal offsets.
-Returns a String with every bit corresponding to a subspace, relative to the corresponding hyperplane.
-All the vectors an normals should lie in space of the same dimension.
+This function partitions a given point in vector space based on its position relative to one or more defined hyperplanes.
+A hyperplane in an N-dimensional space is defined by a normal vector and an optional offset from the origin.
+The function takes a vector representing a point and arrays of normal vectors (and optional offsets) representing the hyperplanes.
+It returns a String, where each bit indicates the side of the corresponding hyperplane on which the point lies, with '0' indicating one side and '1' the other.
+This method allows for efficient classification of points into multiple regions defined by these hyperplanes, suitable for complex geometric, spatial analysis, and machine learning applications.
+Ensure all vectors and normals are in the same dimensional space for accurate results.
         )",
-        .examples{{"partitionByHyperplanes", "SELECT(partitionByHyperplanes([1., 2., 3., 4., 5.], [5., 4., 3., 2., -6.]))", "[1]"}},
-        .categories{"OtherFunctions"}
+        .examples={{"partitionByHyperplanes", "SELECT partitionByHyperplanes([2.0, 3.0], [[1.0, -1.0], [-1.0, 2.0]], [[0.0, 0.0], [1.0, 0.0]])", ""}},
+        .categories{"Geometric", "Classification"}
     });
 }
 
