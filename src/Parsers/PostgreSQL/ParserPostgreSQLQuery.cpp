@@ -24,25 +24,14 @@
 namespace DB
 {
 
-static int ex = 0;
-
 bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & ast, Expected & /*expected*/)
 {
     String json;
 
-    if (ex == 0) {
-        json = ExampleSelectInt.PGAST;
-    }
-    if (ex == 1) {
-        json = ExampleSelectFloat.PGAST;
-    }
-    if (ex == 2) {
-        json = ExampleSelectBool.PGAST;
-    }
-    if (ex == 3) {
-        json = ExampleSelect1UnionAllSelect2.PGAST;
-    }
-    ex++;
+    // json = ExampleSelectInt.PGAST;
+    // json = ExampleSelectFloat.PGAST;
+    // json = ExampleSelectBool.PGAST;
+    json = ExampleSelect1UnionAllSelect2.PGAST;
 
     JSON::Element JSONRoot;
     JSON parser;
@@ -54,6 +43,7 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & ast, Expected & /*
     const auto root = PostgreSQL::buildJSONTree(JSONRoot);
     // PrintDebugInfoRecursive(root);
     ast = PostgreSQL::Transform(root);
+    std::cerr << "Transform Finished\n";
     assert(ast);
     return true;
 }
