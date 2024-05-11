@@ -5,6 +5,11 @@
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <clickhouse>
+    <ggml>
+        <gptj>
+            <path>/home/m0r0zk01/ggml-model.bin</path>
+        </gptj>
+    </ggml>
     <logger>
         <!-- Possible levels [1]:
 
@@ -21,7 +26,7 @@
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
-        <level>trace</level>
+        <level>debug</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy
