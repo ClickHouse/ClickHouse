@@ -117,8 +117,8 @@ class IColumn;
     M(UInt64, azure_max_unexpected_write_error_retries, 4, "The maximum number of retries in case of unexpected errors during Azure blob storage write", 0) \
     M(UInt64, azure_list_object_keys_size, 1000, "Maximum number of files that could be returned in batch by ListObject request", 0) \
     M(UInt64, azure_sdk_max_retries, 10, "Maximum number of retries in azure sdk", 0) \
-    M(UInt64, azure_sdk_retry_initial_backoff_ms, 10, "Minimal backoff beetween retries in azure sdk", 0) \
-    M(UInt64, azure_sdk_retry_max_backoff_ms, 1000, "Maximal backoff beetween retries in azure sdk", 0) \
+    M(UInt64, azure_sdk_retry_initial_backoff_ms, 10, "Minimal backoff between retries in azure sdk", 0) \
+    M(UInt64, azure_sdk_retry_max_backoff_ms, 1000, "Maximal backoff between retries in azure sdk", 0) \
     M(Bool, azure_truncate_on_insert, false, "Enables or disables truncate before insert in azure engine tables.", 0) \
     M(Bool, azure_create_new_file_on_insert, false, "Enables or disables creating a new file on each insert in azure engine tables", 0) \
     M(Bool, azure_allow_parallel_part_upload, true, "Use multiple threads for azure multipart upload.", 0) \
