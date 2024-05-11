@@ -130,16 +130,16 @@ CREATE TABLE codecTest (
     key      UInt64,
     name     String,
     ref_valueU64 UInt64,
-	ref_valueU32 UInt32,
-	ref_valueI64 Int64,
-	ref_valueI32 Int32,
-	valueU64 UInt64  CODEC(Pcodec),
-	valueU32 UInt32  CODEC(Pcodec),
-	valueI64 Int64  CODEC(Pcodec),
-	valueI32 Int32  CODEC(Pcodec),
+    ref_valueU32 UInt32,
+    ref_valueI64 Int64,
+    ref_valueI32 Int32,
+    valueU64 UInt64  CODEC(Pcodec),
+    valueU32 UInt32  CODEC(Pcodec),
+    valueI64 Int64  CODEC(Pcodec),
+    valueI32 Int32  CODEC(Pcodec),
 ) Engine = MergeTree ORDER BY key;
 
-INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
+INSERT INTO codecTest (key, ref_valueU64, ref_valueU32, ref_valueI64, ref_valueI32, valueU64, valueU32, valueI64, valueI32)
     SELECT number as n, n * n * n as v, v, v, v, v, v, v, v
     FROM system.numbers LIMIT 101, 1000;
 
@@ -187,16 +187,16 @@ CREATE TABLE codecTest (
     key      UInt64,
     name     String,
     ref_valueU64 UInt64,
-	ref_valueU32 UInt32,
-	ref_valueI64 Int64,
-	ref_valueI32 Int32,
-	valueU64 UInt64  CODEC(Pcodec(11)),
-	valueU32 UInt32  CODEC(Pcodec(10)),
-	valueI64 Int64  CODEC(Pcodec(2)),
-	valueI32 Int32  CODEC(Pcodec(4)),
+    ref_valueU32 UInt32,
+    ref_valueI64 Int64,
+    ref_valueI32 Int32,
+    valueU64 UInt64  CODEC(Pcodec(11)),
+    valueU32 UInt32  CODEC(Pcodec(10)),
+    valueI64 Int64  CODEC(Pcodec(2)),
+    valueI32 Int32  CODEC(Pcodec(4)),
 ) Engine = MergeTree ORDER BY key;
 
-INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueI64, valueI64, ref_valueI32, valueI32)
+INSERT INTO codecTest (key, ref_valueU64, ref_valueU32, ref_valueI64, ref_valueI32, valueU64, valueU32, valueI64, valueI32)
     SELECT number as n, n * n * n as v, v, v, v, v, v, v, v
     FROM system.numbers LIMIT 101, 1000;
 
