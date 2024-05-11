@@ -94,8 +94,8 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     {
         if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
         {
-            column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
-            column.type = removeLowCardinality(column.type);
+            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
+            column.type = recursiveRemoveLowCardinality(column.type);
         }
     }
 
