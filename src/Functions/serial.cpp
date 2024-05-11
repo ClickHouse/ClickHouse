@@ -7,6 +7,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include "Common/Logger.h"
+#include "Common/ZooKeeper/IKeeper.h"
+#include "Common/ZooKeeper/KeeperException.h"
+#include "Common/ZooKeeper/Types.h"
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB {
@@ -15,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int KEEPER_EXCEPTION;
 }
 
 class FunctionSerial : public IFunction
@@ -69,6 +73,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (zk == nullptr) {
+            throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+            "ZooKeeper is not configured for function {}",
+            getName());
+        }
+        if (zk->expired()) {
+            zk = context->getZooKeeper();
+        }
+
         auto col_res = ColumnVector<Int64>::create();
         typename ColumnVector<Int64>::Container & vec_to = col_res->getData();
         size_t size = input_rows_count;
@@ -77,78 +90,32 @@ public:
 
         const auto & serial_path = "/serials/" + arguments[0].column->getDataAt(0).toString();
 
-        // if serial name used first time
-        zk->createAncestors(serial_path);
-        zk->createIfNotExists(serial_path, "");
+        // CAS in ZooKeeper
+        // `get` value and version, `trySet` new with version check
+        // I didn't get how to do it with `multi`
 
         Int64 counter;
+        std::string counter_path = serial_path + "/counter";
 
-        if (zk != nullptr) {
-            // Get Lock in ZooKeeper
-            // https://zookeeper.apache.org/doc/r3.2.2/recipes.html
+        // if serial name used first time
+        zk->createAncestors(counter_path);
+        zk->createIfNotExists(counter_path, "1");
 
-            // 1.
-            if (zk->expired()) {
-                zk = context->getZooKeeper();
+        Coordination::Stat stat;
+        while (true) {
+            std::string counter_string = zk->get(counter_path, &stat);
+            counter = std::stoll(counter_string);
+            std::string updated_counter = std::to_string(counter + input_rows_count);
+            Coordination::Error err = zk->trySet(counter_path, updated_counter);
+            if (err == Coordination::Error::ZOK) {
+                // CAS is done
+                break;
             }
-
-            std::string lock_path = serial_path + "/lock-";
-            std::string path_created = zk->create(lock_path, "", zkutil::CreateMode::EphemeralSequential);
-            Int64 created_sequence_number = std::stoll(path_created.substr(lock_path.size(), path_created.size() - lock_path.size()));
-
-            while (true) {
-                // 2.
-                zkutil::Strings children = zk->getChildren(serial_path);
-
-                // 3.
-                Int64 lowest_child_sequence_number = -1;
-                for (auto& child : children) {
-                    if (child == "counter") {
-                        continue;
-                    }
-                    std::string child_suffix = child.substr(5, 10);
-                    Int64 seq_number = std::stoll(child_suffix);
-
-                    if (lowest_child_sequence_number == -1 || seq_number < lowest_child_sequence_number) {
-                        lowest_child_sequence_number = seq_number;
-                    }
-                }
-
-                if (lowest_child_sequence_number == created_sequence_number) {
-                    break;
-                    // we have a lock in ZooKeeper, now can get the counter value
-                }
-
-                // 4. and 5.
-                Int64 prev_seq_number = created_sequence_number - 1;
-                std::string to_wait_key = std::to_string(prev_seq_number);
-                while (to_wait_key.size() != 10) {
-                    to_wait_key = "0" + to_wait_key;
-                }
-
-                zk->waitForDisappear(lock_path + to_wait_key);
+            if (err != Coordination::Error::ZBADVERSION) {
+                throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                "ZooKeeper trySet operation failed with unexpected error = {} in function {}",
+                err, getName());
             }
-
-            // Now we have a lock
-            // Update counter in ZooKeeper
-            std::string counter_path = serial_path + "/counter";
-            if (zk->exists(counter_path)) {
-                std::string counter_string = zk->get(counter_path, nullptr);
-                counter = std::stoll(counter_string);
-
-                LOG_INFO(getLogger("Serial Function"), "Got counter from Zookeeper = {}", counter);
-            } else {
-                counter = 1;
-            }
-            zk->createOrUpdate(counter_path, std::to_string(counter + input_rows_count), zkutil::CreateMode::Persistent);
-
-            // Unlock = delete node created on step 1.
-            zk->deleteEphemeralNodeIfContentMatches(path_created, "");
-        } else {
-            // ZooKeeper is not available
-            // What to do?
-
-            counter = 1;
         }
 
         // Make a result
@@ -157,7 +124,6 @@ public:
             ++counter;
         }
 
-
         return col_res;
     }
 
@@ -165,7 +131,39 @@ public:
 
 REGISTER_FUNCTION(Serial)
 {
-    factory.registerFunction<FunctionSerial>();
+    factory.registerFunction<FunctionSerial>(FunctionDocumentation
+    {
+        .description=R"(
+Generates and returns sequential numbers starting from the previous counter value.
+This function takes a constant string argument - a series identifier.
+The server should be configured with a ZooKeeper.
+)",
+        .syntax = "serial(identifier)",
+        .arguments{
+            {"series identifier", "Series identifier (String)"}
+        },
+        .returned_value = "Sequential numbers of type Int64 starting from the previous counter value",
+        .examples{
+            {"first call", "SELECT serial('name')", R"(
+┌─serial('name')─┐
+│              1 │
+└────────────────┘)"},
+            {"second call", "SELECT serial('name')", R"(
+┌─serial('name')─┐
+│              2 │
+└────────────────┘)"},
+            {"column call", "SELECT *, serial('name') FROM test_table", R"(
+┌─CounterID─┬─UserID─┬─ver─┬─serial('name')─┐
+│         1 │      3 │   3 │              3 │
+│         1 │      1 │   1 │              4 │
+│         1 │      2 │   2 │              5 │
+│         1 │      5 │   5 │              6 │
+│         1 │      4 │   4 │              7 │
+└───────────┴────────┴─────┴────────────────┘
+                  )"}},
+        .categories{"Unique identifiers"}
+    });
+
 }
 
 }
