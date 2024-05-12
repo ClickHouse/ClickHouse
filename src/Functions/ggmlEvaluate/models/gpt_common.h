@@ -35,7 +35,7 @@ struct GptVocab {
 
 struct GptParams {
     int32_t seed         = -1;   // RNG seed
-    int32_t n_threads    = std::min(4, static_cast<int32_t>(std::thread::hardware_concurrency()));
+    int32_t n_threads    = 1; // std::min(4, static_cast<int32_t>(std::thread::hardware_concurrency()));
     int32_t n_predict    = 200;  // new tokens to predict
     int32_t n_parallel   = 1;    // number of parallel streams
     int32_t n_batch      = 8;    // batch size for prompt processing
@@ -69,6 +69,6 @@ GptVocab::id gpt_sample_top_k_top_p(
     double temp,
     std::mt19937 & rng);
 
-std::string getPathFromConfig(const DB::ConfigPtr& config);
+std::string getPathFromConfig(const DB::ConfigPtr& config, const std::string& model_name);
 
 }
