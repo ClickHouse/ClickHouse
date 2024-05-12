@@ -1,5 +1,4 @@
 #include <Analyzer/Passes/OptimizeL2DistancePass.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
@@ -7,10 +6,8 @@
 
 namespace DB
 {
-
 namespace
 {
-
 class L2DistanceOptimizationPassVisitor : public InDepthQueryTreeVisitorWithContext<L2DistanceOptimizationPassVisitor>
 {
 public:
@@ -18,10 +15,10 @@ public:
     using Base::Base;
 
     explicit L2DistanceOptimizationPassVisitor(ContextPtr context)
-        : Base(std::move(context))
+        : Base(std::move(context)), context(context)
     {}
 
-    void enterImpl(QueryTreeNodePtr & node, ContextPtr context)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "L2Distance")
@@ -41,6 +38,9 @@ public:
 
         node = sqrt_function;
     }
+
+private:
+    ContextPtr context;
 };
 
 }
@@ -48,7 +48,6 @@ public:
 void L2DistanceOptimizationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     L2DistanceOptimizationPassVisitor visitor(std::move(context));
-    visitor.visit(query_tree_node, context);
+    visitor.visit(query_tree_node);
 }
-
 }
