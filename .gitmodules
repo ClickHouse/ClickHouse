@@ -372,6 +372,3 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
-[submodule "contrib/libpg_query"]
-	path = contrib/libpg_query
-	url = https://github.com/pganalyze/libpg_query.git
