@@ -59,6 +59,8 @@ void IStorageSystemOneBlock::read(
 {
     storage_snapshot->check(column_names);
     Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    // _table virtual column will be added after IStorage::read
+    sample_block.erase("_table");
     std::vector<UInt8> columns_mask;
 
     if (supportsColumnsMask())
