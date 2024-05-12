@@ -27,7 +27,7 @@ public:
     ASTPtr infile;
     ASTPtr compression;
 
-    ASTPtr defaulted;
+    ASTs defaulted;
 
     /// Data inlined into query
     const char * data = nullptr;
@@ -66,7 +66,7 @@ public:
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
         if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression);}
-        if (defaulted) {res->defaulted = defaulted->clone(); res->children.push_back(res->defaulted);}
+        if (defaulted) {res->defaulted = defaulted; res->children.push_back(res->defaulted);}
 
         return res;
     }
