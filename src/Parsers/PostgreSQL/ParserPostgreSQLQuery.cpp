@@ -41,9 +41,13 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     String query(begin, end);
 
+    std::cerr << query << std::endl;
+
     auto res = pg_query_parse(query.data());
 
     String json = String(res.parse_tree);
+
+    std::cerr << json << std::endl;
 
     JSON::Element json_root;
     JSON parser;
@@ -53,7 +57,7 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     }
     const auto root = PostgreSQL::buildJSONTree(json_root);
-    PrintDebugInfoRecursive(root);
+    // PrintDebugInfoRecursive(root);
     node = PostgreSQL::Transform(root);
     std::cerr << "Transform Finished\n";
     assert(node);
