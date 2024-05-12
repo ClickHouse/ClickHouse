@@ -3,6 +3,7 @@
 
 #if USE_PARQUET
 
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -623,6 +624,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
             return;
         }
 
+        // TODO support defaults_for_omitted_fields feature when supporting nested columns
         auto num_rows = chunk.getNumRows();
         res = get_pending_chunk(num_rows, std::move(chunk));
     }

@@ -24,7 +24,7 @@ public:
     /**
      * @brief Used when the bit_width is 0, so all elements have same value.
      */
-    RleValuesReader(UInt32 total_size, Int32 val = 0)
+    explicit RleValuesReader(UInt32 total_size, Int32 val = 0)
         : bit_reader(nullptr), bit_width(0), cur_group_size(total_size), cur_value(val), cur_group_is_packed(false)
         {}
 
@@ -72,7 +72,8 @@ public:
      * @tparam SteppedValidVisitor  A callback with signature:
      *  void(size_t cursor, const std::vector<UInt8> & valid_index_steps)
      *  for n valid elements with null value interleaved in a BitPacked group,
-     *  i-th item in valid_index_steps describes how many elements in column there are after (i-1)-th valid element.
+     *  i-th item in valid_index_steps describes how many elements there are
+     *  from i-th valid element (include) to (i+1)-th valid element (exclude).
      *
      *  take following BitPacked group with 2 valid elements for example:
      *      null valid null null valid null
@@ -138,10 +139,16 @@ public:
 using ParquetDataValuesReaderPtr = std::unique_ptr<ParquetDataValuesReader>;
 
 
+enum class ParquetReaderTypes
+{
+    Normal,
+    TimestampInt96,
+};
+
 /**
  * The definition level is RLE or BitPacked encoding, while data is read directly
  */
-template <typename TColumn>
+template <typename TColumn, ParquetReaderTypes reader_type = ParquetReaderTypes::Normal>
 class ParquetPlainValuesReader : public ParquetDataValuesReader
 {
 public:

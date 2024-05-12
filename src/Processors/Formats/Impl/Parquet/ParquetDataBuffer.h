@@ -48,7 +48,7 @@ public:
         consume(bytes);
     }
 
-    void ALWAYS_INLINE readDateTime64(DateTime64 & dst)
+    void ALWAYS_INLINE readDateTime64FromInt96(DateTime64 & dst)
     {
         static const int max_scale_num = 9;
         static const UInt64 pow10[max_scale_num + 1]
@@ -110,10 +110,7 @@ public:
 
         // refer to: RawBytesToDecimalBytes in reader_internal.cc, Decimal128::FromBigEndian in decimal.cc
         auto status = TArrowDecimal::FromBigEndian(getArrowData(), elem_bytes_num);
-        if (unlikely(!status.ok()))
-        {
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Read parquet decimal failed: {}", status.status().ToString());
-        }
+        assert(status.ok());
         status.ValueUnsafe().ToBytes(reinterpret_cast<uint8_t *>(out));
         consume(elem_bytes_num);
     }
@@ -144,7 +141,7 @@ private:
 class LazyNullMap
 {
 public:
-    LazyNullMap(UInt64 size_) : size(size_), col_nullable(nullptr) {}
+    explicit LazyNullMap(UInt64 size_) : size(size_), col_nullable(nullptr) {}
 
     template <typename T>
     requires std::is_integral_v<T>

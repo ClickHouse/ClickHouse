@@ -276,8 +276,7 @@ void ParquetPlainValuesReader<ColumnString>::readBatch(
 
                 auto idx = cursor;
                 cursor += count;
-                // the type of offset_data is PaddedPODArray, which makes sure that the -1 index is available
-                for (auto val_offset = offset_data[idx - 1]; idx < cursor; idx++)
+                for (auto val_offset = chars_size_bak; idx < cursor; idx++)
                 {
                     offset_data[idx] = ++val_offset;
                 }
@@ -288,7 +287,7 @@ void ParquetPlainValuesReader<ColumnString>::readBatch(
 
 
 template <>
-void ParquetPlainValuesReader<ColumnDecimal<DateTime64>>::readBatch(
+void ParquetPlainValuesReader<ColumnDecimal<DateTime64>, ParquetReaderTypes::TimestampInt96>::readBatch(
     MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
 {
     auto cursor = col_ptr->size();
@@ -302,21 +301,21 @@ void ParquetPlainValuesReader<ColumnDecimal<DateTime64>>::readBatch(
         null_map,
         /* individual_visitor */ [&](size_t nest_cursor)
         {
-            plain_data_buffer.readDateTime64(column_data[nest_cursor]);
+            plain_data_buffer.readDateTime64FromInt96(column_data[nest_cursor]);
         },
         /* repeated_visitor */ [&](size_t nest_cursor, UInt32 count)
         {
             auto * col_data_pos = column_data + nest_cursor;
             for (UInt32 i = 0; i < count; i++)
             {
-                plain_data_buffer.readDateTime64(col_data_pos[i]);
+                plain_data_buffer.readDateTime64FromInt96(col_data_pos[i]);
             }
         }
     );
 }
 
-template <typename TColumn>
-void ParquetPlainValuesReader<TColumn>::readBatch(
+template <typename TColumn, ParquetReaderTypes reader_type>
+void ParquetPlainValuesReader<TColumn, reader_type>::readBatch(
     MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
 {
     auto cursor = col_ptr->size();
@@ -542,11 +541,14 @@ void ParquetRleDictReader<TColumnVector>::readBatch(
 
 
 template class ParquetPlainValuesReader<ColumnInt32>;
+template class ParquetPlainValuesReader<ColumnUInt32>;
 template class ParquetPlainValuesReader<ColumnInt64>;
+template class ParquetPlainValuesReader<ColumnUInt64>;
 template class ParquetPlainValuesReader<ColumnFloat32>;
 template class ParquetPlainValuesReader<ColumnFloat64>;
 template class ParquetPlainValuesReader<ColumnDecimal<Decimal32>>;
 template class ParquetPlainValuesReader<ColumnDecimal<Decimal64>>;
+template class ParquetPlainValuesReader<ColumnDecimal<DateTime64>>;
 template class ParquetPlainValuesReader<ColumnString>;
 
 template class ParquetFixedLenPlainReader<ColumnDecimal<Decimal128>>;
@@ -557,7 +559,9 @@ template class ParquetRleLCReader<ColumnUInt16>;
 template class ParquetRleLCReader<ColumnUInt32>;
 
 template class ParquetRleDictReader<ColumnInt32>;
+template class ParquetRleDictReader<ColumnUInt32>;
 template class ParquetRleDictReader<ColumnInt64>;
+template class ParquetRleDictReader<ColumnUInt64>;
 template class ParquetRleDictReader<ColumnFloat32>;
 template class ParquetRleDictReader<ColumnFloat64>;
 template class ParquetRleDictReader<ColumnDecimal<Decimal32>>;

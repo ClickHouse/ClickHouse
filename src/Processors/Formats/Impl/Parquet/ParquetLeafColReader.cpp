@@ -110,16 +110,24 @@ ColumnPtr readDictPage<ColumnString>(
 template <>
 ColumnPtr readDictPage<ColumnDecimal<DateTime64>>(
     const parquet::DictionaryPage & page,
-    const parquet::ColumnDescriptor & /* col_des */,
+    const parquet::ColumnDescriptor & col_des,
     const DataTypePtr & data_type)
 {
+
     const auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
     auto dict_col = ColumnDecimal<DateTime64>::create(page.num_values(), datetime_type.getScale());
     auto * col_data = dict_col->getData().data();
     ParquetDataBuffer buffer(page.data(), page.size(), datetime_type.getScale());
-    for (auto i = 0; i < page.num_values(); i++)
+    if (col_des.physical_type() == parquet::Type::INT64)
     {
-        buffer.readDateTime64(col_data[i]);
+        buffer.readBytes(dict_col->getData().data(), page.num_values() * sizeof(Int64));
+    }
+    else
+    {
+        for (auto i = 0; i < page.num_values(); i++)
+        {
+            buffer.readDateTime64FromInt96(col_data[i]);
+        }
     }
     return dict_col;
 }
@@ -190,8 +198,12 @@ std::unique_ptr<ParquetDataValuesReader> createPlainReader(
     RleValuesReaderPtr def_level_reader,
     ParquetDataBuffer buffer)
 {
-    return std::make_unique<ParquetPlainValuesReader<TColumn>>(
-        col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
+    if (std::is_same_v<TColumn, ColumnDecimal<DateTime64>> && col_des.physical_type() == parquet::Type::INT96)
+        return std::make_unique<ParquetPlainValuesReader<TColumn, ParquetReaderTypes::TimestampInt96>>(
+            col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
+    else
+        return std::make_unique<ParquetPlainValuesReader<TColumn>>(
+            col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
 }
 
 
@@ -287,6 +299,7 @@ void ParquetLeafColReader<TColumn>::degradeDictionary()
     null_map = std::make_unique<LazyNullMap>(reading_rows_num);
     auto col_existing = std::move(column);
     column = ColumnString::create();
+    reserveColumnStrRows(column, reading_rows_num);
 
     ColumnString & col_dest = *static_cast<ColumnString *>(column.get());
     const ColumnString & col_dict_str = *static_cast<const ColumnString *>(dictionary.get());
@@ -294,8 +307,9 @@ void ParquetLeafColReader<TColumn>::degradeDictionary()
     visitColStrIndexType(dictionary->size(), [&]<typename TColVec>(TColVec *)
     {
         const TColVec & col_src = *static_cast<const TColVec *>(col_existing.get());
-        reserveColumnStrRows(column, reading_rows_num);
 
+        // It will be easier to create a ColumnLowCardinality and call convertToFullColumn() on it,
+        // while the performance loss is ignorable, the implementation can be updated next time.
         col_dest.getOffsets().resize(col_src.size());
         for (size_t i = 0; i < col_src.size(); i++)
         {
@@ -378,6 +392,11 @@ void ParquetLeafColReader<TColumn>::readPage()
             LOG_DEBUG(log, "{} values in dictionary page of column {}", dict_page.num_values(), col_descriptor.name());
 
             dictionary = readDictPage<TColumn>(dict_page, col_descriptor, base_data_type);
+            if (unlikely(dictionary->size() < 2))
+            {
+                // must not small than ColumnUnique<ColumnString>::numSpecialValues()
+                dictionary->assumeMutable()->insertManyDefaults(2);
+            }
             if (std::is_same_v<TColumn, ColumnString>)
             {
                 reading_low_cardinality = true;
@@ -508,7 +527,9 @@ std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn>::createDi
 
 
 template class ParquetLeafColReader<ColumnInt32>;
+template class ParquetLeafColReader<ColumnUInt32>;
 template class ParquetLeafColReader<ColumnInt64>;
+template class ParquetLeafColReader<ColumnUInt64>;
 template class ParquetLeafColReader<ColumnFloat32>;
 template class ParquetLeafColReader<ColumnFloat64>;
 template class ParquetLeafColReader<ColumnString>;
