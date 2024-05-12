@@ -328,8 +328,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 const auto & [columns, descriptions] = *it;
                 const auto & header = ports[set_counter]->getHeader();
 
-                auto tableJoin = std::make_shared<TableJoin>(SizeLimits{}, true, JoinKind::Left, JoinStrictness::Unspecified, columns);
+                auto tableJoin = std::make_shared<TableJoin>(SizeLimits{}, true, JoinKind::Left, JoinStrictness::Any, columns);
                 auto join = std::make_shared<JoinSwitcher>(tableJoin, header);
+
+                std::cout << "Join has delayed blocks " << join->hasDelayedBlocks() << std::endl;
 
                 auto rightJoining = std::make_shared<FillingRightJoinSideTransform>(header, join);
                 auto & rightJoiningInputs = rightJoining->getInputs();
@@ -337,7 +339,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 connect(*ports[set_counter], rightJoiningInputs.front());
                 processors.push_back(rightJoining);
 
-                auto joining = std::make_shared<JoiningTransform>(new_port->getHeader(), output_header, join, max_block_size);
+                auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(/* pipeline.getNumStreams() */ 1);
+
+                auto output_h = JoiningTransform::transformHeader(new_port->getHeader(), join);
+                auto joining = std::make_shared<JoiningTransform>(new_port->getHeader(), output_h, join, max_block_size, false, false, finish_counter);
                 connect(*new_port, joining->getInputs().front());
                 connect(rightJoining->getOutputs().front(), joining->getInputs().back());
                 new_port = &joining->getOutputs().front();
