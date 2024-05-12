@@ -1,39 +1,58 @@
 #include <Analyzer/Passes/OptimizeL2DistancePass.h>
-#include <Parsers/ExpressionListParsers.h>
+
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/FunctionNode.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
 
-void L2DistanceOptimizationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+namespace
 {
-    Data data;
-    query_tree_node->visit(data, [this](ASTPtr & node, ASTPtr & parent, Data & data) { enterImpl(node, parent, data); }, data);
-}
 
-void L2DistanceOptimizationPass::enterImpl(ASTPtr & node, ASTPtr & parent, Data & data)
+class L2DistanceOptimizationPassVisitor : public InDepthQueryTreeVisitorWithContext<L2DistanceOptimizationPassVisitor>
 {
-    if (auto * func_node = typeid_cast<ASTFunction *>(node.get()))
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<L2DistanceOptimizationPassVisitor>;
+    using Base::Base;
+
+    explicit L2DistanceOptimizationPassVisitor(ContextPtr context)
+        : Base(std::move(context))
+    {}
+
+    void enterImpl(QueryTreeNodePtr & node)
     {
-        if (func_node->name == "L2Distance")
+        if (auto * func_node = typeid_cast<ASTFunction *>(node.get()))
         {
-            if (func_node->arguments->children.size() != 2)
+            if (func_node->name == "L2Distance")
+            {
+                if (func_node->arguments->children.size() != 2)
                 return;
 
-            String vec_arg = func_node->arguments->children.at(1)->getColumnName();
+                String vec_arg = func_node->arguments->children.at(1)->getColumnName();
 
-            auto new_function_name = "sqrt";
-            auto new_function_arg = std::make_shared<ASTFunction>();
-            new_function_arg->name = "L2SquaredDistance";
-            new_function_arg->arguments = func_node->arguments;
+                auto new_function_name = "sqrt";
+                auto new_function_arg = std::make_shared<ASTFunction>();
+                new_function_arg->name = "L2SquaredDistance";
+                new_function_arg->arguments = func_node->arguments;
 
-            auto new_function_node = std::make_shared<ASTFunction>();
-            new_function_node->name = new_function_name;
-            new_function_node->arguments = std::make_shared<ASTExpressionList>();
-            new_function_node->arguments->children.push_back(new_function_arg);
+                auto new_function_node = std::make_shared<ASTFunction>();
+                new_function_node->name = new_function_name;
+                new_function_node->arguments = std::make_shared<ASTExpressionList>();
+                new_function_node->arguments->children.push_back(new_function_arg);
 
-            node = new_function_node;
+                node = new_function_node;
+            }
         }
     }
+};
+
+}
+
+void L2DistanceOptimizationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+{
+    L2DistanceOptimizationPassVisitor visitor(std::move(context));
+    visitor.visit(query_tree_node);
 }
 
 }
