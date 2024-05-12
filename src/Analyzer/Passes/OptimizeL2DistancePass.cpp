@@ -21,7 +21,7 @@ public:
         : Base(std::move(context))
     {}
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node, ContextPtr context)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "L2Distance")
@@ -48,7 +48,7 @@ public:
 void L2DistanceOptimizationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     L2DistanceOptimizationPassVisitor visitor(std::move(context));
-    visitor.visit(query_tree_node);
+    visitor.visit(query_tree_node, context);
 }
 
 }
