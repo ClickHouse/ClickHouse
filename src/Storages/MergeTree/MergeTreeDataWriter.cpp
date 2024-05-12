@@ -507,11 +507,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         getBestCompressionPermutation(block, sort_description, perm);
         perm_ptr = &perm;
     }
-    else
-    {
-        LOG_DEBUG(
-            log, "allow_experimental_improve_compression_rows_order=false");
-    }
 
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef().optimize_on_insert)
@@ -740,11 +735,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
         getBestCompressionPermutation(block, sort_description, perm);
         perm_ptr = &perm;
-    }
-    else
-    {
-        LOG_DEBUG(
-            log, "allow_experimental_improve_compression_rows_order=false");
     }
 
     if (projection.type == ProjectionDescription::Type::Aggregate && merge_is_needed)
