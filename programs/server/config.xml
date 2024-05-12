@@ -7,7 +7,7 @@
 <clickhouse>
     <ggml>
         <gptj>
-            <path>/home/m0r0zk01/ggml-model.bin</path>
+            <path>/models/gptj.ggml</path>
         </gptj>
     </ggml>
     <logger>

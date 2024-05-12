@@ -77,11 +77,11 @@ public:
 
 private:
     void loadImpl(ConfigPtr config) override;
-    std::string evalImpl(GgmlModelParams params, const std::string & input) override;
+    std::string evalImpl(const std::string & input, const GgmlModelParams & user_params) override;
 
     bool evalInternal(
         int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
-    std::vector<GptVocab::id> predict(GgmlModelParams params, const std::vector<GptVocab::id> & embd_inp);
+    std::vector<GptVocab::id> predict(const GgmlModelParams & user_params, const std::vector<GptVocab::id> & embd_inp);
 
     GptVocab gpt_vocab;
     GptParams gpt_params;

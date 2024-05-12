@@ -14,9 +14,9 @@ void IGgmlModel::load(ConfigPtr config)
     }
 }
 
-std::string IGgmlModel::eval(GgmlModelParams params, const std::string & input)
+std::string IGgmlModel::eval(const std::string & input, const GgmlModelParams & user_params)
 {
-    return evalImpl(params, input);
+    return evalImpl(input, user_params);
 }
 
 }

@@ -1,5 +1,6 @@
 #include "gpt2.h"
 
+#include "Functions/ggmlEvaluate/IGgmlModel.h"
 #include "ggml/ggml-alloc.h"
 #include "ggml/ggml-backend.h"
 #include "ggml/ggml.h"
@@ -356,7 +357,7 @@ void Gpt2Model::loadImpl(ConfigPtr config)
     }
 }
 
-std::string Gpt2Model::evalImpl(std::tuple<Int32> user_params, const std::string & input)
+std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams & user_params)
 {
     int n_past = 0;
 
@@ -365,7 +366,10 @@ std::string Gpt2Model::evalImpl(std::tuple<Int32> user_params, const std::string
     // tokenize the prompt
     std::vector<GptVocab::id> embd_inp = gpt_tokenize(gpt_vocab, input);
 
-    int n_predict = std::min(std::get<0>(user_params), state.hparams.n_ctx - static_cast<int>(embd_inp.size()));
+    Int64 n_predict = gpt_params.n_predict;
+    if (auto it = user_params.find("n_predict"); it != user_params.end())
+        n_predict = it->second.safeGet<Int64>();
+    n_predict = std::min(n_predict, state.hparams.n_ctx - static_cast<Int64>(embd_inp.size()));
 
     // submit the input prompt token-by-token
     // this reduces the memory usage during inference, at the cost of a bit of speed at the beginning
