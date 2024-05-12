@@ -499,18 +499,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_improve_compression_raws_order)
+    if (data.getSettings()->allow_experimental_improve_compression_rows_order)
     {
         LOG_DEBUG(
-            log, "allow_experimental_improve_compression_raws_order=true");
+            log, "allow_experimental_improve_compression_rows_order=true");
 
         getBestCompressionPermutation(block, sort_description, perm);
         perm_ptr = &perm;
     }
-    else 
+    else
     {
         LOG_DEBUG(
-            log, "allow_experimental_improve_compression_raws_order=false");
+            log, "allow_experimental_improve_compression_rows_order=false");
     }
 
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
@@ -733,18 +733,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (data.getSettings()->allow_experimental_improve_compression_raws_order)
+    if (data.getSettings()->allow_experimental_improve_compression_rows_order)
     {
         LOG_DEBUG(
-            log, "allow_experimental_improve_compression_raws_order=true");
+            log, "allow_experimental_improve_compression_rows_order=true");
 
         getBestCompressionPermutation(block, sort_description, perm);
         perm_ptr = &perm;
     }
-    else 
+    else
     {
         LOG_DEBUG(
-            log, "allow_experimental_improve_compression_raws_order=false");
+            log, "allow_experimental_improve_compression_rows_order=false");
     }
 
     if (projection.type == ProjectionDescription::Type::Aggregate && merge_is_needed)
