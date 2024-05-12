@@ -15,7 +15,7 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
-#include "Core/ColumnWithTypeAndName.h"
+#include <Core/ColumnWithTypeAndName.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 
