@@ -215,7 +215,7 @@ if (NOT BUILD_STANDALONE_KEEPER)
 else ()
     option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
 endif ()
-
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
 if (LINKER_NAME MATCHES "lld")
