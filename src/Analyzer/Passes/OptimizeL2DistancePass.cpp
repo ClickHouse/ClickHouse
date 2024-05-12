@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/L2DistanceOptimizationPass.h>
+#include <Analyzer/Passes/OptimizeL2DistancePass.h>
 #include <Parsers/ExpressionListParsers.h>
 
 namespace DB
