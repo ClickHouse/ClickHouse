@@ -66,7 +66,7 @@ public:
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
         if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression);}
-        if (defaulted) {res->defaulted = defaulted; res->children.push_back(res->defaulted);}
+        if (defaulted.size()) {res->defaulted = defaulted; }
 
         return res;
     }
