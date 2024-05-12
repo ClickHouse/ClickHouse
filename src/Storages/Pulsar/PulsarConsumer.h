@@ -15,7 +15,7 @@ class PulsarConsumer
     friend class StoragePulsar;
 
 public:
-    PulsarConsumer() = default;
+    PulsarConsumer(LoggerPtr logger_);
 
     ReadBufferPtr getNextMessage();
     ReadBufferPtr consume();
@@ -27,6 +27,7 @@ public:
     String currentPayload() const { return next_message[-1].getDataAsString(); }
 
 private:
+    LoggerPtr logger;
     pulsar::Consumer consumer;
     pulsar::Messages polled_messages;
     pulsar::Messages::const_iterator next_message;

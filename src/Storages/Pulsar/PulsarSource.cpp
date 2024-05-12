@@ -6,6 +6,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -16,13 +17,15 @@ PulsarSource::PulsarSource(
     const ContextPtr & context_,
     const Names & columns_,
     size_t max_block_size_,
+    LoggerPtr log_,
     UInt64 max_execution_time_)
     : ISource(storage_snapshot_->getSampleBlockForColumns(columns_))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
-    , max_execution_time(max_execution_time_)
     , max_block_size(max_block_size_)
+    , log(log_)
+    , max_execution_time(max_execution_time_)
     , handle_error_mode(storage.getStreamingHandleErrorMode())
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage.getVirtualsHeader())
@@ -49,18 +52,26 @@ Chunk PulsarSource::generateImpl()
     }
 
     if (is_finished || !consumer)
+    {
+        LOG_TRACE(log, "Can't generate chunk");
         return {};
+    }
 
     Stopwatch stopwatch;
+    LOG_TRACE(log, "Start generate chunk");
 
     is_finished = true;
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
+
+
+    LOG_TRACE(log, "Got virtaul columns");
 
     auto put_error_to_stream = handle_error_mode == StreamingHandleErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+    LOG_TRACE(log, "Format? Gottem!");
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -90,14 +101,24 @@ Chunk PulsarSource::generateImpl()
         }
     };
 
+    LOG_TRACE(log, "Create executor");
+
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
+
+    LOG_TRACE(log, "Start consuming");
 
     while (true)
     {
         size_t new_rows = 0;
         exception_message.reset();
         if (auto buf = consumer->consume())
+        {
+            LOG_TRACE(log, "Got non-empty buffer");
             new_rows = executor.execute(*buf);
+            LOG_TRACE(log, "executed :)");
+        }
+
+        LOG_TRACE(log, "virtual columns size: {}", virtual_columns.size());
 
         if (new_rows)
         {

@@ -15,6 +15,7 @@ public:
         const ContextPtr & context_,
         const Names & columns_,
         size_t max_block_size_,
+        LoggerPtr log_,
         UInt64 max_execution_time_);
 
     ~PulsarSource() override;
@@ -28,8 +29,9 @@ private:
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
-    UInt64 max_execution_time;
     const size_t max_block_size;
+    LoggerPtr log;
+    UInt64 max_execution_time;
     StreamingHandleErrorMode handle_error_mode;
 
     bool is_finished = false;

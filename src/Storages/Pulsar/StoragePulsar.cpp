@@ -22,6 +22,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -72,9 +73,7 @@ private:
 
         // Claim as many consumers as requested, but don't block
         for (size_t i = 0; i < pulsar_storage.num_consumers; ++i)
-        {
-            pipes.emplace_back(std::make_shared<PulsarSource>(pulsar_storage, storage_snapshot, modified_context, column_names, 1, 0));
-        }
+            pipes.emplace_back(std::make_shared<PulsarSource>(pulsar_storage, storage_snapshot, modified_context, column_names, 1, pulsar_storage.log, 0));
 
         return Pipe::unitePipes(std::move(pipes));
     }
@@ -89,19 +88,22 @@ StoragePulsar::StoragePulsar(
     : IStorage(table_id_)
     , WithContext(context_)
     , pulsar_settings(std::move(pulsar_settings_))
+    , format_name(pulsar_settings->pulsar_format.value)
     , num_consumers(pulsar_settings->pulsar_num_consumers.value)
-    , log(getLogger("Storage Pulsar(" + table_id_.table_name + ")"))
     , max_rows_per_message(pulsar_settings->pulsar_max_rows_per_message.value)
+    , log(getLogger("Storage Pulsar(" + table_id_.table_name + ")"))
     , pulsar_client(pulsar_settings->pulsar_broker_address.value)
+    , topics(parseTopics(pulsar_settings->pulsar_topic_list.value))
     , semaphore(0, static_cast<int>(num_consumers))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        auto consumer = std::make_shared<PulsarConsumer>();
+        auto consumer = std::make_shared<PulsarConsumer>(log);
         createConsumer(consumer->consumer);
         pushConsumer(consumer);
     }
@@ -117,9 +119,8 @@ void StoragePulsar::startup()
 void StoragePulsar::shutdown(bool /* is_drop */)
 {
     shutdown_called.store(true);
-    for (size_t i = 0; i < num_consumers; ++i) {
+    for (size_t i = 0; i < num_consumers; ++i)
         popConsumer()->consumer.close();
-    }
     pulsar_client.close();
 }
 
@@ -370,6 +371,7 @@ void StoragePulsar::streamToViews()
             pulsar_context,
             block_io.pipeline.getHeader().getNames(),
             block_size,
+            log,
             max_execution_time.milliseconds());
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -417,9 +419,7 @@ void registerStoragePulsar(StorageFactory & factory)
             pulsar_settings->loadFromQuery(*args.storage_def);
 
         if (!pulsar_settings->pulsar_broker_address.changed)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "You must specify `pulsar_broker_address` settings");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_broker_address` settings");
 
         if (!pulsar_settings->pulsar_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_format` setting");
