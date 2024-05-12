@@ -104,25 +104,28 @@ String toString(TargetArch arch);
 
 #if defined(__clang__)
 
-#define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2")))
-#define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi")))
-#define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw")))
+#define AMXBF16_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi,avx512vbmi2,amx-bf16")))
+#define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi,avx512vbmi2")))
+#define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi")))
+#define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq")))
 #define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f")))
-#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2")))
-#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx"))
+#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,fma,bmi2")))
+#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx")))
 #define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt")))
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
+#   define BEGIN_AMXBF16_SPECIFIC_CODE \
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi,avx512vbmi2,amx-bf16\"))),apply_to=function)")
 #   define BEGIN_AVX512VBMI2_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi,avx512vbmi2\"))),apply_to=function)")
 #   define BEGIN_AVX512VBMI_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi\"))),apply_to=function)")
 #   define BEGIN_AVX512BW_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq\"))),apply_to=function)")
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f\"))),apply_to=function)")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,fma,bmi2\"))),apply_to=function)")
 #   define BEGIN_AVX_SPECIFIC_CODE \
         _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx\"))),apply_to=function)")
 #   define BEGIN_SSE42_SPECIFIC_CODE \
@@ -136,15 +139,19 @@ String toString(TargetArch arch);
 #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 #else
 
-#define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,tune=native")))
-#define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,tune=native")))
-#define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,tune=native")))
+#define AMXBF16_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi,avx512vbmi2,amx-bf16,tune=native")))
+#define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi,avx512vbmi2,tune=native")))
+#define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,avx512vl,avx512vbmi,tune=native")))
+#define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,tune=native")))
 #define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,tune=native")))
-#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2,tune=native")))
+#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,fma,bmi2,tune=native")))
 #define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,tune=native")))
 #define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt",tune=native)))
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
+#   define BEGIN_AMXBF16_SPECIFIC_CODE \
+        _Pragma("GCC push_options") \
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,amx-bf16,tune=native\")")
 #   define BEGIN_AVX512VBMI2_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,tune=native\")")
@@ -153,13 +160,13 @@ String toString(TargetArch arch);
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,tune=native\")")
 #   define BEGIN_AVX512BW_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
-        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,tune=native\")")
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512dq,tune=native\")")
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,tune=native\")")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
-        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2,tune=native\")")
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,bmi2,fma,tune=native\")")
 #   define BEGIN_AVX_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,tune=native\")")
@@ -237,6 +244,14 @@ namespace TargetSpecific::AVX512VBMI2 { \
 } \
 END_TARGET_SPECIFIC_CODE
 
+#define DECLARE_AMXBF16_SPECIFIC_CODE(...) \
+BEGIN_AMXBF16_SPECIFIC_CODE \
+namespace TargetSpecific::AMXBF16 { \
+    DUMMY_FUNCTION_DEFINITION \
+    using namespace DB::TargetSpecific::AMXBF16; \
+    __VA_ARGS__ \
+} \
+END_TARGET_SPECIFIC_CODE
 
 #else
 
@@ -251,6 +266,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX512BW_SPECIFIC_CODE(...)
 #define DECLARE_AVX512VBMI_SPECIFIC_CODE(...)
 #define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
+#define DECLARE_AMXBF16_SPECIFIC_CODE(...)
 
 #endif
 
@@ -269,7 +285,8 @@ DECLARE_AVX2_SPECIFIC_CODE   (__VA_ARGS__) \
 DECLARE_AVX512F_SPECIFIC_CODE(__VA_ARGS__) \
 DECLARE_AVX512BW_SPECIFIC_CODE    (__VA_ARGS__) \
 DECLARE_AVX512VBMI_SPECIFIC_CODE  (__VA_ARGS__) \
-DECLARE_AVX512VBMI2_SPECIFIC_CODE (__VA_ARGS__)
+DECLARE_AVX512VBMI2_SPECIFIC_CODE (__VA_ARGS__) \
+DECLARE_AMXBF16_SPECIFIC_CODE (__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default; /// NOLINT
@@ -302,6 +319,10 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 DECLARE_AVX512VBMI2_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX512VBMI2; /// NOLINT
 ) // DECLARE_AVX512VBMI2_SPECIFIC_CODE
+
+DECLARE_AMXBF16_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::AMXBF16; /// NOLINT
+) // DECLARE_AMXBF16_SPECIFIC_CODE
 
 /** Runtime Dispatch helpers for class members.
   *

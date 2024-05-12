@@ -17,6 +17,7 @@
 #include "Columns/ColumnsNumber.h"
 #include "Columns/IColumn.h"
 #include "Core/TypeId.h"
+#include "DataTypes/DataTypeFixedString.h"
 #include "DataTypes/IDataType.h"
 #include "config.h"
 
@@ -35,15 +36,10 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionPartitionByHyperplanes : public IFunction
-{
-private:
-    static size_t constexpr tile_size = 16;
-#if defined(__AMX_BF16__)
-    static std::array<double, tile_size * tile_size> temp_tile;
-#endif
+size_t constexpr tile_size = 16;
 
-    static void multiplyTileScalar(
+DECLARE_DEFAULT_CODE(
+    void doMultiplyTile(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
         ColumnFloat32 & col_res,
@@ -64,9 +60,9 @@ private:
                     col_res.getElement(nt * normal_count + mt) += vector_element * normal_element;
                 }
     }
+) // DECLARE_DEFAULT_CODE
 
-#if defined(__AMX_BF16__)
-
+DECLARE_AMXBF16_SPECIFIC_CODE(
     // Config for AMX unit
     struct TileConfig
     {
@@ -77,7 +73,7 @@ private:
         uint8_t rows[16]; // actual row count
     };
 
-    static void multiplyTileAMX(
+    void doMultiplyTile(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
         ColumnFloat32 & col_res,
@@ -122,9 +118,10 @@ private:
             vector_count * col_res.sizeOfValueIfFixed());
         _tile_release();
     }
-#endif
+) // DECLARE_AMX_SPECIFIC_CODE
 
-    static void multiplyTileAVX2(
+DECLARE_AVX2_SPECIFIC_CODE(
+    void doMultiplyTile(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
         ColumnFloat32 & col_res,
@@ -149,7 +146,10 @@ private:
             }
     }
 
-    static void multiplyTileAVX512(
+) // DECLARE_AVX2_SPECIFIC_CODE
+
+DECLARE_AVX512BW_SPECIFIC_CODE(
+    void doMultiplyTile(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
         ColumnFloat32 & col_res,
@@ -175,6 +175,11 @@ private:
             }
     }
 
+) // DECLARE_AVX512_SPECIFIC_CODE
+
+class FunctionPartitionByHyperplanes : public IFunction
+{
+private:
     static void multiplyTile(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
@@ -186,10 +191,10 @@ private:
         size_t normals_data_index,
         size_t coordinate_index)
     {
-#if defined(__AMX_BF16__) && defined(__AMX_TILE__)
-        if (isArchSupported(TargetArch::AMXBF16) && isArchSupported(TargetArch::AMXTILE))
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AMXBF16))
         {
-            multiplyTileAMX(
+            TargetSpecific::AMXBF16::doMultiplyTile(
                 nested_vectors_data,
                 nested_normals_data,
                 col_res,
@@ -201,10 +206,10 @@ private:
                 coordinate_index);
             return;
         }
-#endif
-        if (isArchSupported(TargetArch::AVX512F))
+
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            multiplyTileAVX512(
+            TargetSpecific::AVX512BW::doMultiplyTile(
                 nested_vectors_data,
                 nested_normals_data,
                 col_res,
@@ -219,7 +224,7 @@ private:
 
         if (isArchSupported(TargetArch::AVX2))
         {
-            multiplyTileAVX2(
+            TargetSpecific::AVX2::doMultiplyTile(
                 nested_vectors_data,
                 nested_normals_data,
                 col_res,
@@ -231,8 +236,9 @@ private:
                 coordinate_index);
             return;
         }
+#endif
 
-        multiplyTileScalar(
+        TargetSpecific::Default::doMultiplyTile(
             nested_vectors_data,
             nested_normals_data,
             col_res,
@@ -276,12 +282,45 @@ private:
     static void checkDimension(const ColumnArray::Offsets & offsets, size_t dimension)
     {
         size_t prev_offset = 0;
-        for (const auto offset : offsets) {
-            if (offset - prev_offset != dimension) {
+        for (const auto offset : offsets)
+        {
+            if (offset - prev_offset != dimension)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "All vectors must have equal size");
-            }
             prev_offset = offset;
         }
+    }
+
+    static ColumnPtr createFixedStringResult(
+        const IColumn * nested_offsets_data,
+        const ColumnFloat32::MutablePtr & col_res,
+        size_t vector_count,
+        size_t normal_count)
+    {
+        auto res = ColumnFixedString::create((normal_count / 8) + (normal_count % 8 != 0));
+        res->getChars().reserve(vector_count * normal_count / 8);
+        char temp = 0;
+        for (size_t i = 0; i < vector_count; ++i)
+        {
+            for (size_t j = 0; j < normal_count; ++j)
+            {
+                temp = temp << 1;
+                auto res_val = col_res->getData()[i * normal_count + j];
+                auto offset = nested_offsets_data->getFloat32(j);
+                if (res_val > offset)
+                    temp |= 1;
+                if ((j + 1) % 8 == 0)
+                {
+                    res->insertData(&temp, 1);
+                    temp = 0;
+                }
+            }
+            if (normal_count % 8 != 0)
+            {
+                res->insertData(&temp, 1);
+                temp = 0;
+            }
+        }
+        return res;
     }
 
 public:
@@ -309,24 +348,24 @@ public:
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
-        return std::make_shared<DataTypeString>();
+        return std::make_shared<DataTypeFixedString>(1);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnArray * vectors = typeid_cast<const ColumnArray *>(arguments[0].column.get());
         if (!vectors)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be Array", getName());
         const auto & nested_vectors_data = typeid_cast<const ColumnFloat32 &>(vectors->getData());
 
-        const ColumnConst * normals_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
-        if (!normals_const)
+        const ColumnArray * normals = typeid_cast<const ColumnArray *>(arguments[1].column.get());
+        if (!normals)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be Array", getName());
-        const ColumnArray * normals = typeid_cast<const ColumnArray *>(normals_const->getDataColumnPtr().get());
+        // const ColumnArray * normals = typeid_cast<const ColumnArray *>(normals_const->getDataColumnPtr().get());
         const auto & nested_normals_data = typeid_cast<const ColumnFloat32 &>(normals->getData());
 
-        const size_t vector_size = vectors->getOffsets().front();
-        const size_t vector_count = input_rows_count;
+        const size_t dimension = vectors->getOffsets().front();
+        const size_t vector_count = vectors->getOffsets().size();
         const size_t normal_count = normals->getOffsets().size();
 
         auto offsets = ColumnConst::create(ColumnFloat32::create(1, 0), normal_count);
@@ -342,8 +381,8 @@ public:
         if (vector_count == 0)
             return result_type->createColumn();
 
-        checkDimension(vectors->getOffsets(), vector_size);
-        checkDimension(normals->getOffsets(), vector_size);
+        checkDimension(vectors->getOffsets(), dimension);
+        checkDimension(normals->getOffsets(), dimension);
 
         auto col_res = ColumnFloat32::create(vector_count * normal_count);
         executeInternal(
@@ -351,33 +390,10 @@ public:
             nested_normals_data,
             vector_count,
             normal_count,
-            vector_size,
+            dimension,
             *col_res);
-    
-        auto res = ColumnFixedString::create((normal_count / 8) + (normal_count % 8 != 0));
-        res->getChars().reserve(vector_count * ((normal_count / 8) + (normal_count % 8 != 0)));
-        char temp = 0;
-        for (size_t i = 0; i < vector_count; ++i)
-        {
-            for (size_t j = 0; j < normal_count; ++j)
-            {
-                temp = temp << 1;
-                auto res_val = col_res->getData()[i * normal_count + j];
-                auto offset = nested_offsets_data->getFloat32(j);
-                if (res_val > offset)
-                    temp |= 1;
-                if ((j + 1) % 8 == 0) {
-                    res->insertData(&temp, 1);
-                    temp = 0;
-                }
-            }
-            if (normal_count % 8 != 0) {
-                res->insertData(&temp, 1);
-                temp = 0;
-            }
-        }
 
-        return res;
+        return createFixedStringResult(nested_offsets_data, col_res, vector_count, normal_count);
     }
 };
 
