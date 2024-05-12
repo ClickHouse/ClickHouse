@@ -30,6 +30,14 @@
 namespace DB
 {
 
+namespace ErrorCodes {
+extern const int FILE_DOESNT_EXIST;
+extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
+extern const int INCORRECT_DATA;
+extern const int RECEIVED_EMPTY_DATA;
+extern const int SYNTAX_ERROR;
+}
+
 constexpr Int32 GPT2_MAX_NODES = 4096;
 static const std::string ModelArchName = "gpt2";
 

@@ -1,5 +1,6 @@
 #include "gpt_common.h"
 
+#include "Common/ErrorCodes.h"
 #include <Common/Exception.h>
 #include <Common/re2.h>
 
@@ -9,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 namespace
