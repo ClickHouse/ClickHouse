@@ -84,20 +84,25 @@ DECLARE_AMXBF16_SPECIFIC_CODE(
         size_t normals_data_index,
         size_t coordinate_index)
     {
-        TileConfig tileinfo{
-            .palette_id=1,
-            .start_row=0,
-        };
-        tileinfo.rows[0] = tile_size * 4;
-        tileinfo.colsb[0] = tile_size;
+        // Should be executed once
+        static auto load_config = [&] {
+            TileConfig tileinfo{
+                .palette_id=1,
+                .start_row=0,
+            };
+            tileinfo.rows[0] = tile_size * 4;
+            tileinfo.colsb[0] = tile_size;
 
-        tileinfo.rows[1] = tile_size * 4;
-        tileinfo.colsb[1] = tile_size;
+            tileinfo.rows[1] = tile_size * 4;
+            tileinfo.colsb[1] = tile_size;
 
-        tileinfo.rows[2] = tile_size * 4;
-        tileinfo.colsb[2] = tile_size;
+            tileinfo.rows[2] = tile_size * 4;
+            tileinfo.colsb[2] = tile_size;
 
-        _tile_loadconfig(&tileinfo);
+            _tile_loadconfig(&tileinfo);
+            return 0;
+        }();
+        (void)load_config;
 
         _tile_loadd(
             0,
@@ -111,6 +116,7 @@ DECLARE_AMXBF16_SPECIFIC_CODE(
             2,
             nested_normals_data.getData().data() + normals_data_index * dimension + coordinate_index,
             dimension * nested_normals_data.sizeOfValueIfFixed());
+        // Multiply two tiles loaded to AMX registers
         _tile_dpbf16ps(0, 1, 2);
         _tile_stored(
             0,
@@ -250,6 +256,13 @@ private:
             coordinate_index);
     }
 
+    /*
+    The implementation uses tiled matrix multiplication.
+    A tile is a part of a matrix of size tile_size x tile_size.
+    The algorithm iterates over the tiles of the first and second matrix.
+    Classical matrix multiplication is used inside each tile, but since the size of the matrices inside the tile is small,
+    both tiles can fit entirely in the cache, which significantly reduces the number of cache misses.
+    */
     static void executeInternal(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
