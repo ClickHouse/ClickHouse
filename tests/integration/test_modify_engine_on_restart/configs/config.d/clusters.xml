@@ -15,6 +15,8 @@
     </cluster>
 </remote_servers>
 
+<default_replica_path>/clickhouse/tables/{database}/{table}/{uuid}</default_replica_path>
+
 <macros>
         <shard>01</shard>
 </macros>
