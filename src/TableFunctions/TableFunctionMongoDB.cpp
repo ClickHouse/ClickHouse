@@ -56,14 +56,8 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context, is_insert_query);
     auto storage = std::make_shared<StorageMongoDB>(
-    StorageID(configuration->database, table_name),
-    configuration->host,
-    configuration->port,
-    configuration->database,
-    configuration->table,
-    configuration->username,
-    configuration->password,
-    configuration->options,
+    StorageID(getDatabaseName(), table_name),
+    configuration.value(),
     columns,
     ConstraintsDescription(),
     String{});

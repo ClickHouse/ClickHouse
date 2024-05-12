@@ -7,28 +7,34 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <mongocxx/instance.hpp>
 #include <mongocxx/client.hpp>
 
 namespace DB
 {
 /* Implements storage in the MongoDB database.
  * Use ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
+ *              MongoDB(uri, collection);
  * Read only.
  * One stream only.
  */
 
+inline mongocxx::instance inst{};
+
 class StorageMongoDB final : public IStorage
 {
 public:
+    struct Configuration
+    {
+        std::shared_ptr<mongocxx::uri> uri;
+        String collection;
+    };
+
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+
     StorageMongoDB(
         const StorageID & table_id_,
-        const std::string & host_,
-        uint16_t port_,
-        const std::string & database_name_,
-        const std::string & collection_name_,
-        const std::string & username_,
-        const std::string & password_,
-        const std::string & options_,
+        const Configuration & configuration_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment);
@@ -50,23 +56,8 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
-    struct Configuration
-    {
-        std::string host;
-        UInt16 port;
-        std::string username;
-        std::string password;
-        std::string database;
-        std::string table;
-        std::string options;
-    };
-
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
-
 private:
-    const std::string database_name;
-    const std::string collection_name;
-    mongocxx::uri uri;
+    Configuration configuration;
 
     LoggerPtr log;
 

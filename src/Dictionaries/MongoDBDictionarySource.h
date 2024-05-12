@@ -28,8 +28,14 @@ public:
         const std::string & username_,
         const std::string & password_,
         const std::string & database_name_,
-        const std::string & collection_name_,
+        const std::string & collection_,
         const std::string & options_,
+        Block & sample_block_);
+
+    MongoDBDictionarySource(
+        const DictionaryStructure & dict_struct_,
+        const mongocxx::uri & uri_,
+        const std::string & collection_,
         Block & sample_block_);
 
     MongoDBDictionarySource(const MongoDBDictionarySource & other);
@@ -62,17 +68,10 @@ public:
 private:
     const DictionaryStructure dict_struct;
 
-    std::string uri_str;
-    std::string host;
-    UInt16 port;
-    std::string username;
-    std::string password;
-    std::string database_name;
-    std::string collection_name;
-    std::string options;
-    Block & sample_block;
-
     mongocxx::uri uri;
+    std::string collection;
+
+    Block & sample_block;
 };
 
 }

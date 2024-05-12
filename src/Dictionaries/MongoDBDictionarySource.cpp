@@ -108,36 +108,34 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     const std::string & username_,
     const std::string & password_,
     const std::string & database_name_,
-    const std::string & collection_name_,
+    const std::string & collection_,
     const std::string & options_,
     Block & sample_block_)
     : dict_struct{dict_struct_}
-    , uri_str{uri_str_}
-    , host{host_}
-    , port{port_}
-    , username{username_}
-    , password{password_}
-    , database_name{database_name_}
-    , collection_name{collection_name_}
-    , options{options_}
+    , collection{collection_}
     , sample_block{sample_block_}
 {
-    if (!uri_str.empty())
-    {
-        uri = mongocxx::uri{uri_str};
-        host = uri.hosts()[0].name;
-        port = uri.hosts()[0].port;
-        username = uri.username();
-        database_name = uri.database();
-    }
+    if (!uri_str_.empty())
+        uri = mongocxx::uri{uri_str_};
     else
         uri = mongocxx::uri{"mongodb://" + username_ + ":" + password_ + "@" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_};
 }
 
+MongoDBDictionarySource::MongoDBDictionarySource(
+        const DictionaryStructure & dict_struct_,
+        const mongocxx::uri & uri_,
+        const std::string & collection_,
+        Block & sample_block_)
+        : dict_struct{dict_struct_}
+        , uri{uri_.to_string()}
+        , collection{collection_}
+        , sample_block{sample_block_}
+{
+}
+
 
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
-    : MongoDBDictionarySource{other.dict_struct, other.uri_str, other.host, other.port, other.username, other.password, other.database_name,
-                              other.collection_name, other.options, other.sample_block}
+    : MongoDBDictionarySource{other.dict_struct, uri, collection, other.sample_block}
 {
 }
 
@@ -145,8 +143,7 @@ MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
 QueryPipeline MongoDBDictionarySource::loadAll()
 {
-    return QueryPipeline(std::make_shared<MongoDBSource>(uri, database_name, collection_name,
-                                                         make_document(), mongocxx::options::find{}, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(uri, collection, make_document(), mongocxx::options::find{}, sample_block, max_block_size));
 }
 
 QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -160,8 +157,7 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 
     auto query = make_document(kvp(dict_struct.id->name,  make_document(kvp("$in", ids_array))));
 
-    return QueryPipeline(std::make_shared<MongoDBSource>(uri, database_name, collection_name,
-                                                         query.view(), mongocxx::options::find{}, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(uri, collection, query.view(), mongocxx::options::find{}, sample_block, max_block_size));
 }
 
 
@@ -233,7 +229,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & /*key_columns*/,
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}.{},{}{}:{}", database_name, collection_name, (username.empty() ? " " : " " + username + '@'), host, port);
+    return fmt::format("MongoDB: {}", uri.to_string());
 }
 #endif
 

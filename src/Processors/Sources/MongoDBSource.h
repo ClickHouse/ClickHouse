@@ -20,7 +20,6 @@ class MongoDBSource final : public ISource
 public:
     MongoDBSource(
         const mongocxx::uri & uri,
-        const std::string & database_name,
         const std::string & collection_name,
         const bsoncxx::document::view_or_value & query,
         const mongocxx::options::find & options,

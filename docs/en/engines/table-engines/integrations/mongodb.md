@@ -44,7 +44,7 @@ Types that can be used in WHERE section:
  * Bool
  * Object
 
-Prewhere is not supported.
+PREWHERE and HAVING are not supported.
 
 ### LIMIT and OFFSET
 Only `LIMIT` is supported.
@@ -96,6 +96,17 @@ If you are using the MongoDB Atlas cloud offering please add these options:
 
 :::
 
+Also, you can simply pass an URI:
+``` sql
+ENGINE = MongoDB(uri, collection);
+```
+
+**Engine Parameters**
+
+- `uri` — MongoDB server's connection URI
+
+- `collection` — Remote collection name.
+
 ## Usage Example {#usage-example}
 
 Create a table in ClickHouse which allows to read data from MongoDB collection:
@@ -106,6 +117,10 @@ CREATE TABLE mongo_table
     key UInt64,
     data String
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
+```
+or
+``` sql
+ENGINE = MongoDB('mongodb://testuser:clickhouse@mongo1:27017/test', 'simple_table');
 ```
 
 To read from an SSL secured MongoDB server:
@@ -142,3 +157,5 @@ CREATE TABLE mongo_table
 
 ## Troubleshooting
 You can see the generated MongoDB query in DEBUG level logs.
+
+Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.

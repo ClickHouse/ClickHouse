@@ -26,134 +26,133 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
-    extern const int UNKNOWN_TYPE;
-    extern const int MONGODB_ERROR;
-    extern const int BAD_ARGUMENTS;
+extern const int TYPE_MISMATCH;
+extern const int UNKNOWN_TYPE;
+extern const int MONGODB_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
 
-    using ValueType = ExternalResultDescription::ValueType;
-    void insertValue(
-        IColumn & column,
-        const ValueType & type,
-        const bsoncxx::document::element & value,
-        const std::string & name)
+using ValueType = ExternalResultDescription::ValueType;
+void insertValue(
+    IColumn & column,
+    const ValueType & type,
+    const bsoncxx::document::element & value,
+    const std::string & name)
+{
+    switch (type)
     {
-        switch (type)
+        case ValueType::vtUInt8:
+            if (value.type() != bsoncxx::type::k_bool)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected bool, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+        assert_cast<ColumnUInt8 &>(column).insertValue(value.get_bool());
+        break;
+        case ValueType::vtInt32:
+            if (value.type() != bsoncxx::type::k_int32)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int32, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+        assert_cast<ColumnInt32 &>(column).insertValue(value.get_int32());
+        break;
+        case ValueType::vtInt64:
+            if (value.type() != bsoncxx::type::k_int64)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int64, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+        assert_cast<ColumnInt64 &>(column).insertValue(value.get_int64());
+        break;
+        case ValueType::vtFloat64:
+            if (value.type() != bsoncxx::type::k_double)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected double, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+
+        assert_cast<ColumnFloat64 &>(column).insertValue(value.get_double());
+        break;
+        case ValueType::vtDate:
         {
-            case ValueType::vtUInt8:
-                if (value.type() != bsoncxx::type::k_bool)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected bool, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-
-                assert_cast<ColumnUInt8 &>(column).insertValue(value.get_bool());
-                break;
-            case ValueType::vtInt32:
-                if (value.type() != bsoncxx::type::k_int32)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int32, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-
-                assert_cast<ColumnInt32 &>(column).insertValue(value.get_int32());
-                break;
-            case ValueType::vtInt64:
-                if (value.type() != bsoncxx::type::k_int64)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int64, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-
-                assert_cast<ColumnInt64 &>(column).insertValue(value.get_int64());
-                break;
-            case ValueType::vtFloat64:
-                if (value.type() != bsoncxx::type::k_double)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected double, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-
-                assert_cast<ColumnFloat64 &>(column).insertValue(value.get_double());
-                break;
-            case ValueType::vtDate:
-            {
-                if (value.type() == bsoncxx::type::k_date)
-                    assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000));
-                else if (value.type() == bsoncxx::type::k_timestamp)
-                    assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_timestamp().timestamp));
-                else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-                break;
-            }
-            case ValueType::vtDateTime:
-            {
-                if (value.type() == bsoncxx::type::k_date)
-                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.get_date().to_int64() / 1000));
-                else if (value.type() == bsoncxx::type::k_timestamp)
-                    assert_cast<ColumnUInt32 &>(column).insertValue(value.get_timestamp().timestamp);
-                else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-                break;
-            }
-            case ValueType::vtDateTime64:
-            {
-                if (value.type() == bsoncxx::type::k_date)
-                    assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(value.get_date().to_int64());
-                else if (value.type() == bsoncxx::type::k_timestamp)
-                    assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(value.get_timestamp().timestamp * 1000);
-                else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-                break;
-            }
-            case ValueType::vtUUID:
-            {
-                if (value.type() != bsoncxx::type::k_string)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-
-                assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.get_string().value.data()));
-                break;
-            }
-            case ValueType::vtString:
-            {
-                // MongoDB's documents and arrays may not have strict types or be nested, so the most optimal solution is store their JSON representations.
-                if (value.type() == bsoncxx::type::k_string)
-                {
-                    auto value_string = value.get_string().value;
-                    assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
-                }
-                else if (value.type() == bsoncxx::type::k_document)
-                {
-                    auto value_string = bsoncxx::to_json(value.get_document(), bsoncxx::ExtendedJsonMode::k_canonical);
-                    assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
-                }
-                else if (value.type() == bsoncxx::type::k_array)
-                {
-                    auto value_string = bsoncxx::to_json(value.get_array(), bsoncxx::ExtendedJsonMode::k_canonical);
-                    assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
-                }
-                else if (value.type() == bsoncxx::type::k_oid)
-                {
-                    auto value_string = value.get_oid().value.to_string();
-                    assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
-                }
-                else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected one of (string, document, array, oid), got {} for column {}",
-                                    bsoncxx::to_string(value.type()), name);
-                break;
-            }
-            default: // TODO: arrays
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} has unsupported type", column.getName());
+            if (value.type() == bsoncxx::type::k_date)
+                assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000));
+            else if (value.type() == bsoncxx::type::k_timestamp)
+                assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_timestamp().timestamp));
+            else
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+            break;
         }
-    }
+        case ValueType::vtDateTime:
+        {
+            if (value.type() == bsoncxx::type::k_date)
+                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.get_date().to_int64() / 1000));
+            else if (value.type() == bsoncxx::type::k_timestamp)
+                assert_cast<ColumnUInt32 &>(column).insertValue(value.get_timestamp().timestamp);
+            else
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+            break;
+        }
+        case ValueType::vtDateTime64:
+        {
+            if (value.type() == bsoncxx::type::k_date)
+                assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(value.get_date().to_int64());
+            else if (value.type() == bsoncxx::type::k_timestamp)
+                assert_cast<DB::ColumnDecimal<DB::DateTime64> &>(column).insertValue(value.get_timestamp().timestamp * 1000);
+            else
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+            break;
+        }
+        case ValueType::vtUUID:
+        {
+            if (value.type() != bsoncxx::type::k_string)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
 
-    void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
+            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.get_string().value.data()));
+            break;
+        }
+        case ValueType::vtString:
+        {
+            // MongoDB's documents and arrays may not have strict types or be nested, so the most optimal solution is store their JSON representations.
+            if (value.type() == bsoncxx::type::k_string)
+            {
+                auto value_string = value.get_string().value;
+                assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
+            }
+            else if (value.type() == bsoncxx::type::k_document)
+            {
+                auto value_string = bsoncxx::to_json(value.get_document(), bsoncxx::ExtendedJsonMode::k_canonical);
+                assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
+            }
+            else if (value.type() == bsoncxx::type::k_array)
+            {
+                auto value_string = bsoncxx::to_json(value.get_array(), bsoncxx::ExtendedJsonMode::k_canonical);
+                assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
+            }
+            else if (value.type() == bsoncxx::type::k_oid)
+            {
+                auto value_string = value.get_oid().value.to_string();
+                assert_cast<ColumnString &>(column).insertData(value_string.data(), value_string.size());
+            }
+            else
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected one of (string, document, array, oid), got {} for column {}",
+                                bsoncxx::to_string(value.type()), name);
+            break;
+        }
+        default: // TODO: arrays
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} has unsupported type", column.getName());
+    }
+}
+
+void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
 }
 
 
 MongoDBSource::MongoDBSource(
     const mongocxx::uri & uri,
-    const std::string & database_name,
     const std::string & collection_name,
     const bsoncxx::document::view_or_value & query,
     const mongocxx::options::find & options,
@@ -161,7 +160,7 @@ MongoDBSource::MongoDBSource(
     const UInt64 & max_block_size_)
     : ISource{header_}
     , client{uri}
-    , database{client.database(database_name)}
+    , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
     , header{header_}

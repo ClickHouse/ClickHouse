@@ -8,7 +8,6 @@
 #if USE_MONGODB
 #include <memory>
 
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <IO/Operators.h>
@@ -25,8 +24,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/ErrorCodes.h>
 #include <Common/parseAddress.h>
-
-#include <mongocxx/instance.hpp>
 
 #include <bsoncxx/json.hpp>
 #include <bsoncxx/builder/basic/document.hpp>
@@ -48,24 +45,14 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-mongocxx::instance inst{};
-
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
-    const std::string & host_,
-    uint16_t port_,
-    const std::string & database_name_,
-    const std::string & collection_name_,
-    const std::string & username_,
-    const std::string & password_,
-    const std::string & options_,
+    const Configuration & configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
     : IStorage{table_id_}
-    , database_name{database_name_}
-    , collection_name{collection_name_}
-    , uri{"mongodb://" + username_ + ":" + password_ + "@" + host_ + ":" + toString(port_) + "/" + database_name_ + "?" + options_}
+    , configuration{configuration_}
     , log(getLogger("StorageMongoDB (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -95,8 +82,8 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find();
 
-    return Pipe(std::make_shared<MongoDBSource>(uri, database_name, collection_name, buildMongoDBQuery(&options, &query_info),
-                                                std::move(options), sample_block, max_block_size));
+    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(&options, &query_info),
+        std::move(options), sample_block, max_block_size));
 }
 
 SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /* context */, bool /*async_insert*/)
@@ -115,39 +102,44 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
             ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
             {"options"});
 
-        configuration.host = named_collection->getAny<String>({"host", "hostname"});
-        configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-        configuration.username = named_collection->getAny<String>({"user", "username"});
-        configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->getAny<String>({"database", "db"});
-        configuration.table = named_collection->getAny<String>({"collection", "table"});
-        configuration.options = named_collection->getOrDefault<String>("options", "");
+        configuration.collection = named_collection->getAny<String>({"collection", "table"});
+        configuration.uri = std::make_shared<mongocxx::uri>(mongocxx::uri{"mongodb://" + named_collection->getAny<String>({"user", "username"}) + ":" + named_collection->get<String>("password")
+            + "@" + named_collection->getAny<String>({"host", "hostname"}) + ":" + named_collection->get<String>("port")
+            + "/" + named_collection->getAny<String>({"database", "db"}) + "?" + named_collection->getOrDefault<String>("options", "")});
     }
     else
     {
-        if (engine_args.size() < 5 || engine_args.size() > 6)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage MongoDB requires from 5 to 6 parameters: "
-                            "MongoDB('host:port', database, collection, 'user', 'password' [, 'options']).");
-
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        /// 27017 is the default MongoDB port.
-        auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
+        if (engine_args.size() == 5 || engine_args.size() == 6)
+        {
+            /// 27017 is the default MongoDB port.
+            auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
 
-        configuration.host = parsed_host_port.first;
-        configuration.port = parsed_host_port.second;
-        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
-        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
+            String options;
+            if (engine_args.size() == 6)
+                options = checkAndGetLiteralArgument<String>(engine_args[5], "options");
 
-        if (engine_args.size() >= 6)
-            configuration.options = checkAndGetLiteralArgument<String>(engine_args[5], "database");
+            configuration.collection = checkAndGetLiteralArgument<String>(engine_args[2], "table");
+            configuration.uri = std::make_shared<mongocxx::uri>(mongocxx::uri{"mongodb://" + checkAndGetLiteralArgument<String>(engine_args[3], "username") + ":" + checkAndGetLiteralArgument<String>(engine_args[4], "password")
+                + "@" + parsed_host_port.first + ":" + toString(parsed_host_port.second)
+                + "/" + checkAndGetLiteralArgument<String>(engine_args[1], "database") + "?" + options});
+        }
+        else if (engine_args.size() == 2)
+        {
+            configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+            configuration.uri = std::make_shared<mongocxx::uri>(mongocxx::uri{checkAndGetLiteralArgument<String>(engine_args[0], "hostname")});
+        }
+        else
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Storage MongoDB requires 2 or from to 5 to 6 parameters: "
+                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, 'options']) or MongoDB('uri', 'collection').");
     }
 
-    context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
+    // Because domain records will be resolved inside the driver, we can't check IPs for our restrictions.
+    for (const auto & host : configuration.uri->hosts())
+        context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
 
     return configuration;
 }
@@ -352,17 +344,9 @@ void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
-
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            configuration.host,
-            configuration.port,
-            configuration.database,
-            configuration.table,
-            configuration.username,
-            configuration.password,
-            configuration.options,
+            StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext()),
             args.columns,
             args.constraints,
             args.comment);
