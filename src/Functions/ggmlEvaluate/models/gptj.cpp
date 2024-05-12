@@ -525,7 +525,7 @@ std::vector<GptVocab::id> GptJModel::predict(GgmlModelParams params, const std::
     std::vector<GptVocab::id> total_embd;
     std::vector<GptVocab::id> embd;
 
-    std::mt19937 rng(gpt_params.seed);
+    std::mt19937 random_number_generator(gpt_params.seed);
     int n_past = 0;
     std::vector<float> logits;
 
@@ -559,7 +559,7 @@ std::vector<GptVocab::id> GptJModel::predict(GgmlModelParams params, const std::
 
             GptVocab::id id = 0;
 
-            id = gpt_sample_top_k_top_p(gpt_vocab, logits.data() + (logits.size() - n_vocab), top_k, top_p, temp, rng);
+            id = gpt_sample_top_k_top_p(gpt_vocab, logits.data() + (logits.size() - n_vocab), top_k, top_p, temp, random_number_generator);
 
             // add it to the context
             embd.push_back(id);

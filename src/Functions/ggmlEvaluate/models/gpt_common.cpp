@@ -100,7 +100,8 @@ std::vector<GptVocab::id> gpt_tokenize(const GptVocab & vocab, const std::string
     return tokens;
 }
 
-GptVocab::id gpt_sample_top_k_top_p(const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, std::mt19937 & rng)
+GptVocab::id gpt_sample_top_k_top_p(
+    const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, std::mt19937 & random_number_generator)
 {
     int n_logits = static_cast<int>(vocab.id_to_token.size());
 
@@ -169,7 +170,7 @@ GptVocab::id gpt_sample_top_k_top_p(const GptVocab & vocab, const float * logits
     //exit(0);
 
     std::discrete_distribution<> dist(probs.begin(), probs.end());
-    int idx = dist(rng);
+    int idx = dist(random_number_generator);
 
     return logits_id[idx].second;
 }

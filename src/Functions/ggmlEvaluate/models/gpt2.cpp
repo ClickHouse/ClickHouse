@@ -371,7 +371,7 @@ std::string Gpt2Model::evalImpl(std::tuple<Int32> user_params, const std::string
     std::vector<GptVocab::id> embd;
 
     std::string result;
-    std::mt19937 rng;
+    std::mt19937 random_number_generator;
 
     for (size_t i = embd.size(); i < embd_inp.size() + n_predict; i++)
     {
@@ -394,7 +394,8 @@ std::string Gpt2Model::evalImpl(std::tuple<Int32> user_params, const std::string
 
             const int n_vocab = state.hparams.n_vocab;
 
-            GptVocab::id id = gpt_sample_top_k_top_p(gpt_vocab, logits.data() + (logits.size() - n_vocab), top_k, top_p, temp, rng);
+            GptVocab::id id
+                = gpt_sample_top_k_top_p(gpt_vocab, logits.data() + (logits.size() - n_vocab), top_k, top_p, temp, random_number_generator);
 
             // add it to the context
             embd.push_back(id);

@@ -4,7 +4,6 @@
 #include <map>
 #include <random>
 #include <string>
-#include <thread>
 #include "Functions/ggmlEvaluate/IGgmlModel.h"
 
 namespace DB
@@ -24,7 +23,7 @@ struct GptVocab
 
 struct GptParams
 {
-    int32_t seed = -1; // RNG seed
+    int32_t seed = -1; // random_number_generator seed
     int32_t n_threads = 1; // std::min(4, static_cast<int32_t>(std::thread::hardware_concurrency()));
     int32_t n_predict = 200; // new tokens to predict
     int32_t n_parallel = 1; // number of parallel streams
@@ -51,7 +50,8 @@ struct GptParams
 
 std::vector<GptVocab::id> gpt_tokenize(const GptVocab & vocab, const std::string & text);
 
-GptVocab::id gpt_sample_top_k_top_p(const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, std::mt19937 & rng);
+GptVocab::id gpt_sample_top_k_top_p(
+    const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, std::mt19937 & random_number_generator);
 
 std::string getPathFromConfig(const DB::ConfigPtr & config, const std::string & model_name);
 
