@@ -270,14 +270,11 @@ size_t ColumnDecimal<T>::estimateNumberOfDifferent(const IColumn::Permutation & 
 {
     // TODO: sample random elements
     size_t range_size = getRangeSize(range);
-    if (range_size <= 1ULL) {
+    if (range_size <= 1ULL)
         return range_size;
-    }
     HashSet<T> elements;
     for (size_t i = range.first; i < range.second; ++i)
-    {
         elements.insert(data[perm[i]]);
-    }
     return elements.size();
 }
 
