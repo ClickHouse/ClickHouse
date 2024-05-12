@@ -1,12 +1,14 @@
 #include "IGgmlModel.h"
 
 
-namespace DB {
+namespace DB
+{
 
 void IGgmlModel::load(ConfigPtr config)
 {
     std::lock_guard lock{load_mutex};
-    if (!loaded) {
+    if (!loaded)
+    {
         loadImpl(config);
         loaded = true;
     }

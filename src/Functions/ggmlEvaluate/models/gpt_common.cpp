@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -41,7 +41,7 @@ std::string get_tokens_match_group(const std::vector<std::string> & tokens)
         }
         res += '|';
     }
-    res.pop_back();  // remove last '|'
+    res.pop_back(); // remove last '|'
     res += ")";
     return res;
 }
@@ -74,17 +74,22 @@ std::vector<GptVocab::id> gpt_tokenize(const GptVocab & vocab, const std::string
 
     // find the longest token that forms each word in words:
     std::vector<GptVocab::id> tokens;
-    for (const auto & word : words) {
-        for (int i = 0; i < static_cast<int>(word.size()); ){
-            for (int j = static_cast<int>(word.size()) - 1; j >= i; j--){
-                auto cand = word.substr(i, j-i+1);
+    for (const auto & word : words)
+    {
+        for (int i = 0; i < static_cast<int>(word.size());)
+        {
+            for (int j = static_cast<int>(word.size()) - 1; j >= i; j--)
+            {
+                auto cand = word.substr(i, j - i + 1);
                 auto it = vocab.token_to_id.find(cand);
-                if (it != vocab.token_to_id.end()){ // word.substr(i, j-i+1) in vocab
+                if (it != vocab.token_to_id.end())
+                { // word.substr(i, j-i+1) in vocab
                     tokens.push_back(it->second);
                     i = j + 1;
                     break;
                 }
-                else if (j == i){ // word.substr(i, 1) has no matching
+                else if (j == i)
+                { // word.substr(i, 1) has no matching
                     i++;
                 }
             }
@@ -94,13 +99,7 @@ std::vector<GptVocab::id> gpt_tokenize(const GptVocab & vocab, const std::string
     return tokens;
 }
 
-GptVocab::id gpt_sample_top_k_top_p(
-    const GptVocab & vocab,
-    const float * logits,
-    int top_k,
-    double top_p,
-    double temp,
-    std::mt19937 & rng)
+GptVocab::id gpt_sample_top_k_top_p(const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, std::mt19937 & rng)
 {
     int n_logits = static_cast<int>(vocab.id_to_token.size());
 
@@ -108,48 +107,48 @@ GptVocab::id gpt_sample_top_k_top_p(
     logits_id.reserve(n_logits);
 
     {
-        const double scale = 1.0/temp;
-        for (int i = 0; i < n_logits; ++i) {
-            logits_id.push_back(std::make_pair(logits[i]*scale, i));
-        }
+        const double scale = 1.0 / temp;
+        for (int i = 0; i < n_logits; ++i)
+            logits_id.push_back(std::make_pair(logits[i] * scale, i));
     }
 
     // find the top K tokens
     std::partial_sort(
-            logits_id.begin(),
-            logits_id.begin() + top_k, logits_id.end(),
-            [](const std::pair<double, GptVocab::id> & a, const std::pair<double, GptVocab::id> & b) {
-        return a.first > b.first;
-    });
+        logits_id.begin(),
+        logits_id.begin() + top_k,
+        logits_id.end(),
+        [](const std::pair<double, GptVocab::id> & a, const std::pair<double, GptVocab::id> & b) { return a.first > b.first; });
 
     logits_id.resize(top_k);
 
     double maxl = -INFINITY;
-    for (const auto & kv : logits_id) {
+    for (const auto & kv : logits_id)
         maxl = std::max(maxl, kv.first);
-    }
 
     // compute probs for the top K tokens
     std::vector<double> probs;
     probs.reserve(logits_id.size());
 
     double sum = 0.0;
-    for (const auto & kv : logits_id) {
+    for (const auto & kv : logits_id)
+    {
         double p = exp(kv.first - maxl);
         probs.push_back(p);
         sum += p;
     }
 
     // normalize the probs
-    for (auto & p : probs) {
+    for (auto & p : probs)
         p /= sum;
-    }
 
-    if (top_p < 1.0f) {
+    if (top_p < 1.0f)
+    {
         double cumsum = 0.0f;
-        for (int i = 0; i < top_k; i++) {
+        for (int i = 0; i < top_k; i++)
+        {
             cumsum += probs[i];
-            if (cumsum >= top_p) {
+            if (cumsum >= top_p)
+            {
                 top_k = i + 1;
                 probs.resize(top_k);
                 logits_id.resize(top_k);
@@ -157,10 +156,9 @@ GptVocab::id gpt_sample_top_k_top_p(
             }
         }
 
-        cumsum = 1.0/cumsum;
-        for (double & prob : probs) {
+        cumsum = 1.0 / cumsum;
+        for (double & prob : probs)
             prob *= cumsum;
-        }
     }
 
     //printf("\n");
@@ -175,7 +173,8 @@ GptVocab::id gpt_sample_top_k_top_p(
     return logits_id[idx].second;
 }
 
-std::string getPathFromConfig(const DB::ConfigPtr& config, const std::string& model_name) {
+std::string getPathFromConfig(const DB::ConfigPtr & config, const std::string & model_name)
+{
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys(keys);
 

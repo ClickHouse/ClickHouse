@@ -1,7 +1,7 @@
 #include "model_storage.h"
 
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
 #include <Common/Exception.h>
@@ -24,12 +24,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_COLUMN;
-    extern const int NO_ELEMENTS_IN_CONFIG;
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+extern const int ILLEGAL_COLUMN;
+extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 /// Evaluate GGML model.
@@ -41,7 +41,7 @@ public:
     static constexpr auto name = "ggmlEvaluate";
     static constexpr auto ggmlConfigSection = "ggml";
 
-    explicit FunctionGGMLEvaluate(ContextPtr context_) : WithContext(context_), log(getLogger(getName())) {}
+    explicit FunctionGGMLEvaluate(ContextPtr context_) : WithContext(context_), log(getLogger(getName())) { }
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGGMLEvaluate>(context_); }
 
@@ -129,7 +129,7 @@ private:
         if (!col[0].tryGet(t))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Could not convert argument to map");
         UInt64 n_predict = t[0].safeGet<UInt64>();
-        GgmlModelParams res = { n_predict };
+        GgmlModelParams res = {n_predict};
         return res;
     }
 

@@ -3,11 +3,12 @@
 #include <Common/Exception.h>
 
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
-    extern const int NO_ELEMENTS_IN_CONFIG;
+extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 GgmlModelBuilders & GgmlModelBuilders::instance()

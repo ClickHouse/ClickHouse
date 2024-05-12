@@ -10,7 +10,7 @@
 namespace DB
 {
 
-using GgmlModelBuilderFunctionPtr = std::shared_ptr<IGgmlModel> (*) ();
+using GgmlModelBuilderFunctionPtr = std::shared_ptr<IGgmlModel> (*)();
 
 struct GgmlModelBuilders : public std::unordered_map<std::string_view, GgmlModelBuilderFunctionPtr>
 {
@@ -21,16 +21,10 @@ template <typename T>
 class GgmlModelRegister
 {
 public:
-    explicit GgmlModelRegister(std::string_view name)
-    {
-        GgmlModelBuilders::instance().emplace(name, &GgmlModelRegister<T>::Create);
-    }
+    explicit GgmlModelRegister(std::string_view name) { GgmlModelBuilders::instance().emplace(name, &GgmlModelRegister<T>::Create); }
 
 private:
-    static std::shared_ptr<IGgmlModel> Create()
-    {
-        return std::make_shared<T>();
-    }
+    static std::shared_ptr<IGgmlModel> Create() { return std::make_shared<T>(); }
 };
 
 class GgmlModelStorage
