@@ -1,3 +1,5 @@
+#pragma once
+
 #include "ggml/ggml.h"
 
 #include "gpt_common.h"

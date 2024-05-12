@@ -1,3 +1,5 @@
+#pragma once
+
 #include <map>
 #include <Functions/ggmlEvaluate/IGgmlModel.h>
 #include "Functions/ggmlEvaluate/models/gpt_common.h"
