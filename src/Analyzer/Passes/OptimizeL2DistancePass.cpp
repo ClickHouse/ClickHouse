@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/OptimizeL2DistancePass.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Functions/FunctionFactory.h>
@@ -22,28 +23,23 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (auto * func_node = typeid_cast<ASTFunction *>(node.get()))
-        {
-            if (func_node->name == "L2Distance")
-            {
-                if (func_node->arguments->children.size() != 2)
-                return;
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "L2Distance")
+            return;
 
-                String vec_arg = func_node->arguments->children.at(1)->getColumnName();
+        auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() != 2)
+            return;
 
-                auto new_function_name = "sqrt";
-                auto new_function_arg = std::make_shared<ASTFunction>();
-                new_function_arg->name = "L2SquaredDistance";
-                new_function_arg->arguments = func_node->arguments;
+        auto squared_distance_function = std::make_shared<FunctionNode>("L2SquaredDistance");
+        squared_distance_function->getArguments().getNodes().insert(squared_distance_function->getArguments().getNodes().end(), arguments.begin(), arguments.end());
+        squared_distance_function->resolveAsFunction(FunctionFactory::instance().get("L2SquaredDistance"));
 
-                auto new_function_node = std::make_shared<ASTFunction>();
-                new_function_node->name = new_function_name;
-                new_function_node->arguments = std::make_shared<ASTExpressionList>();
-                new_function_node->arguments->children.push_back(new_function_arg);
+        auto sqrt_function = std::make_shared<FunctionNode>("sqrt");
+        sqrt_function->getArguments().getNodes().push_back(squared_distance_function);
+        sqrt_function->resolveAsFunction(FunctionFactory::instance().get("sqrt"));
 
-                node = new_function_node;
-            }
-        }
+        node = sqrt_function;
     }
 };
 

@@ -18,9 +18,6 @@ public:
     String getDescription() override { return "Replace L2Distance(...) with sqrt(L2SquaredDistance(...))"; }
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
-
-private:
-    void enterImpl(ASTPtr & node, ASTPtr & parent, Data & data);
 };
 
 }
