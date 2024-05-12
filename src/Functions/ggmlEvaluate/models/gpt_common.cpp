@@ -1,6 +1,5 @@
 #include "gpt_common.h"
 
-#include "Common/ErrorCodes.h"
 #include <Common/Exception.h>
 #include <Common/re2.h>
 

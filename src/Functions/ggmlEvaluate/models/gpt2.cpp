@@ -1,10 +1,12 @@
 #include "gpt2.h"
 
-#include "Functions/ggmlEvaluate/model_storage.h"
-#include "Functions/ggmlEvaluate/models/gpt_common.h"
 #include "ggml/ggml-alloc.h"
 #include "ggml/ggml-backend.h"
 #include "ggml/ggml.h"
+
+#include <Common/Exception.h>
+
+#include <Functions/ggmlEvaluate/model_storage.h>
 
 // #ifdef GGML_USE_CUDA
 // #include "ggml-cuda.h"
@@ -21,7 +23,6 @@
 #include <map>
 #include <string>
 #include <vector>
-#include "Common/Exception.h"
 
 // #if defined(_MSC_VER)
 // #pragma warning(disable: 4244 4267) // possible loss of data

@@ -1,7 +1,7 @@
 #include "gptj.h"
-#include "ggml.h"
-
 #include "gpt_common.h"
+
+#include "ggml.h"
 
 #include <Common/Exception.h>
 
@@ -9,7 +9,6 @@
 #include <Functions/ggmlEvaluate/model_storage.h>
 
 #include <fstream>
-#include <iostream>
 
 
 using namespace Poco;
