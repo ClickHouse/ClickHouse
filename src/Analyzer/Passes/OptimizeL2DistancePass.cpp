@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/L2DistanceOptimizationPass.h>
+#include <Analyzer/Passes/OptimizeL2DistancePass.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
