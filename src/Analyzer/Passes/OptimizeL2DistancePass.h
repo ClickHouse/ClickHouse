@@ -16,7 +16,7 @@ public:
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 private:
-    void visit(ASTSelectQuery & select_query, Data & data);
+    void visit(ASTSelectQuery & select_query, void * data); // Изменен тип Data на void*
 };
 
 }

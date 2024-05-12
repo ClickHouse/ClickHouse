@@ -18,7 +18,7 @@ public:
 
     explicit OptimizeL2DistancePassVisitor(ContextPtr context) : Base(std::move(context)) {}
 
-    void visit(ASTPtr & ast, Data & data) override
+    void visit(ASTPtr & ast, void * data) override // Изменен тип Data на void*
     {
         if (auto * select_query = ast->as<ASTSelectQuery>())
         {
@@ -32,7 +32,7 @@ public:
     }
 
 private:
-    void visit(ASTSelectQuery & select_query, Data & data)
+    void visit(ASTSelectQuery & select_query, void * data) // Изменен тип Data на void*
     {
         if (auto * order_by = select_query.orderBy())
         {
