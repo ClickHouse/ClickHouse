@@ -40,8 +40,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def q(node, query):
-    return node.query(database=database_name, sql=query)
+def q(node, query, database=database_name):
+    return node.query(database=database, sql=query)
 
 
 def create_tables():
@@ -166,20 +166,24 @@ def test_modify_engine_on_restart(started_cluster):
 
 
 def test_modify_engine_fails_if_zk_path_exists(started_cluster):
-    ch1.query("CREATE DATABASE IF NOT EXISTS " + database_name + " ON CLUSTER cluster")
+    database_name = "zk_path"
+    ch1.query("CREATE DATABASE " + database_name + " ON CLUSTER cluster")
 
     q(
         ch1,
         "CREATE TABLE already_exists_1 ( A Int64, D Date, S String ) ENGINE MergeTree() PARTITION BY toYYYYMM(D) ORDER BY A;",
+        database_name,
     )
     uuid = q(
         ch1,
         f"SELECT uuid FROM system.tables WHERE table = 'already_exists_1' and database = '{database_name}'",
+        database_name,
     ).strip("'[]\n")
 
     q(
         ch1,
         f"CREATE TABLE already_exists_2 ( A Int64, D Date, S String ) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database_name}/already_exists_1/{uuid}', 'r2') PARTITION BY toYYYYMM(D) ORDER BY A;",
+        database_name,
     )
 
     set_convert_flags(ch1, database_name, ["already_exists_1"])
