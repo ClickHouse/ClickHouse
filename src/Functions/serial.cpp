@@ -1,18 +1,11 @@
-#include <cmath>
-#include <memory>
-#include <string>
-#include <unordered_map>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include "Common/Logger.h"
-#include "Common/ZooKeeper/IKeeper.h"
-#include "Common/ZooKeeper/KeeperException.h"
-#include "Common/ZooKeeper/Types.h"
-#include <Common/ZooKeeper/ZooKeeper.h>
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -62,30 +55,26 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                 getName(), arguments.size());
-        if (!isStringOrFixedString(arguments[0])) {
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Type of argument for function {} doesn't match: passed {}, should be string",
                 getName(), arguments[0]->getName());
-        }
 
         return std::make_shared<DataTypeInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (zk == nullptr) {
+        if (zk == nullptr)
             throw Exception(ErrorCodes::KEEPER_EXCEPTION,
             "ZooKeeper is not configured for function {}",
             getName());
-        }
-        if (zk->expired()) {
+        if (zk->expired())
             zk = context->getZooKeeper();
-        }
 
         auto col_res = ColumnVector<Int64>::create();
         typename ColumnVector<Int64>::Container & vec_to = col_res->getData();
         size_t size = input_rows_count;
-        LOG_INFO(getLogger("Serial Function"), "Size = {}", size);
         vec_to.resize(size);
 
         const auto & serial_path = "/serials/" + arguments[0].column->getDataAt(0).toString();
@@ -102,16 +91,19 @@ public:
         zk->createIfNotExists(counter_path, "1");
 
         Coordination::Stat stat;
-        while (true) {
+        while (true)
+        {
             std::string counter_string = zk->get(counter_path, &stat);
             counter = std::stoll(counter_string);
             std::string updated_counter = std::to_string(counter + input_rows_count);
             Coordination::Error err = zk->trySet(counter_path, updated_counter);
-            if (err == Coordination::Error::ZOK) {
+            if (err == Coordination::Error::ZOK)
+            {
                 // CAS is done
                 break;
             }
-            if (err != Coordination::Error::ZBADVERSION) {
+            if (err != Coordination::Error::ZBADVERSION)
+            {
                 throw Exception(ErrorCodes::KEEPER_EXCEPTION,
                 "ZooKeeper trySet operation failed with unexpected error = {} in function {}",
                 err, getName());
@@ -119,7 +111,8 @@ public:
         }
 
         // Make a result
-        for (auto& val : vec_to) {
+        for (auto& val : vec_to)
+        {
             val = counter;
             ++counter;
         }
@@ -163,7 +156,6 @@ The server should be configured with a ZooKeeper.
                   )"}},
         .categories{"Unique identifiers"}
     });
-
 }
 
 }
