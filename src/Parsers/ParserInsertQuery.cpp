@@ -274,7 +274,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (table)
             query->children.push_back(table);
     }
-    if(columns->children)
+    if(!columns->children.empty())
     {
 
        size_t first = 0, last = columns->children.size() - 1;
