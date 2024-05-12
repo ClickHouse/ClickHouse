@@ -18,7 +18,7 @@ INSERT INTO d2 VALUES (4, 40);
 INSERT INTO d3 VALUES (5, 50);
 INSERT INTO d3 VALUES (6, 60);
 
-CREATE TABLE m AS v1 ENGINE=Merge(currentDatabase(), '^(d1|d2)$');
+CREATE TABLE m ENGINE=Merge(currentDatabase(), '^(d1|d2)$');
 
 -- { echoOn }
 SELECT _table FROM d1;

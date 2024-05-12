@@ -21,7 +21,7 @@ StorageSnapshot::StorageSnapshot(
     StorageMetadataPtr metadata_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
+    , virtual_columns(storage_.getAllVirtualsPtr())
 {
 }
 
@@ -41,7 +41,7 @@ StorageSnapshot::StorageSnapshot(
     ColumnsDescription object_columns_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
+    , virtual_columns(storage_.getAllVirtualsPtr())
     , object_columns(std::move(object_columns_))
 {
 }
@@ -53,7 +53,7 @@ StorageSnapshot::StorageSnapshot(
     DataPtr data_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
+    , virtual_columns(storage_.getAllVirtualsPtr())
     , object_columns(std::move(object_columns_))
     , data(std::move(data_))
 {
