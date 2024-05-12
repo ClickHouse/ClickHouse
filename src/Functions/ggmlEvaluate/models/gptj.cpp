@@ -18,6 +18,8 @@ using namespace Poco::Util;
 namespace DB
 {
 
+static const std::string ModelArchName = "gptj";
+
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
@@ -30,7 +32,7 @@ namespace ErrorCodes
 // load the model's weights from a file
 void GptJModel::loadImpl(ConfigPtr config)
 {
-    auto fname = getPathFromConfig(config);
+    auto fname = getPathFromConfig(config, ModelArchName);
     auto fin = std::ifstream(fname, std::ios::binary);
     if (!fin)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Unable to open file at '{}'", fname);
@@ -578,6 +580,6 @@ std::vector<GptVocab::id> GptJModel::predict(GgmlModelParams params, const std::
     return total_embd;
 }
 
-static GgmlModelRegister<GptJModel> RegGptJ("gptj");
+static GgmlModelRegister<GptJModel> RegGptJ(ModelArchName);
 
 }
