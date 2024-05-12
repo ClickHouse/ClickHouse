@@ -16,13 +16,14 @@ namespace ProfileEvents
     extern const Event ReadBackoff;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int CANNOT_SCHEDULE_TASK;
+extern const int LOGICAL_ERROR;
+}
 
 size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
@@ -34,22 +35,22 @@ size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & column
 
 MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
+    VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
-    const Names & virtual_column_names_,
     const PoolSettings & settings_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
+        std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
         column_names_,
-        virtual_column_names_,
         settings_,
         context_)
     , min_marks_for_concurrent_read(pool_settings.min_marks_for_concurrent_read)
@@ -217,6 +218,9 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
 
 void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
 {
+    if (threads > 1000000ull)
+        throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Too many threads ({}) requested", threads);
+
     threads_tasks.resize(threads);
     if (parts_ranges.empty())
         return;

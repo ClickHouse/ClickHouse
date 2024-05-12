@@ -21,4 +21,8 @@
     <query>with rand32() % 2 as x, 1::Decimal256(3) as a, -1::Decimal256(3) as b select if(x, a, b) from numbers(100000000) format Null</query>
     <query>with rand32() % 2 as x, 1::Int128 as a, -1::Int128 as b select if(x, a, b) from numbers(100000000) format Null</query>
     <query>with rand32() % 2 as x, 1::Int256 as a, -1::Int256 as b select if(x, a, b) from numbers(100000000) format Null</query>
+
+    <!-- Tests when branches are maps -->
+    <query>with rand32() % 2 as x select if(x, map(1,2,3,4), map(3,4,5,6)) from numbers(1000000) format Null</query>
+    <query>with rand32() % 2 as x select if(x, materialize(map(1,2,3,4)), materialize(map(3,4,5,6))) from numbers(1000000) format Null</query>
 </test>

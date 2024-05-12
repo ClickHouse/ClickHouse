@@ -7,7 +7,6 @@
 #include <base/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
-#include <boost/program_options/options_description.hpp>
 
 
 namespace boost::program_options
@@ -128,18 +127,6 @@ public:
         size_t index;
         std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
-
-    /// Adds program options to set the settings from a command line.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptions(boost::program_options::options_description & options);
-
-    /// Adds program options as to set the settings from a command line.
-    /// Allows to set one setting multiple times, the last value will be used.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
-
-    void addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
-    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
 
     enum SkipFlags
     {
@@ -559,57 +546,6 @@ String BaseSettings<TTraits>::toString() const
         first = false;
     }
     return out.str();
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOptions(boost::program_options::options_description & options)
-{
-    const auto & settings_to_aliases = TTraits::settingsToAliases();
-    for (const auto & field : all())
-    {
-        std::string_view name = field.getName();
-        addProgramOption(options, name, field);
-
-        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
-        {
-            for (const auto alias : it->second)
-                addProgramOption(options, alias, field);
-        }
-    }
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
-{
-    const auto & settings_to_aliases = TTraits::settingsToAliases();
-    for (const auto & field : all())
-    {
-        std::string_view name = field.getName();
-        addProgramOptionAsMultitoken(options, name, field);
-
-        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
-        {
-            for (const auto alias : it->second)
-                addProgramOptionAsMultitoken(options, alias, field);
-        }
-    }
-}
-
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
-{
-    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
-{
-    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 template <typename TTraits>

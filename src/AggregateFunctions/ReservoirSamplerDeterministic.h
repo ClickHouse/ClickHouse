@@ -191,7 +191,7 @@ public:
             /// TODO: After implementation of "versioning aggregate function state",
             /// change the serialization format.
             Element elem;
-            memset(&elem, 0, sizeof(elem));
+            memset(&elem, 0, sizeof(elem)); /// NOLINT(bugprone-undefined-memory-manipulation)
             elem = samples[i];
 
             DB::transformEndianness<std::endian::little>(elem);

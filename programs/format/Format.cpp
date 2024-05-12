@@ -17,6 +17,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/TerminalSize.h>
+#include <Core/BaseSettingsProgramOptions.h>
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
@@ -70,8 +71,8 @@ void skipSpacesAndComments(const char*& pos, const char* end, bool print_comment
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 extern const char * auto_time_zones[];
 
@@ -102,7 +103,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         {
             std::string_view name = field.getName();
             if (name == "max_parser_depth" || name == "max_query_size")
-                cmd_settings.addProgramOption(desc, name, field);
+                addProgramOption(cmd_settings, desc, name, field);
         }
 
         boost::program_options::variables_map options;
@@ -234,9 +235,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 size_t approx_query_length = multiple ? find_first_symbols<';'>(pos, end) - pos : end - pos;
 
                 ASTPtr res = parseQueryAndMovePosition(
-                    parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
+                    parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth, cmd_settings.max_parser_backtracks);
 
-                std::unique_ptr<ReadBuffer> insert_query_payload = nullptr;
+                std::unique_ptr<ReadBuffer> insert_query_payload;
                 /// If the query is INSERT ... VALUES, then we will try to parse the data.
                 if (auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {

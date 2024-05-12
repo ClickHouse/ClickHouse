@@ -16,7 +16,7 @@ ptr<log_entry> makeClone(const ptr<log_entry> & entry)
 InMemoryLogStore::InMemoryLogStore()
     : start_idx(1)
 {
-    nuraft::ptr<nuraft::buffer> buf = nuraft::buffer::alloc(sizeof(uint64_t));
+    nuraft::ptr<nuraft::buffer> buf = nuraft::buffer::alloc(0);
     logs[0] = nuraft::cs_new<nuraft::log_entry>(0, buf);
 }
 
@@ -189,6 +189,12 @@ bool InMemoryLogStore::compact(uint64_t last_log_index)
 
     start_idx = last_log_index + 1;
     return true;
+}
+
+bool InMemoryLogStore::is_conf(uint64_t index)
+{
+    auto entry = entry_at(index);
+    return entry != nullptr && entry->get_val_type() == nuraft::conf;
 }
 
 }

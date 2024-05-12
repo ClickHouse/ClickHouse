@@ -4,32 +4,28 @@
 
 #if USE_AWS_S3
 
-#include <Core/Types.h>
-
 #include <Compression/CompressionInfo.h>
-
-#include <Storages/IStorage.h>
-#include <Storages/StorageS3Settings.h>
-
-#include <Processors/SourceWithKeyCondition.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Poco/URI.h>
-#include <IO/S3/getObjectInfo.h>
+#include <Core/Types.h>
 #include <IO/CompressionMethod.h>
+#include <IO/S3/BlobStorageLogWriter.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/StorageS3Settings.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Poco/URI.h>
+#include <Common/threadPoolCallbackRunner.h>
 
-namespace Aws::S3
-{
-    class Client;
-}
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -80,7 +76,7 @@ public:
             const S3::URI & globbed_uri_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
-            ContextPtr context,
+            const ContextPtr & context,
             KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
@@ -134,7 +130,7 @@ public:
         const ReadFromFormatInfo & info,
         const String & format,
         String name_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         std::optional<FormatSettings> format_settings_,
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
@@ -151,9 +147,9 @@ public:
 
     String getName() const override;
 
-    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
     {
-        setKeyConditionImpl(nodes, context_, sample_block);
+        setKeyConditionImpl(filter_actions_dag, context_, sample_block);
     }
 
     Chunk generate() override;
@@ -245,7 +241,7 @@ private:
     LoggerPtr log = getLogger("StorageS3Source");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
     std::atomic<bool> initialized{false};
 
@@ -278,20 +274,22 @@ public:
     {
         Configuration() = default;
 
-        String getPath() const { return url.key; }
+        const String & getPath() const { return url.key; }
 
-        bool update(ContextPtr context);
+        bool update(const ContextPtr & context);
 
-        void connect(ContextPtr context);
+        void connect(const ContextPtr & context);
 
         bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
 
-        bool withWildcard() const
+        bool withPartitionWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return url.bucket.find(PARTITION_ID_WILDCARD) != String::npos
                 || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
+
+        bool withGlobsIgnorePartitionWildcard() const;
 
         S3::URI url;
         S3::AuthSettings auth_settings;
@@ -308,7 +306,7 @@ public:
 
     StorageS3(
         const Configuration & configuration_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -336,30 +334,32 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
-    NamesAndTypesList getVirtuals() const override;
-    static Names getVirtualColumnNames();
-
     bool supportsPartitionBy() const override;
 
     static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static StorageS3::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
         const StorageS3::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        const ContextPtr & ctx);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
+        const StorageS3::Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
-    virtual Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
+    virtual Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context);
 
-    virtual void updateConfiguration(ContextPtr local_context);
+    virtual void updateConfiguration(const ContextPtr & local_context);
 
     void useConfiguration(const Configuration & new_configuration);
 
@@ -373,17 +373,17 @@ private:
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
-    NamesAndTypesList virtual_columns;
 
     String name;
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
-    static ColumnsDescription getTableStructureFromDataImpl(
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
+        std::optional<String> format,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        const ContextPtr & ctx);
 
     bool supportsSubcolumns() const override { return true; }
 

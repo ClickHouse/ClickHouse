@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_POLICY;
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
@@ -56,6 +57,8 @@ StoragePolicy::StoragePolicy(
         config.keys(volumes_prefix, keys);
     }
 
+    std::set<UInt64> volume_priorities;
+
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
@@ -63,6 +66,27 @@ StoragePolicy::StoragePolicy(
                             "Volume name can contain only alphanumeric and '_' in storage policy {} ({})",
                             backQuote(name), attr_name);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
+
+        UInt64 last_priority = volumes.back()->volume_priority;
+        if (last_priority != std::numeric_limits<UInt64>::max() && !volume_priorities.insert(last_priority).second)
+        {
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "volume_priority values must be unique across the policy");
+        }
+    }
+
+    if (!volume_priorities.empty())
+    {
+        /// Check that priority values cover the range from 1 to N (lowest explicit priority)
+        if (*volume_priorities.begin() != 1 || *volume_priorities.rbegin() != volume_priorities.size())
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "volume_priority values must cover the range from 1 to N (lowest priority specified) without gaps");
+
+        std::stable_sort(
+            volumes.begin(), volumes.end(),
+            [](const VolumePtr a, const VolumePtr b) { return a->volume_priority < b->volume_priority; });
     }
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
@@ -438,15 +462,18 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
-            continue;
+        if (!name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+        {
+            if (!result->policies.contains(name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
-        if (!result->policies.contains(name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
+            policy->checkCompatibleWith(result->policies[name]);
+        }
 
-        policy->checkCompatibleWith(result->policies[name]);
         for (const auto & disk : policy->getDisks())
+        {
             disks_before_reload.insert(disk->getName());
+        }
     }
 
     /// Second pass, load.

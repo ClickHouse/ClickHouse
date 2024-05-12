@@ -175,15 +175,6 @@ String Macros::expand(const String & s) const
     return expand(s, info);
 }
 
-String Macros::expand(const String & s, const StorageID & table_id, bool allow_uuid) const
-{
-    MacroExpansionInfo info;
-    info.table_id = table_id;
-    if (!allow_uuid)
-        info.table_id.uuid = UUIDHelpers::Nil;
-    return expand(s, info);
-}
-
 Names Macros::expand(const Names & source_names, size_t level) const
 {
     Names result_names;

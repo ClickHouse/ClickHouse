@@ -55,7 +55,7 @@ private:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const ContextPtr & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
@@ -63,7 +63,7 @@ private:
         const Names & column_names,
         const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const ContextPtr & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 

@@ -46,7 +46,7 @@ public:
 
     void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;

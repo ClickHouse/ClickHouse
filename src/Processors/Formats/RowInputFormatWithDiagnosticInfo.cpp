@@ -136,7 +136,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     auto * curr_position = in->position();
 
     if (curr_position < prev_position)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: parsing is non-deterministic.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing is non-deterministic.");
 
     if (isNativeNumber(type) || isDate(type) || isDateTime(type) || isDateTime64(type))
     {

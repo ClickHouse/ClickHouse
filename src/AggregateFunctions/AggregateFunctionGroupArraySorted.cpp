@@ -53,6 +53,7 @@ enum class GroupArraySortedStrategy
     sort
 };
 
+
 constexpr size_t group_array_sorted_sort_strategy_max_elements_threshold = 1000000;
 
 template <typename T, GroupArraySortedStrategy strategy>
@@ -209,6 +210,14 @@ struct GroupArraySortedData
                 result_array_data[result_array_data_insert_begin + i] = values[i];
         }
     }
+
+    ~GroupArraySortedData()
+    {
+        for (auto & value : values)
+        {
+            value.~T();
+        }
+    }
 };
 
 template <typename T>
@@ -310,9 +319,11 @@ public:
         {
             for (Field & element : values)
             {
-                UInt8 is_null = 0;
-                readBinary(is_null, buf);
-                if (!is_null)
+                /// We must initialize the Field type since some internal functions (like operator=) use them
+                new (&element) Field;
+                bool has_value = false;
+                readBinary(has_value, buf);
+                if (has_value)
                     serialization->deserializeBinary(element, buf, {});
             }
         }

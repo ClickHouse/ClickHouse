@@ -14,7 +14,7 @@ jobs:
     # The task for having a preserved ENV and event.json for later investigation
     uses: ./.github/workflows/debug.yml
   RunConfig:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -28,7 +28,7 @@ jobs:
         id: runconfig
         run: |
             echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --rebuild-all-docker --outfile ${{ runner.temp }}/ci_run_data.json
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --outfile ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
             echo "::group::CI run configure results"
@@ -45,62 +45,3 @@ jobs:
     with:
       data: "${{ needs.RunConfig.outputs.data }}"
       set_latest: true
-  SonarCloud:
-    runs-on: [self-hosted, builder]
-    env:
-      SONAR_SCANNER_VERSION: 4.8.0.2856
-      SONAR_SERVER_URL: "https://sonarcloud.io"
-      BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
-      CC: clang-17
-      CXX: clang++-17
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-          filter: tree:0
-          submodules: true
-      - name: Set up JDK 11
-        uses: actions/setup-java@v1
-        with:
-          java-version: 11
-      - name: Download and set up sonar-scanner
-        env:
-          SONAR_SCANNER_DOWNLOAD_URL: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux.zip
-        run: |
-          mkdir -p "$HOME/.sonar"
-          curl -sSLo "$HOME/.sonar/sonar-scanner.zip" "${{ env.SONAR_SCANNER_DOWNLOAD_URL }}"
-          unzip -o "$HOME/.sonar/sonar-scanner.zip" -d "$HOME/.sonar/"
-          echo "$HOME/.sonar/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux/bin" >> "$GITHUB_PATH"
-      - name: Download and set up build-wrapper
-        env:
-          BUILD_WRAPPER_DOWNLOAD_URL: ${{ env.SONAR_SERVER_URL }}/static/cpp/build-wrapper-linux-x86.zip
-        run: |
-          curl -sSLo "$HOME/.sonar/build-wrapper-linux-x86.zip" "${{ env.BUILD_WRAPPER_DOWNLOAD_URL }}"
-          unzip -o "$HOME/.sonar/build-wrapper-linux-x86.zip" -d "$HOME/.sonar/"
-          echo "$HOME/.sonar/build-wrapper-linux-x86" >> "$GITHUB_PATH"
-      - name: Set Up Build Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -yq git cmake ccache ninja-build python3 yasm nasm
-          sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-      - name: Run build-wrapper
-        run: |
-          mkdir build
-          cd build
-          cmake ..
-          cd ..
-          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build/
-      - name: Run sonar-scanner
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          sonar-scanner \
-            --define sonar.host.url="${{ env.SONAR_SERVER_URL }}" \
-            --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
-            --define sonar.projectKey="ClickHouse_ClickHouse" \
-            --define sonar.organization="clickhouse-java" \
-            --define sonar.cfamily.cpp23.enabled=true \
-            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql"

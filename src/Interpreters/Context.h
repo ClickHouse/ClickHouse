@@ -19,9 +19,8 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Common/Scheduler/IResourceManager.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -79,6 +78,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
@@ -113,6 +113,7 @@ class BlobStorageLog;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
+struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
@@ -127,7 +128,6 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class AccessControl;
-class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
 class SettingsProfileElements;
@@ -148,6 +148,18 @@ template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
 
+struct TemporaryTableHolder;
+using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+
+class LoadTask;
+using LoadTaskPtr = std::shared_ptr<LoadTask>;
+using LoadTaskPtrs = std::vector<LoadTaskPtr>;
+
+class IClassifier;
+using ClassifierPtr = std::shared_ptr<IClassifier>;
+class IResourceManager;
+using ResourceManagerPtr = std::shared_ptr<IResourceManager>;
+
 /// Scheduling policy can be changed using `background_merges_mutations_scheduling_policy` config option.
 /// By default concurrent merges are scheduled using "round_robin" to ensure fair and starvation-free operation.
 /// Previously in heavily overloaded shards big merges could possibly be starved by smaller
@@ -162,7 +174,6 @@ using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
-class Session;
 struct WriteSettings;
 
 class IInputFormat;
@@ -203,9 +214,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
-class PooledSessionFactory;
-using PooledSessionFactoryPtr = std::shared_ptr<PooledSessionFactory>;
 
 class SessionTracker;
 
@@ -307,6 +315,7 @@ protected:
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
 
+public:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -331,8 +340,10 @@ protected:
             return *this;
         }
 
-        void swap(QueryAccessInfo & rhs)
+        void swap(QueryAccessInfo & rhs) noexcept TSA_NO_THREAD_SAFETY_ANALYSIS
         {
+            /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't support scoped_lock
+            std::scoped_lock lck{mutex, rhs.mutex};
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
@@ -343,16 +354,21 @@ protected:
 
         /// To prevent a race between copy-constructor and other uses of this structure.
         mutable std::mutex mutex{};
-        std::set<std::string> databases{};
-        std::set<std::string> tables{};
-        std::set<std::string> columns{};
-        std::set<std::string> partitions{};
-        std::set<std::string> projections{};
-        std::set<std::string> views{};
+        std::set<std::string> databases TSA_GUARDED_BY(mutex){};
+        std::set<std::string> tables TSA_GUARDED_BY(mutex){};
+        std::set<std::string> columns TSA_GUARDED_BY(mutex){};
+        std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
+        std::set<std::string> projections TSA_GUARDED_BY(mutex){};
+        std::set<std::string> views TSA_GUARDED_BY(mutex){};
     };
+    using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
-    QueryAccessInfo query_access_info;
+protected:
+    /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
+    /// Therefore, query_access_info must be a pointer.
+    QueryAccessInfoPtr query_access_info;
 
+public:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
@@ -374,19 +390,20 @@ protected:
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
 
-        std::unordered_set<std::string> aggregate_functions;
-        std::unordered_set<std::string> aggregate_function_combinators;
-        std::unordered_set<std::string> database_engines;
-        std::unordered_set<std::string> data_type_families;
-        std::unordered_set<std::string> dictionaries;
-        std::unordered_set<std::string> formats;
-        std::unordered_set<std::string> functions;
-        std::unordered_set<std::string> storages;
-        std::unordered_set<std::string> table_functions;
+        std::unordered_set<std::string> aggregate_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> aggregate_function_combinators TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> database_engines TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> data_type_families TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> dictionaries TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> formats TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> storages TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
     };
 
+protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
@@ -532,6 +549,7 @@ public:
     void setUserScriptsPath(const String & path);
 
     void addWarningMessage(const String & msg) const;
+    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -630,7 +648,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -665,18 +683,22 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
-    const Scalars & getScalars() const;
-    const Block & getScalar(const String & name) const;
+    Scalars getScalars() const;
+    Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    const Block * tryGetSpecialScalar(const String & name) const;
+    std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
 
-    const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+    const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
+    QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
+    void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
         const String & quoted_database_name,
@@ -717,6 +739,8 @@ public:
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
+
+    StoragePtr buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -765,11 +789,11 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
-    void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
-    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
-    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
-    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraints(const SettingChange & change, SettingSource source);
+    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -805,7 +829,7 @@ public:
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt, const std::optional<size_t> max_parsing_threads = std::nullopt) const;
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
@@ -931,8 +955,8 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_NURAFT
-    std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
-    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -959,6 +983,10 @@ public:
     void updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
+
+    void setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages);
+    std::shared_ptr<PageCache> getPageCache() const;
+    void dropPageCache() const;
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1073,6 +1101,7 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
+    const DistributedSettings & getDistributedSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
@@ -1188,7 +1217,7 @@ public:
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
 
-    AsynchronousInsertQueue * getAsynchronousInsertQueue() const;
+    AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
     ReadTaskCallback getReadTaskCallback() const;
@@ -1211,7 +1240,6 @@ public:
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
-    PooledSessionFactoryPtr getCommonFetchesSessionFactory() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
@@ -1271,15 +1299,15 @@ private:
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source);
 
-    void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source);
 
-    void checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source);
 
-    void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
-    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 

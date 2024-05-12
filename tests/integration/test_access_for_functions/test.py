@@ -38,8 +38,11 @@ def test_access_rights_for_function():
 
     instance.query("GRANT DROP FUNCTION ON *.* TO B")
     instance.query("DROP FUNCTION MySum", user="B")
-    assert "Unknown function MySum" in instance.query_and_get_error(
-        "SELECT MySum(1, 2)"
+
+    function_resolution_error = instance.query_and_get_error("SELECT MySum(1, 2)")
+    assert (
+        "Unknown function MySum" in function_resolution_error
+        or "Function with name 'MySum' does not exists." in function_resolution_error
     )
 
     instance.query("REVOKE CREATE FUNCTION ON *.* FROM A")

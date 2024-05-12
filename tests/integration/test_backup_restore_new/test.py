@@ -591,6 +591,138 @@ def test_zip_archive_with_bad_compression_method():
     )
 
 
+def test_tar_archive():
+    backup_name = f"Disk('backups', 'archive.tar')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_bz2_archive():
+    backup_name = f"Disk('backups', 'archive.tar.bz2')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_gz_archive():
+    backup_name = f"Disk('backups', 'archive.tar.gz')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_lzma_archive():
+    backup_name = f"Disk('backups', 'archive.tar.lzma')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_zst_archive():
+    backup_name = f"Disk('backups', 'archive.tar.zst')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_xz_archive():
+    backup_name = f"Disk('backups', 'archive.tar.xz')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.isfile(get_path_to_backup(backup_name))
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_tar_archive_with_password():
+    backup_name = f"Disk('backups', 'archive_with_password.tar')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    expected_error = "Setting a password is not currently supported for libarchive"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_password', password='password123'"
+    )
+    assert (
+        instance.query(
+            "SELECT status FROM system.backups WHERE id='tar_archive_with_password'"
+        )
+        == "BACKUP_FAILED\n"
+    )
+
+
+def test_tar_archive_with_bad_compression_method():
+    backup_name = f"Disk('backups', 'archive_with_bad_compression_method.tar')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    expected_error = "Using compression_method and compression_level options are not supported for tar archives"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='tar_archive_with_bad_compression_method', compression_method='foobar'"
+    )
+    assert (
+        instance.query(
+            "SELECT status FROM system.backups WHERE id='tar_archive_with_bad_compression_method'"
+        )
+        == "BACKUP_FAILED\n"
+    )
+
+
 def test_async():
     create_and_fill_table()
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -885,7 +1017,7 @@ def test_required_privileges():
     instance.query("CREATE USER u1")
 
     backup_name = new_backup_name()
-    expected_error = "necessary to have the grant BACKUP ON test.table"
+    expected_error = "necessary to have the grant BACKUP ON test.`table`"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE test.table TO {backup_name}", user="u1"
     )
@@ -893,7 +1025,7 @@ def test_required_privileges():
     instance.query("GRANT BACKUP ON test.table TO u1")
     instance.query(f"BACKUP TABLE test.table TO {backup_name}", user="u1")
 
-    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.`table`"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE TABLE test.table FROM {backup_name}", user="u1"
     )
@@ -904,13 +1036,14 @@ def test_required_privileges():
     )
 
     instance.query("GRANT INSERT, CREATE ON test.table2 TO u1")
+    instance.query("GRANT TABLE ENGINE ON MergeTree TO u1")
     instance.query(
         f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}", user="u1"
     )
 
     instance.query("DROP TABLE test.table")
 
-    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.`table`"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u1"
     )
@@ -963,7 +1096,7 @@ def test_system_users():
     instance.query("GRANT r1 TO r2 WITH ADMIN OPTION")
     instance.query("GRANT r2 TO u1")
 
-    instance.query("CREATE SETTINGS PROFILE prof1 SETTINGS custom_b=2 TO u1")
+    instance.query("CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b=2 TO u1")
     instance.query("CREATE ROW POLICY rowpol1 ON test.table USING x<50 TO u1")
     instance.query("CREATE QUOTA q1 TO r1")
 
@@ -984,7 +1117,7 @@ def test_system_users():
 
     assert (
         instance.query("SHOW CREATE USER u1")
-        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE default, custom_a = 1\n"
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE `default`, custom_a = 1\n"
     )
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
         ["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"]
@@ -998,11 +1131,11 @@ def test_system_users():
 
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE prof1")
-        == "CREATE SETTINGS PROFILE prof1 SETTINGS custom_b = 2 TO u1\n"
+        == "CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b = 2 TO u1\n"
     )
     assert (
         instance.query("SHOW CREATE ROW POLICY rowpol1")
-        == "CREATE ROW POLICY rowpol1 ON test.table FOR SELECT USING x < 50 TO u1\n"
+        == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
     )
     assert instance.query("SHOW CREATE QUOTA q1") == "CREATE QUOTA q1 TO r1\n"
 
@@ -1144,6 +1277,93 @@ def test_projection():
             "SELECT count() FROM system.projection_parts WHERE database='test' AND table='table' AND name='prjmax'"
         )
         == "2\n"
+    )
+
+
+def test_restore_table_not_evaluate_table_defaults():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.src(key Int64, value Int64) ENGINE=MergeTree ORDER BY key"
+    )
+    instance.query(
+        "INSERT INTO test.src SELECT number as key, number * number AS value FROM numbers(1, 3)"
+    )
+    instance.query(
+        "INSERT INTO test.src SELECT number as key, number * number AS value FROM numbers(6, 3)"
+    )
+    instance.query("CREATE USER u1")
+    instance.query("GRANT SELECT ON test.src TO u1")
+    instance.query(
+        "CREATE DICTIONARY test.dict(key Int64, value Int64 DEFAULT -1) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 DB 'test' TABLE 'src' USER u1)) LIFETIME(0) LAYOUT(FLAT())"
+    )
+    instance.query(
+        "CREATE TABLE test.tbl(a Int64, b Int64 DEFAULT 0, c Int64 DEFAULT dictGet(test.dict, 'value', b)) ENGINE=MergeTree ORDER BY a"
+    )
+    instance.query(
+        "INSERT INTO test.tbl (a, b) SELECT number, number + 1 FROM numbers(5)"
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.users, DATABASE test TO {backup_name}")
+
+    instance.query("DROP USER u1")
+
+    instance.query(
+        f"RESTORE TABLE system.users, DATABASE test AS test2 FROM {backup_name}"
+    )
+
+    # RESTORE should not try to load dictionary `test2.dict`
+    assert instance.query("SELECT * FROM test2.tbl ORDER BY a") == TSV(
+        [[0, 1, 1], [1, 2, 4], [2, 3, 9], [3, 4, -1], [4, 5, -1]]
+    )
+
+    assert (
+        instance.query(
+            "SELECT status FROM system.dictionaries WHERE name = 'dict' AND database = 'test2'"
+        )
+        == "NOT_LOADED\n"
+    )
+
+    # INSERT needs dictionary `test2.dict` and it will cause loading it.
+    error = "necessary to have the grant SELECT(key, value) ON test2.src"  # User `u1` has no privileges for reading `test2.src`
+    assert error in instance.query_and_get_error(
+        "INSERT INTO test2.tbl (a, b) SELECT number, number + 1 FROM numbers(5, 5)"
+    )
+
+    assert (
+        instance.query(
+            "SELECT status FROM system.dictionaries WHERE name = 'dict' AND database = 'test2'"
+        )
+        == "FAILED\n"
+    )
+
+    instance.query("GRANT SELECT ON test2.src TO u1")
+    instance.query("SYSTEM RELOAD DICTIONARY test2.dict")
+
+    assert (
+        instance.query(
+            "SELECT status FROM system.dictionaries WHERE name = 'dict' AND database = 'test2'"
+        )
+        == "LOADED\n"
+    )
+
+    instance.query(
+        "INSERT INTO test2.tbl (a, b) SELECT number, number + 1 FROM numbers(5, 5)"
+    )
+
+    assert instance.query("SELECT * FROM test2.tbl ORDER BY a") == TSV(
+        [
+            [0, 1, 1],
+            [1, 2, 4],
+            [2, 3, 9],
+            [3, 4, -1],
+            [4, 5, -1],
+            [5, 6, 36],
+            [6, 7, 49],
+            [7, 8, 64],
+            [8, 9, -1],
+            [9, 10, -1],
+        ]
     )
 
 

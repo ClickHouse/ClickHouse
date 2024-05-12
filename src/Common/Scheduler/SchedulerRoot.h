@@ -145,22 +145,27 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        if (current == nullptr) // No active resources
-            return {nullptr, false};
+        while (true)
+        {
+            if (current == nullptr) // No active resources
+                return {nullptr, false};
 
-        // Dequeue request from current resource
-        auto [request, resource_active] = current->root->dequeueRequest();
-        assert(request != nullptr);
+            // Dequeue request from current resource
+            auto [request, resource_active] = current->root->dequeueRequest();
 
-        // Deactivate resource if required
-        if (!resource_active)
-            deactivate(current);
-        else
-            current = current->next; // Just move round-robin pointer
+            // Deactivate resource if required
+            if (!resource_active)
+                deactivate(current);
+            else
+                current = current->next; // Just move round-robin pointer
 
-        dequeued_requests++;
-        dequeued_cost += request->cost;
-        return {request, current != nullptr};
+            if (request == nullptr) // Possible in case of request cancel, just retry
+                continue;
+
+            dequeued_requests++;
+            dequeued_cost += request->cost;
+            return {request, current != nullptr};
+        }
     }
 
     bool isActive() override
@@ -226,7 +231,6 @@ private:
         value->next = nullptr;
     }
 
-private:
     void schedulerThread()
     {
         while (!stop_flag.load())
@@ -245,11 +249,9 @@ private:
 
     void execute(ResourceRequest * request)
     {
-        request->execute_ns = clock_gettime_ns();
         request->execute();
     }
 
-private:
     TResource * current = nullptr; // round-robin pointer
     std::unordered_map<ISchedulerNode *, TResource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;

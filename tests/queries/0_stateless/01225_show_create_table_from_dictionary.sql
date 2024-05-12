@@ -1,8 +1,11 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
+
 DROP DATABASE IF EXISTS dict_db_01225;
 DROP DATABASE IF EXISTS dict_db_01225_dictionary;
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
 CREATE DATABASE dict_db_01225 ENGINE=Ordinary;    -- Different internal dictionary name with Atomic
 CREATE DATABASE dict_db_01225_dictionary Engine=Dictionary;
 

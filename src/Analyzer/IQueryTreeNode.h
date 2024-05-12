@@ -97,6 +97,7 @@ public:
     struct CompareOptions
     {
         bool compare_aliases = true;
+        bool compare_types = true;
     };
 
     /** Is tree equal to other tree with node root.
@@ -104,7 +105,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -114,7 +115,7 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       */
-    Hash getTreeHash() const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
@@ -264,12 +265,12 @@ protected:
     /** Subclass must compare its internal state with rhs node internal state and do not compare children or weak pointers to other
       * query tree nodes.
       */
-    virtual bool isEqualImpl(const IQueryTreeNode & rhs) const = 0;
+    virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
 
     /** Subclass must update tree hash with its internal state and do not update tree hash for children or weak pointers to other
       * query tree nodes.
       */
-    virtual void updateTreeHashImpl(HashState & hash_state) const = 0;
+    virtual void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const = 0;
 
     /** Subclass must clone its internal state and do not clone children or weak pointers to other
       * query tree nodes.

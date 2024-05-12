@@ -1,12 +1,12 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/Field.h>
-#include <Parsers/IAST_fwd.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Core/SortDescription.h>
-#include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <Core/Types.h>
+#include <DataTypes/IDataType.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {

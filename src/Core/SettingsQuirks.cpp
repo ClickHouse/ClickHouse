@@ -1,9 +1,10 @@
-#include <base/defines.h>
-#include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
+#include <base/defines.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 
 
@@ -89,4 +90,43 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
     }
 }
 
+void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
+{
+    auto getCurrentValue = [&current_settings](const std::string_view name) -> Field
+    {
+        Field current_value;
+        bool has_current_value = current_settings.tryGet(name, current_value);
+        chassert(has_current_value);
+        return current_value;
+    };
+
+    UInt64 max_threads = getCurrentValue("max_threads").get<UInt64>();
+    UInt64 max_threads_max_value = 256 * getNumberOfPhysicalCPUCores();
+    if (max_threads > max_threads_max_value)
+    {
+        if (log)
+            LOG_WARNING(log, "Sanity check: Too many threads requested ({}). Reduced to {}", max_threads, max_threads_max_value);
+        current_settings.set("max_threads", max_threads_max_value);
+    }
+
+    constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
+    std::unordered_set<String> block_rows_settings{
+        "max_block_size",
+        "max_insert_block_size",
+        "min_insert_block_size_rows",
+        "min_insert_block_size_bytes_for_materialized_views",
+        "min_external_table_block_size_rows",
+        "max_joined_block_size_rows",
+        "input_format_parquet_max_block_size"};
+    for (auto const & setting : block_rows_settings)
+    {
+        auto block_size = getCurrentValue(setting).get<UInt64>();
+        if (block_size > max_sane_block_rows_size)
+        {
+            if (log)
+                LOG_WARNING(log, "Sanity check: '{}' value is too high ({}). Reduced to {}", setting, block_size, max_sane_block_rows_size);
+            current_settings.set(setting, max_sane_block_rows_size);
+        }
+    }
+}
 }

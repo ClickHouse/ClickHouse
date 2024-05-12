@@ -23,9 +23,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
-#include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
@@ -35,8 +33,8 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
-
+#include <Poco/Timestamp.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -232,7 +230,6 @@ public:
         }
     };
 
-
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
@@ -392,7 +389,7 @@ public:
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
-                  bool attach,
+                  LoadingStrictnessLevel mode,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
@@ -421,7 +418,7 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -443,9 +440,7 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
-    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
-
-    NamesAndTypesList getVirtuals() const override;
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
     /// Snapshot for MergeTree contains the current set of data parts
     /// at the moment of the start of query.
@@ -760,7 +755,6 @@ public:
       */
     PartitionCommandsResultInfo freezePartition(
         const ASTPtr & partition,
-        const StorageMetadataPtr & metadata_snapshot,
         const String & with_name,
         ContextPtr context,
         TableLockHolder & table_lock_holder);
@@ -768,7 +762,6 @@ public:
     /// Freezes all parts.
     PartitionCommandsResultInfo freezeAll(
         const String & with_name,
-        const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
@@ -796,6 +789,9 @@ public:
 
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
+
+    /// Moves partition to specified Table
+    void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
 
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -832,7 +828,7 @@ public:
         return secondary_index_sizes;
     }
 
-    /// For ATTACH/DETACH/DROP PARTITION.
+    /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
@@ -854,23 +850,6 @@ public:
         const IDataPartStorage::ClonePartParams & params,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings);
-
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-        const MergeTreeData::DataPartPtr & src_part,
-        const MergeTreePartition & new_partition,
-        const String & partition_id,
-        const IMergeTreeDataPart::MinMaxIndex & min_max_index,
-        const String & tmp_part_prefix,
-        const StorageMetadataPtr & my_metadata_snapshot,
-        const IDataPartStorage::ClonePartParams & clone_params,
-        ContextPtr local_context,
-        Int64 min_block,
-        Int64 max_block);
-
-    static std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> createPartitionAndMinMaxIndexFromSourcePart(
-        const MergeTreeData::DataPartPtr & src_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr local_context);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -1011,15 +990,14 @@ public:
     void removeQueryId(const String & query_id) const;
     void removeQueryIdNoLock(const String & query_id) const TSA_REQUIRES(query_id_set_mutex);
 
-    /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
-    DataTypePtr getPartitionValueType() const;
+    static const Names virtuals_useful_for_filter;
 
     /// Construct a sample block of virtual columns.
-    Block getSampleBlockWithVirtualColumns() const;
+    Block getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const;
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
-    /// If one_part is true, fill in at most one part.
-    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty = false) const;
+    Block getBlockWithVirtualsForFilter(
+        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1106,12 +1084,13 @@ public:
     /// It is used to make a decision whether to enable parallel replicas (distributed processing) or not and how
     /// many to replicas to use
     UInt64 estimateNumberOfRowsToRead(
-        ContextPtr query_context,
-        const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        const ActionDAGNodes & added_filter_nodes) const;
+        ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
+
+    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+
+    void unloadPrimaryKeys();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1335,7 +1314,7 @@ protected:
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Common part for |freezePartition()| and |freezeAll()|.
-    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, ContextPtr context);
+    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, ContextPtr context);
     PartitionCommandsResultInfo unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr context);
 
     // Partition helpers
@@ -1357,6 +1336,8 @@ protected:
         bool fetch_part,
         ContextPtr query_context);
 
+    virtual void forgetPartition(const ASTPtr & partition, ContextPtr context);
+
     virtual void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context);
 
     void writePartLog(
@@ -1369,16 +1350,104 @@ protected:
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
 
+    class PartMutationBackoffPolicy
+    {
+        struct PartMutationInfo
+        {
+            size_t retry_count;
+            size_t latest_fail_time_us;
+            size_t max_postpone_time_ms;
+            size_t max_postpone_power;
+
+            explicit PartMutationInfo(size_t max_postpone_time_ms_)
+                            : retry_count(0ull)
+                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
+                            , max_postpone_time_ms(max_postpone_time_ms_)
+                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
+            {}
+
+
+            size_t getNextMinExecutionTimeUsResolution() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
+                return latest_fail_time_us + current_backoff_interval_us;
+            }
+
+            void addPartFailure()
+            {
+                if (max_postpone_time_ms == 0)
+                    return;
+                retry_count = std::min(max_postpone_power, retry_count + 1);
+                latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+            }
+
+            bool partCanBeMutated() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return true;
+
+                auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                return current_time_us >= getNextMinExecutionTimeUsResolution();
+            }
+        };
+
+        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
+        DataPartsWithRetryInfo failed_mutation_parts;
+        mutable std::mutex parts_info_lock;
+
+    public:
+
+        void resetMutationFailures()
+        {
+            std::unique_lock _lock(parts_info_lock);
+            failed_mutation_parts.clear();
+        }
+
+        void removePartFromFailed(const String & part_name)
+        {
+            std::unique_lock _lock(parts_info_lock);
+            failed_mutation_parts.erase(part_name);
+        }
+
+        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
+        {
+            std::unique_lock _lock(parts_info_lock);
+            auto part_info_it = failed_mutation_parts.find(part_name);
+            if (part_info_it == failed_mutation_parts.end())
+            {
+                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
+                std::swap(it, part_info_it);
+            }
+            auto& part_info = part_info_it->second;
+            part_info.addPartFailure();
+        }
+
+        bool partCanBeMutated(const String& part_name)
+        {
+
+            std::unique_lock _lock(parts_info_lock);
+            auto iter = failed_mutation_parts.find(part_name);
+            if (iter == failed_mutation_parts.end())
+                return true;
+            return iter->second.partCanBeMutated();
+        }
+    };
+    /// Controls postponing logic for failed mutations.
+    PartMutationBackoffPolicy mutation_backoff_policy;
+
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return most recent mutations commands for part which weren't applied
-    /// Used to receive AlterConversions for part and apply them on fly. This
-    /// method has different implementations for replicated and non replicated
-    /// MergeTree because they store mutations in different way.
-    virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
+    /// (i.e. when reading from the part). Mutations not supported by AlterConversions
+    /// (supportsMutationCommandType()) can be omitted.
+    ///
+    /// @return list of mutations, in *reverse* order (newest to oldest)
+    virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
 
     struct PartBackupEntries
     {
@@ -1640,5 +1709,9 @@ struct CurrentlySubmergingEmergingTagger
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
 }
+
+/// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
+/// Return true if the counter had been updated
+bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove);
 
 }

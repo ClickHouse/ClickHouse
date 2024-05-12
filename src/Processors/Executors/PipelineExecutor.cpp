@@ -138,8 +138,8 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         initializeExecution(1, true);
 
         // Acquire slot until we are done
-        single_thread_slot = slots->tryAcquire();
-        chassert(single_thread_slot && "Unable to allocate slot for the first thread, but we just allocated at least one slot");
+        single_thread_cpu_slot = cpu_slots->tryAcquire();
+        chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
             return true;
@@ -155,7 +155,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         if (node->exception)
             std::rethrow_exception(node->exception);
 
-    single_thread_slot.reset();
+    single_thread_cpu_slot.reset();
     finalizeExecution();
 
     return false;
@@ -333,8 +333,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     /// Allocate CPU slots from concurrency control
     size_t min_threads = concurrency_control ? 1uz : num_threads;
-    slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    use_threads = slots->grantedCount();
+    cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+    use_threads = cpu_slots->grantedCount();
 
     Queue queue;
     graph->initializeExecution(queue);
@@ -348,7 +348,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
 void PipelineExecutor::spawnThreads()
 {
-    while (auto slot = slots->tryAcquire())
+    while (auto slot = cpu_slots->tryAcquire())
     {
         size_t thread_num = threads.fetch_add(1);
 
@@ -391,7 +391,9 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     SCOPE_EXIT_SAFE(
         if (!finished_flag)
         {
-            finish();
+            /// If finished_flag is not set, there was an exception.
+            /// Cancel execution in this case.
+            cancel();
             if (pool)
                 pool->wait();
         }
@@ -405,7 +407,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     }
     else
     {
-        auto slot = slots->tryAcquire();
+        auto slot = cpu_slots->tryAcquire();
         executeSingleThread(0);
     }
 

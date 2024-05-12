@@ -29,14 +29,14 @@ const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 namespace DB::QueryPlanOptimizations
 {
 
-/// This is a check that output columns does not have the same name
+/// This is a check that nodes columns does not have the same name
 /// This is ok for DAG, but may introduce a bug in a SotringStep cause columns are selected by name.
-static bool areOutputsConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & outputs)
+static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     std::unordered_set<std::string_view> names;
-    for (const auto & output : outputs)
+    for (const auto & node : nodes)
     {
-        if (!names.emplace(output->result_name).second)
+        if (!names.emplace(node->result_name).second)
             return false;
     }
 
@@ -66,13 +66,13 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
-    auto [needed_for_sorting, unneeded_for_sorting] = expression_step->getExpression()->splitActionsBySortingDescription(sort_columns);
+    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression()->splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.
     if (unneeded_for_sorting->trivial())
         return 0;
 
-    if (!areOutputsConvertableToBlock(needed_for_sorting->getOutputs()))
+    if (!areNodesConvertableToBlock(needed_for_sorting->getOutputs()) || !areNodesConvertableToBlock(unneeded_for_sorting->getInputs()))
         return 0;
 
     // Sorting (parent_node) -> Expression (child_node)

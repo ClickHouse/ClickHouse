@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/array
-sidebar_position: 52
+sidebar_position: 32
 sidebar_label: Array(T)
 ---
 

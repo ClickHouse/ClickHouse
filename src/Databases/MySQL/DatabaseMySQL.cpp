@@ -105,7 +105,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
@@ -174,12 +174,14 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         ast_storage->settings = nullptr;
     }
 
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-    auto create_table_query = DB::getCreateQueryFromStorage(storage,
-                                                            table_storage_define,
-                                                            true,
-                                                            max_parser_depth,
-                                                            throw_on_error);
+    const Settings & settings = getContext()->getSettingsRef();
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        table_storage_define,
+        true,
+        static_cast<unsigned>(settings.max_parser_depth),
+        static_cast<unsigned>(settings.max_parser_backtracks),
+        throw_on_error);
     return create_table_query;
 }
 

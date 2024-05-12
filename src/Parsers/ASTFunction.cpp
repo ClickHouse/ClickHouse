@@ -18,6 +18,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/FunctionSecretArgumentsFinderAST.h>
 #include <Core/QualifiedTableName.h>
 
 #include <boost/algorithm/string.hpp>
@@ -33,464 +34,6 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_FUNCTION;
-}
-
-
-namespace
-{
-    /// Finds arguments of a specified function which should not be displayed for most users for security reasons.
-    /// That involves passwords and secret keys.
-    class FunctionSecretArgumentsFinder
-    {
-    public:
-        explicit FunctionSecretArgumentsFinder(const ASTFunction & function_) : function(function_)
-        {
-            if (!function.arguments)
-                return;
-
-            const auto * expr_list = function.arguments->as<ASTExpressionList>();
-            if (!expr_list)
-                return;
-
-            arguments = &expr_list->children;
-            switch (function.kind)
-            {
-                case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
-                case ASTFunction::Kind::WINDOW_FUNCTION: break;
-                case ASTFunction::Kind::LAMBDA_FUNCTION:  break;
-                case ASTFunction::Kind::TABLE_ENGINE: findTableEngineSecretArguments(); break;
-                case ASTFunction::Kind::DATABASE_ENGINE: findDatabaseEngineSecretArguments(); break;
-                case ASTFunction::Kind::BACKUP_NAME: findBackupNameSecretArguments(); break;
-            }
-        }
-
-        struct Result
-        {
-            /// Result constructed by default means no arguments will be hidden.
-            size_t start = static_cast<size_t>(-1);
-            size_t count = 0; /// Mostly it's either 0 or 1. There are only a few cases where `count` can be greater than 1 (e.g. see `encrypt`).
-                              /// In all known cases secret arguments are consecutive
-            bool are_named = false; /// Arguments like `password = 'password'` are considered as named arguments.
-        };
-
-        Result getResult() const { return result; }
-
-    private:
-        const ASTFunction & function;
-        const ASTs * arguments = nullptr;
-        Result result;
-
-        void markSecretArgument(size_t index, bool argument_is_named = false)
-        {
-            if (index >= arguments->size())
-                return;
-            if (!result.count)
-            {
-                result.start = index;
-                result.are_named = argument_is_named;
-            }
-            chassert(index >= result.start); /// We always check arguments consecutively
-            result.count = index + 1 - result.start;
-            if (!argument_is_named)
-                result.are_named = false;
-        }
-
-        void findOrdinaryFunctionSecretArguments()
-        {
-            if ((function.name == "mysql") || (function.name == "postgresql") || (function.name == "mongodb"))
-            {
-                /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
-                /// postgresql('host:port', 'database', 'table', 'user', 'password', ...)
-                /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
-                findMySQLFunctionSecretArguments();
-            }
-            else if ((function.name == "s3") || (function.name == "cosn") || (function.name == "oss") ||
-                     (function.name == "deltaLake") || (function.name == "hudi") || (function.name == "iceberg"))
-            {
-                /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-                findS3FunctionSecretArguments(/* is_cluster_function= */ false);
-            }
-            else if (function.name == "s3Cluster")
-            {
-                /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-                findS3FunctionSecretArguments(/* is_cluster_function= */ true);
-            }
-            else if ((function.name == "remote") || (function.name == "remoteSecure"))
-            {
-                /// remote('addresses_expr', 'db', 'table', 'user', 'password', ...)
-                findRemoteFunctionSecretArguments();
-            }
-            else if ((function.name == "encrypt") || (function.name == "decrypt") ||
-                     (function.name == "aes_encrypt_mysql") || (function.name == "aes_decrypt_mysql") ||
-                     (function.name == "tryDecrypt"))
-            {
-                /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
-                findEncryptionFunctionSecretArguments();
-            }
-        }
-
-        void findMySQLFunctionSecretArguments()
-        {
-            if (isNamedCollectionName(0))
-            {
-                /// mysql(named_collection, ..., password = 'password', ...)
-                findSecretNamedArgument("password", 1);
-            }
-            else
-            {
-                /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
-                markSecretArgument(4);
-            }
-        }
-
-        void findS3FunctionSecretArguments(bool is_cluster_function)
-        {
-            /// s3Cluster('cluster_name', 'url', ...) has 'url' as its second argument.
-            size_t url_arg_idx = is_cluster_function ? 1 : 0;
-
-            if (!is_cluster_function && isNamedCollectionName(0))
-            {
-                /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
-                findSecretNamedArgument("secret_access_key", 1);
-                return;
-            }
-
-            /// We should check other arguments first because we don't need to do any replacement in case of
-            /// s3('url', NOSIGN, 'format' [, 'compression'])
-            /// s3('url', 'format', 'structure' [, 'compression'])
-            if ((url_arg_idx + 3 <= arguments->size()) && (arguments->size() <= url_arg_idx + 4))
-            {
-                String second_arg;
-                if (tryGetStringFromArgument(url_arg_idx + 1, &second_arg))
-                {
-                    if (boost::iequals(second_arg, "NOSIGN"))
-                        return; /// The argument after 'url' is "NOSIGN".
-
-                    if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
-                        return; /// The argument after 'url' is a format: s3('url', 'format', ...)
-                }
-            }
-
-            /// We're going to replace 'aws_secret_access_key' with '[HIDDEN]' for the following signatures:
-            /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-            /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-            markSecretArgument(url_arg_idx + 2);
-        }
-
-        bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
-        {
-            if (arg_idx >= arguments->size())
-                return false;
-
-            return tryGetStringFromArgument(*(*arguments)[arg_idx], res, allow_identifier);
-        }
-
-        static bool tryGetStringFromArgument(const IAST & argument, String * res, bool allow_identifier = true)
-        {
-            if (const auto * literal = argument.as<ASTLiteral>())
-            {
-                if (literal->value.getType() != Field::Types::String)
-                    return false;
-                if (res)
-                    *res = literal->value.safeGet<String>();
-                return true;
-            }
-
-            if (allow_identifier)
-            {
-                if (const auto * id = argument.as<ASTIdentifier>())
-                {
-                    if (res)
-                        *res = id->name();
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        void findRemoteFunctionSecretArguments()
-        {
-            if (isNamedCollectionName(0))
-            {
-                /// remote(named_collection, ..., password = 'password', ...)
-                findSecretNamedArgument("password", 1);
-                return;
-            }
-
-            /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
-            /// remote('addresses_expr', db.table, 'user' [, 'password'] [, sharding_key])
-            /// remote('addresses_expr', 'db', 'table', 'user' [, 'password'] [, sharding_key])
-            /// remote('addresses_expr', table_function(), 'user' [, 'password'] [, sharding_key])
-
-            /// But we should check the number of arguments first because we don't need to do any replacements in case of
-            /// remote('addresses_expr', db.table)
-            if (arguments->size() < 3)
-                return;
-
-            size_t arg_num = 1;
-
-            /// Skip 1 or 2 arguments with table_function() or db.table or 'db', 'table'.
-            const auto * table_function = (*arguments)[arg_num]->as<ASTFunction>();
-            if (table_function && KnownTableFunctionNames::instance().exists(table_function->name))
-            {
-                ++arg_num;
-            }
-            else
-            {
-                std::optional<String> database;
-                std::optional<QualifiedTableName> qualified_table_name;
-                if (!tryGetDatabaseNameOrQualifiedTableName(arg_num, database, qualified_table_name))
-                {
-                    /// We couldn't evaluate the argument so we don't know whether it is 'db.table' or just 'db'.
-                    /// Hence we can't figure out whether we should skip one argument 'user' or two arguments 'table', 'user'
-                    /// before the argument 'password'. So it's safer to wipe two arguments just in case.
-                    /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
-                    /// before wiping it (because the `password` argument is always a literal string).
-                    if (tryGetStringFromArgument(arg_num + 2, nullptr, /* allow_identifier= */ false))
-                    {
-                        /// Wipe either `password` or `user`.
-                        markSecretArgument(arg_num + 2);
-                    }
-                    if (tryGetStringFromArgument(arg_num + 3, nullptr, /* allow_identifier= */ false))
-                    {
-                        /// Wipe either `password` or `sharding_key`.
-                        markSecretArgument(arg_num + 3);
-                    }
-                    return;
-                }
-
-                /// Skip the current argument (which is either a database name or a qualified table name).
-                ++arg_num;
-                if (database)
-                {
-                    /// Skip the 'table' argument if the previous argument was a database name.
-                    ++arg_num;
-                }
-            }
-
-            /// Skip username.
-            ++arg_num;
-
-            /// Do our replacement:
-            /// remote('addresses_expr', db.table, 'user', 'password', ...) -> remote('addresses_expr', db.table, 'user', '[HIDDEN]', ...)
-            /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
-            /// before wiping it (because the `password` argument is always a literal string).
-            bool can_be_password = tryGetStringFromArgument(arg_num, nullptr, /* allow_identifier= */ false);
-            if (can_be_password)
-                markSecretArgument(arg_num);
-        }
-
-        /// Tries to get either a database name or a qualified table name from an argument.
-        /// Empty string is also allowed (it means the default database).
-        /// The function is used by findRemoteFunctionSecretArguments() to determine how many arguments to skip before a password.
-        bool tryGetDatabaseNameOrQualifiedTableName(
-            size_t arg_idx,
-            std::optional<String> & res_database,
-            std::optional<QualifiedTableName> & res_qualified_table_name) const
-        {
-            res_database.reset();
-            res_qualified_table_name.reset();
-
-            String str;
-            if (!tryGetStringFromArgument(arg_idx, &str, /* allow_identifier= */ true))
-                return false;
-
-            if (str.empty())
-            {
-                res_database = "";
-                return true;
-            }
-
-            auto qualified_table_name = QualifiedTableName::tryParseFromString(str);
-            if (!qualified_table_name)
-                return false;
-
-            if (qualified_table_name->database.empty())
-                res_database = std::move(qualified_table_name->table);
-            else
-                res_qualified_table_name = std::move(qualified_table_name);
-            return true;
-        }
-
-        void findEncryptionFunctionSecretArguments()
-        {
-            if (arguments->empty())
-                return;
-
-            /// We replace all arguments after 'mode' with '[HIDDEN]':
-            /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
-            result.start = 1;
-            result.count = arguments->size() - 1;
-        }
-
-        void findTableEngineSecretArguments()
-        {
-            const String & engine_name = function.name;
-            if (engine_name == "ExternalDistributed")
-            {
-                /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
-                findExternalDistributedTableEngineSecretArguments();
-            }
-            else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") ||
-                     (engine_name == "MaterializedPostgreSQL") || (engine_name == "MongoDB"))
-            {
-                /// MySQL('host:port', 'database', 'table', 'user', 'password', ...)
-                /// PostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
-                /// MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
-                /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
-                findMySQLFunctionSecretArguments();
-            }
-            else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
-                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg"))
-            {
-                /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
-                findS3TableEngineSecretArguments();
-            }
-        }
-
-        void findExternalDistributedTableEngineSecretArguments()
-        {
-            if (isNamedCollectionName(1))
-            {
-                /// ExternalDistributed('engine', named_collection, ..., password = 'password', ...)
-                findSecretNamedArgument("password", 2);
-            }
-            else
-            {
-                /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
-                markSecretArgument(5);
-            }
-        }
-
-        void findS3TableEngineSecretArguments()
-        {
-            if (isNamedCollectionName(0))
-            {
-                /// S3(named_collection, ..., secret_access_key = 'secret_access_key')
-                findSecretNamedArgument("secret_access_key", 1);
-                return;
-            }
-
-            /// We should check other arguments first because we don't need to do any replacement in case of
-            /// S3('url', NOSIGN, 'format' [, 'compression'])
-            /// S3('url', 'format', 'compression')
-            if ((3 <= arguments->size()) && (arguments->size() <= 4))
-            {
-                String second_arg;
-                if (tryGetStringFromArgument(1, &second_arg))
-                {
-                    if (boost::iequals(second_arg, "NOSIGN"))
-                        return; /// The argument after 'url' is "NOSIGN".
-
-                    if (arguments->size() == 3)
-                    {
-                        if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
-                            return; /// The argument after 'url' is a format: S3('url', 'format', ...)
-                    }
-                }
-            }
-
-            /// We replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
-            /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
-            /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
-            /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-            markSecretArgument(2);
-        }
-
-        void findDatabaseEngineSecretArguments()
-        {
-            const String & engine_name = function.name;
-            if ((engine_name == "MySQL") || (engine_name == "MaterializeMySQL") ||
-                (engine_name == "MaterializedMySQL") || (engine_name == "PostgreSQL") ||
-                (engine_name == "MaterializedPostgreSQL"))
-            {
-                /// MySQL('host:port', 'database', 'user', 'password')
-                /// PostgreSQL('host:port', 'database', 'user', 'password')
-                findMySQLDatabaseSecretArguments();
-            }
-            else if (engine_name == "S3")
-            {
-                /// S3('url', 'access_key_id', 'secret_access_key')
-                findS3DatabaseSecretArguments();
-            }
-        }
-
-        void findMySQLDatabaseSecretArguments()
-        {
-            if (isNamedCollectionName(0))
-            {
-                /// MySQL(named_collection, ..., password = 'password', ...)
-                findSecretNamedArgument("password", 1);
-            }
-            else
-            {
-                /// MySQL('host:port', 'database', 'user', 'password')
-                markSecretArgument(3);
-            }
-        }
-
-        void findS3DatabaseSecretArguments()
-        {
-            if (isNamedCollectionName(0))
-            {
-                /// S3(named_collection, ..., secret_access_key = 'password', ...)
-                findSecretNamedArgument("secret_access_key", 1);
-            }
-            else
-            {
-                /// S3('url', 'access_key_id', 'secret_access_key')
-                markSecretArgument(2);
-            }
-        }
-
-        void findBackupNameSecretArguments()
-        {
-            const String & engine_name = function.name;
-            if (engine_name == "S3")
-            {
-                /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
-                markSecretArgument(2);
-            }
-        }
-
-        /// Whether a specified argument can be the name of a named collection?
-        bool isNamedCollectionName(size_t arg_idx) const
-        {
-            if (arguments->size() <= arg_idx)
-                return false;
-
-            const auto * identifier = (*arguments)[arg_idx]->as<ASTIdentifier>();
-            return identifier != nullptr;
-        }
-
-        /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
-        void findSecretNamedArgument(const std::string_view & key, size_t start = 0)
-        {
-            for (size_t i = start; i < arguments->size(); ++i)
-            {
-                const auto & argument = (*arguments)[i];
-                const auto * equals_func = argument->as<ASTFunction>();
-                if (!equals_func || (equals_func->name != "equals"))
-                    continue;
-
-                const auto * expr_list = equals_func->arguments->as<ASTExpressionList>();
-                if (!expr_list)
-                    continue;
-
-                const auto & equal_args = expr_list->children;
-                if (equal_args.size() != 2)
-                    continue;
-
-                String found_key;
-                if (!tryGetStringFromArgument(*equal_args[0], &found_key))
-                    continue;
-
-                if (found_key == key)
-                    markSecretArgument(i, /* argument_is_named= */ true);
-            }
-        }
-    };
 }
 
 
@@ -724,6 +267,25 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 }
 
 
+static bool formatNamedArgWithHiddenValue(IAST * arg, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    const auto * equals_func = arg->as<ASTFunction>();
+    if (!equals_func || (equals_func->name != "equals"))
+        return false;
+    const auto * expr_list = equals_func->arguments->as<ASTExpressionList>();
+    if (!expr_list)
+        return false;
+    const auto & equal_args = expr_list->children;
+    if (equal_args.size() != 2)
+        return false;
+
+    equal_args[0]->formatImpl(settings, state, frame);
+    settings.ostr << (settings.hilite ? IAST::hilite_operator : "") << " = " << (settings.hilite ? IAST::hilite_none : "");
+    settings.ostr << "'[HIDDEN]'";
+
+    return true;
+}
+
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
@@ -750,8 +312,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     /// Should this function to be written as operator?
     bool written = false;
-
-    if (arguments && !parameters)
+    if (arguments && !parameters && nulls_action == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -772,34 +333,37 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
-                bool negate = name == "negate";
                 bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
                 // do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
                 bool literal_need_parens = literal && !is_tuple;
+
                 // negate always requires parentheses, otherwise -(-1) will be printed as --1
-                bool negate_need_parens = negate && (literal_need_parens || (function && function->name == "negate"));
-                // We don't need parentheses around a single literal.
-                bool need_parens = !literal && frame.need_parens && !negate_need_parens;
+                bool inside_parens = name == "negate" && (literal_need_parens || (function && function->name == "negate"));
+
+                /// We DO need parentheses around a single literal
+                /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
+                /// this is equal to SELECT NOT (0 + NOT 0)
+                bool outside_parens = frame.need_parens && !inside_parens;
 
                 // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
-                if (negate_need_parens)
+                if (inside_parens)
                     nested_need_parens.need_parens = false;
 
-                if (need_parens)
+                if (outside_parens)
                     settings.ostr << '(';
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
-                if (negate_need_parens)
+                if (inside_parens)
                     settings.ostr << '(';
 
                 arguments->formatImpl(settings, state, nested_need_parens);
                 written = true;
 
-                if (negate_need_parens)
+                if (inside_parens)
                     settings.ostr << ')';
 
-                if (need_parens)
+                if (outside_parens)
                     settings.ostr << ')';
 
                 break;
@@ -971,31 +535,39 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
             }
 
-            if (!written && name == "lambda"sv)
+            const auto & first_argument = arguments->children[0];
+            const ASTIdentifier * first_argument_identifier = first_argument->as<ASTIdentifier>();
+            const ASTFunction * first_argument_function = first_argument->as<ASTFunction>();
+            bool first_argument_is_tuple = first_argument_function && first_argument_function->name == "tuple";
+
+            /// Only these types of arguments are accepted by the parser of the '->' operator.
+            bool acceptable_first_argument_for_lambda_expression = first_argument_identifier || first_argument_is_tuple;
+
+            if (!written && name == "lambda"sv && acceptable_first_argument_for_lambda_expression)
             {
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
+                /// If lambda function is not the first element in the list, it has to be put in parentheses.
+                /// Example: f(x, (y -> z)) should not be printed as f((x, y) -> z).
 
-                if (frame.need_parens)
+                if (frame.need_parens || frame.list_element_index > 0)
                     settings.ostr << '(';
 
-                const auto * first_arg_func = arguments->children[0]->as<ASTFunction>();
-                if (first_arg_func
-                    && first_arg_func->name == "tuple"
-                    && first_arg_func->arguments
-                    && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
+                if (first_argument_is_tuple
+                    && first_argument_function->arguments
+                    && (first_argument_function->arguments->children.size() == 1 || first_argument_function->arguments->children.empty()))
                 {
-                    if (first_arg_func->arguments->children.size() == 1)
-                        first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    if (first_argument_function->arguments->children.size() == 1)
+                        first_argument_function->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
                     else
                         settings.ostr << "()";
                 }
                 else
-                    arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    first_argument->formatImpl(settings, state, nested_need_parens);
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << " -> " << (settings.hilite ? hilite_none : "");
                 arguments->children[1]->formatImpl(settings, state, nested_need_parens);
-                if (frame.need_parens)
+                if (frame.need_parens || frame.list_element_index > 0)
                     settings.ostr << ')';
                 written = true;
             }
@@ -1122,7 +694,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         FunctionSecretArgumentsFinder::Result secret_arguments;
         if (!settings.show_secrets)
-            secret_arguments = FunctionSecretArgumentsFinder{*this}.getResult();
+            secret_arguments = FunctionSecretArgumentsFinderAST(*this).getResult();
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
@@ -1133,17 +705,37 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (argument->as<ASTSetQuery>())
                 settings.ostr << "SETTINGS ";
 
-            if (!settings.show_secrets && (secret_arguments.start <= i) && (i < secret_arguments.start + secret_arguments.count))
+            if (!settings.show_secrets)
             {
-                if (secret_arguments.are_named)
+                if (secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count)
                 {
-                   assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
-                   settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
+                    if (secret_arguments.are_named)
+                    {
+                        assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
+                        settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
+                    }
+                    settings.ostr << "'[HIDDEN]'";
+                    if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
+                        break; /// All other arguments should also be hidden.
+                    continue;
                 }
-                settings.ostr << "'[HIDDEN]'";
-                if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
-                    break; /// All other arguments should also be hidden.
-                continue;
+
+                const ASTFunction * function = argument->as<ASTFunction>();
+                if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
+                {
+                    /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
+                    settings.ostr << (settings.hilite ? hilite_function : "") << function->name << (settings.hilite ? hilite_none : "") << "(";
+                    for (size_t j = 0; j < function->arguments->children.size(); ++j)
+                    {
+                        if (j != 0)
+                            settings.ostr << ", ";
+                        auto inner_arg = function->arguments->children[j];
+                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), settings, state, nested_dont_need_parens))
+                            inner_arg->formatImpl(settings, state, nested_dont_need_parens);
+                    }
+                    settings.ostr << ")";
+                    continue;
+                }
             }
 
             if ((i == 1) && special_hilite_regexp
@@ -1152,6 +744,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 continue;
             }
 
+            nested_dont_need_parens.list_element_index = i;
             argument->formatImpl(settings, state, nested_dont_need_parens);
         }
     }
@@ -1166,7 +759,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
 bool ASTFunction::hasSecretParts() const
 {
-    return (FunctionSecretArgumentsFinder{*this}.getResult().count > 0) || childrenHaveSecretParts();
+    return (FunctionSecretArgumentsFinderAST(*this).getResult().hasSecrets()) || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)
@@ -1197,6 +790,17 @@ bool tryGetFunctionNameInto(const IAST * ast, String & name)
             return true;
         }
     }
+    return false;
+}
+
+bool isASTLambdaFunction(const ASTFunction & function)
+{
+    if (function.name == "lambda" && function.arguments && function.arguments->children.size() == 2)
+    {
+        const auto * lambda_args_tuple = function.arguments->children.at(0)->as<ASTFunction>();
+        return lambda_args_tuple && lambda_args_tuple->name == "tuple";
+    }
+
     return false;
 }
 

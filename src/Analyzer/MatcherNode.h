@@ -6,6 +6,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Common/re2.h>
 
+
 namespace DB
 {
 
@@ -58,10 +59,10 @@ public:
     explicit MatcherNode(Identifier qualified_identifier_, ColumnTransformersNodes column_transformers_ = {});
 
     /// Variant unqualified COLUMNS('regexp')
-    explicit MatcherNode(std::shared_ptr<re2::RE2> columns_matcher_, ColumnTransformersNodes column_transformers_ = {});
+    explicit MatcherNode(String pattern_, ColumnTransformersNodes column_transformers_ = {});
 
     /// Variant qualified COLUMNS('regexp')
-    explicit MatcherNode(Identifier qualified_identifier_, std::shared_ptr<re2::RE2> columns_matcher_, ColumnTransformersNodes column_transformers_ = {});
+    explicit MatcherNode(Identifier qualified_identifier_, String pattern_, ColumnTransformersNodes column_transformers_ = {});
 
     /// Variant unqualified COLUMNS(column_name_1, ...)
     explicit MatcherNode(Identifiers columns_identifiers_, ColumnTransformersNodes column_transformers_ = {});
@@ -79,12 +80,6 @@ public:
     bool isAsteriskMatcher() const
     {
         return matcher_type == MatcherNodeType::ASTERISK;
-    }
-
-    /// Returns true if matcher is columns regexp or columns list matcher, false otherwise
-    bool isColumnsMatcher() const
-    {
-        return matcher_type == MatcherNodeType::COLUMNS_REGEXP || matcher_type == MatcherNodeType::COLUMNS_LIST;
     }
 
     /// Returns true if matcher is qualified, false otherwise
@@ -140,9 +135,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -152,7 +147,7 @@ private:
     explicit MatcherNode(MatcherNodeType matcher_type_,
         Identifier qualified_identifier_,
         Identifiers columns_identifiers_,
-        std::shared_ptr<re2::RE2> columns_matcher_,
+        std::optional<String> pattern_,
         ColumnTransformersNodes column_transformers_);
 
     MatcherNodeType matcher_type;

@@ -5,9 +5,9 @@
 int main(int argc, char ** argv)
 try
 {
-    zkutil::ZooKeeper zookeeper{zkutil::ZooKeeperArgs("localhost:2181")};
+    auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zkutil::ZooKeeperArgs("localhost:2181"));
 
-    auto nodes = zookeeper.getChildren("/tmp");
+    auto nodes = zookeeper->getChildren("/tmp");
 
     if (argc < 2)
     {
@@ -26,7 +26,7 @@ try
                 std::vector<std::future<Coordination::GetResponse>> futures;
                 futures.reserve(nodes.size());
                 for (auto & node : nodes)
-                    futures.push_back(zookeeper.asyncGet("/tmp/" + node));
+                    futures.push_back(zookeeper->asyncGet("/tmp/" + node));
 
                 for (auto & future : futures)
                     std::cerr << (future.get().data.empty() ? ',' : '.');

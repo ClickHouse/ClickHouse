@@ -22,7 +22,7 @@ const size_t DEFAULT_SCHEMA_CACHE_ELEMENTS = 4096;
 class SchemaCache
 {
 public:
-    SchemaCache(size_t max_elements_);
+    explicit SchemaCache(size_t max_elements_);
 
     struct Key
     {

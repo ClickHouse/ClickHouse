@@ -51,29 +51,29 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool is_temporary = false;
     bool if_not_exists = false;
 
-    if (!ParserKeyword("CREATE").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::CREATE).ignore(pos, expected))
         return false;
 
-    if (ParserKeyword("TEMPORARY").ignore(pos, expected))
+    if (ParserKeyword(Keyword::TEMPORARY).ignore(pos, expected))
         is_temporary = true;
 
-    if (!ParserKeyword("TABLE").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::TABLE).ignore(pos, expected))
         return false;
 
-    if (ParserKeyword("IF NOT EXISTS").ignore(pos, expected))
+    if (ParserKeyword(Keyword::IF_NOT_EXISTS).ignore(pos, expected))
         if_not_exists = true;
 
     if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
         return false;
 
-    if (ParserKeyword("LIKE").ignore(pos, expected))
+    if (ParserKeyword(Keyword::LIKE).ignore(pos, expected))
     {
         if (!ParserCompoundIdentifier(true).parse(pos, like_table, expected))
             return false;
     }
     else if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        if (ParserKeyword("LIKE").ignore(pos, expected))
+        if (ParserKeyword(Keyword::LIKE).ignore(pos, expected))
         {
             if (!ParserCompoundIdentifier(true).parse(pos, like_table, expected))
                 return false;

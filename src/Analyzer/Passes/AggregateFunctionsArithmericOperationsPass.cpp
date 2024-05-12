@@ -194,7 +194,7 @@ private:
 
 }
 
-void AggregateFunctionsArithmericOperationsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void AggregateFunctionsArithmericOperationsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     AggregateFunctionsArithmericOperationsVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

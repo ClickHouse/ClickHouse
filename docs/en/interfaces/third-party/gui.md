@@ -172,7 +172,7 @@ Features:
 
 ### ClickVisual {#clickvisual}
 
-[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
+[ClickVisual](https://clickvisual.net/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
 
 Features:
 
@@ -209,6 +209,18 @@ Features:
 - Promql-like language to query metrics.
 - Pre-built metrics dashboards.
 - Multiple users/projects via YAML config.
+
+### clickhouse-monitoring {#clickhouse-monitoring}
+
+[clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) is a simple Next.js dashboard that relies on `system.*` tables to help monitor and provide an overview of your ClickHouse cluster.
+
+Features:
+
+- Query monitor: current queries, query history, query resources (memory, parts read, file_open, ...), most expensive queries, most used tables or columns, etc.
+- Cluster monitor: total memory/CPU usage, distributed queue, global settings, mergetree settings, metrics, etc.
+- Tables and parts information: size, row count, compression, part size, etc., at the column level detail.
+- Useful tools: Zookeeper data exploration, query EXPLAIN, kill queries, etc.
+- Visualization metric charts: queries and resource usage, number of merges/mutation, merge performance, query performance, etc.
 
 ## Commercial {#commercial}
 
@@ -306,3 +318,18 @@ License: [commercial](https://tablum.io/pricing) product with 3-month free perio
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
+
+### CKMAN {#ckman}
+
+[CKMAN] (https://www.github.com/housepower/ckman) is a tool for managing and monitoring ClickHouse clusters!
+
+Features:
+
+- Rapid and convenient automated deployment of clusters through a browser interface
+- Clusters can be scaled or scaled
+- Load balance the data of the cluster
+- Upgrade the cluster online
+- Modify the cluster configuration on the page
+- Provides cluster node monitoring and zookeeper monitoring
+- Monitor the status of tables and partitions, and monitor slow SQL statements
+- Provides an easy-to-use SQL execution page

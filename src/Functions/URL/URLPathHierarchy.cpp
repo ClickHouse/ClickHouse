@@ -22,10 +22,12 @@ public:
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", &isString<IDataType>, nullptr, "String"},
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
         validateFunctionArgumentTypes(func, arguments, mandatory_args);

@@ -178,6 +178,22 @@ namespace
                 elements_to_revoke.emplace_back(std::move(element_to_revoke));
         }
 
+        /// Additional check for REVOKE
+        ///
+        /// If user1 has the rights
+        /// GRANT SELECT ON *.* TO user1;
+        /// REVOKE SELECT ON system.* FROM user1;
+        /// REVOKE SELECT ON mydb.* FROM user1;
+        ///
+        /// And user2 has the rights
+        /// GRANT SELECT ON *.* TO user2;
+        /// REVOKE SELECT ON system.* FROM user2;
+        ///
+        /// the query `REVOKE SELECT ON *.* FROM user1` executed by user2 should succeed.
+        if (current_user_access.getAccessRights()->containsWithGrantOption(access_to_revoke))
+            return;
+
+        /// Technically, this check always fails if `containsWithGrantOption` returns `false`. But we still call it to get a nice exception message.
         current_user_access.checkGrantOption(elements_to_revoke);
     }
 
