@@ -91,7 +91,7 @@ public:
             std::string val;
             if (!vals[j].tryGet(val))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Could not convert {}'th input to string", j);
-            result_raw[j] = model->eval(model_params, val);
+            result_raw[j] = model->eval(val, model_params);
             totalsize += result_raw[j].size() + 1;
         }
 
@@ -125,11 +125,15 @@ private:
     {
         if (!col.hasEqualValues())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ambiguous model parameters: column contains different values");
-        Tuple t;
-        if (!col[0].tryGet(t))
+        Map mp;
+        if (!col[0].tryGet(mp))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Could not convert argument to map");
-        UInt64 n_predict = t[0].safeGet<UInt64>();
-        GgmlModelParams res = {n_predict};
+        GgmlModelParams res;
+        for (const auto & val : mp)
+        {
+            Tuple t = val.safeGet<Tuple>();
+            res[t[0].safeGet<String>()] = t[1];
+        }
         return res;
     }
 

@@ -93,7 +93,8 @@ public:
 
 private:
     void loadImpl(ConfigPtr config) override;
-    std::string evalImpl(std::tuple<Int32> user_params, const std::string & input) override;
+    std::string evalImpl(const std::string & input, const GgmlModelParams & user_params) override;
+
     ggml_cgraph * gpt2_graph(int n_past, int n_tokens);
     bool gpt2_eval(int n_threads, int n_past, std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w);
     GptVocab gpt_vocab;

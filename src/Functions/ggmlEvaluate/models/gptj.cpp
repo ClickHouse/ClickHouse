@@ -1,4 +1,5 @@
 #include "gptj.h"
+#include "base/types.h"
 #include "gpt_common.h"
 
 #include "ggml.h"
@@ -508,10 +509,10 @@ bool GptJModel::evalInternal(
 }
 // NOLINTEND
 
-std::string GptJModel::evalImpl(GgmlModelParams params, const std::string & input)
+std::string GptJModel::evalImpl(const std::string & input, const GgmlModelParams & user_params)
 {
     std::vector<GptVocab::id> embd_inp = gpt_tokenize(gpt_vocab, input);
-    std::vector<GptVocab::id> embd = predict(params, embd_inp);
+    std::vector<GptVocab::id> embd = predict(user_params, embd_inp);
 
     std::string result;
     for (auto id : embd)
@@ -519,7 +520,7 @@ std::string GptJModel::evalImpl(GgmlModelParams params, const std::string & inpu
     return result;
 }
 
-std::vector<GptVocab::id> GptJModel::predict(GgmlModelParams params, const std::vector<GptVocab::id> & embd_inp)
+std::vector<GptVocab::id> GptJModel::predict(const GgmlModelParams & user_params, const std::vector<GptVocab::id> & embd_inp)
 {
     std::vector<GptVocab::id> total_embd;
     std::vector<GptVocab::id> embd;
@@ -528,7 +529,10 @@ std::vector<GptVocab::id> GptJModel::predict(GgmlModelParams params, const std::
     int n_past = 0;
     std::vector<float> logits;
 
-    int n_predict = std::min(std::get<0>(params), hparams.n_ctx - static_cast<int>(embd_inp.size()));
+    Int64 n_predict = gpt_params.n_predict;
+    if (auto it = user_params.find("n_predict"); it != user_params.end())
+        n_predict = it->second.safeGet<Int64>();
+    n_predict = std::min(n_predict, hparams.n_ctx - static_cast<Int64>(embd_inp.size()));
 
     size_t mem_per_token = 0;
     evalInternal(gpt_params.n_threads, 0, {0, 1, 2, 3}, logits, mem_per_token);
