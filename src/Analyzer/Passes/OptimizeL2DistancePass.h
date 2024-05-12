@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/IQueryTreePass.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
@@ -18,6 +19,8 @@ public:
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
+private:
+    void enterImpl(ASTPtr & node, ASTPtr & parent, Data & data);
 };
 
 }
