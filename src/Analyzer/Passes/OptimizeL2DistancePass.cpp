@@ -14,8 +14,8 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<L2DistanceOptimizationPassVisitor>;
     using Base::Base;
 
-    explicit L2DistanceOptimizationPassVisitor(ContextPtr context)
-        : Base(std::move(context)), context(context)
+    explicit L2DistanceOptimizationPassVisitor(ContextPtr ctx)
+        : Base(std::move(ctx)), context(ctx)
     {}
 
     void enterImpl(QueryTreeNodePtr & node)
