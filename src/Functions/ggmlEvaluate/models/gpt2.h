@@ -1,10 +1,13 @@
 #pragma once
 
-#include <map>
-#include <Functions/ggmlEvaluate/IGgmlModel.h>
-#include "Functions/ggmlEvaluate/models/gpt_common.h"
+#include "gpt_common.h"
+
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
+
+#include <Functions/ggmlEvaluate/IGgmlModel.h>
+
+#include <map>
 
 namespace DB
 {
