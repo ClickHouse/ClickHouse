@@ -10,4 +10,8 @@ ASTPtr ASTDefaultedColumn::clone() const
     res->expression->clone();
     return res;
 }
+void ASTDefaultedColumn::formatImpl(const DB::IAST::FormatSettings & settings, DB::IAST::FormatState & state, DB::IAST::FormatStateStacked frame) const
+{
+    return;
+}
 }
