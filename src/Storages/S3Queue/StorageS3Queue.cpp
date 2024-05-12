@@ -106,7 +106,7 @@ StorageS3Queue::StorageS3Queue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args,
+    ASTStorage * /* engine_args */,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -184,21 +184,9 @@ StorageS3Queue::StorageS3Queue(
     /// The ref count is decreased when StorageS3Queue::drop() method is called.
     files_metadata = S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings);
 
-    if (files_metadata->isShardedProcessing())
-    {
-        if (!s3queue_settings->s3queue_current_shard_num.changed)
-        {
-            s3queue_settings->s3queue_current_shard_num = static_cast<UInt32>(files_metadata->registerNewShard());
-            engine_args->settings->changes.setSetting("s3queue_current_shard_num", s3queue_settings->s3queue_current_shard_num.value);
-        }
-        else if (!files_metadata->isShardRegistered(s3queue_settings->s3queue_current_shard_num))
-        {
-            files_metadata->registerNewShard(s3queue_settings->s3queue_current_shard_num);
-        }
-    }
     if (s3queue_settings->mode == S3QueueMode::ORDERED && !s3queue_settings->s3queue_last_processed_path.value.empty())
     {
-        files_metadata->setFileProcessed(s3queue_settings->s3queue_last_processed_path.value, s3queue_settings->s3queue_current_shard_num);
+        // files_metadata->setFileProcessed(s3queue_settings->s3queue_last_processed_path.value, s3queue_settings->s3queue_current_shard_num);
     }
 }
 
@@ -222,13 +210,6 @@ void StorageS3Queue::shutdown(bool is_drop)
     if (files_metadata)
     {
         files_metadata->deactivateCleanupTask();
-
-        if (is_drop && files_metadata->isShardedProcessing())
-        {
-            files_metadata->unregisterShard(s3queue_settings->s3queue_current_shard_num);
-            LOG_TRACE(log, "Unregistered shard {} from zookeeper", s3queue_settings->s3queue_current_shard_num);
-        }
-
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
@@ -349,7 +330,6 @@ void ReadFromS3Queue::initializePipeline(QueryPipelineBuilder & pipeline, const 
         pipes.emplace_back(storage->createSource(
                                info,
                                iterator,
-                               storage->files_metadata->getIdForProcessingThread(i, storage->s3queue_settings->s3queue_current_shard_num),
                                max_block_size, context));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -365,7 +345,6 @@ void ReadFromS3Queue::initializePipeline(QueryPipelineBuilder & pipeline, const 
 std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
-    size_t processing_id,
     size_t max_block_size,
     ContextPtr local_context)
 {
@@ -405,7 +384,7 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     auto s3_queue_log = s3queue_settings->s3queue_enable_logging_to_s3queue_log ? local_context->getS3QueueLog() : nullptr;
     return std::make_shared<StorageS3QueueSource>(
         getName(), info.source_header, std::move(internal_source),
-        files_metadata, processing_id, after_processing, file_deleter, info.requested_virtual_columns,
+        files_metadata, after_processing, file_deleter, info.requested_virtual_columns,
         local_context, shutdown_called, table_is_being_dropped, s3_queue_log, getStorageID(), log);
 }
 
@@ -508,10 +487,7 @@ bool StorageS3Queue::streamToViews()
     pipes.reserve(s3queue_settings->s3queue_processing_threads_num);
     for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
     {
-        auto source = createSource(
-            read_from_format_info, file_iterator, files_metadata->getIdForProcessingThread(i, s3queue_settings->s3queue_current_shard_num),
-            DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
-
+        auto source = createSource(read_from_format_info, file_iterator, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
         pipes.emplace_back(std::move(source));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -614,7 +590,7 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
         *configuration.client, configuration.url, predicate, getVirtualsList(), local_context,
         /* read_keys */nullptr, configuration.request_settings);
 
-    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
+    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called);
 }
 
 void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)

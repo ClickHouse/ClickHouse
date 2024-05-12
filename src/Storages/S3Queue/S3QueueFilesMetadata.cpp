@@ -132,7 +132,6 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(const fs::path & zookeeper_path_, con
     , min_cleanup_interval_ms(settings_.s3queue_cleanup_interval_min_ms.value)
     , max_cleanup_interval_ms(settings_.s3queue_cleanup_interval_max_ms.value)
     , shards_num(settings_.s3queue_total_shards_num)
-    , threads_per_shard(settings_.s3queue_processing_threads_num)
     , zookeeper_processing_path(zookeeper_path_ / "processing")
     , zookeeper_processed_path(zookeeper_path_ / "processed")
     , zookeeper_failed_path(zookeeper_path_ / "failed")
@@ -200,126 +199,6 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     metadata.last_exception = exception;
     metadata.retries = retries;
     return metadata;
-}
-
-bool S3QueueFilesMetadata::isShardedProcessing() const
-{
-    return getProcessingIdsNum() > 1 && mode == S3QueueMode::ORDERED;
-}
-
-size_t S3QueueFilesMetadata::registerNewShard()
-{
-    if (!isShardedProcessing())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot register a new shard, because processing is not sharded");
-    }
-
-    const auto zk_client = getZooKeeper();
-    zk_client->createIfNotExists(zookeeper_shards_path, "");
-
-    std::string shard_node_path;
-    size_t shard_id = 0;
-    for (size_t i = 0; i < shards_num; ++i)
-    {
-        const auto node_path = getZooKeeperPathForShard(i);
-        auto err = zk_client->tryCreate(node_path, "", zkutil::CreateMode::Persistent);
-        if (err == Coordination::Error::ZOK)
-        {
-            shard_node_path = node_path;
-            shard_id = i;
-            break;
-        }
-        else if (err == Coordination::Error::ZNODEEXISTS)
-            continue;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected error: {}", magic_enum::enum_name(err));
-    }
-
-    if (shard_node_path.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to register a new shard");
-
-    LOG_TRACE(log, "Using shard {} (zk node: {})", shard_id, shard_node_path);
-    return shard_id;
-}
-
-std::string S3QueueFilesMetadata::getZooKeeperPathForShard(size_t shard_id) const
-{
-    return zookeeper_shards_path / ("shard" + toString(shard_id));
-}
-
-void S3QueueFilesMetadata::registerNewShard(size_t shard_id)
-{
-    if (!isShardedProcessing())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot register a new shard, because processing is not sharded");
-    }
-
-    const auto zk_client = getZooKeeper();
-    const auto node_path = getZooKeeperPathForShard(shard_id);
-    zk_client->createAncestors(node_path);
-
-    auto err = zk_client->tryCreate(node_path, "", zkutil::CreateMode::Persistent);
-    if (err != Coordination::Error::ZOK)
-    {
-        if (err == Coordination::Error::ZNODEEXISTS)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot register shard {}: already exists", shard_id);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected error: {}", magic_enum::enum_name(err));
-    }
-}
-
-bool S3QueueFilesMetadata::isShardRegistered(size_t shard_id)
-{
-    const auto zk_client = getZooKeeper();
-    const auto node_path = getZooKeeperPathForShard(shard_id);
-    return zk_client->exists(node_path);
-}
-
-void S3QueueFilesMetadata::unregisterShard(size_t shard_id)
-{
-    if (!isShardedProcessing())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot unregister a shard, because processing is not sharded");
-    }
-
-    const auto zk_client = getZooKeeper();
-    const auto node_path = getZooKeeperPathForShard(shard_id);
-    auto error_code = zk_client->tryRemove(node_path);
-    if (error_code != Coordination::Error::ZOK
-        && error_code != Coordination::Error::ZNONODE)
-        throw zkutil::KeeperException::fromPath(error_code, node_path);
-}
-
-size_t S3QueueFilesMetadata::getProcessingIdsNum() const
-{
-    return shards_num * threads_per_shard;
-}
-
-std::vector<size_t> S3QueueFilesMetadata::getProcessingIdsForShard(size_t shard_id) const
-{
-    std::vector<size_t> res(threads_per_shard);
-    std::iota(res.begin(), res.end(), shard_id * threads_per_shard);
-    return res;
-}
-
-bool S3QueueFilesMetadata::isProcessingIdBelongsToShard(size_t id, size_t shard_id) const
-{
-    return shard_id * threads_per_shard <= id && id < (shard_id + 1) * threads_per_shard;
-}
-
-size_t S3QueueFilesMetadata::getIdForProcessingThread(size_t thread_id, size_t shard_id) const
-{
-    return shard_id * threads_per_shard + thread_id;
-}
-
-size_t S3QueueFilesMetadata::getProcessingIdForPath(const std::string & path) const
-{
-    return sipHash64(path) % getProcessingIdsNum();
 }
 
 S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
@@ -519,8 +398,8 @@ S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & p
         /// If the version did change - retry (since we cannot do Get and Create requests
         /// in the same zookeeper transaction, so we use a while loop with tries).
 
-        auto processed_node = isShardedProcessing()
-            ? zookeeper_processed_path / toString(getProcessingIdForPath(path))
+        auto processed_node = useBucketsForProcessing()
+            ? zookeeper_processed_path / toString(getBucketForPath(path))
             : zookeeper_processed_path;
 
         NodeMetadata processed_node_metadata;
@@ -645,8 +524,8 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolder
 
 void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder)
 {
-    auto processed_node_path = isShardedProcessing()
-        ? zookeeper_processed_path / toString(getProcessingIdForPath(holder->path))
+    auto processed_node_path = useBucketsForProcessing()
+        ? zookeeper_processed_path / toString(getBucketForPath(holder->path))
         : zookeeper_processed_path;
 
     return setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
@@ -721,15 +600,15 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(
     }
 }
 
-void S3QueueFilesMetadata::setFileProcessed(const std::string & path, size_t shard_id)
+void S3QueueFilesMetadata::setFileProcessed(const std::string & path, size_t /* shard_id */)
 {
     if (mode != S3QueueMode::ORDERED)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can set file as preprocessed only for Ordered mode");
 
-    if (isShardedProcessing())
+    if (useBucketsForProcessing())
     {
-        for (const auto & processor : getProcessingIdsForShard(shard_id))
-            setFileProcessedForOrderedModeImpl(path, nullptr, zookeeper_processed_path / toString(processor));
+        // for (const auto & processor : getProcessingIdsForShard(shard_id))
+        //     setFileProcessedForOrderedModeImpl(path, nullptr, zookeeper_processed_path / toString(processor));
     }
     else
     {
