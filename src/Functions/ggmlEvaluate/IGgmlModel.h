@@ -7,13 +7,15 @@
 #include <mutex>
 #include <string>
 
-namespace DB {
+namespace DB
+{
 
 using ConfigPtr = Poco::AutoPtr<const Poco::Util::AbstractConfiguration>;
 
 using GgmlModelParams = std::tuple<Int32>;
 
-class IGgmlModel {
+class IGgmlModel
+{
 public:
     virtual ~IGgmlModel() = default;
 

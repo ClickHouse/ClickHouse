@@ -4,21 +4,24 @@
 
 #include <Functions/ggmlEvaluate/IGgmlModel.h>
 
-namespace DB {
+namespace DB
+{
 
 // default hparams (GPT-J 6B)
-struct GptJHparams {
+struct GptJHparams
+{
     int32_t n_vocab = 50400;
-    int32_t n_ctx   = 2048;
-    int32_t n_embd  = 4096;
-    int32_t n_head  = 16;
+    int32_t n_ctx = 2048;
+    int32_t n_embd = 4096;
+    int32_t n_head = 16;
     int32_t n_layer = 28;
-    int32_t n_rot   = 64;
-    int32_t ftype   = 1;
-    float   eps     = 1e-5f;
+    int32_t n_rot = 64;
+    int32_t ftype = 1;
+    float eps = 1e-5f;
 };
 
-struct GptJLayer {
+struct GptJLayer
+{
     // normalization
     struct ggml_tensor * ln_1_g;
     struct ggml_tensor * ln_1_b;
@@ -38,7 +41,8 @@ struct GptJLayer {
     struct ggml_tensor * c_mlp_proj_b;
 };
 
-struct GptJModelState {
+struct GptJModelState
+{
     GptJHparams hparams;
 
     // normalization
@@ -61,9 +65,11 @@ struct GptJModelState {
     std::map<std::string, struct ggml_tensor *> tensors;
 };
 
-class GptJModel : public IGgmlModel, protected GptJModelState {
+class GptJModel : public IGgmlModel, protected GptJModelState
+{
 public:
-    ~GptJModel() override {
+    ~GptJModel() override
+    {
         ggml_free(ctx); // GGMLTODO : bullshit
     }
 
@@ -71,7 +77,8 @@ private:
     void loadImpl(ConfigPtr config) override;
     std::string evalImpl(GgmlModelParams params, const std::string & input) override;
 
-    bool evalInternal(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
+    bool evalInternal(
+        int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
     std::vector<GptVocab::id> predict(GgmlModelParams params, const std::vector<GptVocab::id> & embd_inp);
 
     GptVocab gpt_vocab;
