@@ -1,8 +1,8 @@
-#include "OptimizeL2DistancePass.h"
+#include <Analyzer/Passes/L2DistanceOptimizationPass.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Analyzer/FunctionNode.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -10,62 +10,44 @@ namespace DB
 namespace
 {
 
-class OptimizeL2DistancePassVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeL2DistancePassVisitor>
+class L2DistanceOptimizationPassVisitor : public InDepthQueryTreeVisitorWithContext<L2DistanceOptimizationPassVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<OptimizeL2DistancePassVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<L2DistanceOptimizationPassVisitor>;
     using Base::Base;
 
-    explicit OptimizeL2DistancePassVisitor(ContextPtr context) : Base(std::move(context)) {}
+    explicit L2DistanceOptimizationPassVisitor(ContextPtr context)
+        : Base(std::move(context))
+    {}
 
-    void visit(ASTPtr & ast, void * data) override // Изменен тип Data на void*
+    void enterImpl(QueryTreeNodePtr & node)
     {
-        if (auto * select_query = ast->as<ASTSelectQuery>())
-        {
-            visit(*select_query, data);
-            visitChildren(ast, data);
-        }
-        else
-        {
-            visitChildren(ast, data);
-        }
-    }
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "L2Distance")
+            return;
 
-private:
-    void visit(ASTSelectQuery & select_query, void * data) // Изменен тип Data на void*
-    {
-        if (auto * order_by = select_query.orderBy())
-        {
-            for (auto & order_elem : order_by->children)
-            {
-                auto * function_node = order_elem->as<ASTFunction>();
-                if (!function_node)
-                    continue;
+        auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() != 2)
+            return;
 
-                if (function_node->name == "l2distance")
-                {
-                    auto sqrt_function_node = std::make_shared<ASTFunction>();
-                    sqrt_function_node->name = "sqrt";
+        auto vec_arg = arguments[1]->toString();
+        auto new_function_name = "sqrt";
+        auto new_function_arg = std::make_shared<FunctionNode>("L2SquaredDistance");
+        new_function_arg->addChild(arguments[0]);
+        new_function_arg->addChild(arguments[1]);
+        
+        auto new_function_node = std::make_shared<FunctionNode>(new_function_name);
+        new_function_node->addChild(new_function_arg);
 
-                    auto argument = std::make_shared<ASTFunction>();
-                    argument->name = "l2squared";
-                    argument->arguments = function_node->arguments;
-
-                    sqrt_function_node->arguments = std::make_shared<ASTExpressionList>();
-                    sqrt_function_node->arguments->children.push_back(argument);
-
-                    order_elem = sqrt_function_node;
-                }
-            }
-        }
+        node = std::move(new_function_node);
     }
 };
 
 }
 
-void OptimizeL2DistancePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void L2DistanceOptimizationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    OptimizeL2DistancePassVisitor visitor(std::move(context));
+    L2DistanceOptimizationPassVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 
