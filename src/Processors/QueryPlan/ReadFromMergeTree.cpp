@@ -597,8 +597,9 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings, block_size, reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
-        processor->addVirtualRowToChunk(need_virtual_row, part_with_ranges.data_part->getIndex(),
-            part_with_ranges.ranges.front().begin);
+        processor->addVirtualRowToChunk(part_with_ranges.data_part->getIndex(), part_with_ranges.ranges.front().begin);
+        if (need_virtual_row)
+            processor->enableVirtualRow();
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
         if (set_rows_approx)

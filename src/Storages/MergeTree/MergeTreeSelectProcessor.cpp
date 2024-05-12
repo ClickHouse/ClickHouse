@@ -134,10 +134,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
 
-        if (add_virtual_row)
+        if (enable_virtual_row)
         {
             /// Turn on virtual row just once.
-            add_virtual_row = false;
+            enable_virtual_row = false;
 
             const auto & primary_key = storage_snapshot->metadata->primary_key;
 

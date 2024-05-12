@@ -13,6 +13,9 @@
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
 namespace CurrentMetrics
 {
@@ -367,6 +370,34 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::FinishSorting)
     {
+        /// We check every step of this pipeline, to make sure virtual row can work correctly.
+        /// Currently ExpressionTransform is okay, should add other processor if possible.
+        const auto& pipe = pipeline.getPipe();
+        bool enable_virtual_row = true;
+        std::vector<std::shared_ptr<MergeTreeSource>> merge_tree_sources;
+        for (const auto & processor : pipe.getProcessors())
+        {
+            if (auto merge_tree_source = std::dynamic_pointer_cast<MergeTreeSource>(processor))
+            {
+                merge_tree_sources.push_back(merge_tree_source);
+            }
+            else if (!std::dynamic_pointer_cast<ExpressionTransform>(processor))
+            {
+                enable_virtual_row = false;
+                break;
+            }
+        }
+
+        /// If everything is okay, we enable virtual row in MergeTreeSelectProcessor
+        if (enable_virtual_row && merge_tree_sources.size() >= 2)
+        {
+            for (const auto & merge_tree_source : merge_tree_sources)
+            {
+                const auto& merge_tree_select_processor = merge_tree_source->getProcessor();
+                merge_tree_select_processor->enableVirtualRow();
+            }
+        }
+
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
