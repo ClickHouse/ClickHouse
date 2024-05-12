@@ -4,6 +4,20 @@
 
 #include <Storages/MergeTree/VectorSimilarityCommon.h>
 
+#if defined(__linux__) && (defined(__x86_64__) || defined (__aarch64__))
+#  define USEARCH_USE_SIMSIMD 1 /// probably works on other platforms too but let's not risk
+#else
+#  define USEARCH_USE_SIMSIMD 0
+#endif
+
+#if defined(__linux__) && (defined(__x86_64__) || defined (__aarch64__))
+#  define USEARCH_USE_FP16LIB 0 /// native FP16 type (needs x86/ARM-only _Float16/__fp16 types)
+#else
+#  define USEARCH_USE_FP16LIB 1 /// software-emulated FP16 type
+#endif
+
+#define USEARCH_USE_OPENMP  0 /// ClickHouse uses its own thread pool
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
 #include <usearch/index_dense.hpp>
