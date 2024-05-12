@@ -15,7 +15,7 @@ void ASTDefaultedColumn::formatImpl(const DB::IAST::FormatSettings & settings, D
     if(settings.one_line) {
         return;
     }
-    if(state) {
+    if(state.printed_asts_with_alias[1]) {
         return;
     }
     if(frame.need_parens) {
