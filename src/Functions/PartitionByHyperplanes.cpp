@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include "Common/FunctionDocumentation.h"
+#include "Columns/ColumnFixedString.h"
 #include "Columns/ColumnArray.h"
 #include "Columns/ColumnConst.h"
 #include "Columns/ColumnsNumber.h"
@@ -45,96 +46,70 @@ private:
     static void multiplyTileScalar(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
-        const IColumn * nested_offsets_data,
         ColumnFloat32 & col_res,
-        size_t input_rows_count,
+        size_t vector_count,
+        size_t normal_count,
         size_t dimension,
         size_t vectors_data_index,
         size_t normals_data_index,
         size_t coordinate_index)
     {
-        for (size_t nt = vectors_data_index; nt < vectors_data_index + tile_size && nt < input_rows_count; ++nt)
-            for (size_t mt = normals_data_index; mt < normals_data_index + tile_size && mt < input_rows_count; ++mt)
+        for (size_t nt = vectors_data_index; nt < vectors_data_index + tile_size && nt < vector_count; ++nt)
+            for (size_t mt = normals_data_index; mt < normals_data_index + tile_size && mt < normal_count; ++mt)
                 for (size_t kt = coordinate_index; kt < coordinate_index + tile_size && kt < dimension; ++kt)
                 {
                     auto vector_element = nested_vectors_data.getFloat32(nt * dimension + kt);
                     auto normal_element = nested_normals_data.getFloat32(mt * dimension + kt);
-                    auto offset_element = nested_offsets_data->getFloat32(mt * dimension + kt);
 
-                    col_res.getElement(nt * input_rows_count + mt) += (vector_element - offset_element) * normal_element;
+                    col_res.getElement(nt * normal_count + mt) += vector_element * normal_element;
                 }
     }
 
 #if defined(__AMX_BF16__)
-    static void subVectorOffsetTile(
-        const ColumnFloat32 & nested_vectors_data,
-        const IColumn * nested_offsets_data,
-        size_t input_rows_count,
-        size_t dimension,
-        size_t vectors_data_index,
-        size_t offsets_data_index,
-        size_t coordinate_index)
-    {
-        for (size_t i = 0; i < tile_size && vectors_data_index + i < input_rows_count && offsets_data_index + i < input_rows_count; ++i)
-            for (size_t j = 0; j < tile_size && coordinate_index + j < dimension; ++j)
-            {
-                auto vector_element = nested_vectors_data.getFloat64((vectors_data_index + i) * dimension + coordinate_index + j);
-                auto offset_element = nested_offsets_data->getFloat64((offsets_data_index + i) * dimension + coordinate_index + j);
 
-                temp_tile[i * tile_size + j] = vector_element - offset_element;
-            }
-    }
-
+    // Config for AMX unit
     struct TileConfig
     {
-        uint8_t palette_id;
-        uint8_t start_row;
+        uint8_t palette_id; // must be 1
+        uint8_t start_row; // must be 0
         uint8_t reserved_0[14];
-        uint16_t colsb[16]; 
-        uint8_t rows[16]; 
+        uint16_t colsb[16]; // actual row length in bytes
+        uint8_t rows[16]; // actual row count
     };
 
     static void multiplyTileAMX(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
-        const IColumn * nested_offsets_data,
         ColumnFloat32 & col_res,
-        size_t input_rows_count,
+        size_t vector_count,
+        size_t normal_count,
         size_t dimension,
         size_t vectors_data_index,
         size_t normals_data_index,
         size_t coordinate_index)
     {
-        subVectorOffsetTile(
-            nested_vectors_data,
-            nested_offsets_data,
-            input_rows_count,
-            dimension,
-            vectors_data_index,
-            normals_data_index);
-
         TileConfig tileinfo{
             .palette_id=1,
             .start_row=0,
         };
-        tileinfo.rows[0] = tile_size;
+        tileinfo.rows[0] = tile_size * 4;
         tileinfo.colsb[0] = tile_size;
 
-        tileinfo.rows[1] = tile_size;
+        tileinfo.rows[1] = tile_size * 4;
         tileinfo.colsb[1] = tile_size;
 
-        tileinfo.rows[2] = tile_size;
+        tileinfo.rows[2] = tile_size * 4;
         tileinfo.colsb[2] = tile_size;
 
         _tile_loadconfig(&tileinfo);
 
         _tile_loadd(
             0,
-            col_res.getData().data() + vectors_data_index * input_rows_count + normals_data_index,
-            input_rows_count * col_res.sizeOfValueIfFixed());
+            col_res.getData().data() + vectors_data_index * normal_count + normals_data_index,
+            vector_count * col_res.sizeOfValueIfFixed());
         _tile_loadd(
             1,
-            temp_tile.data(),
+            nested_vectors_data.getData().data() + vectors_data_index * dimension + coordinate_index,
             tile_size * nested_vectors_data.sizeOfValueIfFixed());
         _tile_loadd(
             2,
@@ -143,18 +118,69 @@ private:
         _tile_dpbf16ps(0, 1, 2);
         _tile_stored(
             0,
-            col_res.getData().data() + vectors_data_index * input_rows_count + normals_data_index,
-            input_rows_count * col_res.sizeOfValueIfFixed());
+            col_res.getData().data() + vectors_data_index * normal_count + normals_data_index,
+            vector_count * col_res.sizeOfValueIfFixed());
         _tile_release();
     }
 #endif
 
+    static void multiplyTileAVX2(
+        const ColumnFloat32 & nested_vectors_data,
+        const ColumnFloat32 & nested_normals_data,
+        ColumnFloat32 & col_res,
+        size_t vector_count,
+        size_t normal_count,
+        size_t dimension,
+        size_t vectors_data_index,
+        size_t normals_data_index,
+        size_t coordinate_index)
+    {
+        for (size_t nt = vectors_data_index; nt < vectors_data_index + tile_size && nt < vector_count; ++nt)
+            for (size_t mt = normals_data_index; mt < normals_data_index + tile_size && mt < normal_count; mt += 8)
+            {
+                __m256 sum = _mm256_setzero_ps();
+                for (size_t kt = coordinate_index; kt < coordinate_index + tile_size && kt < dimension; ++kt)
+                {
+                    __m256 va = _mm256_broadcast_ss(&nested_vectors_data.getData()[nt * dimension + kt]);
+                    __m256 vb = _mm256_loadu_ps(&nested_normals_data.getData()[mt * dimension + kt]);
+                    sum = _mm256_fmadd_ps(va, vb, sum);
+                }
+                _mm256_storeu_ps(&col_res.getData()[nt * normal_count + mt], sum);
+            }
+    }
+
+    static void multiplyTileAVX512(
+        const ColumnFloat32 & nested_vectors_data,
+        const ColumnFloat32 & nested_normals_data,
+        ColumnFloat32 & col_res,
+        size_t vector_count,
+        size_t normal_count,
+        size_t dimension,
+        size_t vectors_data_index,
+        size_t normals_data_index,
+        size_t coordinate_index)
+    {
+        for (size_t nt = vectors_data_index; nt < vectors_data_index + tile_size && nt < vector_count; ++nt)
+            for (size_t mt = normals_data_index; mt < normals_data_index + tile_size && mt < normal_count; mt += 16)
+            {
+                __m512 sum = _mm512_setzero_ps();
+                for (size_t kt = coordinate_index; kt < coordinate_index + tile_size && kt < dimension; ++kt)
+                {
+                    __m256 va256 = _mm256_broadcast_ss(&nested_vectors_data.getData()[nt * dimension + kt]);
+                    __m512 va = _mm512_broadcast_f32x8(va256);
+                    __m512 vb = _mm512_loadu_ps(&nested_normals_data.getData()[mt * dimension + kt]);
+                    sum = _mm512_fmadd_ps(va, vb, sum);
+                }
+                _mm512_storeu_ps(&col_res.getData()[nt * normal_count + mt], sum);
+            }
+    }
+
     static void multiplyTile(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
-        const IColumn * nested_offsets_data,
         ColumnFloat32 & col_res,
-        size_t input_rows_count,
+        size_t vector_count,
+        size_t normal_count,
         size_t dimension,
         size_t vectors_data_index,
         size_t normals_data_index,
@@ -166,9 +192,9 @@ private:
             multiplyTileAMX(
                 nested_vectors_data,
                 nested_normals_data,
-                nested_offsets_data,
                 col_res,
-                input_rows_count,
+                vector_count,
+                normal_count,
                 dimension,
                 vectors_data_index,
                 normals_data_index,
@@ -176,12 +202,42 @@ private:
             return;
         }
 #endif
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            multiplyTileAVX512(
+                nested_vectors_data,
+                nested_normals_data,
+                col_res,
+                vector_count,
+                normal_count,
+                dimension,
+                vectors_data_index,
+                normals_data_index,
+                coordinate_index);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            multiplyTileAVX2(
+                nested_vectors_data,
+                nested_normals_data,
+                col_res,
+                vector_count,
+                normal_count,
+                dimension,
+                vectors_data_index,
+                normals_data_index,
+                coordinate_index);
+            return;
+        }
+
         multiplyTileScalar(
             nested_vectors_data,
             nested_normals_data,
-            nested_offsets_data,
             col_res,
-            input_rows_count,
+            vector_count,
+            normal_count,
             dimension,
             vectors_data_index,
             normals_data_index,
@@ -191,23 +247,23 @@ private:
     static void executeInternal(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
-        const IColumn * nested_offsets_data,
-        size_t input_rows_count,
+        size_t vector_count,
+        size_t normal_count,
         size_t dimension,
         ColumnFloat32 & col_res)
     {
-        for (size_t i = 0; i < input_rows_count; i += tile_size)
+        for (size_t i = 0; i < vector_count; i += tile_size)
         {
-            for (size_t j = 0; j < input_rows_count; j += tile_size)
+            for (size_t j = 0; j < normal_count; j += tile_size)
             {
                 for (size_t k = 0; k < dimension; k += tile_size)
                 {
                     multiplyTile(
                         nested_vectors_data,
                         nested_normals_data,
-                        nested_offsets_data,
                         col_res,
-                        input_rows_count,
+                        vector_count,
+                        normal_count,
                         dimension,
                         i,
                         j,
@@ -244,11 +300,11 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"vectors", &isArray<IDataType>, nullptr, "Array"},
-            {"normals", &isArray<IDataType>, nullptr, "Array"},
+            {"normals", &isArray<IDataType>, isColumnConst, "const Array"},
         };
 
         FunctionArgumentDescriptors optional_args{
-            {"offsets", &isArray<IDataType>, nullptr, "Array"},
+            {"offsets", &isArray<IDataType>, isColumnConst, "const Array"},
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -263,46 +319,65 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be Array", getName());
         const auto & nested_vectors_data = typeid_cast<const ColumnFloat32 &>(vectors->getData());
 
-        const ColumnArray * normals = typeid_cast<const ColumnArray *>(arguments[1].column.get());
-        if (!normals)
+        const ColumnConst * normals_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
+        if (!normals_const)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be Array", getName());
+        const ColumnArray * normals = typeid_cast<const ColumnArray *>(normals_const->getDataColumnPtr().get());
         const auto & nested_normals_data = typeid_cast<const ColumnFloat32 &>(normals->getData());
 
         const size_t vector_size = vectors->getOffsets().front();
+        const size_t vector_count = input_rows_count;
+        const size_t normal_count = normals->getOffsets().size();
 
-        auto const_offsets = ColumnConst::create(ColumnFloat32::create(1, 0), input_rows_count * vector_size);
-        const IColumn * nested_offsets_data = const_offsets.get();
+        auto offsets = ColumnConst::create(ColumnFloat32::create(1, 0), normal_count);
+        const IColumn * nested_offsets_data = offsets.get();
         if (arguments.size() >= 3)
         {
-            const ColumnArray * offsets = typeid_cast<const ColumnArray *>(arguments[2].column.get());
-            if (!offsets)
+            const ColumnConst * offsets_const = typeid_cast<const ColumnConst *>(arguments[2].column.get());
+            if (!offsets_const)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument of function {} must be Array", getName());
-            nested_offsets_data = &offsets->getData();
+            nested_offsets_data = offsets_const;
         }
 
-        if (input_rows_count == 0)
+        if (vector_count == 0)
             return result_type->createColumn();
 
         checkDimension(vectors->getOffsets(), vector_size);
         checkDimension(normals->getOffsets(), vector_size);
 
-        auto col_res = ColumnFloat32::create(input_rows_count * input_rows_count);
-        auto col_res_offsets = ColumnArray::ColumnOffsets::create();
-        col_res_offsets->reserve(input_rows_count);
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            col_res_offsets->insertValue(input_rows_count * i);
-        }
-
+        auto col_res = ColumnFloat32::create(vector_count * normal_count);
         executeInternal(
             nested_vectors_data,
             nested_normals_data,
-            nested_offsets_data,
-            input_rows_count,
+            vector_count,
+            normal_count,
             vector_size,
             *col_res);
+    
+        auto res = ColumnFixedString::create((normal_count / 8) + (normal_count % 8 != 0));
+        res->getChars().reserve(vector_count * ((normal_count / 8) + (normal_count % 8 != 0)));
+        char temp = 0;
+        for (size_t i = 0; i < vector_count; ++i)
+        {
+            for (size_t j = 0; j < normal_count; ++j)
+            {
+                temp = temp << 1;
+                auto res_val = col_res->getData()[i * normal_count + j];
+                auto offset = nested_offsets_data->getFloat32(j);
+                if (res_val > offset)
+                    temp |= 1;
+                if ((j + 1) % 8 == 0) {
+                    res->insertData(&temp, 1);
+                    temp = 0;
+                }
+            }
+            if (normal_count % 8 != 0) {
+                res->insertData(&temp, 1);
+                temp = 0;
+            }
+        }
 
-        return ColumnArray::create(std::move(col_res), std::move(col_res_offsets));
+        return res;
     }
 };
 
