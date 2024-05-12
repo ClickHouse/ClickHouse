@@ -55,7 +55,7 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
-size_t IColumn::estimateNumberOfDifferent(const IColumn::Permutation & /*perm*/, const EqualRange & range, size_t /*samples*/) const 
+size_t IColumn::estimateNumberOfDifferent(const IColumn::Permutation & /*perm*/, const EqualRange & range, size_t /*samples*/) const
 {
     return getRangeSize(range);
 }
