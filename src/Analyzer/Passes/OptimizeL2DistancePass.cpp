@@ -33,11 +33,11 @@ public:
 
         auto squared_distance_function = std::make_shared<FunctionNode>("L2SquaredDistance");
         squared_distance_function->getArguments().getNodes().insert(squared_distance_function->getArguments().getNodes().end(), arguments.begin(), arguments.end());
-        squared_distance_function->resolveAsFunction(FunctionFactory::instance().get("L2SquaredDistance"));
+        squared_distance_function->resolveAsFunction(FunctionFactory::instance().get("L2SquaredDistance", context));
 
         auto sqrt_function = std::make_shared<FunctionNode>("sqrt");
         sqrt_function->getArguments().getNodes().push_back(squared_distance_function);
-        sqrt_function->resolveAsFunction(FunctionFactory::instance().get("sqrt"));
+        sqrt_function->resolveAsFunction(FunctionFactory::instance().get("sqrt", context));
 
         node = sqrt_function;
     }
