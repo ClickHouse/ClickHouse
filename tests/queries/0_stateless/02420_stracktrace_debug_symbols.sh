@@ -11,4 +11,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Also note, that to rely on this test one should assume that CI packages uses
 # ThinLTO builds.
 
-$CLICKHOUSE_LOCAL --stacktrace -q 'select throwIf(1)' |& grep -c 'Common/Exception.cpp:[0-9]*: DB::Exception::Exception'
+$CLICKHOUSE_LOCAL --stacktrace -q 'select throwIf(1)' |& grep -c 'Common/Exception.cpp:[0-9]*: DB::Exception::Exception' || $CLICKHOUSE_LOCAL --stacktrace -q 'select throwIf(1)'
