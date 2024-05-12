@@ -24,8 +24,12 @@
 namespace DB
 {
 
-bool ParserPostgreSQLQuery::parseImpl(Pos &  pos, ASTPtr & ast, Expected & /*expected*/)
+bool ParserPostgreSQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserSetQuery set_p;
+
+    if (set_p.parse(pos, node, expected))
+        return true;
 
     const auto * begin = pos->begin;
 
@@ -46,9 +50,9 @@ bool ParserPostgreSQLQuery::parseImpl(Pos &  pos, ASTPtr & ast, Expected & /*exp
     }
     const auto root = PostgreSQL::buildJSONTree(json_root);
     PrintDebugInfoRecursive(root);
-    ast = PostgreSQL::Transform(root);
+    node = PostgreSQL::Transform(root);
     std::cerr << "Transform Finished\n";
-    assert(ast);
+    assert(node);
     return true;
 }
 }
