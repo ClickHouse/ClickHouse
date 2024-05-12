@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <map>
 #include <string>
-#include "Functions/ggmlEvaluate/IGgmlModel.h"
 #include <absl/random/random.h>
 
 namespace DB
