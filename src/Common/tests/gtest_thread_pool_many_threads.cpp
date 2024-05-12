@@ -74,7 +74,7 @@ class ThreadPoolTest : public ::testing::TestWithParam<GlobalPoolType>
 };
 
 
-constexpr size_t num_threads = 4500;
+constexpr size_t num_threads = 10000;
 constexpr size_t num_jobs = 800000;
 
 TEST_P(ThreadPoolTest, Warm)
@@ -82,7 +82,7 @@ TEST_P(ThreadPoolTest, Warm)
     if (GetParam().experimental)
     {
         auto t_start = std::chrono::high_resolution_clock::now();
-        GlobalThreadPool<tp::ThreadPool>::initialize(5000, 100, 10000);
+        GlobalThreadPool<tp::ThreadPool>::initialize(5000, 100, 20000);
         auto t_end = std::chrono::high_resolution_clock::now();
         double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
         std::cout << "elapsed_time_ms=" << elapsed_time_ms << std::endl;
@@ -94,7 +94,7 @@ TEST_P(ThreadPoolTest, Warm)
     else
     {
         auto t_start = std::chrono::high_resolution_clock::now();
-        GlobalThreadPool<FreeThreadPool>::initialize(5000, 100, 10000);
+        GlobalThreadPool<FreeThreadPool>::initialize(5000, 100, 20000);
         auto t_end = std::chrono::high_resolution_clock::now();
         double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
         std::cout << "elapsed_time_ms=" << elapsed_time_ms << std::endl;
@@ -103,7 +103,8 @@ TEST_P(ThreadPoolTest, Warm)
     }
 
 
-    ThreadPool warm_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
+    ThreadPool warm_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        5000, 100, 20000);
     warm_pool.setQueueSize(0);
     warm_pool.wait();
 

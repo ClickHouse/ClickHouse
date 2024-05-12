@@ -86,11 +86,6 @@ public:
     ~ThreadPoolImpl() override;
 
     /**
-     * @brief Move assignment implementation.
-     */
-    ThreadPoolImpl & operator=(ThreadPoolImpl && rhs) noexcept;
-
-    /**
      * @brief post Try post job to thread pool.
      * @param handler Handler to be called from thread pool worker. It has
      * to be callable as 'handler()'.

@@ -42,6 +42,8 @@ inline ThreadPoolImpl<Task>::ThreadPoolImpl(Metric metric_threads_,
 
     for (size_t i = 0; i < m_num_workers; ++i)
         m_workers[i]->start(i, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
+
+    metric_threads_ = m_num_workers;
 }
 
 // template <typename Task>
@@ -96,6 +98,7 @@ inline void ThreadPoolImpl<Task>::finalize()
             m_raw_workers[num].store(nullptr);
             m_orphaned_workers[num] = std::move(m_workers[num]);
             m_num_workers--;
+            metric_threads--;
         }
         ++num;
     }
@@ -112,24 +115,6 @@ inline void ThreadPoolImpl<Task>::wait()
 }
 
 template <typename Task>
-inline ThreadPoolImpl<Task> & ThreadPoolImpl<Task>::operator=(ThreadPoolImpl<Task> && rhs) noexcept
-{
-    if (this != &rhs)
-    {
-        std::unique_lock lock(m_mutex);
-
-        m_workers = std::move(rhs.m_workers);
-        m_raw_workers = std::move(rhs.m_raw_workers);
-        m_orphaned_workers = std::move(rhs.m_orphaned_workers);
-        m_free_workers = std::move(rhs.m_free_workers);
-
-        m_next_worker = rhs.m_next_worker.load();
-        m_num_workers = rhs.m_num_workers.load();
-    }
-    return *this;
-}
-
-template <typename Task>
 // template <typename Handler>
 inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
 {
@@ -138,54 +123,49 @@ inline bool ThreadPoolImpl<Task>::tryPost(Job && handler)
     auto worker = getWorker();
     bool try_shrink = false;
 
-    if (worker->is_busy())
+    if (worker->make_busy())
     {
         // std::cout << "getWorker().is_busy()" << std::endl;
 
         size_t worker_id = 0;
         for (; worker_id < m_workers.size(); ++worker_id)
         {
-            if (m_workers[worker_id] && !m_workers[worker_id]->is_busy())  // max_active_worker for optimization ?
+            if (auto raw_worker = m_raw_workers[worker_id].load(); raw_worker && !raw_worker->make_busy())  // max_active_worker for optimization ?
             {
                 // Worker<Task>::setWorkerIdForCurrentThread(worker_id);
-                worker = m_workers[worker_id].get();
+                worker = raw_worker;
                 break;
             }
         }
         if (worker_id == m_workers.size())
         {
-            std::unique_lock lock(m_mutex, std::defer_lock);
-            if (lock.try_lock())
+            std::unique_lock lock(m_mutex);
+            while (m_num_workers < m_options.threadCount() /*m_workers.size() */)
             {
-                while (m_num_workers < m_options.threadCount() /*m_workers.size() */) /// empty slots?
-                {
-                    size_t new_worker_num = 0;
+                size_t new_worker_num = 0;
 
-                    new_worker_num = m_workers.size();
-                    if (m_scheduled_jobs < m_num_workers * 1 || m_num_workers >= m_options.threadCount())
-                    {
-                        // no courage to create new workers
-                        break;
-                    }
+                // if (m_scheduled_jobs < m_num_workers * 1)
+                // {
+                //     // no courage to create new workers
+                //     break;
+                // }
 
-                    assert(!m_free_workers.empty()); // need atomic check !
+                assert(!m_free_workers.empty()); // need atomic check !
 
-                    new_worker_num = m_free_workers.back();
-                    m_free_workers.pop_back();
-                    m_workers[new_worker_num] = std::move(std::make_unique<Worker<Task>>(m_options.queueSize(), this));
-                    lock.unlock();
+                new_worker_num = m_free_workers.back();
+                m_free_workers.pop_back();
+                assert(!m_workers[new_worker_num]);
+                m_workers[new_worker_num].reset(new Worker<Task>(m_options.queueSize(), this));
 
+                worker = m_workers[new_worker_num].get();
+                m_num_workers++;
+                lock.unlock();
 
+                worker->start(new_worker_num, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
+                m_raw_workers[new_worker_num].store(worker);
+                ProfileEvents::increment(ProfileEvents::GlobalThreadPoolExpansions);
 
-                    worker = m_workers[new_worker_num].get();
-                    m_num_workers++;
-
-                    worker->start(new_worker_num, [this](Task & task, size_t acceptor_num) { return this->steal(task, acceptor_num); });
-                    m_raw_workers[new_worker_num].store(worker);
-                    ProfileEvents::increment(ProfileEvents::GlobalThreadPoolExpansions);
-
-                    break;
-                }
+                break;
             }
         }
     }
@@ -232,14 +212,12 @@ inline void ThreadPoolImpl<Task>::tryShrink(Worker<Task> * /* worker */)
             auto max_free_threads = std::max(2UL, m_options.maxFreeThreads());
             for (size_t worker_num = 0; worker_num < m_workers.size() && m_num_workers > max_free_threads; ++worker_num)
             {
-                const auto worker_ptr = m_workers[worker_num].get();
+                const auto worker_ptr = m_raw_workers[worker_num].load();
                 if (worker_ptr && !worker_ptr->is_busy())
                 {
                     auto idle_since = worker_ptr->idleSince();
                     if (std::chrono::duration_cast<std::chrono::milliseconds>(now - idle_since).count() > idle_milliseconds)
                     {
-                        // std::cout << "shrinking" << std::endl;
-                        worker_ptr->stop();
                         auto num = worker_ptr->get_id();
                         m_raw_workers[num].store(nullptr);
                         m_orphaned_workers[num] = std::move(m_workers[num]);

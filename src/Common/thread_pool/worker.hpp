@@ -2,7 +2,7 @@
 
 #include <atomic>
 #include <thread>
-// #include <semaphore>
+#include <semaphore>
 #include <condition_variable>
 #include <mutex>
 #include <boost/circular_buffer.hpp>
@@ -71,23 +71,22 @@ public:
 
     bool is_busy() const
     {
-        if (m_busy)
-        {
-            // std::cout << (void*)this << " is_busy about to return true" << std::endl;
-            return true;
-        }
-        else
-        {
-            // std::cout << (void*)this << "is_busy about to return false" << std::endl;
-            return false;
-        }
+        return m_busy;
+    }
+
+    bool make_busy()
+    {
+        auto was_busy = m_busy.exchange(true);
+        return was_busy;
     }
 
     ssize_t get_id() { return m_id; }
 
-    std::chrono::time_point<std::chrono::steady_clock> idleSince() { return m_idle_since; }
+    std::chrono::time_point<std::chrono::steady_clock> idleSince() { return m_idle_since.load(); }
 
     bool steal(Task & task);
+
+    ~Worker();
 
 private:
     /**
@@ -117,13 +116,16 @@ private:
     std::atomic<bool> m_running_flag;
     std::thread m_thread;
     std::mutex m_mutex;
-    std::condition_variable m_cond_var;
+
+    // std::condition_variable m_cond_var;
+    std::binary_semaphore m_sema;
+    std::binary_semaphore m_sema_finished;
 
     ActiveWorkers<Task> * m_handler_ptr;
     std::atomic<bool> m_busy;
     ssize_t m_id = -1;
 
-    std::chrono::time_point<std::chrono::steady_clock> m_idle_since;
+    std::atomic<std::chrono::time_point<std::chrono::steady_clock>> m_idle_since;
     std::function<bool(Task &, size_t)> parent_steal;
 };
 
@@ -141,7 +143,7 @@ inline size_t * thread_id()
 
 template <typename Task>
 inline Worker<Task>::Worker(size_t queue_size, ActiveWorkers<Task> * handler_ptr)
-    : m_cb(queue_size), m_running_flag(true), m_handler_ptr(handler_ptr)
+    : m_cb(queue_size), m_running_flag(true), m_sema(0), m_sema_finished(0), m_handler_ptr(handler_ptr)
 {
 }
 
@@ -169,10 +171,21 @@ template <typename Task>
 inline void Worker<Task>::stop()
 {
     // std::cout << std::this_thread::get_id() << " m_id=" << m_id << " Worker::stop()" << std::endl;
-    m_running_flag.store(false, std::memory_order_relaxed);
-    // m_sema.release();
-    m_cond_var.notify_all();
-    m_thread.join();
+    assert(!m_busy);
+
+    if (m_running_flag)
+    {
+        m_running_flag.store(false);
+        m_sema.release();
+        // m_cond_var.notify_all();
+
+        // wait until all done?
+
+        if (m_thread.joinable())
+        {
+            m_thread.join();
+        }
+    }
 }
 
 template <typename Task>
@@ -180,9 +193,9 @@ inline void Worker<Task>::start(size_t id, std::function<bool(Task &, size_t)> p
 {
     m_id = id;
 
-    assert(!m_thread.joinable());
     parent_steal = std::move(parent_steal_);
 
+    assert(!m_thread.joinable());
     m_thread = std::thread(&Worker<Task>::threadFunc, this, id);
 }
 
@@ -206,17 +219,26 @@ inline bool Worker<Task>::post(Handler && handler)
 {
     bool ret = true;
     {
-        m_handler_ptr->activate();
         m_busy = true;
-        // std::cout << (void*)this << " m_busy to true" << std::endl;
         std::unique_lock lock(m_mutex);
+
+        // assert(m_cb.empty());
+
         // m_busy.store(true, std::memory_order_relaxed);
+        while (m_cb.full() && m_running_flag.load())
+        {
+            m_sema_finished.acquire();
+        }
+        if (!m_running_flag.load())
+        {
+            return true;
+        }
+
+        m_handler_ptr->activate();
         m_cb.push_back(std::forward<Handler>(handler));
+
     }
-
-    // m_sema.release();
-    m_cond_var.notify_one();
-
+    m_sema.release();
 
     return ret;
 }
@@ -227,7 +249,7 @@ inline bool Worker<Task>::steal(Task & task)
     std::lock_guard lock(m_mutex);
     if (pop(task))
     {
-        m_handler_ptr->deactivate();
+        // m_handler_ptr->deactivate();
         return true;
     }
     return false;
@@ -240,7 +262,7 @@ inline void Worker<Task>::threadFunc(size_t id)
 
     Task handler;
 
-    while (m_running_flag.load(std::memory_order_relaxed))
+    while (m_running_flag.load())
     {
         bool got_task = false;
         {
@@ -251,6 +273,7 @@ inline void Worker<Task>::threadFunc(size_t id)
 
         if (got_task || (parent_steal(handler, m_id)))
         {
+            m_handler_ptr->deactivate();
             // lock.unlock();  // too late in case of steal
             try
             {
@@ -264,6 +287,7 @@ inline void Worker<Task>::threadFunc(size_t id)
                 CurrentMetrics::Increment metric_pool_threads(m_handler_ptr->metric_active_threads);
 
                 handler();
+                m_sema_finished.release();
             }
             catch (...)
             {
@@ -277,17 +301,23 @@ inline void Worker<Task>::threadFunc(size_t id)
             {
                 // std::cout << (void*)this << " m_busy to false" << std::endl;
                 m_busy = false;
-                m_handler_ptr->deactivate();
             }
             m_idle_since = std::chrono::steady_clock::now();
 
             // std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            // m_sema.acquire();
+            m_sema.acquire();
             // m_busy.store(false, std::memory_order_relaxed);
-            std::unique_lock lock(m_mutex);
-            m_cond_var.wait(lock);
+            // std::unique_lock lock(m_mutex);
+            // m_cond_var.wait(lock);
         }
     }
 }
+
+template <typename Task>
+inline Worker<Task>::~Worker()
+{
+    stop();
+}
+
 
 }
