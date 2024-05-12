@@ -716,7 +716,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
                     context->addExternalTable(it.first, std::move(*it.second));
         }
-
         if (!options.only_analyze || options.modify_inplace)
         {
             if (syntax_analyzer_result->rewrite_subqueries)
@@ -725,7 +724,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
             }
         }
-
         if (interpreter_subquery)
         {
             /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
@@ -733,9 +731,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 interpreter_subquery->ignoreWithTotals();
             uses_view_source |= interpreter_subquery->usesViewSource();
         }
-
         required_columns = syntax_analyzer_result->requiredSourceColumns();
-
         if (storage)
         {
             query_info.filter_asts.clear();
@@ -773,7 +769,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
         }
-
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
     };

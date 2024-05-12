@@ -155,10 +155,6 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     explicit_sorting_required_for_aggregation_in_order = false;
 }
 
-AggregatingTransformParams getMutipleAggregatingTransformParams() {
-
-}
-
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
@@ -193,7 +189,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
     std::vector<AggregateDescription> default_aggregates;
-    HashMap<Names, std::vector<AggregateDescription>> by_column_sets_aggregates;
+    std::map<std::vector<String>, std::vector<AggregateDescription>> by_column_sets_aggregates;
     for (const auto& description : params.aggregates) {
         if (description.by_columns.has_value()) {
             by_column_sets_aggregates[description.by_columns.value()].emplace_back(description);
@@ -233,13 +229,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
            });
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
-            assert(streams * by_column_sets_aggregates.size() == ports.size());
+            assert(streams * by_column_sets_size == ports.size());
             Processors processors;
 
             auto it = by_column_sets_aggregates.begin();
-            for (int i = 0; i < by_column_sets_size; ++i, ++it)
+            for (size_t i = 0; i < by_column_sets_size; ++i)
             {
-                const auto & [columns, descriptions] = i == 0 ? std::make_pair(params.keys, default_aggregates) : *it;
+                const auto & columns = i == 0 ? params.keys : it->first;
+                const auto & descriptions = i == 0 ? default_aggregates : it->second;
+                if (i != 0)
+                    ++it;
                 Aggregator::Params params_for_set
                 {
                     columns,
@@ -324,7 +323,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             // Join all by_column blocks into default_aggregation block
 
             it = by_column_sets_aggregates.begin();
-            auto new_port = ports[0];
+            auto* new_port = ports[0];
             for (size_t set_counter = 1; set_counter < by_column_sets_size; ++set_counter, ++it) {
                 const auto & [columns, descriptions] = *it;
                 const auto & header = ports[set_counter]->getHeader();
@@ -338,15 +337,19 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 connect(*ports[set_counter], rightJoiningInputs.front());
                 processors.push_back(rightJoining);
 
-                auto joining = std::make_shared<JoiningTransform>(ports[0]->getHeader(), output_header, join, max_block_size);
+                auto joining = std::make_shared<JoiningTransform>(new_port->getHeader(), output_header, join, max_block_size);
                 connect(*new_port, joining->getInputs().front());
+                connect(rightJoining->getOutputs().front(), joining->getInputs().back());
                 new_port = &joining->getOutputs().front();
                 processors.push_back(joining);
             }
-            ports.assign({new_port});
 
             return processors;
         });
+
+        aggregating = collector.detachProcessors(0);
+
+        return;
     }
 
     if (!grouping_sets_params.empty())

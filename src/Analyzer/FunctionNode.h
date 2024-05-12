@@ -92,6 +92,15 @@ public:
     /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
+    /// Returns true if function has BY or TOTALS clause, false otherwise
+    bool hasByClause() const { return children[by_columns_child_index] != nullptr; }
+
+    /// Get BY columns node
+    const QueryTreeNodePtr & getByColumnsNode() const { return children[by_columns_child_index]; }
+
+    /// Get BY columns node
+    QueryTreeNodePtr & getByColumnsNode() { return children[by_columns_child_index]; }
+
     /// Get argument types
     const DataTypes & getArgumentTypes() const;
 

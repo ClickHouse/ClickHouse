@@ -1015,38 +1015,54 @@ public:
             if (ParserToken(TokenType::Comma).ignore(pos, expected))
             {
                 action = Action::OPERAND;
-                return mergeElement();
+                if (mergeElement()) {
+                    if (has_by) {
+                        by_columns->children.emplace_back(std::move(elements.back()));
+                        elements.pop_back();
+
+                    }
+                    return true;
+                }
+                return false;
             }
 
             ParserKeyword by(Keyword::BY);
             ParserKeyword totals(Keyword::TOTALS);
+
+            if (by.ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+                if (has_by)
+                    return false;
+                has_by = true;
+                if (!by_columns)
+                    by_columns = std::make_shared<ASTExpressionList>();
+
+                if (!isCurrentElementEmpty() || !elements.empty()) {
+                    if (!mergeElement())
+                        return false;
+                }
+
+                return true;
+            }
 
             if (totals.ignore(pos, expected))
             {
                 has_totals = true;
             }
 
-            if (by.ignore(pos, expected))
-            {
-                if (mergeElement()) {
-                    if (!by_columns)
-                        by_columns = std::make_shared<ASTExpressionList>();
-
-                    by_columns->children.emplace_back(std::move(elements.back()));
-                    elements.pop_back();
-
-                    return true;
-                }
-                return false;
-            }
-
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 action = Action::OPERATOR;
 
-                if (!isCurrentElementEmpty() || !elements.empty())
+                if (!isCurrentElementEmpty() || !elements.empty()) {
                     if (!mergeElement())
                         return false;
+                    if (has_by) {
+                        by_columns->children.emplace_back(std::move(elements.back()));
+                        elements.pop_back();
+                    }
+                }
 
                 contents_end = pos->begin;
 
@@ -1111,10 +1127,6 @@ public:
                             has_distinct = false;
                         }
                     }
-                }
-                else if (has_totals)
-                {
-                    return false;
                 }
                 else
                 {

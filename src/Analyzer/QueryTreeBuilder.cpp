@@ -617,14 +617,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             if (function->arguments)
             {
                 const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
-                for (const auto & argument : function_arguments_list)
+                for (const auto & argument : function_arguments_list) {
                     function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                }
             }
 
-            if (function->by_columns) {
-                const auto & by_columns_list = function->by_columns->as<ASTExpressionList>()->children;
-                for (const auto & by_column : by_columns_list)
-                    function_node->getByColumns().getNodes().push_back(buildExpression(by_column, context));
+            if (function->by_or_totals) {
+                const auto & by_columns_list = function->by_columns
+                    ? function->by_columns->as<ASTExpressionList>()->children
+                    : ASTs{};
+                auto by_columns_node = std::make_shared<ListNode>();
+                for (const auto & by_column : by_columns_list) {
+                    by_columns_node->getNodes().push_back(buildExpression(by_column, context));
+                }
+
+                function_node->getByColumnsNode() = std::move(by_columns_node);
             }
 
             if (function->is_window_function)

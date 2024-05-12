@@ -5463,6 +5463,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
 
+    if (function_node_ptr->hasByClause())
+        resolveExpressionNodeList(function_node_ptr->getByColumnsNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/);
+
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
     {
