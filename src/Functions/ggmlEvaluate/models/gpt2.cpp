@@ -30,7 +30,8 @@
 namespace DB
 {
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
 extern const int FILE_DOESNT_EXIST;
 extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
 extern const int INCORRECT_DATA;
@@ -112,10 +113,10 @@ void Gpt2Model::loadImpl(ConfigPtr config)
     // create the ggml context
     {
         size_t n_tensors = 2 + 6 + 12 * state.hparams.n_layer;
-        struct ggml_init_params params = {
-            /*.mem_size   =*/ggml_tensor_overhead() * n_tensors,
-            /*.mem_buffer =*/nullptr,
-            /*.no_alloc   =*/true,
+        ggml_init_params params = {
+            .mem_size = ggml_tensor_overhead() * n_tensors,
+            .mem_buffer = nullptr,
+            .no_alloc = true,
         };
 
         ctx = ggml_init(params);
@@ -230,10 +231,10 @@ void Gpt2Model::loadImpl(ConfigPtr config)
         // create the ggml context
         {
             size_t n_tensors = 2;
-            struct ggml_init_params params = {
-                /*.mem_size   =*/ggml_tensor_overhead() * n_tensors,
-                /*.mem_buffer =*/nullptr,
-                /*.no_alloc   =*/true,
+            ggml_init_params params = {
+                .mem_size = ggml_tensor_overhead() * n_tensors,
+                .mem_buffer = nullptr,
+                .no_alloc = true,
             };
 
             context = ggml_init(params);
@@ -347,7 +348,7 @@ void Gpt2Model::loadImpl(ConfigPtr config)
         // int n_tokens = std::min(state.hparams.n_ctx, params.n_batch); // GGMLTODO : no clue what it means
         int n_tokens = std::min(state.hparams.n_ctx, 8);
         int n_past = state.hparams.n_ctx - n_tokens;
-        struct ggml_cgraph * gf = gpt2_graph(n_past, n_tokens);
+        ggml_cgraph * gf = gpt2_graph(n_past, n_tokens);
 
         // pre-allocate the compute buffer for the worst case (optional)
         ggml_gallocr_reserve(allocr, gf);
@@ -438,10 +439,10 @@ ggml_cgraph * Gpt2Model::gpt2_graph(const int n_past, const int n_tokens)
     static size_t buf_size = ggml_tensor_overhead() * GPT2_MAX_NODES + ggml_graph_overhead_custom(GPT2_MAX_NODES, false);
     static std::vector<uint8_t> buf(buf_size);
 
-    struct ggml_init_params params = {
-        /*.mem_size   =*/buf_size,
-        /*.mem_buffer =*/buf.data(),
-        /*.no_alloc   =*/true, // the tensors will be allocated later by ggml_gallocr_alloc_graph()
+    ggml_init_params params = {
+        .mem_size = buf_size,
+        .mem_buffer = buf.data(),
+        .no_alloc = true, // the tensors will be allocated later by ggml_gallocr_alloc_graph()
     };
 
     struct ggml_context * ctx = ggml_init(params);

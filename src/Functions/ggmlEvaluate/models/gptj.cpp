@@ -134,10 +134,10 @@ void GptJModel::loadImpl(ConfigPtr config)
 
     // create the ggml context
     {
-        struct ggml_init_params params = {
-            /*.mem_size   =*/ctx_size,
-            /*.mem_buffer =*/nullptr,
-            /*.no_alloc   =*/false,
+        ggml_init_params params = {
+            .mem_size = ctx_size,
+            .mem_buffer = nullptr,
+            .no_alloc = false,
         };
 
         ctx = ggml_init(params);
@@ -315,10 +315,10 @@ bool GptJModel::evalInternal(
             return false;
     }
 
-    struct ggml_init_params params = {
-        /*.mem_size   =*/buf_size,
-        /*.mem_buffer =*/buf,
-        /*.no_alloc   =*/false,
+    ggml_init_params params = {
+        .mem_size = buf_size,
+        .mem_buffer = buf,
+        .no_alloc = false,
     };
 
     struct ggml_context * ctx0 = ggml_init(params);
