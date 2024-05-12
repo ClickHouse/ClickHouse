@@ -173,5 +173,3 @@ private:
 };
 }
 }
-
-// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
