@@ -15,9 +15,7 @@ void ASTDefaultedColumn::formatImpl(const DB::IAST::FormatSettings & settings, D
     if(settings.one_line) {
         return;
     }
-    if(state.printed_asts_with_alias) {
-        return;
-    }
+    auto stat = std::shared_ptr<DB::IAST::FormatState>(state);
     if(frame.need_parens) {
         return;
     }
