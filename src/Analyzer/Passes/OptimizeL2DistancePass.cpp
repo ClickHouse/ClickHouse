@@ -1,4 +1,6 @@
 #include <Analyzer/Passes/OptimizeL2DistancePass.h>
+
+#include "QueryTree/Nodes/OrderByNode.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
