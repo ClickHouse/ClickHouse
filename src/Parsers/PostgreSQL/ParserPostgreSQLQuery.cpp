@@ -9,7 +9,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/iostream_debug_helpers.h>
 
-// #include <pg_query.h>
+#include <pg_query.h>
 
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
@@ -24,21 +24,28 @@
 namespace DB
 {
 
-bool ParserPostgreSQLQuery::parseImpl(Pos & /*pos*/, ASTPtr & ast, Expected & /*expected*/)
+bool ParserPostgreSQLQuery::parseImpl(Pos &  pos, ASTPtr & ast, Expected & /*expected*/)
 {
-    String json;
 
-    json = PostgreSQL::Testing::SelectInt.PGAST;
+    const auto * begin = pos->begin;
 
-    JSON::Element JSONRoot;
+    // The same parsers are used in the client and the server, so the parser have to detect the end of a single query in case of multiquery queries
+    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+        ++pos;
+
+    const auto * end = pos->begin;
+
+    String json(begin, end);
+
+    JSON::Element json_root;
     JSON parser;
 
-    if (!parser.parse(json, JSONRoot))
+    if (!parser.parse(json, json_root))
     {
         return false;
     }
-    const auto root = PostgreSQL::buildJSONTree(JSONRoot);
-    // PrintDebugInfoRecursive(root);
+    const auto root = PostgreSQL::buildJSONTree(json_root);
+    PrintDebugInfoRecursive(root);
     ast = PostgreSQL::Transform(root);
     std::cerr << "Transform Finished\n";
     assert(ast);

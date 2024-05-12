@@ -81,7 +81,7 @@ add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 add_contrib (libarchive-cmake libarchive)
-# add_contrib (libpg_query-cmake libpg_query)
+add_contrib (libpg_query-cmake libpg_query)
 
 add_contrib (corrosion-cmake corrosion)
 

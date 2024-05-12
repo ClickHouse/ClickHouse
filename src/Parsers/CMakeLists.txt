@@ -26,7 +26,7 @@ if (TARGET ch_rust::prql)
 endif ()
 if (TARGET ch_contrib::libpg_query)
     target_link_libraries(clickhouse_parsers PRIVATE ch_contrib::libpg_query)
-endif ()
+endif()
 
 
 if (USE_DEBUG_HELPERS)
