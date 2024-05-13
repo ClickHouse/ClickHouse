@@ -318,7 +318,7 @@ while true; do
 
         if ! is_job_assigned; then
             RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$RUNNER_PID" 2>/dev/null || date +%s) ))
-            echo "The runner is launched $RUNNER_AGE seconds ago and still has hot received the job"
+            echo "The runner is launched $RUNNER_AGE seconds ago and still hasn't received a job"
             if (( 60 < RUNNER_AGE )); then
                 echo "Attempt to delete the runner for a graceful shutdown"
                 sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)" \
@@ -354,11 +354,11 @@ while true; do
             --labels "$LABELS" --work _work --name "$INSTANCE_ID"
         )
         if (( ATTEMPT > 1 )); then
-            echo 'The runner failed to start at least once. Removing it and then configuring with autoudate enabled.'
+            echo 'The runner failed to start at least once. Removing it and then configuring with autoupdate enabled.'
             sudo -u ubuntu ./config.sh remove "${token_args[@]}"
             sudo -u ubuntu ./config.sh "${config_args[@]}"
         else
-            echo "Configure runner with disable autoupdate"
+            echo "Configure runner with disabled autoupdate"
             config_args+=("--disableupdate")
             sudo -u ubuntu ./config.sh "${config_args[@]}"
         fi
