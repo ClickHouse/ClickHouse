@@ -1,13 +1,10 @@
 #pragma once
-
-#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
-#include <Storages/StorageAzureBlobCluster.h>
-#include <Interpreters/Context_fwd.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 
 namespace DB

@@ -9,7 +9,6 @@
 #include <Storages/StorageAzureBlobCluster.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskType.h>

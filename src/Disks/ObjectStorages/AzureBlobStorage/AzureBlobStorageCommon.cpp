@@ -1,8 +1,4 @@
-#include <memory>
-#include <type_traits>
-#include <variant>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Poco/URI.h>
 
 #if USE_AZURE_BLOB_STORAGE
 

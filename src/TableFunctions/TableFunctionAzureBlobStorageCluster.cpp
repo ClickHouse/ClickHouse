@@ -1,4 +1,3 @@
-#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -7,10 +6,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/StorageAzureBlob.h>
-
 #include "registerTableFunctions.h"
-
-#include <memory>
 
 
 namespace DB

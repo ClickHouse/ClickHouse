@@ -1,8 +1,4 @@
 #pragma once
-
-#include <memory>
-#include <Poco/URI.h>
-#include "base/strong_typedef.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -15,10 +11,10 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 
-#include <Core/Types.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/strong_typedef.h>
 
 namespace DB
 {

@@ -1,7 +1,4 @@
 #pragma once
-
-#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
-#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE

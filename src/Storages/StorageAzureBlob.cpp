@@ -1,6 +1,4 @@
-#include <optional>
 #include <Storages/StorageAzureBlob.h>
-#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Formats/FormatFactory.h>
@@ -44,6 +42,7 @@
 
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 #include <filesystem>
 
@@ -1307,8 +1306,7 @@ namespace
             if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure)
                 return;
 
-            const auto & params = configuration.connection_params;
-            String source = fs::path(params.getConnectionURL()) / params.getContainer() / current_path_with_metadata.relative_path;
+            String source = fs::path(configuration.connection_params.endpoint.getEndpoint()) / current_path_with_metadata.relative_path;
             auto key = getKeyForSchemaCache(source, *format, format_settings, getContext());
             StorageAzureBlob::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
@@ -1319,8 +1317,7 @@ namespace
                 || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
                 return;
 
-            const auto & params = configuration.connection_params;
-            String source = fs::path(params.getConnectionURL()) / params.getContainer() / current_path_with_metadata.relative_path;
+            String source = fs::path(configuration.connection_params.endpoint.getEndpoint()) / current_path_with_metadata.relative_path;
             auto key = getKeyForSchemaCache(source, *format, format_settings, getContext());
             StorageAzureBlob::getSchemaCache(getContext()).addColumns(key, columns);
         }
@@ -1331,12 +1328,11 @@ namespace
                 || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
                 return;
 
-            const auto & params = configuration.connection_params;
-            auto host_and_bucket = params.getConnectionURL() + '/' + params.getContainer();
+            auto endpoint = fs::path(configuration.connection_params.endpoint.getEndpoint());
 
             Strings sources;
             sources.reserve(read_keys.size());
-            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
+            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem) { return endpoint / elem.relative_path; });
             auto cache_keys = getKeysForSchemaCache(sources, *format, format_settings, getContext());
             StorageAzureBlob::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
@@ -1376,9 +1372,8 @@ namespace
                     return std::nullopt;
                 };
 
-                const auto & params = configuration.connection_params;
-                auto host_and_bucket = params.getConnectionURL() + '/' + params.getContainer();
-                String source = host_and_bucket + '/' + it->relative_path;
+                auto endpoint = fs::path(configuration.connection_params.endpoint.getEndpoint());
+                String source = endpoint / it->relative_path;
 
                 if (format)
                 {

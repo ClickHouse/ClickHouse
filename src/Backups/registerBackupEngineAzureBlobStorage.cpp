@@ -1,4 +1,3 @@
-#include "Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h"
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
@@ -6,7 +5,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_AzureBlobStorage.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Backups/BackupImpl.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
