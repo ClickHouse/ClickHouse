@@ -274,7 +274,7 @@ public:
     {
         Configuration() = default;
 
-        String getPath() const { return url.key; }
+        const String & getPath() const { return url.key; }
 
         bool update(const ContextPtr & context);
 
@@ -282,12 +282,14 @@ public:
 
         bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
 
-        bool withWildcard() const
+        bool withPartitionWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return url.bucket.find(PARTITION_ID_WILDCARD) != String::npos
                 || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
+
+        bool withGlobsIgnorePartitionWildcard() const;
 
         S3::URI url;
         S3::AuthSettings auth_settings;

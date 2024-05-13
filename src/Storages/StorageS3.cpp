@@ -1283,7 +1283,7 @@ void ReadFromStorageS3Step::createIterator(const ActionsDAG::Node * predicate)
 
 void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (storage.partition_by && query_configuration.withWildcard())
+    if (storage.partition_by && query_configuration.withPartitionWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
 
     createIterator(nullptr);
@@ -1341,12 +1341,16 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
     auto key = query_configuration.keys.front();
 
+    if (query_configuration.withGlobsIgnorePartitionWildcard())
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
+
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(query_configuration.keys.back(), query_configuration.compression_method);
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && query_configuration.withWildcard();
+    bool is_partitioned_implementation = partition_by_ast && query_configuration.withPartitionWildcard();
 
     if (is_partitioned_implementation)
     {
@@ -1363,10 +1367,6 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     }
     else
     {
-        if (query_configuration.withGlobs())
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
-
         if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(local_context, configuration, query_configuration.keys.front(), query_configuration.keys.size()))
         {
             query_configuration.keys.push_back(*new_key);
@@ -1528,6 +1528,14 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         },
         credentials.GetSessionToken());
+}
+
+bool StorageS3::Configuration::withGlobsIgnorePartitionWildcard() const
+{
+    if (!withPartitionWildcard())
+        return withGlobs();
+
+    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
@@ -2048,17 +2056,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 
 void registerStorageS3(StorageFactory & factory)
 {
-    return registerStorageS3Impl("S3", factory);
-}
-
-void registerStorageCOS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("COSN", factory);
-}
-
-void registerStorageOSS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("OSS", factory);
+    registerStorageS3Impl("S3", factory);
+    registerStorageS3Impl("COSN", factory);
+    registerStorageS3Impl("OSS", factory);
 }
 
 bool StorageS3::supportsPartitionBy() const

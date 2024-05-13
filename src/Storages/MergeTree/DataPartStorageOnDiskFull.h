@@ -23,7 +23,7 @@ public:
     Poco::Timestamp getFileLastModified(const String & file_name) const override;
     size_t getFileSize(const std::string & file_name) const override;
     UInt32 getRefCount(const std::string & file_name) const override;
-    std::string getRemotePath(const std::string & file_name) const override;
+    std::string getRemotePath(const std::string & file_name, bool if_exists) const override;
     String getUniqueId() const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(

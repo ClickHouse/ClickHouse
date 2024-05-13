@@ -238,9 +238,9 @@ public:
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
-                    const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(col_num.get());
+                    const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*col_num);
                     auto col_res = ColumnString::create();
-                    RepeatImpl::vectorStrVectorRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), column->getData());
+                    RepeatImpl::vectorStrVectorRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), column.getData());
                     res = std::move(col_res);
                     return true;
                 }))
@@ -258,9 +258,9 @@ public:
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
-                    const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(col_num.get());
+                    const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*col_num);
                     auto col_res = ColumnString::create();
-                    RepeatImpl::constStrVectorRepeat(copy_str, col_res->getChars(), col_res->getOffsets(), column->getData());
+                    RepeatImpl::constStrVectorRepeat(copy_str, col_res->getChars(), col_res->getOffsets(), column.getData());
                     res = std::move(col_res);
                     return true;
                 }))
