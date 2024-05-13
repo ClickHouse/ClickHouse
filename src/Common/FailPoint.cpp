@@ -54,7 +54,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE(dummy_pausable_failpoint) \
-    ONCE(execute_query_calling_empty_set_result_func_on_exception)
+    ONCE(execute_query_calling_empty_set_result_func_on_exception)\
+    REGULAR(stripe_log_sink_write_fallpoint)
 
 namespace FailPoints
 {

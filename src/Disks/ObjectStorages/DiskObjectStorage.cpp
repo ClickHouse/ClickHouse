@@ -132,6 +132,14 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
+void DiskObjectStorage::truncateFile(const String & path, size_t size)
+{
+    LOG_TEST(log, "Truncate file operation {} to size : {}", path, size);
+    auto transaction = createObjectStorageTransaction();
+    transaction->truncateFile(path, size);
+    transaction->commit();
+}
+
 void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,

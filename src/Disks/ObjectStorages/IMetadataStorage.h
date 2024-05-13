@@ -31,7 +31,15 @@ struct UnlinkMetadataFileOperationOutcome
     UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
 };
 
+struct TruncateFileOperationOutcome
+{
+    StoredObjects objects_to_remove;
+};
+
+
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
+using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOutcome>;
+
 
 /// Tries to provide some "transactions" interface, which allow
 /// to execute (commit) operations simultaneously. We don't provide
@@ -140,6 +148,12 @@ public:
     virtual UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path)
     {
         unlinkFile(path);
+        return nullptr;
+    }
+
+    virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */, size_t /* size */)
+    {
+        throwNotImplemented();
         return nullptr;
     }
 
