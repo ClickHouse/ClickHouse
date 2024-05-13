@@ -33,7 +33,13 @@ class VectorSimilarityCondition
 {
 public:
     static constexpr auto L2Distance = "L2Distance";
+    static constexpr auto DistanceL2 = "DistanceL2";
+
     static constexpr auto CosineDistance = "cosineDistance";
+
+    static constexpr auto DotProduct = "dotProduct";
+    static constexpr auto ArrayDotProduct = "arrayDotProduct";
+    static constexpr auto ScalarProduct = "scalarProduct";
 
     VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
@@ -45,7 +51,9 @@ public:
         enum class DistanceFunction : uint8_t
         {
             Unknown,
-            L2
+            L2,
+            Cosine,
+            DotProduct
         };
         DistanceFunction distance_function;
         std::vector<float> reference_vector;

@@ -44,8 +44,9 @@ std::set<String> methods = {"hnsw"};
 
 /// Maps from user-facing name to internal name
 std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
-    {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
-    {"cosineDistance", unum::usearch::metric_kind_t::cos_k}};
+    {VectorSimilarityCondition::L2Distance, unum::usearch::metric_kind_t::l2sq_k},
+    {VectorSimilarityCondition::CosineDistance, unum::usearch::metric_kind_t::cos_k},
+    {VectorSimilarityCondition::DotProduct, unum::usearch::metric_kind_t::ip_k}};
 
 /// Maps from user-facing name to internal name
 std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
@@ -275,8 +276,9 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     String index_distance_function;
     switch (metric_kind)
     {
-        case unum::usearch::metric_kind_t::l2sq_k: index_distance_function = "L2Distance"; break;
-        case unum::usearch::metric_kind_t::cos_k:  index_distance_function = "cosineDistance"; break;
+        case unum::usearch::metric_kind_t::l2sq_k: index_distance_function = VectorSimilarityCondition::L2Distance; break;
+        case unum::usearch::metric_kind_t::cos_k: index_distance_function = VectorSimilarityCondition::CosineDistance; break;
+        case unum::usearch::metric_kind_t::ip_k: index_distance_function = VectorSimilarityCondition::DotProduct; break;
         default: std::unreachable();
     }
     return condition.alwaysUnknownOrTrue(index_distance_function);

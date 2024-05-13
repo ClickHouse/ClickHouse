@@ -41,8 +41,12 @@ void extractReferenceVectorFromLiteral(std::vector<float> & reference_vector, Li
 
 VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(std::string_view distance_function)
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == VectorSimilarityCondition::L2Distance || distance_function == VectorSimilarityCondition::DistanceL2)
         return VectorSimilarityCondition::Info::DistanceFunction::L2;
+    else if (distance_function == VectorSimilarityCondition::CosineDistance)
+        return VectorSimilarityCondition::Info::DistanceFunction::Cosine;
+    else if (distance_function == VectorSimilarityCondition::DotProduct || distance_function == VectorSimilarityCondition::ArrayDotProduct || distance_function == VectorSimilarityCondition::ScalarProduct)
+        return VectorSimilarityCondition::Info::DistanceFunction::DotProduct;
     else
         return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
 }
@@ -162,11 +166,9 @@ bool VectorSimilarityCondition::traverseAtomAST(const ASTPtr & node, RPNElement 
         /// Set the name
         out.func_name = function->name;
 
-        if (function->name == "L1Distance" ||
-            function->name == "L2Distance" ||
-            function->name == "LinfDistance" ||
-            function->name == "cosineDistance" ||
-            function->name == "dotProduct")
+        if (function->name == L2Distance || function->name == DistanceL2
+            || function->name == CosineDistance
+            || function->name == DotProduct || function->name == ArrayDotProduct || function->name == ScalarProduct)
             out.function = RPNElement::FUNCTION_DISTANCE;
         else if (function->name == "array")
             out.function = RPNElement::FUNCTION_ARRAY;
