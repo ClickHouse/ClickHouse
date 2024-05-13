@@ -1644,14 +1644,14 @@ struct WindowFunctionHelpers
 
         auto current_row = transform->current_row;
         current_row.row++;
-        const auto & partitoin_end_row = transform->partition_end;
+        const auto & partition_end_row = transform->partition_end;
         /// If current_row == partitoin_end_row, return true. otherwise
-        if (current_row != partitoin_end_row)
+        if (current_row != partition_end_row)
         {
             if (current_row.row < transform->blockRowsNumber(current_row))
                 return false;
             /// Next row to current_row may belong to next block.
-            if (partitoin_end_row.block != current_row.block + 1 || partitoin_end_row.row)
+            if (partition_end_row.block != current_row.block + 1 || partition_end_row.row)
                 return false;
         }
         return true;
