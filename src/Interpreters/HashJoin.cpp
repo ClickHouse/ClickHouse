@@ -1271,9 +1271,8 @@ void AddedColumns<true>::buildOutput()
             const Block * block = reinterpret_cast<const Block *>(lazy_output.blocks[j]);
             if (hash_join_compression)
             {
-                auto [shared_block_source, _] = decompressed_cache.getOrSet(block, [&]() {
-                    return std::make_shared<Block>(block->decompress());
-                });
+                auto [shared_block_source, _]
+                    = decompressed_cache.getOrSet(block, [&]() { return std::make_shared<Block>(block->decompress()); });
                 shared_block = std::move(shared_block_source);
                 block = shared_block.get();
             }
@@ -1324,9 +1323,7 @@ void AddedColumns<false>::appendFromBlock(const Block & compressed_block, size_t
     const Block * block = &compressed_block;
     if (hash_join_compression)
     {
-        auto [shared_block_source, _] = decompressed_cache.getOrSet(block, [&]() {
-            return std::make_shared<Block>(block->decompress());
-        });
+        auto [shared_block_source, _] = decompressed_cache.getOrSet(block, [&]() { return std::make_shared<Block>(block->decompress()); });
         shared_block = std::move(shared_block_source);
         block = shared_block.get();
     }
