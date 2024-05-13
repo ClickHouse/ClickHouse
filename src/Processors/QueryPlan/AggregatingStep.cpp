@@ -346,23 +346,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 const auto & [columns, descriptions] = *it;
                 const auto & header = ports[set_counter]->getHeader();
 
-                auto tableJoin = std::make_shared<TableJoin>(SizeLimits{}, true, JoinKind::Left, JoinStrictness::Any, columns);
+                auto tableJoin = std::make_shared<TableJoin>(SizeLimits{}, true,
+                    columns.empty() ? JoinKind::Paste : JoinKind::Left, JoinStrictness::Any, columns);
                 tableJoin->getOnlyClause().key_names_left = columns;
 
                 auto join = std::make_shared<JoinSwitcher>(tableJoin, header);
 
                 std::cout << "Join has delayed blocks " << join->hasDelayedBlocks() << std::endl;
-
-                // std::vector input_headers = {new_port->getHeader(), header};
-                // auto merge_join = std::make_shared<MergeJoinTransform>(join, input_headers,
-                //     JoiningTransform::transformHeader(new_port->getHeader(), join), max_block_size);
-                //
-                // connect(*new_port, merge_join->getInputs().front());
-                // connect(*ports[set_counter], merge_join->getInputs().back());
-                //
-                // new_port = &merge_join->getOutputs().front();
-                //
-                // processors.emplace_back(merge_join);
 
                 auto rightJoining = std::make_shared<FillingRightJoinSideTransform>(header, join);
                 auto & rightJoiningInputs = rightJoining->getInputs();
