@@ -39,6 +39,7 @@ struct HostResolverMetrics
     const ProfileEvents::Event failed = ProfileEvents::end();
 
     const CurrentMetrics::Metric active_count = CurrentMetrics::end();
+    const CurrentMetrics::Metric banned_count = CurrentMetrics::end();
 };
 
 constexpr size_t DEFAULT_RESOLVE_TIME_HISTORY_SECONDS = 2*60;
@@ -151,6 +152,11 @@ protected:
             return address < r.address;
         }
 
+        bool operator ==(const Record & r) const
+        {
+            return address == r.address;
+        }
+
         size_t getWeight() const
         {
             if (failed)
@@ -169,21 +175,20 @@ protected:
             return 10;
         }
 
-        void cleanTimeoutedFailedFlag(const Poco::Timestamp & now, const Poco::Timespan & keep_history)
+        bool setFail(const Poco::Timestamp & now)
         {
-            if (!failed)
-                return;
-            /// Exponential increased time between flag cleanups
-            if (fail_time < now - Poco::Timespan(keep_history.totalSeconds() * (1ull << (consecutive_fail_count - 1)), 0))
-                failed = false;
-        }
+            bool was_ok = !failed;
 
-        void setFail(const Poco::Timestamp & now)
-        {
             failed = true;
             fail_time = now;
-            if (consecutive_fail_count < RECORD_CONSECTIVE_FAIL_COUNT_LIMIT)
-                ++consecutive_fail_count;
+
+            if (was_ok)
+            {
+                if (consecutive_fail_count < RECORD_CONSECTIVE_FAIL_COUNT_LIMIT)
+                    ++consecutive_fail_count;
+            }
+
+            return was_ok;
         }
 
         void setSuccess()
@@ -214,7 +219,7 @@ protected:
 
     std::mutex mutex;
 
-    Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex);
+    Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex) = Poco::Timestamp::TIMEVAL_MIN;
     Records records TSA_GUARDED_BY(mutex);
 
     Poco::Logger * log = &Poco::Logger::get("ConnectionPool");
