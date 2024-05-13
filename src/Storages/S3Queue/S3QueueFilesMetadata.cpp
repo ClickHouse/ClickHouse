@@ -24,6 +24,8 @@ namespace ProfileEvents
     extern const Event S3QueueSetFileProcessingMicroseconds;
     extern const Event S3QueueSetFileProcessedMicroseconds;
     extern const Event S3QueueSetFileFailedMicroseconds;
+    extern const Event S3QueueFailedFiles;
+    extern const Event S3QueueProcessedFiles;
     extern const Event S3QueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event S3QueueLockLocalFileStatusesMicroseconds;
     extern const Event CannotRemoveEphemeralNode;
@@ -600,13 +602,17 @@ void S3QueueFilesMetadata::setFileProcessed(ProcessingNodeHolderPtr holder)
     {
         case S3QueueMode::ORDERED:
         {
-            return setFileProcessedForOrderedMode(holder);
+            setFileProcessedForOrderedMode(holder);
+            break;
         }
         case S3QueueMode::UNORDERED:
         {
-            return setFileProcessedForUnorderedMode(holder);
+            setFileProcessedForUnorderedMode(holder);
+            break;
         }
     }
+
+    ProfileEvents::increment(ProfileEvents::S3QueueProcessedFiles);
 }
 
 void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolderPtr holder)
@@ -751,6 +757,8 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
         file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     }
 
+    ProfileEvents::increment(ProfileEvents::S3QueueFailedFiles);
+
     SCOPE_EXIT({
         file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileFailedMicroseconds, timer.get());
         timer.cancel();
@@ -787,6 +795,7 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
         LOG_WARNING(log, "Cannot set file ({}) as processed since processing node "
                     "does not exist with expected processing id does not exist, "
                     "this could be a result of expired zookeeper session", path);
+
         return;
     }
 
