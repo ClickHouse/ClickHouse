@@ -105,7 +105,7 @@ private:
     {
         DynamicStructureSerializationVersion structure_version;
         DataTypePtr variant_type;
-        ColumnDynamic::Statistics statistics = {.source = ColumnDynamic::Statistics::Source::READ};
+        ColumnDynamic::Statistics statistics = {.source = ColumnDynamic::Statistics::Source::READ, .data = {}};
 
         explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_) : structure_version(structure_version_) {}
     };
