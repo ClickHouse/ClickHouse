@@ -24,7 +24,11 @@
 #include <Common/JSONBuilder.h>
 
 #include "Interpreters/JoinSwitcher.h"
+#include "Processors/DelayedPortsProcessor.h"
+#include "Processors/ForkProcessor.h"
 #include "Processors/Transforms/JoiningTransform.h"
+#include "Processors/Transforms/MergeJoinTransform.h"
+#include "Processors/Transforms/PasteJoinTransform.h"
 
 namespace DB
 {
@@ -214,19 +218,32 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         auto input_header = pipeline.getHeader();
 
         pipeline.transform([&](OutputPortRawPtrs ports)
-           {
-               Processors copiers;
-               copiers.reserve(ports.size());
+        {
+            Processors copiers;
+            copiers.reserve(ports.size());
 
-               for (auto * port : ports)
-               {
-                   auto copier = std::make_shared<CopyTransform>(input_header, by_column_sets_aggregates.size() + 1);
-                   connect(*port, copier->getInputPort());
-                   copiers.push_back(copier);
-               }
+            for (auto * port : ports)
+            {
+                auto copier = std::make_shared<CopyAccumulatingTransform>(input_header, by_column_sets_aggregates.size() + 1);
+                connect(*port, copier->getInputPort());
+                copiers.push_back(copier);
 
-               return copiers;
-           });
+                // if (!by_column_sets_aggregates.empty()) {
+                //     auto* portPtr = &copier->getOutputs().front();
+                //     auto nextPortPtr = std::next(copier->getOutputs().begin());
+                //     for (size_t i = 0; i < copier->getOutputs().size() - 1; ++i) {
+                //         auto delay = std::make_shared<DelayedPortsProcessor>(input_header, 2, DelayedPortsProcessor::PortNumbers{1});
+                //         connect(*portPtr, delay->getInputs().front());
+                //         connect(*nextPortPtr, delay->getInputs().back());
+                //         portPtr = &delay->getOutputs().back();
+                //         ++nextPortPtr;
+                //         copiers.push_back(delay);
+                //     }
+                // }
+            }
+
+            return copiers;
+        });
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
             assert(streams * by_column_sets_size == ports.size());
@@ -324,22 +341,33 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             it = by_column_sets_aggregates.begin();
             auto* new_port = ports[0];
+            auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(1);
             for (size_t set_counter = 1; set_counter < by_column_sets_size; ++set_counter, ++it) {
                 const auto & [columns, descriptions] = *it;
                 const auto & header = ports[set_counter]->getHeader();
 
                 auto tableJoin = std::make_shared<TableJoin>(SizeLimits{}, true, JoinKind::Left, JoinStrictness::Any, columns);
                 tableJoin->getOnlyClause().key_names_left = columns;
+
                 auto join = std::make_shared<JoinSwitcher>(tableJoin, header);
 
                 std::cout << "Join has delayed blocks " << join->hasDelayedBlocks() << std::endl;
+
+                // std::vector input_headers = {new_port->getHeader(), header};
+                // auto merge_join = std::make_shared<MergeJoinTransform>(join, input_headers,
+                //     JoiningTransform::transformHeader(new_port->getHeader(), join), max_block_size);
+                //
+                // connect(*new_port, merge_join->getInputs().front());
+                // connect(*ports[set_counter], merge_join->getInputs().back());
+                //
+                // new_port = &merge_join->getOutputs().front();
+                //
+                // processors.emplace_back(merge_join);
 
                 auto rightJoining = std::make_shared<FillingRightJoinSideTransform>(header, join);
                 auto & rightJoiningInputs = rightJoining->getInputs();
 
                 connect(*ports[set_counter], rightJoiningInputs.front());
-
-                auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(/* pipeline.getNumStreams() */ 1);
 
                 std::cout << "Pipeline getNumStreams " << pipeline.getNumStreams() << std::endl;
 
@@ -355,6 +383,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             return processors;
         });
+
+        std::cout << "num threads" << pipeline.getNumThreads() << std::endl;
+
+        std::cout << "num streams" << pipeline.getNumStreams() << std::endl;
 
         aggregating = collector.detachProcessors(0);
 
