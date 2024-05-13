@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int FORMAT_VERSION_TOO_OLD;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
@@ -114,7 +115,12 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         return true;
     };
 
-    Base::load_from_stream(callback);
+    auto result = Base::load_from_stream(callback);
+    if (result.error)
+        /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
+        throw Exception::createRuntime(
+                ErrorCodes::INCORRECT_DATA,
+                "Could not load vector similarity index, error: " + String(result.error.release()) + " Please drop the index and create it again.");
 }
 
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
@@ -145,16 +151,33 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
 
 void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) const
 {
+    writeIntBinary(FILE_FORMAT_VERSION, ostr);
+
     /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
     writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr);
+
     index->serialize(ostr);
 }
 
 void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
+    UInt64 file_format;
+    readIntBinary(file_format, istr);
+    if (file_format != FILE_FORMAT_VERSION)
+        /// Throw an exception and ask the user to re-create the index.
+        /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
+        /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index,
+        /// keep it simple for now.
+        throw Exception(
+            ErrorCodes::FORMAT_VERSION_TOO_OLD,
+            "Vector similarity index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
+            FILE_FORMAT_VERSION,
+            file_format);
+
     UInt64 dimension;
     readIntBinary(dimension, istr);
+
     index = std::make_shared<USearchIndexWithSerialization>(dimension, metric_kind, scalar_kind, usearch_hnsw_params);
     index->deserialize(istr);
 }
@@ -238,7 +261,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
         /// Reserving space is mandatory
         if (!index->reserve(roundUpToPowerOfTwoOrZero(index->size() + num_rows)))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
 
         /// Add all rows of block
         for (size_t row = 0; row < num_rows; ++row)
