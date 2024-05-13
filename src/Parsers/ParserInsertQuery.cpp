@@ -281,7 +281,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
        while(first < last) {
            if(columns->children[first]->getID() == "DefaultedColumn") {
                std::swap(columns->children[first], columns->children[last]);
-               defaulted.push_back(columns->children[last]);
+               //defaulted.push_back(columns->children[last]);
                //columns->children[last] = columns->children[last]->children[0];
                --last;
            } else {
