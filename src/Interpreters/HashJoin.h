@@ -254,7 +254,7 @@ public:
         M(key_string)                          \
         M(key_fixed_string)
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY,
         CROSS,

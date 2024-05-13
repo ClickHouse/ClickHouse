@@ -85,9 +85,9 @@ public:
     void visitImpl(QueryTreeNodePtr & node) const
     {
         if (auto * column = node->as<ColumnNode>())
-            return visitColumn(column);
+            visitColumn(column);
         else if (auto * function = node->as<FunctionNode>())
-            return visitFunction(function);
+            visitFunction(function);
     }
 private:
     void visitColumn(ColumnNode * column) const
@@ -290,7 +290,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 
-
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
@@ -300,7 +299,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
-
 }
 
 }
