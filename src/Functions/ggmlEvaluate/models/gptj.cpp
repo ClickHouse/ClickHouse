@@ -306,7 +306,6 @@ bool GptJModel::evalInternal(
     if (mem_per_token > 0 && mem_per_token * N > buf_size)
     {
         const size_t buf_size_new = static_cast<size_t>(1.1 * (mem_per_token * N)); // add 10% to account for ggml object overhead
-        //printf("\n%s: reallocating buffer from %zu to %zu bytes\n", __func__, buf_size, buf_size_new);
 
         // reallocate
         buf_size = buf_size_new;
