@@ -33,15 +33,15 @@ std::string formatReadableValue(ProfileEvents::ValueType value_type, double valu
 {
     switch (value_type)
     {
-        case ProfileEvents::ValueType::NUMBER:
+        case ProfileEvents::ValueType::Number:
             return formatReadableQuantity(value);
-        case ProfileEvents::ValueType::BYTES:
+        case ProfileEvents::ValueType::Bytes:
             return formatReadableSizeWithDecimalSuffix(value);
-        case ProfileEvents::ValueType::NANOSECONDS:
+        case ProfileEvents::ValueType::Nanoseconds:
             return formatReadableTime(value);
-        case ProfileEvents::ValueType::MICROSECONDS:
+        case ProfileEvents::ValueType::Microseconds:
             return formatReadableTime(value * 1e3);
-        case ProfileEvents::ValueType::MILLISECONDS:
+        case ProfileEvents::ValueType::Milliseconds:
             return formatReadableTime(value * 1e6);
     }
 }
@@ -55,14 +55,14 @@ auto createEventToValueTypeMap()
         ProfileEvents::ValueType value_type = getValueType(event);
         event_to_value_type[name] = value_type;
     }
-    event_to_value_type[MemoryTracker::USAGE_EVENT_NAME] = ProfileEvents::ValueType::BYTES;
+    event_to_value_type[MemoryTracker::USAGE_EVENT_NAME] = ProfileEvents::ValueType::Bytes;
     return event_to_value_type;
 }
 
 std::string_view setColorForProgress(double progress, double max_progress)
 {
     static const std::string_view colors[] = {
-        "",
+        "\033[38;5;65m", /// Pale green
         "\033[38;5;34m", /// Green
         "\033[38;5;154m", /// Yellow-green
         "\033[38;5;220m", /// Yellow
@@ -256,9 +256,9 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
 {
     /// If the value has not been updated for a long time
     /// reset the time in snapshots.
-    if (new_time - new_snapshot.time >= 0.5 || new_snapshot.time == 0)
+    if (new_time - new_snapshot.time >= 0.25 || new_snapshot.time == 0)
     {
-        prev_shapshot = {new_snapshot.value, new_time - 2.0};
+        prev_shapshot = {new_snapshot.value, new_time - 1.0};
         cur_shapshot = {new_snapshot.value, new_time - 1.0};
     }
 
@@ -273,23 +273,17 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
     }
     new_snapshot.time = new_time;
 
-    if (new_snapshot.time - cur_shapshot.time >= 0.5)
+    if (new_snapshot.time - cur_shapshot.time >= 0.25)
         prev_shapshot = std::exchange(cur_shapshot, new_snapshot);
 }
 
 double ProgressTable::MetricInfo::calculateProgress(double time_now) const
 {
     /// If the value has not been updated for a long time, the progress is 0.
-    if (time_now - new_snapshot.time >= 0.5)
+    if (time_now - new_snapshot.time >= 0.25)
         return 0;
 
-    switch (type)
-    {
-        case ProfileEvents::Type::INCREMENT:
-            return (cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
-        case ProfileEvents::Type::GAUGE:
-            return cur_shapshot.value - prev_shapshot.value;
-    }
+    return (cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
 }
 
 double ProgressTable::MetricInfo::getValue() const
