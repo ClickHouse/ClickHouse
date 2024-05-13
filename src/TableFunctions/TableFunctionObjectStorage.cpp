@@ -192,6 +192,15 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #if USE_HDFS
     factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
     {
+        .documentation =
+        {
+            .description=R"(The table function can be used to read the data stored on HDFS virtual filesystem.)",
+            .examples{
+            {
+                "hdfs",
+                "SELECT * FROM  hdfs(url, format, compression, structure])", ""
+            }}
+        },
         .allow_readonly = false
     });
 #endif
