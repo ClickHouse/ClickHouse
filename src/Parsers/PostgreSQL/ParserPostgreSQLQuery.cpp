@@ -41,13 +41,13 @@ bool ParserPostgreSQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     String query(begin, end);
 
-    std::cerr << query << std::endl;
+    std::cerr << "Query: " << query << std::endl;
 
     auto res = pg_query_parse(query.data());
 
     String json = String(res.parse_tree);
 
-    std::cerr << json << std::endl;
+    std::cerr << "JSON: " << json << std::endl;
 
     JSON::Element json_root;
     JSON parser;

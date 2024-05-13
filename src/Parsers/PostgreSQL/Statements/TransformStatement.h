@@ -1,4 +1,6 @@
+#pragma once
 #include <Parsers/PostgreSQL/Statements/Select.h>
+#include <Parsers/PostgreSQL/Statements/Create.h>
 
 namespace DB::PostgreSQL
 {
@@ -7,7 +9,11 @@ namespace DB::PostgreSQL
         if (node->GetKeyString() == "SelectStmt")
         {
             return TransformSelectStatement(node);
-        } 
+        }
+        else if (node->GetKeyString() == "CreateStmt")
+        {
+            return TransformCreateStatement(node);
+        }
         else
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");

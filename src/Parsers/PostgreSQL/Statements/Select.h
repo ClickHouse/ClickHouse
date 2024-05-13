@@ -1,3 +1,4 @@
+#pragma once
 #include "SelectSimple.h"
 
 #include <Parsers/PostgreSQL/Common/util/JSONHelpers.h>
@@ -13,7 +14,7 @@ namespace DB::PostgreSQL
         auto ast = std::make_shared<ASTSelectWithUnionQuery>();
         ast->list_of_selects = std::make_shared<ASTExpressionList>();
 
-        if ((*node)["all"]->GetBoolValue()) {
+        if (node->HasChildWithKey("all") && (*node)["all"]->GetBoolValue()) {
             ast->list_of_modes.push_back(SelectUnionMode::UNION_ALL);
             ast->set_of_modes.insert(SelectUnionMode::UNION_ALL);
         }
