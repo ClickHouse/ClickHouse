@@ -6,6 +6,28 @@ SET allow_experimental_usearch_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
+-- what should work:
+
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance'));
+DROP TABLE tab;
+
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance', 'f32', 21, 22, 23));
+DROP TABLE tab;
+
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'cosineDistance'));
+DROP TABLE tab;
+
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 'f32', 21, 22, 23));
+DROP TABLE tab;
+
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'dotProduct'));
+DROP TABLE tab;
+
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'dotProduct', 'f32', 21, 22, 23));
+DROP TABLE tab;
+
+-- what should not work:
+
 SELECT 'Two or six index arguments';
 CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity()); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('cant_have_one_arg')); -- { serverError INCORRECT_QUERY }
