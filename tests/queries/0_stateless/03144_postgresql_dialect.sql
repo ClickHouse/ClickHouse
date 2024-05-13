@@ -1,0 +1,9 @@
+SET dialect = 'postgresql'
+
+SELECT 1
+
+SELECT TRUE
+
+SELECT 2.5
+
+SELECT 1 UNION ALL SELECT 2
