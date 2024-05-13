@@ -589,7 +589,7 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
         }
     }
 
-    nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
+    std::erase_if(nodes, [&](const Node & node) { return !visited_nodes.contains(&node); });
     std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
 }
 
