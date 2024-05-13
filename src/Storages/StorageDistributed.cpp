@@ -45,6 +45,7 @@
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -823,6 +824,38 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
 
+void replaceTableVirtualColumn(
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    const SelectQueryInfo & modified_query_info,
+    QueryTreeNodePtr & node)
+{
+    const auto & table_name = storage_snapshot->storage.getStorageID().table_name;
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+    if (storage_snapshot->storage.supportsSubcolumns())
+        get_column_options.withSubcolumns();
+
+    std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+
+    if (!storage_snapshot->tryGetColumn(get_column_options, "_table"))
+    {
+        auto table_name_node = std::make_shared<ConstantNode>(table_name);
+        auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
+
+        auto function_node = std::make_shared<FunctionNode>("__actionName");
+        function_node->getArguments().getNodes().push_back(std::move(table_name_node));
+        function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
+        function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+
+        column_name_to_node.emplace("_table", function_node);
+    }
+
+    if (!column_name_to_node.empty())
+        replaceColumns(node,
+            modified_query_info.table_expression,
+            column_name_to_node);
+}
+
 }
 
 void StorageDistributed::read(
@@ -841,6 +874,9 @@ void StorageDistributed::read(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
+        if (!remote_table_function_ptr)
+            replaceTableVirtualColumn(storage_snapshot, local_context, modified_query_info, modified_query_info.query_tree);
+
         StorageID remote_storage_id = StorageID::createEmpty();
         if (!remote_table_function_ptr)
             remote_storage_id = StorageID{remote_database, remote_table};
