@@ -9,23 +9,41 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
-namespace DB::QueryPlanOptimizations
+namespace DB
 {
-size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes) {
-    // Проверяем, является ли узел ExpressionStep, содержащий вызов L2Distance
-    if (auto *expression_node = typeid_cast<ExpressionStep *>(parent_node->node)) {
-        if (expression_node->expression->getFunctionName() == "L2Distance") {
-            // Заменяем вызов L2Distance на sqrt(L2SquaredDistance)
-            auto l2_distance_args = std::move(expression_node->children.front()->children);
-            auto l2_squared_distance = std::make_shared<ExpressionFunction>("L2SquaredDistance", l2_distance_args);
-            auto sqrt_function = std::make_shared<ExpressionFunction>("sqrt", ExpressionActions::Actions{{}, l2_squared_distance});
-            expression_node->expression = sqrt_function;
 
-            // Возвращаем 1, чтобы указать, что мы внесли изменения
-            return 1;
-        }
-    }
-    return 0; // Не внесли изменений
+namespace QueryPlanOptimizations
+{
+
+size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+{
+    if (!parent_node->as<QueryPlan::ExpressionStep>())
+        return 0;
+
+    auto & expression_step = parent_node->as<QueryPlan::ExpressionStep>();
+
+    // Check if the expression is a call to L2Distance
+    if (expression_step.function_base->name != "L2Distance")
+        return 0;
+
+    // Replace the function name with L2SquaredDistance
+    expression_step.function_base->name = "L2SquaredDistance";
+
+    // Add sqrt function as a parent of L2SquaredDistance
+    auto sqrt_function = std::make_shared<Function>("sqrt", FunctionFactory::instance());
+    auto l2_squared_distance_function = expression_step.function_base;
+    expression_step.function_base = sqrt_function;
+
+    auto l2_squared_distance_argument = l2_squared_distance_function->arguments[0];
+    l2_squared_distance_function->arguments.clear();
+    sqrt_function->arguments.push_back(l2_squared_distance_argument);
+
+    // Add L2SquaredDistance as an argument to the sqrt function
+    sqrt_function->arguments.push_back(l2_squared_distance_function);
+
+    return 1;
+}
+
 }
 
 }
