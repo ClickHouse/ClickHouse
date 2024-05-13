@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionMathUnary.h>
 #include <Common/typeid_cast.h>
 
 size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
