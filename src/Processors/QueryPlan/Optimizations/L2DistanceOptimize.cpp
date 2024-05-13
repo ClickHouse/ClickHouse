@@ -1,10 +1,23 @@
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/typeid_cast.h>
+#include <Functions/IFunction.h>
+
+namespace DB
+{
+
+namespace QueryPlanOptimizations
+{
 
 size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
-    // Проверяем, является ли родительский узел функцией L2Distance
+     // Проверяем, является ли родительский узел функцией L2Distance
     auto * expression_step = typeid_cast<ExpressionStep *>(parent_node->step.get());
     if (!expression_step)
         return 0;
@@ -42,4 +55,8 @@ size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPla
     settings.is_function_monotonic[sqrt_function->getName()] = true;
 
     return 1;
+}
+
+}
+
 }
