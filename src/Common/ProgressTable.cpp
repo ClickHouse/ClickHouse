@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/terminalColors.h>
-#include <Common/ProfileEvents.h>
 #include <Common/TerminalSize.h>
 #include <Common/formatReadable.h>
 

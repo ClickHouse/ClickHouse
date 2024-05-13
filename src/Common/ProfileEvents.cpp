@@ -675,7 +675,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheRegistryUpdates, "Number of distributed cache registry updates", ValueType::NUMBER) \
     \
     M(DistrCacheConnectMicroseconds, "The time spent to connect to distributed cache", ValueType::MICROSECONDS) \
-    M(DistrCacheConnectAttempts, "The number of connection attempts to distributed cache") \
+    M(DistrCacheConnectAttempts, "The number of connection attempts to distributed cache", ValueType::NUMBER) \
     M(DistrCacheGetClient, "Number of client access times", ValueType::NUMBER) \
     \
     M(DistrCacheServerProcessRequestMicroseconds, "Time spent processing request on DistributedCache server side", ValueType::MICROSECONDS) \

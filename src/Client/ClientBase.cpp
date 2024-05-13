@@ -1292,7 +1292,7 @@ void ClientBase::onEndOfStream()
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
     if (need_render_progress_table && tty_buf)
-        progress_table.clearTableOutput(*tty_buf);     
+        progress_table.clearTableOutput(*tty_buf);
 
     if (output_format)
     {
@@ -1371,7 +1371,7 @@ void ClientBase::onProfileEvents(Block & block)
         if (need_render_progress && tty_buf)
             progress_indication.writeProgress(*tty_buf);
         if (need_render_progress_table && tty_buf)
-            progress_table.writeTable(*tty_buf);      
+            progress_table.writeTable(*tty_buf);
 
         if (profile_events.print)
         {
