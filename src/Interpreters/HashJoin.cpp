@@ -848,7 +848,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             block_to_save = block_to_save.compress();
         }
 
-        if (kind != JoinKind::Cross/* && setting is on */)
+        if (kind != JoinKind::Cross && table_join->hashJoinCompression())
         {
             block_to_save = block_to_save.compress();
         }
@@ -1077,13 +1077,15 @@ public:
         ExpressionActionsPtr additional_filter_expression_,
         bool is_asof_join,
         bool is_join_get_,
-        CacheBase<const Block *, Block> & decompressed_cache_)
+        CacheBase<const Block *, Block> & decompressed_cache_,
+        bool hash_join_compression_)
         : left_block(left_block_)
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , rows_to_add(left_block.rows())
         , is_join_get(is_join_get_)
         , decompressed_cache(decompressed_cache_)
+        , hash_join_compression(hash_join_compression_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
         if (is_asof_join)
@@ -1180,6 +1182,11 @@ private:
 
     void checkBlock(const Block & block)
     {
+        if (hash_join_compression)
+        {
+            /// checkBlock with turned on 'hash_join_compression' is now not supporting
+            return;
+        }
         for (size_t j = 0; j < right_indexes.size(); ++j)
         {
             const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
@@ -1212,6 +1219,7 @@ private:
     std::vector<ColumnNullable *> nullable_column_ptrs;
     size_t lazy_defaults_count = 0;
     CacheBase<const Block *, Block> & decompressed_cache;
+    bool hash_join_compression;
 
     /// for lazy
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
@@ -1258,10 +1266,17 @@ void AddedColumns<true>::buildOutput()
                 continue;
             }
             apply_default();
-            auto [block, _] = decompressed_cache.getOrSet(reinterpret_cast<const Block *>(lazy_output.blocks[j]), [&]()
+            /// Shared ptr needed there because we want to hold a Block if we got it from cache
+            std::shared_ptr<Block> shared_block = nullptr;
+            const Block * block = reinterpret_cast<const Block *>(lazy_output.blocks[j]);
+            if (hash_join_compression)
             {
-                return std::make_shared<Block>(reinterpret_cast<const Block *>(lazy_output.blocks[j])->decompress());
-            });
+                auto [shared_block_source, _] = decompressed_cache.getOrSet(block, [&]() {
+                    return std::make_shared<Block>(block->decompress());
+                });
+                shared_block = std::move(shared_block_source);
+                block = shared_block.get();
+            }
             const auto & column_from_block = block->getByPosition(right_indexes[i]);
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             if (is_join_get)
@@ -1304,11 +1319,17 @@ void AddedColumns<false>::appendFromBlock(const Block & compressed_block, size_t
 #ifndef NDEBUG
     checkBlock(block);
 #endif
-    auto [block, _] = decompressed_cache.getOrSet(&compressed_block, [&]()
+    /// Shared ptr needed there because we want to hold a Block if we got it from cache
+    std::shared_ptr<Block> shared_block = nullptr;
+    const Block * block = &compressed_block;
+    if (hash_join_compression)
     {
-        return std::make_shared<Block>(compressed_block.decompress());
-    });
-    assert(block);
+        auto [shared_block_source, _] = decompressed_cache.getOrSet(block, [&]() {
+            return std::make_shared<Block>(block->decompress());
+        });
+        shared_block = std::move(shared_block_source);
+        block = shared_block.get();
+    }
     if (is_join_get)
     {
         size_t right_indexes_size = right_indexes.size();
@@ -2174,7 +2195,8 @@ Block HashJoin::joinBlockImpl(
         table_join->getMixedJoinExpression(),
         join_features.is_asof_join,
         is_join_get,
-        decompressed_cache);
+        decompressed_cache,
+        table_join->hashJoinCompression());
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;

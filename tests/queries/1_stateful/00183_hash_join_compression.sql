@@ -1,0 +1,1 @@
+SELECT CounterID, LinkURL, Title, RegionID FROM test.hits JOIN test.visits ON test.hits.CounterID = test.visits.CounterID ORDER BY (CounterID, LinkURL, Title, RegionID) DESC LIMIT 10000;
