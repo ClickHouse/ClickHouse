@@ -211,6 +211,7 @@ function run_tests()
         # azurite is slow, but with these two settings it can be super slow
         ADDITIONAL_OPTIONS+=('--no-random-settings')
         ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
+        ADDITIONAL_OPTIONS+=('--allow_repeated_settings')
     fi
 
     if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
