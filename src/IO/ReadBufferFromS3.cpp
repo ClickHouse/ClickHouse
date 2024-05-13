@@ -197,7 +197,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
 
             if (cancelled)
-                return initial_n - n;
+                return initial_n - n - bytes_copied;
 
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
