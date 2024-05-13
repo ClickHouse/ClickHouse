@@ -35,7 +35,7 @@ public:
     bool is_infinite = false;
 
     /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
-    enum class SortScope
+    enum class SortScope : uint8_t
     {
         None   = 0,
         Chunk  = 1, /// Separate chunks are sorted

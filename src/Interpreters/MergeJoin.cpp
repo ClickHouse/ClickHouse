@@ -80,8 +80,8 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_left_nulls && has_right_nulls)
     {
-        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
-        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
+        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column);
+        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column);
 
         if (left_nullable && right_nullable)
         {
@@ -99,7 +99,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_left_nulls)
     {
-        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
+        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
         {
             if (left_column.isNullAt(lhs_pos))
                 return null_direction_hint;
@@ -109,7 +109,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_right_nulls)
     {
-        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
         {
             if (right_column.isNullAt(rhs_pos))
                 return -null_direction_hint;
@@ -604,7 +604,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, false, 0, 0, 0, nullptr, 0));
+        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, false, 0, 0, 0, nullptr, 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);

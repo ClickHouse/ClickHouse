@@ -1938,7 +1938,6 @@ void IMergeTreeDataPart::remove()
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
-    String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
         *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".

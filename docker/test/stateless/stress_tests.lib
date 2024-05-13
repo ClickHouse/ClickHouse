@@ -78,7 +78,8 @@ function configure()
         randomize_config_boolean_value use_compression zookeeper
     fi
 
-    randomize_config_boolean_value allow_experimental_block_number_column block_number
+    randomize_config_boolean_value enable_block_number_column block_number
+    randomize_config_boolean_value enable_block_offset_column block_number
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
@@ -119,13 +120,41 @@ EOL
 
     local max_users_mem
     max_users_mem=$((total_mem*30/100)) # 30%
+    # Similar to docker/test/fuzzer/query-fuzzer-tweaks-users.xml
     echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
-    cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
+    cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
         <default>
+            <max_execution_time>60</max_execution_time>
             <max_memory_usage>10G</max_memory_usage>
             <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
+
+            <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
+
+            <constraints>
+                <max_execution_time>
+                    <max>60</max>
+                </max_execution_time>
+
+                <max_memory_usage>
+                    <max>10G</max>
+                </max_memory_usage>
+
+                <table_function_remote_max_addresses>
+                    <max>200</max>
+                </table_function_remote_max_addresses>
+
+                <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
+                <allow_experimental_analyzer>
+                    <readonly/>
+                </allow_experimental_analyzer>
+
+                <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
+                <allow_experimental_object_type>
+                    <readonly/>
+                </allow_experimental_object_type>
+            </constraints>
         </default>
     </profiles>
 </clickhouse>

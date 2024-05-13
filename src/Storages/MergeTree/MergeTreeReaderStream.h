@@ -40,6 +40,7 @@ public:
     /// Seeks to exact mark in file.
     void seekToMarkAndColumn(size_t row_index, size_t column_position);
 
+    /// Seeks to the start of the file.
     void seekToStart();
 
     /**
@@ -53,11 +54,11 @@ public:
 
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
-    virtual size_t getRightOffset(size_t right_mark) const = 0;
+    virtual size_t getRightOffset(size_t right_mark) = 0;
 
     /// Returns estimated max amount of bytes to read among mark ranges (which is used as size for read buffer)
     /// and total amount of bytes to read in all mark ranges.
-    virtual std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) const = 0;
+    virtual std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) = 0;
 
     const ReadBufferFromFileBase::ProfileCallback profile_callback;
     const clockid_t clock_type;
@@ -80,6 +81,7 @@ private:
 
 protected:
     void init();
+    void loadMarks();
 
     const MergeTreeReaderSettings settings;
     const size_t marks_count;
@@ -100,9 +102,23 @@ public:
     {
     }
 
-    size_t getRightOffset(size_t right_mark_non_included) const override;
-    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) const override;
+    size_t getRightOffset(size_t right_mark_non_included) override;
+    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
+};
+
+class MergeTreeReaderStreamSingleColumnWholePart : public MergeTreeReaderStream
+{
+public:
+    template <typename... Args>
+    explicit MergeTreeReaderStreamSingleColumnWholePart(Args &&... args)
+        : MergeTreeReaderStream{std::forward<Args>(args)...}
+    {
+    }
+
+    size_t getRightOffset(size_t right_mark_non_included) override;
+    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
+    void seekToMark(size_t row_index) override;
 };
 
 /// Base class for reading from file that contains multiple columns.
@@ -118,9 +134,9 @@ public:
     }
 
 protected:
-    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position) const;
-    std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position) const;
-    MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position) const;
+    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
+    std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
+    MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 };
 
 /// Class for reading a single column from file that contains multiple columns
@@ -135,8 +151,8 @@ public:
     {
     }
 
-    size_t getRightOffset(size_t right_mark_non_included) const override;
-    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) const override;
+    size_t getRightOffset(size_t right_mark_non_included) override;
+    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, column_position); }
 
 private:
@@ -154,8 +170,8 @@ public:
     {
     }
 
-    size_t getRightOffset(size_t right_mark_non_included) const override;
-    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) const override;
+    size_t getRightOffset(size_t right_mark_non_included) override;
+    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
 };
 

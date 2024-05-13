@@ -193,8 +193,7 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
             throw;
         }
 
-        if (num > res)
-            res = num;
+        res = std::max(num, res);
     }
 
     return res;

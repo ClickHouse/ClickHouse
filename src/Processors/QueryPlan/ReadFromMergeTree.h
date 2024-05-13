@@ -63,8 +63,7 @@ struct UsefulSkipIndexes
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-
-    enum class IndexType
+    enum class IndexType : uint8_t
     {
         None,
         MinMax,

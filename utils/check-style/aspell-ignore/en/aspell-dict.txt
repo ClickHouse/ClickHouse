@@ -394,6 +394,8 @@ InterserverThreads
 IsPentagon
 IsResClassIII
 IsValid
+isNotDistinctFrom
+isNullable
 JBOD
 JOINed
 JOINs
@@ -879,6 +881,7 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
+sigmoid
 Smirnov's
 Smirnov'test
 Soundex
@@ -1002,6 +1005,7 @@ UMTS
 UNDROP
 UPDATEs
 URIs
+URL
 URL's
 URLHash
 URLHierarchy
@@ -1095,6 +1099,8 @@ addQuarters
 addSeconds
 addWeeks
 addYears
+addInterval
+addTupleOfIntervals
 addr
 addressToLine
 addressToLineWithInlines
@@ -1949,6 +1955,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeTreeIndex
 mergeable
 mergetree
@@ -2405,6 +2413,8 @@ simpleaggregatefunction
 simplelinearregression
 simpod
 singlepart
+singleValueOrNull
+singlevalueornull
 sinh
 sipHash
 siphash
@@ -2524,6 +2534,8 @@ subtractQuarters
 subtractSeconds
 subtractWeeks
 subtractYears
+subtractInterval
+subtractTupleOfIntervals
 subtree
 subtrees
 subtype
@@ -2759,6 +2771,7 @@ uptime
 uptrace
 uring
 url
+urlencoded
 urlCluster
 urls
 usearch

@@ -1200,8 +1200,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
     assert(num_streams == requested_num_streams);
-    if (num_streams > settings.max_final_threads)
-        num_streams = settings.max_final_threads;
+    num_streams = std::min<size_t>(num_streams, settings.max_final_threads);
 
     /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
