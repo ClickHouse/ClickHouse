@@ -1210,6 +1210,15 @@ bool StorageS3::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
 }
 
+ReadFromFormatInfo StorageS3::prepareReadingFromFormat(
+    const Strings & requested_columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    bool supports_subset_of_columns,
+    ContextPtr /* local_context */)
+{
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+}
+
 void StorageS3::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -1220,7 +1229,8 @@ void StorageS3::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), local_context);
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;

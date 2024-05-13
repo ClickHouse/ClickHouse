@@ -9,6 +9,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include "PartitionColumns.h"
 #include <filesystem>
 
@@ -32,11 +33,13 @@ public:
         Args && ...args)
     {
         std::unique_ptr<MetadataParser> metadata;
-        Configuration read_configuration;
+
         Configuration base_configuration{configuration_};
+        base_configuration.update(context_);
+        Configuration read_configuration{base_configuration};
+
         try
         {
-            base_configuration.update(context_);
             metadata = std::make_unique<MetadataParser>(base_configuration, context_);
             read_configuration = getConfigurationForDataRead(*metadata, base_configuration, context_);
         }
@@ -124,23 +127,48 @@ private:
         return configuration;
     }
 
+    ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        ContextPtr local_context) override
+    {
+        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+        if (!metadata)
+        {
+            base_configuration.update(local_context);
+            metadata = std::make_unique<MetadataParser>(base_configuration, local_context);
+        }
+        auto column_mapping = metadata->getColumnNameToPhysicalNameMapping();
+        if (!column_mapping.empty())
+        {
+            for (const auto & [column_name, physical_name] : column_mapping)
+            {
+                auto & column = info.format_header.getByName(column_name);
+                column.name = physical_name;
+            }
+        }
+        return info;
+    }
+
     void updateConfigurationImpl(const ContextPtr & local_context)
     {
         const bool updated = base_configuration.update(local_context);
 
-        auto metadata = MetadataParser(base_configuration, local_context);
-        auto new_keys = metadata.getFiles();
-        Storage::partition_columns = metadata.getPartitionColumns();
+        metadata = std::make_unique<MetadataParser>(base_configuration, local_context);
+        auto new_keys = metadata->getFiles();
+        Storage::partition_columns = metadata->getPartitionColumns();
 
         if (!updated && new_keys == Storage::getConfiguration().keys)
             return;
 
-        auto read_configuration = getConfigurationForDataRead(metadata, base_configuration, local_context);
+        auto read_configuration = getConfigurationForDataRead(*metadata, base_configuration, local_context);
         Storage::useConfiguration(read_configuration);
     }
 
     Configuration base_configuration;
     std::mutex configuration_update_mutex;
+    std::unique_ptr<MetadataParser> metadata;
     LoggerPtr log;
 };
 

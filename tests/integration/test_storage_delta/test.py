@@ -153,7 +153,7 @@ def test_single_log_file(started_cluster):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = "test_single_log_file"
 
-    inserted_data = "SELECT number, toString(number + 1) FROM numbers(100)"
+    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
         started_cluster, instance, inserted_data, TABLE_NAME
     )
@@ -520,7 +520,7 @@ def test_partition_columns(started_cluster):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = "test_partition_columns"
     result_file = f"{TABLE_NAME}"
-    partition_column = "c"
+    partition_columns = ["b", "c", "d", "e"]
 
     delta_table = (
         DeltaTable.create(spark)
@@ -529,7 +529,9 @@ def test_partition_columns(started_cluster):
         .addColumn("a", "INT")
         .addColumn("b", "STRING")
         .addColumn("c", "DATE")
-        .partitionedBy(partition_column)
+        .addColumn("d", "INT")
+        .addColumn("e", "BOOLEAN")
+        .partitionedBy(partition_columns)
         .execute()
     )
     num_rows = 9
@@ -539,6 +541,8 @@ def test_partition_columns(started_cluster):
             StructField("a", IntegerType()),
             StructField("b", StringType()),
             StructField("c", DateType()),
+            StructField("d", IntegerType()),
+            StructField("e", BooleanType()),
         ]
     )
 
@@ -548,11 +552,13 @@ def test_partition_columns(started_cluster):
                 i,
                 "test" + str(i),
                 datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
+                i,
+                False,
             )
         ]
         df = spark.createDataFrame(data=data, schema=schema)
         df.printSchema()
-        df.write.mode("append").format("delta").partitionBy(partition_column).save(
+        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
             f"/{TABLE_NAME}"
         )
 
@@ -569,7 +575,7 @@ def test_partition_columns(started_cluster):
 
     assert (
         result
-        == "a\tNullable(Int32)\t\t\t\t\t\nb\tNullable(String)\t\t\t\t\t\nc\tNullable(Date)"
+        == "a\tNullable(Int32)\t\t\t\t\t\nb\tNullable(String)\t\t\t\t\t\nc\tNullable(Date32)\t\t\t\t\t\nd\tNullable(Int32)\t\t\t\t\t\ne\tNullable(Bool)"
     )
 
     result = int(

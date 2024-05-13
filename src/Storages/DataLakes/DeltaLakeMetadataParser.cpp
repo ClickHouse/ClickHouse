@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename Configuration, typename MetadataReadHelper>
@@ -184,6 +185,10 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
             Poco::Dynamic::Var json = parser.parse(json_str);
             Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
+            std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            object->stringify(oss);
+            LOG_TEST(log, "Metadata: {}", oss.str());
+
             if (object->has("add"))
             {
                 auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
@@ -218,34 +223,49 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
                 auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
                 result.erase(fs::path(configuration.getPath()) / path);
             }
-            if (file_schema.empty())
+            if (object->has("metaData"))
             {
-                // std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                // object->stringify(oss);
-                // LOG_TEST(log, "Metadata: {}", oss.str());
+                const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
+                const auto schema_object = metadata_object->getValue<String>("schemaString");
 
-                if (object->has("metaData"))
+                Poco::JSON::Parser p;
+                Poco::Dynamic::Var fields_json = parser.parse(schema_object);
+                Poco::JSON::Object::Ptr fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
+
+                const auto fields = fields_object->get("fields").extract<Poco::JSON::Array::Ptr>();
+                NamesAndTypesList current_schema;
+                for (size_t i = 0; i < fields->size(); ++i)
                 {
-                    const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
-                    const auto schema_object = metadata_object->getValue<String>("schemaString");
+                    const auto field = fields->getObject(static_cast<UInt32>(i));
+                    auto name = field->getValue<String>("name");
+                    auto type = field->getValue<String>("type");
+                    auto is_nullable = field->getValue<bool>("nullable");
 
-                    Poco::JSON::Parser p;
-                    Poco::Dynamic::Var fields_json = parser.parse(schema_object);
-                    Poco::JSON::Object::Ptr fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
+                    std::string physical_name;
+                    auto schema_metadata_object = field->get("metadata").extract<Poco::JSON::Object::Ptr>();
+                    if (schema_metadata_object->has("delta.columnMapping.physicalName"))
+                        physical_name = schema_metadata_object->getValue<String>("delta.columnMapping.physicalName");
+                    else
+                        physical_name = name;
 
-                    const auto fields = fields_object->get("fields").extract<Poco::JSON::Array::Ptr>();
-                    for (size_t i = 0; i < fields->size(); ++i)
-                    {
-                        const auto field = fields->getObject(static_cast<UInt32>(i));
-                        auto name = field->getValue<String>("name");
-                        auto type = field->getValue<String>("type");
-                        auto is_nullable = field->getValue<bool>("nullable");
+                    LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
+                                name, type, is_nullable, physical_name);
 
-                        file_schema.push_back({name, getFieldType(field, "type", is_nullable)});
-                    }
+                    current_schema.push_back({physical_name, getFieldType(field, "type", is_nullable)});
+                }
+
+                if (file_schema.empty())
+                {
+                    file_schema = current_schema;
+                }
+                else if (file_schema != current_schema)
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                    "Reading from files with different schema is not possible "
+                                    "({} is different from {})",
+                                    file_schema.toString(), current_schema.toString());
                 }
             }
-            /// TODO: Check if schema in each file is the same?
         }
     }
 
@@ -278,12 +298,20 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
             return value;
         else if (which.isInt8())
             return parse<Int8>(value);
+        else if (which.isUInt8())
+            return parse<UInt8>(value);
         else if (which.isInt16())
             return parse<Int16>(value);
+        else if (which.isUInt16())
+            return parse<UInt16>(value);
         else if (which.isInt32())
             return parse<Int32>(value);
+        else if (which.isUInt32())
+            return parse<UInt32>(value);
         else if (which.isInt64())
             return parse<Int64>(value);
+        else if (which.isUInt64())
+            return parse<UInt64>(value);
         else if (which.isFloat32())
             return parse<Float32>(value);
         else if (which.isFloat64())
@@ -299,14 +327,6 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
             return time;
         }
-        // else if (which.isDecimal32())
-        //     return parse<Decimal32>(value);
-        // else if (which.isDecimal64())
-        //     return parse<Decimal64>(value);
-        // else if (which.isDecimal128())
-        //     return parse<Decimal128>(value);
-        // else if (which.isDecimal256())
-        //     return parse<Decimal256>(value);
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
     }

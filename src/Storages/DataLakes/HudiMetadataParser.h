@@ -20,10 +20,13 @@ public:
 
     DataLakePartitionColumns getPartitionColumns() const { return {}; }
 
+    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const { return column_name_to_physical_name; }
+
 private:
     struct Impl;
     std::shared_ptr<Impl> impl;
     Strings data_files;
+    std::unordered_map<String, String> column_name_to_physical_name;
 };
 
 }
