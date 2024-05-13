@@ -1258,7 +1258,8 @@ void AddedColumns<true>::buildOutput()
                 continue;
             }
             apply_default();
-            auto [block, _] = decompressed_cache.getOrSet(reinterpret_cast<const Block *>(lazy_output.blocks[j]), [&]() {
+            auto [block, _] = decompressed_cache.getOrSet(reinterpret_cast<const Block *>(lazy_output.blocks[j]), [&]()
+            {
                 return std::make_shared<Block>(reinterpret_cast<const Block *>(lazy_output.blocks[j])->decompress());
             });
             const auto & column_from_block = block->getByPosition(right_indexes[i]);
@@ -1303,7 +1304,8 @@ void AddedColumns<false>::appendFromBlock(const Block & compressed_block, size_t
 #ifndef NDEBUG
     checkBlock(block);
 #endif
-    auto [block, _] = decompressed_cache.getOrSet(&compressed_block, [&]() {
+    auto [block, _] = decompressed_cache.getOrSet(&compressed_block, [&]()
+    {
         return std::make_shared<Block>(compressed_block.decompress());
     });
     assert(block);
