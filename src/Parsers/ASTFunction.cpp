@@ -763,6 +763,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         }
     }
 
+    if (by_or_totals)
+    {
+        if (by_columns)
+        {
+            settings.ostr << " BY ";
+            by_columns->formatImpl(settings, state, frame);
+        }
+        else
+        {
+            settings.ostr << " TOTALS";
+        }
+    }
+
     if ((arguments && !arguments->children.empty()) || !no_empty_args)
         settings.ostr << (settings.hilite ? hilite_function : "") << ')';
 
