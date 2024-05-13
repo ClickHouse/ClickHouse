@@ -1,5 +1,6 @@
 #include <any>
 #include <limits>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -35,6 +36,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
+#include "Core/Joins.h"
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
@@ -251,6 +253,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , data(std::make_shared<RightTableData>())
     , right_sample_block(right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
+    , decompressed_cache("LRU", 1024, 1024, 0.5l)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -845,6 +848,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             block_to_save = block_to_save.compress();
         }
 
+        if (kind != JoinKind::Cross/* && setting is on */)
+        {
+            block_to_save = block_to_save.compress();
+        }
+
         data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
@@ -1068,12 +1076,14 @@ public:
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         ExpressionActionsPtr additional_filter_expression_,
         bool is_asof_join,
-        bool is_join_get_)
+        bool is_join_get_,
+        CacheBase<const Block *, Block> & decompressed_cache_)
         : left_block(left_block_)
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , rows_to_add(left_block.rows())
         , is_join_get(is_join_get_)
+        , decompressed_cache(decompressed_cache_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
         if (is_asof_join)
@@ -1132,7 +1142,7 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void appendFromBlock(const Block & block, size_t row_num, bool has_default);
+    void appendFromBlock(const Block & compressed_block, size_t row_num, bool has_default);
 
     void appendDefaultRow();
 
@@ -1201,6 +1211,7 @@ private:
     std::vector<TypeAndName> type_name;
     std::vector<ColumnNullable *> nullable_column_ptrs;
     size_t lazy_defaults_count = 0;
+    CacheBase<const Block *, Block> & decompressed_cache;
 
     /// for lazy
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
@@ -1247,7 +1258,10 @@ void AddedColumns<true>::buildOutput()
                 continue;
             }
             apply_default();
-            const auto & column_from_block = reinterpret_cast<const Block *>(lazy_output.blocks[j])->getByPosition(right_indexes[i]);
+            auto [block, _] = decompressed_cache.getOrSet(reinterpret_cast<const Block *>(lazy_output.blocks[j]), [&]() {
+                return std::make_shared<Block>(reinterpret_cast<const Block *>(lazy_output.blocks[j])->decompress());
+            });
+            const auto & column_from_block = block->getByPosition(right_indexes[i]);
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             if (is_join_get)
             {
@@ -1281,7 +1295,7 @@ void AddedColumns<true>::applyLazyDefaults()
 }
 
 template <>
-void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,const bool has_defaults)
+void AddedColumns<false>::appendFromBlock(const Block & compressed_block, size_t row_num,const bool has_defaults)
 {
     if (has_defaults)
         applyLazyDefaults();
@@ -1289,12 +1303,16 @@ void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,co
 #ifndef NDEBUG
     checkBlock(block);
 #endif
+    auto [block, _] = decompressed_cache.getOrSet(&compressed_block, [&]() {
+        return std::make_shared<Block>(compressed_block.decompress());
+    });
+    assert(block);
     if (is_join_get)
     {
         size_t right_indexes_size = right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = block.getByPosition(right_indexes[j]);
+            const auto & column_from_block = block->getByPosition(right_indexes[j]);
             if (auto * nullable_col = nullable_column_ptrs[j])
                 nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
             else
@@ -1306,7 +1324,7 @@ void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,co
         size_t right_indexes_size = right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = block.getByPosition(right_indexes[j]);
+            const auto & column_from_block = block->getByPosition(right_indexes[j]);
             columns[j]->insertFrom(*column_from_block.column, row_num);
         }
     }
@@ -2153,7 +2171,8 @@ Block HashJoin::joinBlockImpl(
         std::move(join_on_keys),
         table_join->getMixedJoinExpression(),
         join_features.is_asof_join,
-        is_join_get);
+        is_join_get,
+        decompressed_cache);
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
