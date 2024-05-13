@@ -206,7 +206,7 @@ void StorageObjectStorage::read(
     size_t num_streams)
 {
     updateConfiguration(local_context);
-    if (partition_by && configuration->withWildcard())
+    if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
@@ -247,7 +247,14 @@ SinkToStoragePtr StorageObjectStorage::write(
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
-    if (configuration->withWildcard())
+    if (configuration->withGlobsIgnorePartitionWildcard())
+    {
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "Path '{}' contains globs, so the table is in readonly mode",
+                        configuration->getPath());
+    }
+
+    if (configuration->withPartitionWildcard())
     {
         ASTPtr partition_by_ast = nullptr;
         if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))
@@ -263,14 +270,6 @@ SinkToStoragePtr StorageObjectStorage::write(
             return std::make_shared<PartitionedStorageObjectStorageSink>(
                 object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
         }
-    }
-
-    if (configuration->withGlobs())
-    {
-        throw Exception(
-            ErrorCodes::DATABASE_ACCESS_DENIED,
-            "{} key '{}' contains globs, so the table is in readonly mode",
-            getName(), configuration->getPath());
     }
 
     auto paths = configuration->getPaths();
@@ -428,11 +427,19 @@ StorageObjectStorage::Configuration::Configuration(const Configuration & other)
     structure = other.structure;
 }
 
-bool StorageObjectStorage::Configuration::withWildcard() const
+bool StorageObjectStorage::Configuration::withPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
     return getPath().find(PARTITION_ID_WILDCARD) != String::npos
         || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
+}
+
+bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() const
+{
+    if (!withPartitionWildcard())
+        return withGlobs();
+    else
+        return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isPathWithGlobs() const

@@ -163,8 +163,9 @@ public:
     virtual void addStructureAndFormatToArgs(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
 
-    bool withWildcard() const;
+    bool withPartitionWildcard() const;
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
+    bool withGlobsIgnorePartitionWildcard() const;
     bool isPathWithGlobs() const;
     bool isNamespaceWithGlobs() const;
     virtual std::string getPathWithoutGlobs() const;
