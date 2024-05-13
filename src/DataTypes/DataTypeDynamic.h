@@ -12,7 +12,7 @@ class DataTypeDynamic final : public IDataType
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeDynamic(size_t max_dynamic_types_ = DEFAULT_MAX_DYNAMIC_TYPES);
+    explicit DataTypeDynamic(size_t max_dynamic_types_ = DEFAULT_MAX_DYNAMIC_TYPES);
 
     TypeIndex getTypeId() const override { return TypeIndex::Dynamic; }
     const char * getFamilyName() const override { return "Dynamic"; }

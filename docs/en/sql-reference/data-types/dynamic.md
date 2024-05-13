@@ -261,7 +261,7 @@ SELECT d, dynamicType(d), d::Dynamic(max_types=1) as d2, dynamicType(d2) FROM te
 └─────────┴────────────────┴─────────┴─────────────────┘
 ```
 
-## Reading Variant type from the data
+## Reading Dynamic type from the data
 
 All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Dynamic` type. During data parsing ClickHouse tries to infer the type of each value and use it during insertion to `Dynamic` column. 
 
@@ -409,3 +409,87 @@ SELECT d, dynamicType(d) FROM test ORDER by d;
 └─────┴────────────────┘
 ```
 
+## Reaching the limit in number of different data types stored inside Dynamic
+
+`Dynamic` data type can store only limited number of different data types inside. By default, this limit is 32, but you can change it in type declaration using syntax `Dynamic(max_types=N)` where N is between 1 and 255 (due to implementation details, it's impossible to have more than 255 different data types inside Dynamic).
+When the limit is reached, all new data types inserted to `Dynamic` column will be casted to `String` and stored as `String` values.
+
+Let's see what happens when the limit is reached in different scenarios.
+
+### Reaching the limit during data parsing
+
+During parsing of `Dynamic` values from the data, when the limit is reached for current block of data, all new values will be inserted as `String` values:
+
+```sql
+SELECT d, dynamicType(d) FROM format(JSONEachRow, 'd Dynamic(max_types=3)', '
+{"d" : 42}
+{"d" : [1, 2, 3]}
+{"d" : "Hello, World!"}
+{"d" : "2020-01-01"}
+{"d" : ["str1", "str2", "str3"]}
+{"d" : {"a" : 1, "b" : [1, 2, 3]}}
+')
+```
+
+```text
+┌─d──────────────────────────┬─dynamicType(d)─┐
+│ 42                         │ Int64          │
+│ [1,2,3]                    │ Array(Int64)   │
+│ Hello, World!              │ String         │
+│ 2020-01-01                 │ String         │
+│ ["str1", "str2", "str3"]   │ String         │
+│ {"a" : 1, "b" : [1, 2, 3]} │ String         │
+└────────────────────────────┴────────────────┘
+```
+
+As we can see, after inserting 3 different data types `Int64`, `Array(Int64)` and `String` all new types were converted to `String`.
+
+### During merges of data parts in MergeTree table engines
+
+During merge of several data parts in MergeTree table the `Dynamic` column in the resulting data part can reach the limit of different data types inside and won't be able to store all types from source parts.
+In this case ClickHouse chooses what types will remain after merge and what types will be casted to `String`.  In most cases ClickHouse tries to keep the most frequent types and cast the rarest types to `String`, but it depends on the implementation.
+
+Let's see an example of such merge. First, let's create a table with `Dynamic` column, set the limit of different data types to `3` and insert values with `5` different types:
+
+```sql
+CREATE TABLE test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree ORDER BY id;
+SYSTEM STOP MERGES test;
+INSERT INTO test SELECT number, number FROM numbers(5);
+INSERT INTO test SELECT number, range(number) FROM numbers(4);
+INSERT INTO test SELECT number, toDate(number) FROM numbers(3);
+INSERT INTO test SELECT number, map(number, number) FROM numbers(2);
+INSERT INTO test SELECT number, 'str_' || toString(number) FROM numbers(1);
+```
+
+Each insert will create a separate data pert with `Dynamic` column containing single type:
+```sql
+SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) ORDER BY _part;
+```
+
+```text
+┌─count()─┬─dynamicType(d)──────┬─_part─────┐
+│       5 │ UInt64              │ all_1_1_0 │
+│       4 │ Array(UInt64)       │ all_2_2_0 │
+│       3 │ Date                │ all_3_3_0 │
+│       2 │ Map(UInt64, UInt64) │ all_4_4_0 │
+│       1 │ String              │ all_5_5_0 │
+└─────────┴─────────────────────┴───────────┘
+```
+
+Now, let's merge all parts into one and see what will happen:
+
+```sql
+SYSTEM START MERGES test;
+OPTIMIZE TABLE test FINAL;
+SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) ORDER BY _part;
+```
+
+```text
+┌─count()─┬─dynamicType(d)─┬─_part─────┐
+│       5 │ UInt64         │ all_1_5_2 │
+│       6 │ String         │ all_1_5_2 │
+│       4 │ Array(UInt64)  │ all_1_5_2 │
+└─────────┴────────────────┴───────────┘
+```
+
+As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt64)` and casted all other types to `String`.

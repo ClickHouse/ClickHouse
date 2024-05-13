@@ -290,6 +290,13 @@ void ColumnDynamic::insertRangeFrom(const DB::IColumn & src_, size_t start, size
     /// We cannot combine 2 Variant types as total number of variants exceeds the limit.
     /// In this case we will add most frequent variants from this range and insert them as usual,
     /// all other variants will be converted to String.
+    /// TODO: instead of keeping all current variants and just adding new most frequent variants
+    ///       from source columns we can also try to replace rarest existing variants with frequent
+    ///       variants from source column (so we will avoid casting new frequent variants to String
+    ///       and keeping rare existing ones). It will require rewriting of existing data in Variant
+    ///       column but will improve usability of Dynamic column for example during squashing blocks
+    ///       during insert.
+
     const auto & src_variant_column = dynamic_src.getVariantColumn();
 
     /// Calculate ranges for each variant in current range.
