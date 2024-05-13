@@ -152,8 +152,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 void Timer::set(UInt32 period)
 {
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
-    if (period < 1000000)
-        period = 1000000;
+    period = std::max<UInt32>(period, 1000000);
     /// Randomize offset as uniform random value from 0 to period - 1.
     /// It will allow to sample short queries even if timer period is large.
     /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).

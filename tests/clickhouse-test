@@ -734,9 +734,9 @@ def get_localzone():
 
 class SettingsRandomizer:
     settings = {
-        "max_insert_threads": lambda: 0
-        if random.random() < 0.5
-        else random.randint(1, 16),
+        "max_insert_threads": lambda: (
+            0 if random.random() < 0.5 else random.randint(1, 16)
+        ),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -908,7 +908,7 @@ class MergeTreeSettingsRandomizer:
         ),
         "cache_populated_by_fetch": lambda: random.randint(0, 1),
         "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
-        "old_parts_lifetime": threshold_generator(0.2, 0.3, 30, 8 * 60),
+        "old_parts_lifetime": threshold_generator(0.2, 0.3, 10, 8 * 60),
     }
 
     @staticmethod
@@ -1470,11 +1470,14 @@ class TestCase:
             args.collect_per_test_coverage
             and BuildFlags.SANITIZE_COVERAGE in args.build_flags
         ):
-            clickhouse_execute(
-                args,
-                f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
-                retry_error_codes=True,
-            )
+            try:
+                clickhouse_execute(
+                    args,
+                    f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
+                    retry_error_codes=True,
+                )
+            except Exception as e:
+                print("Cannot insert coverage data: ", str(e))
 
             # Check for dumped coverage files
             file_pattern = "coverage.*"
@@ -1484,7 +1487,9 @@ class TestCase:
                     body = read_file_as_binary_string(file_path)
                     clickhouse_execute(
                         args,
-                        f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        "INSERT INTO system.coverage_log "
+                        "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
+                        f"SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
                         body=body,
                         retry_error_codes=True,
                     )
@@ -1492,6 +1497,8 @@ class TestCase:
                     print("Cannot insert coverage data: ", str(e))
                 # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
                 os.remove(file_path)
+
+            _ = clickhouse_execute(args, "SYSTEM FLUSH ASYNC INSERT QUEUE")
 
             coverage = clickhouse_execute(
                 args,
@@ -2943,7 +2950,7 @@ def parse_args():
 
     parser.add_argument("--extract_from_config", help="extract-from-config program")
     parser.add_argument(
-        "--configclient", help="Client config (if you use not default ports)"
+        "--configclient", help="Client config (if you do not use default ports)"
     )
     parser.add_argument(
         "--configserver",
@@ -2963,7 +2970,7 @@ def parse_args():
     parser.add_argument(
         "--global_time_limit",
         type=int,
-        help="Stop if executing more than specified time (after current test finished)",
+        help="Stop if executing more than specified time (after current test is finished)",
     )
     parser.add_argument("test", nargs="*", help="Optional test case name regex")
     parser.add_argument(

@@ -43,14 +43,13 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 # Download toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
- # disabled because s390x refused to build in the migration to OpenSSL
 # Download and install mold 2.0 for s390x build
-# RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz" \
-#     && mkdir /tmp/mold \
-#     && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
-#     && cp -r /tmp/mold/mold*/* /usr \
-#     && rm -rf /tmp/mold \
-#     && rm /tmp/mold.tar.gz
+RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz" \
+    && mkdir /tmp/mold \
+    && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
+    && cp -r /tmp/mold/mold*/* /usr \
+    && rm -rf /tmp/mold \
+    && rm /tmp/mold.tar.gz
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

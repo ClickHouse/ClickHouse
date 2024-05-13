@@ -982,7 +982,6 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
                             "to represent regular expressions");
         }
 
-        String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);

@@ -31,7 +31,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    calculateWidths(header, chunk, widths, max_widths, name_widths, 1);
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
         writeString(String(row_number_width, ' '), out);
@@ -70,6 +70,9 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     }
     writeCString("\n\n", out);
 
+    std::vector<String> transferred_row(num_columns);
+    bool has_transferred_row = false;
+
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
         if (format_settings.pretty.output_format_pretty_row_numbers)
@@ -85,19 +88,34 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
                 writeCString("\033[0m", out);
 
         }
+        size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 1 : 1;
         for (size_t column = 0; column < num_columns; ++column)
         {
             if (column != 0)
                 writeCString(" ", out);
 
             const auto & type = *header.getByPosition(column).type;
-            auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(
-                *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+            size_t cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
+            String serialized_value;
+            {
+                WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+                serializations[column]->serializeText(*columns[column], row, out_serialize, format_settings);
+            }
+            if (cut_to_width && format_settings.pretty.preserve_border_for_multiline_string)
+                splitValueAtBreakLine(serialized_value, transferred_row[column], cur_width, cur_width, prefix);
+            has_transferred_row |= !transferred_row[column].empty();
+
+            writeValueWithPadding(serialized_value, cur_width, max_widths[column], cut_to_width,
+                type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[column].empty(), false);
+
+            prefix += max_widths[column] + 3;
         }
 
         writeReadableNumberTip(chunk);
         writeChar('\n', out);
+
+        if (has_transferred_row)
+            writeTransferredRow(max_widths, header, transferred_row, cut_to_width, true);
     }
 
     total_rows += num_rows;

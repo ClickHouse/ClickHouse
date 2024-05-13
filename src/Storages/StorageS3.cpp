@@ -191,7 +191,7 @@ public:
     Impl(
         const S3::Client & client_,
         const S3::URI & globbed_uri_,
-        const ActionsDAG::Node * predicate,
+        const ActionsDAG::Node * predicate_,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
         KeysWithInfo * read_keys_,
@@ -200,6 +200,7 @@ public:
         : WithContext(context_)
         , client(client_.clone())
         , globbed_uri(globbed_uri_)
+        , predicate(predicate_)
         , virtual_columns(virtual_columns_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
@@ -210,32 +211,11 @@ public:
         if (globbed_uri.bucket.find_first_of("*?{") != std::string::npos)
             throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Expression can not have wildcards inside bucket name");
 
-        const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
+        expanded_keys = expandSelectionGlob(globbed_uri.key);
+        expanded_keys_iter = expanded_keys.begin();
 
-        /// We don't have to list bucket, because there is no asterisks.
-        if (key_prefix.size() == globbed_uri.key.size())
-        {
-            buffer.emplace_back(std::make_shared<KeyWithInfo>(globbed_uri.key, std::nullopt));
-            buffer_iter = buffer.begin();
-            is_finished = true;
-            return;
-        }
-
-        request.SetBucket(globbed_uri.bucket);
-        request.SetPrefix(key_prefix);
-        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
-
-        outcome_future = listObjectsAsync();
-
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
-
-        recursive = globbed_uri.key == "/**" ? true : false;
-
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-        fillInternalBufferAssumeLocked();
+        fillBufferForKey(*expanded_keys_iter);
+        expanded_keys_iter++;
     }
 
     KeyWithInfoPtr next(size_t)
@@ -249,6 +229,14 @@ public:
         return buffer.size();
     }
 
+    bool hasMore()
+    {
+        if (buffer.empty())
+            return !(expanded_keys_iter == expanded_keys.end() && is_finished_for_key);
+        else
+            return true;
+    }
+
     ~Impl()
     {
         list_objects_pool.wait();
@@ -256,6 +244,41 @@ public:
 
 private:
     using ListObjectsOutcome = Aws::S3::Model::ListObjectsV2Outcome;
+
+    void fillBufferForKey(const std::string & uri_key)
+    {
+        is_finished_for_key = false;
+        const String key_prefix = uri_key.substr(0, uri_key.find_first_of("*?{"));
+
+        /// We don't have to list bucket, because there is no asterisks.
+        if (key_prefix.size() == uri_key.size())
+        {
+            buffer.clear();
+            buffer.emplace_back(std::make_shared<KeyWithInfo>(uri_key, std::nullopt));
+            buffer_iter = buffer.begin();
+            if (read_keys)
+                read_keys->insert(read_keys->end(), buffer.begin(), buffer.end());
+            is_finished_for_key = true;
+            return;
+        }
+
+        request = {};
+        request.SetBucket(globbed_uri.bucket);
+        request.SetPrefix(key_prefix);
+        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
+
+        outcome_future = listObjectsAsync();
+
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(uri_key));
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                            "Cannot compile regex from glob ({}): {}", uri_key, matcher->error());
+
+        recursive = globbed_uri.key == "/**";
+
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        fillInternalBufferAssumeLocked();
+    }
 
     KeyWithInfoPtr nextAssumeLocked()
     {
@@ -270,7 +293,18 @@ private:
                 /// So we get object info lazily here on 'next()' request.
                 if (!answer->info)
                 {
-                    answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
+                    try
+                    {
+                        answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
+                    }
+                    catch (...)
+                    {
+                        /// if no such file AND there was no `{}` glob -- this is an exception
+                        /// otherwise ignore it, this is acceptable
+                        if (expanded_keys.size() == 1)
+                            throw;
+                        continue;
+                    }
                     if (file_progress_callback)
                         file_progress_callback(FileProgress(0, answer->info->size));
                 }
@@ -278,8 +312,17 @@ private:
                 return answer;
             }
 
-            if (is_finished)
-                return {};
+            if (is_finished_for_key)
+            {
+                if (expanded_keys_iter != expanded_keys.end())
+                {
+                    fillBufferForKey(*expanded_keys_iter);
+                    expanded_keys_iter++;
+                    continue;
+                }
+                else
+                    return {};
+            }
 
             try
             {
@@ -293,7 +336,7 @@ private:
                 /// it may take some time for threads to stop processors and they
                 /// may still use this iterator after exception is thrown.
                 /// To avoid this UB, reset the buffer and return defaults for further calls.
-                is_finished = true;
+                is_finished_for_key = true;
                 buffer.clear();
                 buffer_iter = buffer.begin();
                 throw;
@@ -317,9 +360,9 @@ private:
         const auto & result_batch = outcome.GetResult().GetContents();
 
         /// It returns false when all objects were returned
-        is_finished = !outcome.GetResult().GetIsTruncated();
+        is_finished_for_key = !outcome.GetResult().GetIsTruncated();
 
-        if (!is_finished)
+        if (!is_finished_for_key)
         {
             /// Even if task is finished the thread may be not freed in pool.
             /// So wait until it will be freed before scheduling a new task.
@@ -399,14 +442,18 @@ private:
     KeysWithInfo buffer;
     KeysWithInfo::iterator buffer_iter;
 
+    std::vector<String> expanded_keys;
+    std::vector<String>::iterator expanded_keys_iter;
+
     std::unique_ptr<S3::Client> client;
     S3::URI globbed_uri;
+    const ActionsDAG::Node * predicate;
     ASTPtr query;
     NamesAndTypesList virtual_columns;
     ActionsDAGPtr filter_dag;
     std::unique_ptr<re2::RE2> matcher;
     bool recursive{false};
-    bool is_finished{false};
+    bool is_finished_for_key{false};
     KeysWithInfo * read_keys;
 
     S3::ListObjectsV2Request request;
@@ -438,7 +485,16 @@ StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next(siz
 
 size_t StorageS3Source::DisclosedGlobIterator::estimatedKeysCount()
 {
-    return pimpl->objectsCount();
+    if (pimpl->hasMore())
+    {
+        /// 1000 files were listed, and we cannot make any estimation of _how many more_ there are (because we list bucket lazily);
+        /// If there are more objects in the bucket, limiting the number of streams is the last thing we may want to do
+        /// as it would lead to serious slow down of the execution, since objects are going
+        /// to be fetched sequentially rather than in-parallel with up to <max_threads> times.
+        return std::numeric_limits<size_t>::max();
+    }
+    else
+        return pimpl->objectsCount();
 }
 
 class StorageS3Source::KeysIterator::Impl
@@ -1227,7 +1283,7 @@ void ReadFromStorageS3Step::createIterator(const ActionsDAG::Node * predicate)
 
 void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (storage.partition_by && query_configuration.withWildcard())
+    if (storage.partition_by && query_configuration.withPartitionWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
 
     createIterator(nullptr);
@@ -1236,8 +1292,10 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
     if (estimated_keys_count > 1)
         num_streams = std::min(num_streams, estimated_keys_count);
     else
-        /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
+    {
+        /// The amount of keys (zero) was probably underestimated. We will keep one stream for this particular case.
         num_streams = 1;
+    }
 
     const auto & settings = context->getSettingsRef();
     const size_t max_parsing_threads = num_streams >= settings.max_parsing_threads ? 1 : (settings.max_parsing_threads / std::max(num_streams, 1ul));
@@ -1283,12 +1341,16 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
     auto key = query_configuration.keys.front();
 
+    if (query_configuration.withGlobsIgnorePartitionWildcard())
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
+
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(query_configuration.keys.back(), query_configuration.compression_method);
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && query_configuration.withWildcard();
+    bool is_partitioned_implementation = partition_by_ast && query_configuration.withPartitionWildcard();
 
     if (is_partitioned_implementation)
     {
@@ -1305,10 +1367,6 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     }
     else
     {
-        if (query_configuration.withGlobs())
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
-
         if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(local_context, configuration, query_configuration.keys.front(), query_configuration.keys.size()))
         {
             query_configuration.keys.push_back(*new_key);
@@ -1470,6 +1528,14 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         },
         credentials.GetSessionToken());
+}
+
+bool StorageS3::Configuration::withGlobsIgnorePartitionWildcard() const
+{
+    if (!withPartitionWildcard())
+        return withGlobs();
+
+    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
@@ -1866,7 +1932,6 @@ namespace
                              configuration.url.version_id,
                              configuration.request_settings,
                              /*with_metadata=*/ false,
-                             /*for_disk_s3=*/ false,
                              /*throw_on_error= */ false).last_modification_time;
                     }
 
@@ -1991,17 +2056,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 
 void registerStorageS3(StorageFactory & factory)
 {
-    return registerStorageS3Impl("S3", factory);
-}
-
-void registerStorageCOS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("COSN", factory);
-}
-
-void registerStorageOSS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("OSS", factory);
+    registerStorageS3Impl("S3", factory);
+    registerStorageS3Impl("COSN", factory);
+    registerStorageS3Impl("OSS", factory);
 }
 
 bool StorageS3::supportsPartitionBy() const
