@@ -78,6 +78,7 @@ function cmp_cli_and_http() {
     $CLICKHOUSE_CLIENT -q "$(query "$1")" > "${CLICKHOUSE_TMP}"/res1
     ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > "${CLICKHOUSE_TMP}"/res2
     ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > "${CLICKHOUSE_TMP}"/res3
+    cat "${CLICKHOUSE_TMP}"/res3
     cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 && cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res3 || echo FAIL 5 "$@"
     rm -rf "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 "${CLICKHOUSE_TMP}"/res3
 }
