@@ -20,6 +20,7 @@ bool ParserDefaultValue::parseImpl(DB::IParser::Pos & pos, DB::ASTPtr & node, DB
     {
         DefaultElement->expression = expression;
         DefaultElement->name = name;
+        DefaultElement->children.push_back(name);
         node = DefaultElement;
         return true;
     }
