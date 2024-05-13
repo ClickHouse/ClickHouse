@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
-#include <absl/random/random.h>
+#include <pcg-random/pcg_random.hpp>
 
 namespace DB
 {
@@ -52,7 +52,7 @@ struct GptParams
 std::vector<GptVocab::id> gpt_tokenize(const GptVocab & vocab, const std::string & text);
 
 GptVocab::id gpt_sample_top_k_top_p(
-    const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, absl::BitGen & random_number_generator);
+    const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, pcg64_fast & random_number_generator);
 
 std::string getPathFromConfig(const DB::ConfigPtr & config, const std::string & model_name);
 

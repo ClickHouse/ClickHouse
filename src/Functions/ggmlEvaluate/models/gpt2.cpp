@@ -376,7 +376,7 @@ std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams
     std::vector<GptVocab::id> embd;
 
     std::string result;
-    absl::BitGen random_number_generator;
+    pcg64_fast random_number_generator;
 
     for (size_t i = embd.size(); i < embd_inp.size() + n_predict; i++)
     {
