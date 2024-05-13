@@ -35,7 +35,7 @@ public:
     using MinMaxIndex = IMergeTreeDataPart::MinMaxIndex;
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
-    enum class FileFormat
+    enum class FileFormat : uint8_t
     {
         RC_FILE,
         TEXT,

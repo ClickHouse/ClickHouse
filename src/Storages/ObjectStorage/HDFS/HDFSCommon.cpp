@@ -113,7 +113,6 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     const Poco::URI uri(uri_str);
     const auto & host = uri.getHost();
     auto port = uri.getPort();
-    const String path = "//";
     if (host.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal HDFS URI: {}", uri.toString());
 

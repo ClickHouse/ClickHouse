@@ -592,8 +592,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     ContextPtr context)
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
-    auto new_client = getClient(config, config_prefix, context, *new_s3_settings, true);
-    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
 
     auto new_uri{uri};
     new_uri.bucket = new_namespace;
@@ -610,13 +609,6 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
     return key_generator->generate(path, /* is_directory */ false);
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
-{
-    if (!key_generator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
-
-    return key_generator->generate(path, /* is_directory */ true);
-}
 }
 
 #endif

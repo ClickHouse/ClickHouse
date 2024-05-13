@@ -98,6 +98,8 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"hdfs_ignore_file_doesnt_exist", false, false, "Ignore if files does not exits and return 0 zeros for StorageHDFS"},
               {"azure_ignore_file_doesnt_exist", false, false, "Ignore if files does not exits and return 0 zeros for StorageAzureBlob"},
               {"s3_ignore_file_doesnt_exist", false, false, "Ignore if files does not exits and return 0 zeros for StorageS3"},
+              {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
+              {"output_format_pretty_preserve_border_for_multiline_string", 1, 1, "Applies better rendering for multiline strings."},
               }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"max_parsing_threads", 0, 0, "Add a separate setting to control number of threads in parallel parsing from files"},
