@@ -74,20 +74,15 @@ struct Gpt2ModelState
 class Gpt2Model : public IGgmlModel
 {
 public:
-    ~Gpt2Model() override
-    {
-        ggml_free(state.ctx_w);
-    }
+    ~Gpt2Model() override { ggml_free(state.ctx_w); }
 
 private:
     void loadImpl(ConfigPtr config) override;
     std::string evalImpl(const std::string & input, const GgmlModelParams & user_params) override;
 
     ggml_cgraph * gpt2_graph(int n_past, int n_tokens);
-    bool gpt2_eval(int n_threads,
-        int n_past, const std::vector<GptVocab::id> & embd_inp,
-              std::vector<float>         & embd_w,
-              size_t                     & mem_per_token);
+    bool
+    gpt2_eval(int n_threads, int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token);
     GptVocab gpt_vocab;
     Gpt2ModelState state;
     GptParams gpt_params;

@@ -107,48 +107,48 @@ void Gpt2Model::loadImpl(ConfigPtr config)
     {
         const auto & hparams = state.hparams;
 
-        const int n_embd  = hparams.n_embd;
+        const int n_embd = hparams.n_embd;
         const int n_layer = hparams.n_layer;
-        const int n_ctx   = hparams.n_ctx;
+        const int n_ctx = hparams.n_ctx;
         const int n_vocab = hparams.n_vocab;
 
         ctx_size += ggml_row_size(GGML_TYPE_F32, n_embd); // ln_f_g
         ctx_size += ggml_row_size(GGML_TYPE_F32, n_embd); // ln_f_b
 
-        ctx_size += ggml_row_size(wtype,         n_vocab*n_embd); // wte
-        ctx_size += ggml_row_size(GGML_TYPE_F32,   n_ctx*n_embd); // wpe
-        ctx_size += ggml_row_size(wtype,         n_vocab*n_embd); // lm_head
+        ctx_size += ggml_row_size(wtype, n_vocab * n_embd); // wte
+        ctx_size += ggml_row_size(GGML_TYPE_F32, n_ctx * n_embd); // wpe
+        ctx_size += ggml_row_size(wtype, n_vocab * n_embd); // lm_head
 
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_1_g
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_1_b
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_1_g
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_1_b
 
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_2_g
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_2_b
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_2_g
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, n_embd)); // ln_2_b
 
-        ctx_size += n_layer*(ggml_row_size(wtype,         3*n_embd*n_embd)); // c_attn_attn_w
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, 3*n_embd));        // c_attn_attn_b
+        ctx_size += n_layer * (ggml_row_size(wtype, 3 * n_embd * n_embd)); // c_attn_attn_w
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, 3 * n_embd)); // c_attn_attn_b
 
-        ctx_size += n_layer*(ggml_row_size(wtype,         n_embd*n_embd));   // c_attn_proj_w
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, n_embd));          // c_attn_proj_b
+        ctx_size += n_layer * (ggml_row_size(wtype, n_embd * n_embd)); // c_attn_proj_w
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, n_embd)); // c_attn_proj_b
 
-        ctx_size += n_layer*(ggml_row_size(wtype,         4*n_embd*n_embd)); // c_mlp_fc_w
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, 4*n_embd));        // c_mlp_fc_b
+        ctx_size += n_layer * (ggml_row_size(wtype, 4 * n_embd * n_embd)); // c_mlp_fc_w
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, 4 * n_embd)); // c_mlp_fc_b
 
-        ctx_size += n_layer*(ggml_row_size(wtype,         4*n_embd*n_embd)); // c_mlp_proj_w
-        ctx_size += n_layer*(ggml_row_size(GGML_TYPE_F32, 4*n_embd));        // c_mlp_proj_b
+        ctx_size += n_layer * (ggml_row_size(wtype, 4 * n_embd * n_embd)); // c_mlp_proj_w
+        ctx_size += n_layer * (ggml_row_size(GGML_TYPE_F32, 4 * n_embd)); // c_mlp_proj_b
 
-        ctx_size += n_ctx*n_layer*ggml_row_size(GGML_TYPE_F32, n_embd); // memory_k
-        ctx_size += n_ctx*n_layer*ggml_row_size(GGML_TYPE_F32, n_embd); // memory_v
+        ctx_size += n_ctx * n_layer * ggml_row_size(GGML_TYPE_F32, n_embd); // memory_k
+        ctx_size += n_ctx * n_layer * ggml_row_size(GGML_TYPE_F32, n_embd); // memory_v
 
-        ctx_size += (6 + 12*n_layer)*512; // object overhead
+        ctx_size += (6 + 12 * n_layer) * 512; // object overhead
     }
 
     // create the ggml context
     {
         ggml_init_params params = {
-            .mem_size   = ctx_size,
+            .mem_size = ctx_size,
             .mem_buffer = nullptr,
-            .no_alloc   = false,
+            .no_alloc = false,
         };
 
         ctx = ggml_init(params);
@@ -156,13 +156,13 @@ void Gpt2Model::loadImpl(ConfigPtr config)
             throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "ggml_init() failed");
     }
 
-// prepare memory for the weights
+    // prepare memory for the weights
     {
         const auto & hparams = state.hparams;
 
-        const int n_embd  = hparams.n_embd;
+        const int n_embd = hparams.n_embd;
         const int n_layer = hparams.n_layer;
-        const int n_ctx   = hparams.n_ctx;
+        const int n_ctx = hparams.n_ctx;
         const int n_vocab = hparams.n_vocab;
 
         state.layers.resize(n_layer);
@@ -170,45 +170,46 @@ void Gpt2Model::loadImpl(ConfigPtr config)
         state.ln_f_g = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
         state.ln_f_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
 
-        state.wte     = ggml_new_tensor_2d(ctx, wtype,         n_embd, n_vocab);
-        state.wpe     = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_embd, n_ctx);
-        state.lm_head = ggml_new_tensor_2d(ctx, wtype,         n_embd, n_vocab);
+        state.wte = ggml_new_tensor_2d(ctx, wtype, n_embd, n_vocab);
+        state.wpe = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_embd, n_ctx);
+        state.lm_head = ggml_new_tensor_2d(ctx, wtype, n_embd, n_vocab);
 
         // map by name
         state.tensors["model/ln_f/g"] = state.ln_f_g;
         state.tensors["model/ln_f/b"] = state.ln_f_b;
 
-        state.tensors["model/wte"]     = state.wte;
-        state.tensors["model/wpe"]     = state.wpe;
+        state.tensors["model/wte"] = state.wte;
+        state.tensors["model/wpe"] = state.wpe;
         state.tensors["model/lm_head"] = state.lm_head;
 
-        for (int i = 0; i < n_layer; ++i) {
+        for (int i = 0; i < n_layer; ++i)
+        {
             auto & layer = state.layers[i];
 
-            layer.ln_1_g        = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,   n_embd);
-            layer.ln_1_b        = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,   n_embd);
+            layer.ln_1_g = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
+            layer.ln_1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
 
-            layer.ln_2_g        = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,   n_embd);
-            layer.ln_2_b        = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,   n_embd);
+            layer.ln_2_g = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
+            layer.ln_2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
 
-            layer.c_attn_attn_w = ggml_new_tensor_2d(ctx, wtype,           n_embd, 3*n_embd);
-            layer.c_attn_attn_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3*n_embd);
+            layer.c_attn_attn_w = ggml_new_tensor_2d(ctx, wtype, n_embd, 3 * n_embd);
+            layer.c_attn_attn_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3 * n_embd);
 
-            layer.c_attn_proj_w = ggml_new_tensor_2d(ctx, wtype,           n_embd, n_embd);
-            layer.c_attn_proj_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,   n_embd);
+            layer.c_attn_proj_w = ggml_new_tensor_2d(ctx, wtype, n_embd, n_embd);
+            layer.c_attn_proj_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
 
-            layer.c_mlp_fc_w    = ggml_new_tensor_2d(ctx, wtype,           n_embd, 4*n_embd);
-            layer.c_mlp_fc_b    = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4*n_embd);
+            layer.c_mlp_fc_w = ggml_new_tensor_2d(ctx, wtype, n_embd, 4 * n_embd);
+            layer.c_mlp_fc_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4 * n_embd);
 
-            layer.c_mlp_proj_w  = ggml_new_tensor_2d(ctx, wtype,         4*n_embd, n_embd);
-            layer.c_mlp_proj_b  = ggml_new_tensor_1d(ctx, GGML_TYPE_F32,   n_embd);
+            layer.c_mlp_proj_w = ggml_new_tensor_2d(ctx, wtype, 4 * n_embd, n_embd);
+            layer.c_mlp_proj_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_embd);
 
             // map by name
-            state.tensors["model/h" + std::to_string(i) + "/ln_1/g"]        = layer.ln_1_g;
-            state.tensors["model/h" + std::to_string(i) + "/ln_1/b"]        = layer.ln_1_b;
+            state.tensors["model/h" + std::to_string(i) + "/ln_1/g"] = layer.ln_1_g;
+            state.tensors["model/h" + std::to_string(i) + "/ln_1/b"] = layer.ln_1_b;
 
-            state.tensors["model/h" + std::to_string(i) + "/ln_2/g"]        = layer.ln_2_g;
-            state.tensors["model/h" + std::to_string(i) + "/ln_2/b"]        = layer.ln_2_b;
+            state.tensors["model/h" + std::to_string(i) + "/ln_2/g"] = layer.ln_2_g;
+            state.tensors["model/h" + std::to_string(i) + "/ln_2/b"] = layer.ln_2_b;
 
             state.tensors["model/h" + std::to_string(i) + "/attn/c_attn/w"] = layer.c_attn_attn_w;
             state.tensors["model/h" + std::to_string(i) + "/attn/c_attn/b"] = layer.c_attn_attn_b;
@@ -216,11 +217,11 @@ void Gpt2Model::loadImpl(ConfigPtr config)
             state.tensors["model/h" + std::to_string(i) + "/attn/c_proj/w"] = layer.c_attn_proj_w;
             state.tensors["model/h" + std::to_string(i) + "/attn/c_proj/b"] = layer.c_attn_proj_b;
 
-            state.tensors["model/h" + std::to_string(i) + "/mlp/c_fc/w"]    = layer.c_mlp_fc_w;
-            state.tensors["model/h" + std::to_string(i) + "/mlp/c_fc/b"]    = layer.c_mlp_fc_b;
+            state.tensors["model/h" + std::to_string(i) + "/mlp/c_fc/w"] = layer.c_mlp_fc_w;
+            state.tensors["model/h" + std::to_string(i) + "/mlp/c_fc/b"] = layer.c_mlp_fc_b;
 
-            state.tensors["model/h" + std::to_string(i) + "/mlp/c_proj/w"]  = layer.c_mlp_proj_w;
-            state.tensors["model/h" + std::to_string(i) + "/mlp/c_proj/b"]  = layer.c_mlp_proj_b;
+            state.tensors["model/h" + std::to_string(i) + "/mlp/c_proj/w"] = layer.c_mlp_proj_w;
+            state.tensors["model/h" + std::to_string(i) + "/mlp/c_proj/b"] = layer.c_mlp_proj_b;
         }
     }
 
@@ -228,12 +229,12 @@ void Gpt2Model::loadImpl(ConfigPtr config)
     {
         const auto & hparams = state.hparams;
 
-        const int n_embd  = hparams.n_embd;
+        const int n_embd = hparams.n_embd;
         const int n_layer = hparams.n_layer;
-        const int n_ctx   = hparams.n_ctx;
+        const int n_ctx = hparams.n_ctx;
 
-        const int n_mem      = n_layer*n_ctx;
-        const int n_elements = n_embd*n_mem;
+        const int n_mem = n_layer * n_ctx;
+        const int n_elements = n_embd * n_mem;
 
         state.memory_k = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_elements);
         state.memory_v = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_elements);
@@ -242,22 +243,23 @@ void Gpt2Model::loadImpl(ConfigPtr config)
     {
         bool has_lm_head = false;
 
-        while (true) {
+        while (true)
+        {
             int32_t n_dims;
             int32_t length;
             int32_t ttype;
 
             fin.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
             fin.read(reinterpret_cast<char *>(&length), sizeof(length));
-            fin.read(reinterpret_cast<char *>(&ttype),  sizeof(ttype));
+            fin.read(reinterpret_cast<char *>(&ttype), sizeof(ttype));
 
-            if (fin.eof()) {
+            if (fin.eof())
                 break;
-            }
 
             int32_t nelements = 1;
-            int32_t ne[2] = { 1, 1 };
-            for (int i = 0; i < n_dims; ++i) {
+            int32_t ne[2] = {1, 1};
+            for (int i = 0; i < n_dims; ++i)
+            {
                 fin.read(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
                 nelements *= ne[i];
             }
@@ -265,22 +267,20 @@ void Gpt2Model::loadImpl(ConfigPtr config)
             std::string name(length, 0);
             fin.read(name.data(), length);
 
-            if (state.tensors.find(name) == state.tensors.end()) {
+            if (state.tensors.find(name) == state.tensors.end())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "In model file '{}' : unknown tensor name {}", fname, name);
-            }
 
-            auto *tensor = state.tensors[name];
-            if (ggml_nelements(tensor) != nelements) {
+            auto * tensor = state.tensors[name];
+            if (ggml_nelements(tensor) != nelements)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "In model file '{}' : tensor {} has wrong size in model file", fname, name);
-            }
 
-            if (tensor->ne[0] != ne[0] || tensor->ne[1] != ne[1]) {
+            if (tensor->ne[0] != ne[0] || tensor->ne[1] != ne[1])
                 throw Exception(ErrorCodes::INCORRECT_DATA, "In model file '{}' : tensor {} has wrong shape in model file", fname, name);
-            }
 
             const size_t bpe = ggml_type_size(ggml_type(ttype));
 
-            if ((nelements*bpe)/ggml_blck_size(tensor->type) != ggml_nbytes(tensor)) {
+            if ((nelements * bpe) / ggml_blck_size(tensor->type) != ggml_nbytes(tensor))
+            {
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "In model file '{}' : tensor {} has wrong size in model file : got {}, expected {}",
@@ -293,20 +293,19 @@ void Gpt2Model::loadImpl(ConfigPtr config)
             fin.read(reinterpret_cast<char *>(tensor->data), ggml_nbytes(tensor));
 
             // GPT-2 models share the WTE tensor as the LM head
-            if (name == "model/wte" && has_lm_head == false) {
+            if (name == "model/wte" && has_lm_head == false)
                 memcpy(state.lm_head->data, tensor->data, ggml_nbytes(tensor));
-            }
 
-            if (name == "model/lm_head") {
+            if (name == "model/lm_head")
                 has_lm_head = true;
-            }
         }
     }
 
     fin.close();
 }
 
-std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams & user_params) {
+std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams & user_params)
+{
     int n_past = 0;
 
     std::vector<float> logits;
@@ -322,7 +321,7 @@ std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams
     // submit the input prompt token-by-token
     // this reduces the memory usage during inference, at the cost of a bit of speed at the beginning
     size_t mem_per_token = 0;
-    gpt2_eval(gpt_params.n_threads, 0, { 0, 1, 2, 3 }, logits, mem_per_token);
+    gpt2_eval(gpt_params.n_threads, 0, {0, 1, 2, 3}, logits, mem_per_token);
 
     std::vector<GptVocab::id> embd;
 
@@ -344,9 +343,9 @@ std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams
         if (i >= embd_inp.size())
         {
             // sample next token
-            const int   top_k = gpt_params.top_k;
+            const int top_k = gpt_params.top_k;
             const float top_p = gpt_params.top_p;
-            const float temp  = gpt_params.temp;
+            const float temp = gpt_params.temp;
 
             const int n_vocab = state.hparams.n_vocab;
 
@@ -381,26 +380,25 @@ std::string Gpt2Model::evalImpl(const std::string & input, const GgmlModelParams
 }
 
 // NOLINTBEGIN
-bool Gpt2Model::gpt2_eval(const int n_threads,
-        const int n_past, const std::vector<GptVocab::id> & embd_inp,
-              std::vector<float>         & embd_w,
-              size_t                     & mem_per_token)
+bool Gpt2Model::gpt2_eval(
+    const int n_threads, const int n_past, const std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w, size_t & mem_per_token)
 {
     const int n = static_cast<int>(embd_inp.size());
 
     const auto & hparams = state.hparams;
 
-    const int n_embd  = hparams.n_embd;
+    const int n_embd = hparams.n_embd;
     const int n_layer = hparams.n_layer;
-    const int n_ctx   = hparams.n_ctx;
-    const int n_head  = hparams.n_head;
+    const int n_ctx = hparams.n_ctx;
+    const int n_head = hparams.n_head;
     const int n_vocab = hparams.n_vocab;
 
-    static size_t buf_size = 256u*1024*1024;
+    static size_t buf_size = 256u * 1024 * 1024;
     static thread_local void * buf = malloc(buf_size);
 
-    if (mem_per_token > 0 && mem_per_token*n > buf_size) {
-        const size_t buf_size_new = static_cast<size_t>(1.1*(mem_per_token*n)); // add 10% to account for ggml object overhead
+    if (mem_per_token > 0 && mem_per_token * n > buf_size)
+    {
+        const size_t buf_size_new = static_cast<size_t>(1.1 * (mem_per_token * n)); // add 10% to account for ggml object overhead
         //printf("\n%s: reallocating buffer from %zu to %zu bytes\n", __func__, buf_size, buf_size_new);
 
         // reallocate
@@ -420,20 +418,17 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
     struct ggml_cgraph * gf = ggml_new_graph(ctx0);
 
     struct ggml_tensor * embd = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n);
-    memcpy(embd->data, embd_inp.data(), n*ggml_element_size(embd));
+    memcpy(embd->data, embd_inp.data(), n * ggml_element_size(embd));
 
     struct ggml_tensor * position = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n);
-    for (int i = 0; i < n; ++i) {
-        reinterpret_cast<int32_t*>(position->data)[i] = n_past + i;
-    }
+    for (int i = 0; i < n; ++i)
+        reinterpret_cast<int32_t *>(position->data)[i] = n_past + i;
 
     // wte + wpe
-    struct ggml_tensor * inpL =
-        ggml_add(ctx0,
-                ggml_get_rows(ctx0, state.wte, embd),
-                ggml_get_rows(ctx0, state.wpe, position));
+    struct ggml_tensor * inpL = ggml_add(ctx0, ggml_get_rows(ctx0, state.wte, embd), ggml_get_rows(ctx0, state.wpe, position));
 
-    for (int il = 0; il < n_layer; ++il) {
+    for (int il = 0; il < n_layer; ++il)
+    {
         struct ggml_tensor * cur;
 
         // norm
@@ -443,11 +438,10 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
             // cur = ln_1_g*cur + ln_1_b
             // [ 768, N]
-            cur = ggml_add(ctx0,
-                    ggml_mul(ctx0,
-                        ggml_repeat(ctx0, state.layers[il].ln_1_g, cur),
-                        cur),
-                    ggml_repeat(ctx0, state.layers[il].ln_1_b, cur));
+            cur = ggml_add(
+                ctx0,
+                ggml_mul(ctx0, ggml_repeat(ctx0, state.layers[il].ln_1_g, cur), cur),
+                ggml_repeat(ctx0, state.layers[il].ln_1_b, cur));
         }
 
         // attn
@@ -459,25 +453,24 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
         // cur = attn_w*cur + attn_b
         // [2304, N]
         {
-            cur = ggml_mul_mat(ctx0,
-                    state.layers[il].c_attn_attn_w,
-                    cur);
+            cur = ggml_mul_mat(ctx0, state.layers[il].c_attn_attn_w, cur);
 
-            cur = ggml_add(ctx0,
-                    ggml_repeat(ctx0, state.layers[il].c_attn_attn_b, cur),
-                    cur);
+            cur = ggml_add(ctx0, ggml_repeat(ctx0, state.layers[il].c_attn_attn_b, cur), cur);
         }
 
         // self-attention
         {
-            struct ggml_tensor * Qcur = ggml_view_2d(ctx0, cur, n_embd, n, cur->nb[1], 0*sizeof(float)*n_embd);
-            struct ggml_tensor * Kcur = ggml_view_2d(ctx0, cur, n_embd, n, cur->nb[1], 1*sizeof(float)*n_embd);
-            struct ggml_tensor * Vcur = ggml_view_2d(ctx0, cur, n_embd, n, cur->nb[1], 2*sizeof(float)*n_embd);
+            struct ggml_tensor * Qcur = ggml_view_2d(ctx0, cur, n_embd, n, cur->nb[1], 0 * sizeof(float) * n_embd);
+            struct ggml_tensor * Kcur = ggml_view_2d(ctx0, cur, n_embd, n, cur->nb[1], 1 * sizeof(float) * n_embd);
+            struct ggml_tensor * Vcur = ggml_view_2d(ctx0, cur, n_embd, n, cur->nb[1], 2 * sizeof(float) * n_embd);
 
             // store key and value to memory
-            if (n >= 1) {
-                struct ggml_tensor * k = ggml_view_1d(ctx0, state.memory_k, n*n_embd, (ggml_element_size(state.memory_k)*n_embd)*(il*n_ctx + n_past));
-                struct ggml_tensor * v = ggml_view_1d(ctx0, state.memory_v, n*n_embd, (ggml_element_size(state.memory_v)*n_embd)*(il*n_ctx + n_past));
+            if (n >= 1)
+            {
+                struct ggml_tensor * k
+                    = ggml_view_1d(ctx0, state.memory_k, n * n_embd, (ggml_element_size(state.memory_k) * n_embd) * (il * n_ctx + n_past));
+                struct ggml_tensor * v
+                    = ggml_view_1d(ctx0, state.memory_v, n * n_embd, (ggml_element_size(state.memory_v) * n_embd) * (il * n_ctx + n_past));
 
                 ggml_build_forward_expand(gf, ggml_cpy(ctx0, Kcur, k));
                 ggml_build_forward_expand(gf, ggml_cpy(ctx0, Vcur, v));
@@ -485,21 +478,23 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
             // Q = Qcur.contiguous().view(n_embd/n_head, n_head, N).permute(0, 2, 1, 3)
             // [64, N, 12]
-            struct ggml_tensor * Q =
-                ggml_permute(ctx0,
-                        ggml_cpy(ctx0,
-                            Qcur,
-                            ggml_new_tensor_3d(ctx0, GGML_TYPE_F32, n_embd/n_head, n_head, n)),
-                        0, 2, 1, 3);
+            struct ggml_tensor * Q
+                = ggml_permute(ctx0, ggml_cpy(ctx0, Qcur, ggml_new_tensor_3d(ctx0, GGML_TYPE_F32, n_embd / n_head, n_head, n)), 0, 2, 1, 3);
 
             // K = Kmem.view(n_embd/n_head, n_head, n_past + N).permute(0, 2, 1, 3)
             // [64, n_past + N, 12]
-            struct ggml_tensor * K =
-                ggml_permute(ctx0,
-                        ggml_reshape_3d(ctx0,
-                            ggml_view_1d(ctx0, state.memory_k, (n_past + n)*n_embd, il*n_ctx*ggml_element_size(state.memory_k)*n_embd),
-                            n_embd/n_head, n_head, n_past + n),
-                        0, 2, 1, 3);
+            struct ggml_tensor * K = ggml_permute(
+                ctx0,
+                ggml_reshape_3d(
+                    ctx0,
+                    ggml_view_1d(ctx0, state.memory_k, (n_past + n) * n_embd, il * n_ctx * ggml_element_size(state.memory_k) * n_embd),
+                    n_embd / n_head,
+                    n_head,
+                    n_past + n),
+                0,
+                2,
+                1,
+                3);
 
             // GG: flash attention
             //struct ggml_tensor * V =
@@ -519,7 +514,7 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
             // KQ_scaled = KQ / sqrt(n_embd/n_head)
             // [n_past + N, N, 12]
-            struct ggml_tensor * KQ_scaled = ggml_scale_inplace(ctx0, KQ, 1.0f/sqrt(float(n_embd)/n_head));
+            struct ggml_tensor * KQ_scaled = ggml_scale_inplace(ctx0, KQ, 1.0f / sqrt(float(n_embd) / n_head));
 
             // KQ_masked = mask_past(KQ_scaled)
             // [n_past + N, N, 12]
@@ -531,14 +526,21 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
             // V_trans = Vmem.view(n_embd/n_head, n_head, n_past + N).permute(1, 2, 0, 3).contiguous()
             // [n_past + N, 64, 12]
-            struct ggml_tensor * V_trans =
-                ggml_cpy(ctx0,
-                        ggml_permute(ctx0,
-                            ggml_reshape_3d(ctx0,
-                                ggml_view_1d(ctx0, state.memory_v, (n_past + n)*n_embd, il*n_ctx*ggml_element_size(state.memory_v)*n_embd),
-                                n_embd/n_head, n_head, n_past + n),
-                            1, 2, 0, 3),
-                        ggml_new_tensor_3d(ctx0, state.memory_v->type, n_past + n, n_embd/n_head, n_head));
+            struct ggml_tensor * V_trans = ggml_cpy(
+                ctx0,
+                ggml_permute(
+                    ctx0,
+                    ggml_reshape_3d(
+                        ctx0,
+                        ggml_view_1d(ctx0, state.memory_v, (n_past + n) * n_embd, il * n_ctx * ggml_element_size(state.memory_v) * n_embd),
+                        n_embd / n_head,
+                        n_head,
+                        n_past + n),
+                    1,
+                    2,
+                    0,
+                    3),
+                ggml_new_tensor_3d(ctx0, state.memory_v->type, n_past + n, n_embd / n_head, n_head));
 
             // KQV = transpose(V) * KQ_soft_max
             // [64, N, 12]
@@ -550,9 +552,7 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
             // cur = KQV_merged.contiguous().view(n_embd, N)
             // [768, N]
-            cur = ggml_cpy(ctx0,
-                    KQV_merged,
-                    ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_embd, n));
+            cur = ggml_cpy(ctx0, KQV_merged, ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_embd, n));
         }
 
         // projection
@@ -564,13 +564,9 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
         // cur = proj_w*cur + proj_b
         // [768, N]
         {
-            cur = ggml_mul_mat(ctx0,
-                    state.layers[il].c_attn_proj_w,
-                    cur);
+            cur = ggml_mul_mat(ctx0, state.layers[il].c_attn_proj_w, cur);
 
-            cur = ggml_add(ctx0,
-                    ggml_repeat(ctx0, state.layers[il].c_attn_proj_b, cur),
-                    cur);
+            cur = ggml_add(ctx0, ggml_repeat(ctx0, state.layers[il].c_attn_proj_b, cur), cur);
         }
 
         // add the input
@@ -586,11 +582,10 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
                 // cur = ln_2_g*cur + ln_2_b
                 // [ 768, N]
-                cur = ggml_add(ctx0,
-                        ggml_mul(ctx0,
-                            ggml_repeat(ctx0, state.layers[il].ln_2_g, cur),
-                            cur),
-                        ggml_repeat(ctx0, state.layers[il].ln_2_b, cur));
+                cur = ggml_add(
+                    ctx0,
+                    ggml_mul(ctx0, ggml_repeat(ctx0, state.layers[il].ln_2_g, cur), cur),
+                    ggml_repeat(ctx0, state.layers[il].ln_2_b, cur));
             }
 
             // fully connected
@@ -601,13 +596,9 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
             //
             // cur = fc_w*cur + fc_b
             // [3072, N]
-            cur = ggml_mul_mat(ctx0,
-                    state.layers[il].c_mlp_fc_w,
-                    cur);
+            cur = ggml_mul_mat(ctx0, state.layers[il].c_mlp_fc_w, cur);
 
-            cur = ggml_add(ctx0,
-                    ggml_repeat(ctx0, state.layers[il].c_mlp_fc_b, cur),
-                    cur);
+            cur = ggml_add(ctx0, ggml_repeat(ctx0, state.layers[il].c_mlp_fc_b, cur), cur);
 
             // GELU activation
             // [3072, N]
@@ -621,13 +612,9 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
             //
             // cur = proj_w*cur + proj_b
             // [768, N]
-            cur = ggml_mul_mat(ctx0,
-                    state.layers[il].c_mlp_proj_w,
-                    cur);
+            cur = ggml_mul_mat(ctx0, state.layers[il].c_mlp_proj_w, cur);
 
-            cur = ggml_add(ctx0,
-                    ggml_repeat(ctx0, state.layers[il].c_mlp_proj_b, cur),
-                    cur);
+            cur = ggml_add(ctx0, ggml_repeat(ctx0, state.layers[il].c_mlp_proj_b, cur), cur);
         }
 
         // input for next layer
@@ -641,11 +628,7 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
         // inpL = ln_f_g*inpL + ln_f_b
         // [ 768, N]
-        inpL = ggml_add(ctx0,
-                ggml_mul(ctx0,
-                    ggml_repeat(ctx0, state.ln_f_g, inpL),
-                    inpL),
-                ggml_repeat(ctx0, state.ln_f_b, inpL));
+        inpL = ggml_add(ctx0, ggml_mul(ctx0, ggml_repeat(ctx0, state.ln_f_g, inpL), inpL), ggml_repeat(ctx0, state.ln_f_b, inpL));
     }
 
     // inpL = WTE * inpL
@@ -670,11 +653,10 @@ bool Gpt2Model::gpt2_eval(const int n_threads,
 
     // return result just for the last token
     embd_w.resize(n_vocab);
-    memcpy(embd_w.data(), reinterpret_cast<float *>(ggml_get_data(inpL)) + (n_vocab*(n-1)), sizeof(float)*n_vocab);
+    memcpy(embd_w.data(), reinterpret_cast<float *>(ggml_get_data(inpL)) + (n_vocab * (n - 1)), sizeof(float) * n_vocab);
 
-    if (mem_per_token == 0) {
-        mem_per_token = ggml_used_mem(ctx0)/n;
-    }
+    if (mem_per_token == 0)
+        mem_per_token = ggml_used_mem(ctx0) / n;
     //printf("used_mem = %zu\n", ggml_used_mem(ctx0));
 
     ggml_free(ctx0);
