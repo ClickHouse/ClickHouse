@@ -1,12 +1,16 @@
 import pytest
-from test_modify_engine_on_restart.common import check_flags_deleted, set_convert_flags
+from test_modify_engine_on_restart.common import (
+    check_flags_deleted,
+    get_table_path,
+    set_convert_flags,
+)
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(
     "ch1",
     main_configs=[
-        "configs/config.d/clusters_unusual.xml",
+        "configs/config.d/clusters_zk_path.xml",
         "configs/config.d/distributed_ddl.xml",
     ],
     with_zookeeper=True,
@@ -27,8 +31,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def q(node, query):
-    return node.query(database=database_name, sql=query)
+def q(node, query, database=database_name):
+    return node.query(database=database, sql=query)
 
 
 def create_tables():
@@ -63,7 +67,7 @@ def check_tables():
         )
         .strip()
         .startswith(
-            "ReplicatedReplacingMergeTree(\\'/lol/kek/\\\\\\'/{uuid}\\', \\'{replica}\\', D)"
+            "ReplicatedReplacingMergeTree(\\'/clickhouse/\\\\\\'/{database}/{table}/{uuid}\\', \\'{replica}\\', D)"
         )
     )
     assert (
@@ -73,7 +77,7 @@ def check_tables():
         )
         .strip()
         .startswith(
-            "ReplicatedVersionedCollapsingMergeTree(\\'/lol/kek/\\\\\\'/{uuid}\\', \\'{replica}\\', Sign, Version)"
+            "ReplicatedVersionedCollapsingMergeTree(\\'/clickhouse/\\\\\\'/{database}/{table}/{uuid}\\', \\'{replica}\\', Sign, Version)"
         )
     )
 
@@ -90,3 +94,42 @@ def test_modify_engine_on_restart_with_unusual_path(started_cluster):
     check_flags_deleted(ch1, database_name, ["replacing_ver", "collapsing_ver"])
 
     check_tables()
+
+
+def test_modify_engine_fails_if_zk_path_exists(started_cluster):
+    database_name = "zk_path"
+    ch1.query("CREATE DATABASE " + database_name + " ON CLUSTER cluster")
+
+    q(
+        ch1,
+        "CREATE TABLE already_exists_1 ( A Int64, D Date, S String ) ENGINE MergeTree() PARTITION BY toYYYYMM(D) ORDER BY A;",
+        database_name,
+    )
+    uuid = q(
+        ch1,
+        f"SELECT uuid FROM system.tables WHERE table = 'already_exists_1' and database = '{database_name}'",
+        database_name,
+    ).strip("'[]\n")
+
+    q(
+        ch1,
+        f"CREATE TABLE already_exists_2 ( A Int64, D Date, S String ) ENGINE ReplicatedMergeTree('/clickhouse/\\'/{database_name}/already_exists_1/{uuid}', 'r2') PARTITION BY toYYYYMM(D) ORDER BY A;",
+        database_name,
+    )
+
+    set_convert_flags(ch1, database_name, ["already_exists_1"])
+
+    table_data_path = get_table_path(ch1, "already_exists_1", database_name)
+
+    ch1.stop_clickhouse()
+    ch1.start_clickhouse(retry_start=False, expected_to_fail=True)
+
+    # Check if we can cancel convertation
+    ch1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"rm {table_data_path}convert_to_replicated",
+        ]
+    )
+    ch1.start_clickhouse()
