@@ -18,6 +18,10 @@
                 <type>dynamic_query_handler</type>
                 <query_param_name>get_dynamic_handler_query</query_param_name>
                 <content_type>application/whatever; charset=cp1337</content_type>
+                <http_response_headers>
+                  <X-Test-Http-Response-Headers-Works>it works</X-Test-Http-Response-Headers-Works>
+                  <X-Test-Http-Response-Headers-Even-Multiple>also works</X-Test-Http-Response-Headers-Even-Multiple>
+                </http_response_headers>
             </handler>
         </rule>
     </http_handlers>
