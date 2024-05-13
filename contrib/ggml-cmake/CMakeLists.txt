@@ -27,10 +27,6 @@ set(GGML_ARCH_FLAGS "")
 if ((${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") OR (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64"))
     # ARM architecture
 
-    # check_cxx_ compiler_flag(-mfp16-format=ieee COMPILER_SUPPORTS_FP16_FORMAT_I3E)
-    if (NOT "${COMPILER_SUPPORTS_FP16_FORMAT_I3E}" STREQUAL "")
-        list(APPEND GGML_ARCH_FLAGS -mfp16-format=ieee)
-    endif()
     if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv6")
         list(APPEND GGML_ARCH_FLAGS -mfpu=neon-fp-armv8 -mno-unaligned-access)
     endif()
@@ -94,10 +90,9 @@ set_target_properties(_ggml PROPERTIES PUBLIC_HEADER ${GGML_PUBLIC_HDRS})
 # Dependencies
 #
 
-find_library(MATH_LIB m)        # -lm
-# find_ package(Threads REQUIRED)  # Threads::Threads
-
 target_link_libraries(_ggml PUBLIC ${CMAKE_THREAD_LIBS_INIT})
+
+find_library(MATH_LIB m) # -lm
 if (MATH_LIB)
     target_link_libraries(_ggml PUBLIC ${MATH_LIB})
 endif()
