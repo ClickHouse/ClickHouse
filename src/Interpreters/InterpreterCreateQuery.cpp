@@ -694,7 +694,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && context_->getSettingsRef().flatten_nested)
+    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
 
