@@ -27,12 +27,14 @@ SELECT *
 FROM ( SELECT * FROM test_grouping_sets_predicate GROUP BY GROUPING SETS ( (day_, type_1), (day_) ) )
 WHERE day_ = '2023-01-05'
 GROUP BY *
+ORDER BY ALL
 SETTINGS allow_experimental_analyzer=1;
 
 SELECT *
 FROM ( SELECT * FROM test_grouping_sets_predicate GROUP BY GROUPING SETS ( (*), (day_) ) )
 WHERE day_ = '2023-01-05'
 GROUP BY GROUPING SETS (*)
+ORDER BY type_1
 SETTINGS allow_experimental_analyzer=1;
 
 SELECT *
