@@ -525,7 +525,7 @@ std::vector<GptVocab::id> GptJModel::predict(const GgmlModelParams & user_params
     std::vector<GptVocab::id> total_embd;
     std::vector<GptVocab::id> embd;
 
-    absl::BitGen random_number_generator;
+    pcg64_fast random_number_generator;
     int n_past = 0;
     std::vector<float> logits;
 

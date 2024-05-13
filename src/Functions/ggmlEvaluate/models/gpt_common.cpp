@@ -1,9 +1,10 @@
 #include "gpt_common.h"
-#include <absl/random/discrete_distribution.h>
 
 #include <Common/Exception.h>
 #include <Common/re2.h>
 
+#include <pcg-random/pcg_random.hpp>
+#include <random>
 
 namespace DB
 {
@@ -101,7 +102,7 @@ std::vector<GptVocab::id> gpt_tokenize(const GptVocab & vocab, const std::string
 }
 
 GptVocab::id gpt_sample_top_k_top_p(
-    const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, absl::BitGen & random_number_generator)
+    const GptVocab & vocab, const float * logits, int top_k, double top_p, double temp, pcg64_fast & random_number_generator)
 {
     int n_logits = static_cast<int>(vocab.id_to_token.size());
 
@@ -169,7 +170,7 @@ GptVocab::id gpt_sample_top_k_top_p(
     //}
     //exit(0);
 
-    absl::discrete_distribution<> dist(probs.begin(), probs.end());
+    std::discrete_distribution<> dist(probs.begin(), probs.end());
     int idx = dist(random_number_generator);
 
     return logits_id[idx].second;
