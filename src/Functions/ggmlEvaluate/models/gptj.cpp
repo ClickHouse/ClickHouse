@@ -11,14 +11,10 @@
 
 #include <fstream>
 
-
-using namespace Poco;
-using namespace Poco::Util;
-
 namespace DB
 {
 
-static const std::string ModelArchName = "gptj";
+static constexpr const char* ModelArchName = "gptj";
 
 namespace ErrorCodes
 {
