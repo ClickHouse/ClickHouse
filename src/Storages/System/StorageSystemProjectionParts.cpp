@@ -84,8 +84,11 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
         {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression."},
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
         {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
-    }
-    )
+
+        {"is_broken",                                   std::make_shared<DataTypeUInt8>(), "Whether projection part is broken"},
+        {"exception_code",                              std::make_shared<DataTypeInt32>(), "Exception message explaining broken state of the projection part"},
+        {"exception",                                   std::make_shared<DataTypeString>(), "Exception code explaining broken state of the projection part"},
+    })
 {
 }
 
@@ -272,11 +275,37 @@ void StorageSystemProjectionParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
+        {
+            if (part->default_codec)
+                columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
+            else
+                columns[res_index++]->insertDefault();
+        }
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
+
+        {
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->is_broken.load(std::memory_order_relaxed));
+
+            if (part->is_broken)
+            {
+                std::lock_guard lock(part->broken_reason_mutex);
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insert(part->exception_code);
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insert(part->exception);
+            }
+            else
+            {
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insertDefault();
+            }
+        }
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

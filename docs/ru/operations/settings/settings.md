@@ -2776,7 +2776,7 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 -   0 — номера строк не выводятся.
 -   1 — номера строк выводятся.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 **Пример**
 
@@ -3446,17 +3446,6 @@ SELECT
     (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
-
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Позволяет создавать базы данных с движком [Replicated](../../engines/database-engines/replicated.md).
-
-Возможные значения:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Значение по умолчанию: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 

@@ -47,7 +47,7 @@ size_t getNumberOfDimensions(const IDataType & type)
 
 size_t getNumberOfDimensions(const IColumn & column)
 {
-    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column))
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return column_array->getNumberOfDimensions();
     return 0;
 }
@@ -1052,6 +1052,14 @@ Field FieldVisitorFoldDimension::operator()(const Array & x) const
         res[i] = applyVisitor(FieldVisitorFoldDimension(num_dimensions_to_fold - 1), x[i]);
 
     return res;
+}
+
+Field FieldVisitorFoldDimension::operator()(const Null & x) const
+{
+    if (num_dimensions_to_fold == 0)
+        return x;
+
+    return Array();
 }
 
 void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)

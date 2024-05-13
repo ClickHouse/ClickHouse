@@ -70,6 +70,16 @@ static void removeNonCommonColumns(const Block & src_header, Block & target_head
     target_header.erase(target_only_positions);
 }
 
+namespace
+{
+    void checkTargetTableHasQueryOutputColumns(const ColumnsDescription & target_table_columns, const ColumnsDescription & select_query_output_columns)
+    {
+        for (const auto & column : select_query_output_columns)
+            if (!target_table_columns.has(column.name))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
+    }
+}
+
 StorageMaterializedView::StorageMaterializedView(
     const StorageID & table_id_,
     ContextPtr local_context,
@@ -81,9 +91,16 @@ StorageMaterializedView::StorageMaterializedView(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    auto * storage_def = query.storage;
+    if (storage_def && storage_def->primary_key)
+        storage_metadata.primary_key = KeyDescription::getKeyFromAST(storage_def->primary_key->ptr(),
+                                                                     storage_metadata.columns,
+                                                                     local_context->getGlobalContext());
+
     if (query.sql_security)
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
+    /// Materialized view doesn't support SQL SECURITY INVOKER.
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
@@ -203,8 +220,10 @@ void StorageMaterializedView::read(
         context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
 
     auto storage_id = storage->getStorageID();
+
+    /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table && !storage_id.empty())
+    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type)
         context->checkAccess(AccessType::SELECT, storage_id, column_names);
 
     storage->read(query_plan, column_names, target_storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
@@ -252,8 +271,10 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     auto storage_id = storage->getStorageID();
+
+    /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table && !storage_id.empty())
+    if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type)
     {
         auto query_sample_block = InterpreterInsertQuery::getSampleBlock(query->as<ASTInsertQuery &>(), storage, metadata_snapshot, context);
         context->checkAccess(AccessType::INSERT, storage_id, query_sample_block.getNames());
@@ -402,11 +423,13 @@ void StorageMaterializedView::alter(
     /// Check the materialized view's inner table structure.
     if (has_inner_table)
     {
-        const Block & block = InterpreterSelectWithUnionQuery::getSampleBlock(new_select.select_query, local_context);
-        const auto & inner_table_metadata = tryGetTargetTable()->getInMemoryMetadata().columns;
-        for (const auto & name : block.getNames())
-            if (!inner_table_metadata.has(name))
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", name);
+        /// If this materialized view has an inner table it should always have the same columns as this materialized view.
+        /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner table).
+        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr();
+        const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
+        checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
+        /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
+        new_metadata.columns = target_table_metadata->columns;
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
@@ -579,7 +602,7 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     if (hasInnerTable())
-        return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+        getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
 bool StorageMaterializedView::supportsBackupPartition() const

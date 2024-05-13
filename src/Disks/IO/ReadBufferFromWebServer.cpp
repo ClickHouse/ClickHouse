@@ -21,10 +21,11 @@ namespace ErrorCodes
 ReadBufferFromWebServer::ReadBufferFromWebServer(
     const String & url_,
     ContextPtr context_,
+    size_t file_size_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -36,7 +37,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
 }
 
 
-std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
+std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
     if (read_until_position)
@@ -119,9 +120,8 @@ bool ReadBufferFromWebServer::nextImpl()
 
     auto result = impl->next();
 
-    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
-
-    chassert(working_buffer.begin() == impl->buffer().begin());
+    working_buffer = impl->buffer();
+    pos = impl->position();
 
     if (result)
         offset += working_buffer.size();
@@ -132,16 +132,29 @@ bool ReadBufferFromWebServer::nextImpl()
 
 off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
 {
-    if (impl)
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer");
-
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed");
 
     if (offset_ < 0)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
-    offset = offset_;
+    if (impl)
+    {
+        if (use_external_buffer)
+        {
+            impl->set(internal_buffer.begin(), internal_buffer.size());
+        }
+
+        impl->seek(offset_, SEEK_SET);
+
+        working_buffer = impl->buffer();
+        pos = impl->position();
+        offset = offset_ + available();
+    }
+    else
+    {
+        offset = offset_;
+    }
 
     return offset;
 }

@@ -14,8 +14,6 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     multiMatchAny.cpp
     checkHyperscanRegexp.cpp
     array/has.cpp
-    equals.cpp
-    notEquals.cpp
     CastOverloadResolver.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
@@ -48,6 +46,7 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
+        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash

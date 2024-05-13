@@ -30,10 +30,7 @@ public:
         const ContextPtr & context);
 
     std::string getName() const override { return "AzureBlobStorageCluster"; }
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
-
-    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     void updateBeforeRead(const ContextPtr & /*context*/) override {}

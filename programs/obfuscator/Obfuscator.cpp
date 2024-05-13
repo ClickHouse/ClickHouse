@@ -674,8 +674,7 @@ private:
 
         if (pos + length > end)
             length = end - pos;
-        if (length > sizeof(CodePoint))
-            length = sizeof(CodePoint);
+        length = std::min(length, sizeof(CodePoint));
 
         CodePoint res = 0;
         memcpy(&res, pos, length);
@@ -883,9 +882,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in markov model");
 
             size_t offset_from_begin_of_string = pos - data;
-            size_t determinator_sliding_window_size = params.determinator_sliding_window_size;
-            if (determinator_sliding_window_size > determinator_size)
-                determinator_sliding_window_size = determinator_size;
+            size_t determinator_sliding_window_size = std::min(params.determinator_sliding_window_size, determinator_size);
 
             size_t determinator_sliding_window_overflow = offset_from_begin_of_string + determinator_sliding_window_size > determinator_size
                 ? offset_from_begin_of_string + determinator_sliding_window_size - determinator_size : 0;

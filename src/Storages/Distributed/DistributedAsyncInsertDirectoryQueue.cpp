@@ -101,7 +101,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     StorageDistributed & storage_,
     const DiskPtr & disk_,
     const std::string & relative_path_,
-    ConnectionPoolPtr pool_,
+    ConnectionPoolWithFailoverPtr pool_,
     ActionBlocker & monitor_blocker_,
     BackgroundSchedulePool & bg_pool)
     : storage(storage_)
@@ -237,7 +237,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
 }
 
 
-ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
 {
     const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
@@ -284,7 +284,7 @@ ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster
     auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
     const auto settings = storage.getContext()->getSettings();
-    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
+    return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
         settings.distributed_replica_error_cap);
@@ -412,7 +412,9 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-        auto connection = pool->get(timeouts, insert_settings);
+        auto result = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto connection = std::move(result.front().entry);
+
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),

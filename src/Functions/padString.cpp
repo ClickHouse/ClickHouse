@@ -84,8 +84,7 @@ namespace
                     if (offset == pad_string.length())
                         break;
                     offset += UTF8::seqLength(pad_string[offset]);
-                    if (offset > pad_string.length())
-                        offset = pad_string.length();
+                    offset = std::min(offset, pad_string.length());
                 }
             }
 

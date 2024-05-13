@@ -60,8 +60,7 @@ struct UsefulSkipIndexes
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-
-    enum class IndexType
+    enum class IndexType : uint8_t
     {
         None,
         MinMax,
@@ -280,6 +279,7 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+    bool enable_remove_parts_from_snapshot_optimization = true;
 };
 
 }

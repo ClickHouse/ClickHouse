@@ -94,6 +94,8 @@ void StorageInMemoryMetadata::setSQLSecurity(const ASTSQLSecurity & sql_security
 {
     if (sql_security.definer)
         definer = sql_security.definer->toString();
+    else
+        definer = std::nullopt;
 
     sql_security_type = sql_security.type;
 }

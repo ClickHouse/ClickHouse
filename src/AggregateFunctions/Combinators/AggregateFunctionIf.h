@@ -18,7 +18,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -42,7 +42,7 @@ public:
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} require at least one argument", getName());
 
         only_null_condition = types.back()->onlyNull();
 
@@ -167,9 +167,14 @@ public:
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
-        nested_func->merge(place, rhs, thread_pool, arena);
+        nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
     }
 
     void mergeBatch(

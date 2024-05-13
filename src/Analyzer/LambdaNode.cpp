@@ -46,13 +46,13 @@ void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool LambdaNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool LambdaNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const LambdaNode &>(rhs);
     return argument_names == rhs_typed.argument_names;
 }
 
-void LambdaNode::updateTreeHashImpl(HashState & state) const
+void LambdaNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(argument_names.size());
     for (const auto & argument_name : argument_names)

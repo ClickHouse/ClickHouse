@@ -1,6 +1,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #endif
@@ -118,6 +119,20 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
     });
 }
 
+void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
+{
+    factory.registerMetadataStorageType(
+        "plain_rewritable",
+        [](const std::string & /* name */,
+           const Poco::Util::AbstractConfiguration & config,
+           const std::string & config_prefix,
+           ObjectStoragePtr object_storage) -> MetadataStoragePtr
+        {
+            auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
+            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix);
+        });
+}
+
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
@@ -137,6 +152,7 @@ void registerMetadataStorages()
     auto & factory = MetadataStorageFactory::instance();
     registerMetadataStorageFromDisk(factory);
     registerPlainMetadataStorage(factory);
+    registerPlainRewritableMetadataStorage(factory);
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerMetadataStorageFromStaticFilesWebServer(factory);
 #endif

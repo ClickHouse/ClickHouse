@@ -93,7 +93,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     friend class HDFSSource;

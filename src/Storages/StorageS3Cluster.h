@@ -27,10 +27,7 @@ public:
         const ContextPtr & context_);
 
     std::string getName() const override { return "S3Cluster"; }
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
-
-    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     void updateConfigurationIfChanged(ContextPtr local_context);

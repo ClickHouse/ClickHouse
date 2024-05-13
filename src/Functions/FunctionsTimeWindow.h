@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Common/DateLUT.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/IFunction.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB

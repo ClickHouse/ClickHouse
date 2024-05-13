@@ -5,7 +5,7 @@ FROM ubuntu:22.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
 
 RUN apt-get update \
     && apt-get install \

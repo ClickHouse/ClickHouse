@@ -31,10 +31,7 @@ public:
         const String & compression_method);
 
     std::string getName() const override { return "HDFSCluster"; }
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
-
-    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;

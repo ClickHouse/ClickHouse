@@ -113,8 +113,10 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
     FutureSetFromSubqueryPtr future_set;
 };
 
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+
 ///TODO maybe remove shared_ptr from here?
-using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 

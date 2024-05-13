@@ -84,7 +84,7 @@ public:
         rhs->getArguments().getNodes().push_back(rhs_count);
         resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());
 
-        const auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
+        auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
         if (column_id == 0)
             new_node->getArguments().getNodes() = {lhs, rhs};
         else if (column_id == 1)
@@ -95,7 +95,12 @@ public:
         if (!new_node)
             return;
 
-        node = new_node;
+        QueryTreeNodePtr res = std::move(new_node);
+
+        if (!res->getResultType()->equals(*function_node->getResultType()))
+            res = createCastFunction(res, function_node->getResultType(), getContext());
+
+        node = std::move(res);
     }
 };
 

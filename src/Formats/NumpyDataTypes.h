@@ -7,7 +7,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-enum class NumpyDataTypeIndex
+enum class NumpyDataTypeIndex : uint8_t
 {
     Int8,
     Int16,

@@ -156,6 +156,7 @@
     M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry.") \
     M(DistributedConnectionMissingTable, "Number of times we rejected a replica from a distributed query, because it did not contain a table needed for the query.") \
     M(DistributedConnectionStaleReplica, "Number of times we rejected a replica from a distributed query, because some table needed for a query had replication lag higher than the configured threshold.") \
+    M(DistributedConnectionSkipReadOnlyReplica, "Number of replicas skipped during INSERT into Distributed table due to replicas being read-only") \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished.") \
     \
     M(HedgedRequestsChangeReplica, "Total count when timeout for changing replica expired in hedged requests.") \
@@ -355,8 +356,6 @@ The server successfully detected this situation and will download merged part fr
     M(PerfLocalMemoryReferences, "Local NUMA node memory reads") \
     M(PerfLocalMemoryMisses, "Local NUMA node memory read misses") \
     \
-    M(CreatedHTTPConnections, "Total amount of created HTTP connections (counter increase every time connection is created).") \
-    \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a query profiler signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
     M(QueryProfilerConcurrencyOverruns, "Number of times we drop processing of a query profiler signal due to too many concurrent query profilers in other threads, which may indicate overload.") \
@@ -404,13 +403,6 @@ The server successfully detected this situation and will download merged part fr
     M(S3PutObject, "Number of S3 API PutObject calls.") \
     M(S3GetObject, "Number of S3 API GetObject calls.") \
     \
-    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
-    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
-    M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
-    M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
-    M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
-    M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
-    \
     M(DiskS3DeleteObjects, "Number of DiskS3 API DeleteObject(s) calls.") \
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
@@ -436,13 +428,30 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromS3ResetSessions, "Number of HTTP sessions that were reset in ReadBufferFromS3.") \
     M(ReadBufferFromS3PreservedSessions, "Number of HTTP sessions that were preserved in ReadBufferFromS3.") \
     \
-    M(ReadWriteBufferFromHTTPPreservedSessions, "Number of HTTP sessions that were preserved in ReadWriteBufferFromHTTP.") \
-    \
     M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.") \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
     M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.") \
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
+    \
+    M(AzureGetObject, "Number of Azure API GetObject calls.") \
+    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
+    M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
+    M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
+    M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
+    \
+    M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
+    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
+    M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
+    M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
+    M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.") \
+    \
+    M(ReadBufferFromAzureMicroseconds, "Time spent on reading from Azure.") \
+    M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.") \
+    M(ReadBufferFromAzureBytes, "Bytes read from Azure.") \
+    M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure") \
     \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.") \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.") \
@@ -459,7 +468,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata") \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
-    M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being unreleasable") \
+    M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state") \
+    M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state") \
     M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts") \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time") \
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time") \
@@ -479,6 +489,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
+    M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job") \
+    M(FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, "Time for which background thread executed free space keeping job") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -726,6 +738,9 @@ The server successfully detected this situation and will download merged part fr
     M(AddressesDiscovered, "Total count of new addresses in dns resolve results for http connections") \
     M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for http connections") \
     M(AddressesMarkedAsFailed, "Total count of addresses which has been marked as faulty due to connection errors for http connections") \
+    \
+    M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP") \
+    M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

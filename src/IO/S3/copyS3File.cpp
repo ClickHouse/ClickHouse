@@ -58,7 +58,7 @@ namespace
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_)
@@ -84,7 +84,7 @@ namespace
         const S3Settings::RequestSettings & request_settings;
         const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
         const std::optional<std::map<String, String>> & object_metadata;
-        ThreadPoolCallbackRunner<void> schedule;
+        ThreadPoolCallbackRunnerUnsafe<void> schedule;
         bool for_disk_s3;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
@@ -140,7 +140,7 @@ namespace
             fillCreateMultipartRequest(request);
 
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
-            if (for_disk_s3)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
             auto outcome = client_ptr->CreateMultipartUpload(request);
@@ -189,7 +189,7 @@ namespace
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
-                if (for_disk_s3)
+                if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
@@ -239,7 +239,7 @@ namespace
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, request_settings, {}, "Immediately after upload");
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, request_settings, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
@@ -467,7 +467,7 @@ namespace
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyDataToS3File"))
@@ -528,7 +528,7 @@ namespace
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3PutObject);
-                if (for_disk_s3)
+                if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
                 Stopwatch watch;
@@ -615,7 +615,7 @@ namespace
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
 
             ProfileEvents::increment(ProfileEvents::S3UploadPart);
-            if (for_disk_s3)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
             auto outcome = client_ptr->UploadPart(req);
@@ -650,7 +650,7 @@ namespace
             const S3Settings::RequestSettings & request_settings_,
             const ReadSettings & read_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
+            ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyS3File"))
@@ -726,7 +726,7 @@ namespace
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CopyObject);
-                if (for_disk_s3)
+                if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
                 auto outcome = client_ptr->CopyObject(request);
@@ -830,7 +830,7 @@ namespace
             auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
 
             ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
-            if (for_disk_s3)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
             auto outcome = client_ptr->UploadPartCopy(req);
@@ -856,7 +856,7 @@ void copyDataToS3File(
     const S3Settings::RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
     CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
@@ -876,7 +876,7 @@ void copyS3File(
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
     if (settings.allow_native_copy)

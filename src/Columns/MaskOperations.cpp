@@ -205,10 +205,10 @@ static MaskInfo extractMaskImpl(
     auto column = col->convertToFullColumnIfLowCardinality();
 
     /// Special implementation for Null and Const columns.
-    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
+    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(&*column))
         return extractMaskFromConstOrNull<inverted>(mask, column, null_value, nulls);
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column))
     {
         const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
         return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
