@@ -133,10 +133,10 @@ public:
     ~IFunctionBase() override = default;
 
     virtual ColumnPtr execute( /// NOLINT
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
-    {
-        return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
-    }
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run = false) const;
 
     /// Get the main function name.
     virtual String getName() const = 0;
