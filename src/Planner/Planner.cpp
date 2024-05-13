@@ -35,6 +35,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -1249,6 +1250,21 @@ void Planner::buildPlanForUnionNode()
         || union_mode == SelectUnionMode::INTERSECT_DEFAULT)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode must be initialized");
 
+    if (union_node.hasRecursiveCTETable())
+    {
+        const auto & recursive_cte_table = *union_node.getRecursiveCTETable();
+
+        ColumnsWithTypeAndName recursive_cte_columns;
+        recursive_cte_columns.reserve(recursive_cte_table.columns.size());
+        for (const auto & recursive_cte_table_column : recursive_cte_table.columns)
+            recursive_cte_columns.emplace_back(recursive_cte_table_column.type, recursive_cte_table_column.name);
+
+        auto read_from_recursive_cte_step = std::make_unique<ReadFromRecursiveCTEStep>(Block(std::move(recursive_cte_columns)), query_tree);
+        read_from_recursive_cte_step->setStepDescription(query_tree->toAST()->formatForErrorMessage());
+        query_plan.addStep(std::move(read_from_recursive_cte_step));
+        return;
+    }
+
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
@@ -1366,6 +1382,17 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
+    select_query_info.merge_tree_enable_remove_parts_from_snapshot_optimization = select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization;
+
+    if (!select_query_info.has_window && query_node.hasQualify())
+    {
+        if (query_node.hasHaving())
+            query_node.getHaving() = mergeConditionNodes({query_node.getHaving(), query_node.getQualify()}, query_context);
+        else
+            query_node.getHaving() = query_node.getQualify();
+
+        query_node.getQualify() = {};
+    }
 
     if (!select_query_info.need_aggregate && query_node.hasHaving())
     {
@@ -1635,6 +1662,9 @@ void Planner::buildPlanForQueryNode()
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
+
+            if (expression_analysis_result.hasQualify())
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", result_actions_to_execute);
 
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", result_actions_to_execute);

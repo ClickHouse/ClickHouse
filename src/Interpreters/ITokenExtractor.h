@@ -32,7 +32,7 @@ struct ITokenExtractor
 
     virtual void stringPaddedToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
     {
-        return stringToBloomFilter(data, length, bloom_filter);
+        stringToBloomFilter(data, length, bloom_filter);
     }
 
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
@@ -41,7 +41,7 @@ struct ITokenExtractor
 
     virtual void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const
     {
-        return stringToGinFilter(data, length, gin_filter);
+        stringToGinFilter(data, length, gin_filter);
     }
 
     virtual void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;

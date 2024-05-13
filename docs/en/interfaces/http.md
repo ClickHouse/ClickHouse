@@ -327,7 +327,9 @@ Use buffering to avoid situations where a query processing error occurred after 
 
 ## Setting a role with query parameters {#setting-role-with-query-parameters}
 
-In certain scenarios, it might be required to set the granted role first, before executing the statement itself.
+This is a new feature added in ClickHouse 24.4.
+
+In specific scenarios, setting the granted role first might be required before executing the statement itself.
 However, it is not possible to send `SET ROLE` and the statement together, as multi-statements are not allowed:
 
 ```
@@ -346,7 +348,7 @@ To overcome this limitation, you could use the `role` query parameter instead:
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
 ```
 
-This will be an equivalent of executing `SET ROLE my_role` before the statement.
+This will be the equivalent of executing `SET ROLE my_role` before the statement.
 
 Additionally, it is possible to specify multiple `role` query parameters:
 

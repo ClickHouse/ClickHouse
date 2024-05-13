@@ -93,7 +93,7 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
 ### ClickVisual {#clickvisual}
 
-[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual是一款轻量级的开源日志查询、分析、报警的可视化平台！
+[ClickVisual](https://clickvisual.net/) ClickVisual是一款轻量级的开源日志查询、分析、报警的可视化平台！
 
 特征：
 

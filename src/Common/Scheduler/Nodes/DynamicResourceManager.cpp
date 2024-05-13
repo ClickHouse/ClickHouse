@@ -61,7 +61,7 @@ DynamicResourceManager::State::Resource::Resource(
 
     // Create nodes
     bool has_root = false;
-    for (auto [path, key] : path2key)
+    for (const auto & [path, key] : path2key)
     {
         // Validate path
         size_t slash = path.rfind('/');

@@ -159,7 +159,7 @@ public:
 
     virtual ~IMetadataTransaction() = default;
 
-private:
+protected:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");
@@ -243,7 +243,7 @@ public:
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
-private:
+protected:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");
