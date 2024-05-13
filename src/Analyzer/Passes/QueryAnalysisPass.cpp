@@ -6516,7 +6516,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    /// Lambda can be inside the aggregate function, so we should check parent scopes.
+    /// Most likely only the root scope can have an arrgegate function, but let's check all just in case.
+    bool in_aggregate_function_scope = false;
+    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+        in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+
+    if (!in_aggregate_function_scope)
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
