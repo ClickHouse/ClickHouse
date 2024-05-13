@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS t_length_1;
 DROP TABLE IF EXISTS t_length_2;
 
+SET optimize_functions_to_subcolumns = 1;
 SET allow_experimental_analyzer = 1;
 SET optimize_on_insert = 0;
 

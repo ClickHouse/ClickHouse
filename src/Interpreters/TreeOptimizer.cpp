@@ -17,7 +17,6 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
-#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
@@ -564,63 +563,6 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeFunctionsToSubcolumns(ASTPtr & query, const TreeRewriterResult & result)
-{
-    if (!result.storage || !result.storage->supportsOptimizationToSubcolumns() || !result.storage_snapshot)
-        return;
-
-    const auto & metadata_snapshot = result.storage_snapshot->metadata;
-    const auto & select_query = assert_cast<const ASTSelectQuery &>(*query);
-
-    /// For queries with FINAL converting function to subcolumn may alter
-    /// special merging algorithms and produce wrong result of query.
-    if (select_query.final())
-        return;
-
-    NameSet all_key_columns;
-
-    const auto & primary_key_columns = result.storage_snapshot->metadata->getColumnsRequiredForPrimaryKey();
-    all_key_columns.insert(primary_key_columns.begin(), primary_key_columns.end());
-
-    const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
-    all_key_columns.insert(partition_key_columns.begin(), partition_key_columns.end());
-
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-    {
-        const auto & index_columns = index.expression->getRequiredColumns();
-        all_key_columns.insert(index_columns.begin(), index_columns.end());
-    }
-
-    /// Do not optimize if full column is requested in other context.
-    /// It doesn't make sense because it doesn't reduce amount of read data
-    /// and optimized functions are not computation heavy. But introducing
-    /// new identifier complicates query analysis and may break it.
-    ///
-    /// E.g. query:
-    ///     SELECT n FROM table GROUP BY n HAVING isNotNull(n)
-    /// may be optimized to incorrect query:
-    ///     SELECT n FROM table GROUP BY n HAVING not(n.null)
-    /// Will produce: `n.null` is not under aggregate function and not in GROUP BY keys)
-    ///
-    /// Do not optimize index columns (primary, min-max, secondary),
-    /// because otherwise analysis of indexes may be broken.
-    /// TODO: handle subcolumns in index analysis.
-
-    RewriteFunctionToSubcolumnFirstPassVisitor::Data data(metadata_snapshot);
-    RewriteFunctionToSubcolumnFirstPassVisitor(data).visit(query);
-
-    NameSet identifiers_to_optimize;
-    for (const auto & [identifier, count] : data.optimized_identifiers_count)
-        if (!all_key_columns.contains(identifier) && data.indentifiers_count[identifier] == count)
-            identifiers_to_optimize.insert(identifier);
-
-    if (identifiers_to_optimize.empty())
-        return;
-
-    RewriteFunctionToSubcolumnSecondPassVisitor::Data rewrite_data(metadata_snapshot, identifiers_to_optimize);
-    RewriteFunctionToSubcolumnSecondPassVisitor(rewrite_data).visit(query);
-}
-
 void optimizeOrLikeChain(ASTPtr & query)
 {
     ConvertFunctionOrLikeVisitor::Data data = {};
@@ -684,9 +626,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
-
-    if (settings.optimize_functions_to_subcolumns)
-        optimizeFunctionsToSubcolumns(query, result);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
