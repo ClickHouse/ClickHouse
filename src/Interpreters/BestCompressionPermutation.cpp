@@ -2,6 +2,7 @@
 
 #include <base/sort.h>
 #include <Columns/IColumn.h>
+#include <Common/iota.h>
 #include <Common/PODArray.h>
 #include <Interpreters/sortBlock.h>
 
@@ -122,6 +123,16 @@ EqualRanges getEqualRanges(const Block & block, const SortDescription & descript
 
 void getBestCompressionPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & permutation)
 {
+    if (!block)
+        return;
+    if (!permutation.empty() && block.rows() != permutation.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "!permutation.empty() && block.rows() != permutation.size()");
+    if (permutation.empty())
+    {
+        size_t size = block.rows();
+        permutation.resize(size);
+        iota(permutation.data(), size, IColumn::Permutation::value_type(0));
+    }
     const auto equal_ranges = getEqualRanges(block, description, permutation);
     const auto not_already_sorted_columns = getNotAlreadySortedColumnsIndex(block, description);
     for (const auto & range : equal_ranges)
