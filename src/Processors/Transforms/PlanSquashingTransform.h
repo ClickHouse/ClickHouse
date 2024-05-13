@@ -4,9 +4,23 @@
 #include <Processors/IProcessor.h>
 #include <Interpreters/Squashing.h>
 
+enum PlanningStatus
+{
+    INIT,
+    READ_IF_CAN,
+    WAIT_IN,
+    PUSH,
+    WAIT_OUT_AND_PUSH,
+    WAIT_OUT_FLUSH,
+    FINISH
+};
+
 namespace DB
 {
-
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class PlanSquashingTransform : public IProcessor
 {
@@ -20,19 +34,23 @@ public:
     OutputPorts & getOutputPorts() { return outputs; }
 
     Status prepare() override;
+    Status init();
     Status prepareConsume();
     Status prepareSend();
+    Status prepareSendFlush();
+    Status waitForDataIn();
+    Status finish();
 
+    bool checkInputs();
     void transform(Chunk & chunk);
 
 protected:
 
 private:
-    size_t CalculateBlockSize(const Block & block);
     Chunk chunk;
     PlanSquashing balance;
-    bool has_data = false;
-    std::vector<char> was_output_processed;
+    PlanningStatus planning_status = PlanningStatus::INIT;
+    size_t available_inputs = 0;
 
     /// When consumption is finished we need to release the final chunk regardless of its size.
     bool finished = false;
