@@ -9,7 +9,6 @@ enum PlanningStatus
     INIT,
     READ_IF_CAN,
     WAIT_IN,
-    PUSH,
     WAIT_OUT_AND_PUSH,
     WAIT_OUT_FLUSH,
     FINISH
@@ -17,10 +16,6 @@ enum PlanningStatus
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 class PlanSquashingTransform : public IProcessor
 {

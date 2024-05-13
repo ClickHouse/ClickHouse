@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 PlanSquashingTransform::PlanSquashingTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports)
     : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header)), balance(header, min_block_size_rows, min_block_size_bytes)
 {
@@ -34,11 +39,6 @@ IProcessor::Status PlanSquashingTransform::prepare()
                 break;
             }
             case PlanningStatus::WAIT_OUT_AND_PUSH:
-            {
-                status = prepareSend();
-                break;
-            }
-            case PlanningStatus::PUSH:
             {
                 status = prepareSend();
                 break;
@@ -121,10 +121,9 @@ bool PlanSquashingTransform::checkInputs()
     bool all_finished = true;
 
     for (auto & output : outputs)
-    {
         if (!output.isFinished())
             all_finished = false;
-    }
+
     if (all_finished) /// If all outputs are closed, we close inputs (just in case)
     {
         planning_status = PlanningStatus::FINISH;
@@ -133,11 +132,8 @@ bool PlanSquashingTransform::checkInputs()
 
     all_finished = true;
     for (auto & input : inputs)
-    {
-        
         if (!input.isFinished())
             all_finished = false;
-    }
 
     if (all_finished) /// If all inputs are closed, we check if we have data in balancing
     {
@@ -166,7 +162,7 @@ IProcessor::Status PlanSquashingTransform::waitForDataIn()
 
         if (!input.hasData())
             continue;
-        
+
         available_inputs++;
     }
     if (all_finished)
@@ -174,13 +170,13 @@ IProcessor::Status PlanSquashingTransform::waitForDataIn()
         checkInputs();
         return Status::Ready;
     }
-    
+
     if (available_inputs > 0)
     {
         planning_status = PlanningStatus::READ_IF_CAN;
         return Status::Ready;
     }
-    
+
     return Status::NeedData;
 }
 
