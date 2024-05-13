@@ -2,6 +2,7 @@
 
 #include <base/sort.h>
 #include <Columns/IColumn.h>
+#include <Common/ErrorCodes.h>
 #include <Common/iota.h>
 #include <Common/PODArray.h>
 #include <Interpreters/sortBlock.h>
