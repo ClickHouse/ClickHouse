@@ -753,7 +753,7 @@ size_t getMaxArraySize()
     return 0xFFFFFF;
 }
 
-bool isLimitArraySize()
+bool hasLimitArraySize()
 {
     if (auto context = Context::getGlobalContextInstance())
         return context->getServerSettings().aggregate_function_group_array_has_limit_size;
@@ -767,7 +767,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 {
     assertUnary(name, argument_types);
 
-    bool limit_size = isLimitArraySize();
+    bool limit_size = hasLimitArraySize();
     UInt64 max_elems = getMaxArraySize();
 
     if (parameters.empty())
