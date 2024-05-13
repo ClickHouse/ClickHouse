@@ -94,8 +94,8 @@ namespace impl
                 i = 0;
             if (offsets != nullptr)
             {
-                const auto begin = offsets->begin();
-                auto upper = std::upper_bound(begin, offsets->end(), i);
+                const auto *const begin = offsets->begin();
+                const auto * upper = std::upper_bound(begin, offsets->end(), i);
                 if (upper == offsets->end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "offset {} not found in function SipHashKeyColumns::getKey", i);
                 i = upper - begin;
