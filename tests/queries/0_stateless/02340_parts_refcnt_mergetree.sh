@@ -9,7 +9,11 @@ function check_refcnt_for_table()
 {
     local table=$1 && shift
 
-    $CLICKHOUSE_CLIENT -q "system stop merges $table"
+    $CLICKHOUSE_CLIENT -nm -q "
+        system stop merges $table;
+        -- cleanup thread may hold the parts lock
+        system stop cleanup $table;
+    "
     $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into $table select number, number%4 from numbers(200)"
 
     local query_id
