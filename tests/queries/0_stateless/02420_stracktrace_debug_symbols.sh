@@ -13,4 +13,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Due to inlining, it can show vector instead of Exception.cpp
 
-$CLICKHOUSE_LOCAL --stacktrace -q 'select throwIf(1)' |& grep -c -P '(Common/Exception.cpp|libcxx/include/vector):[0-9]*: DB::Exception::Exception' || $CLICKHOUSE_LOCAL --stacktrace -q 'select throwIf(1)'
+$CLICKHOUSE_LOCAL --stacktrace -q 'select throwIf(1)' |& grep -q -P '(Common/Exception.cpp|libcxx/include/vector):[0-9]*: DB::Exception::Exception' && echo 1 || $CLICKHOUSE_LOCAL --stacktrace -q 'select throwIf(1)'
