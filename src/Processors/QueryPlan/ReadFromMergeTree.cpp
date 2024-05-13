@@ -1473,7 +1473,7 @@ static void buildIndexes(
             else
             {
                 MergeTreeIndexConditionPtr condition;
-                if (index_helper->isVectorSearch())
+                if (index_helper->isVectorSimilarityIndex())
                 {
 #ifdef ENABLE_USEARCH
                     if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))

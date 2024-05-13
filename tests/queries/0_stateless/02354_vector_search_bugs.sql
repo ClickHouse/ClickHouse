@@ -31,6 +31,12 @@ LIMIT 3; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 DROP TABLE tab;
 
+SELECT 'Inserts of Arrays with different sizes within a single part are rejected';
+
+CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance'));
+INSERT INTO tab values (0, [2.2, 2.3]) (1, [3.1, 3.2, 3.3]); -- { serverError INCORRECT_DATA }
+DROP TABLE tab;
+
 
 SELECT 'Correctness of index with > 1 mark';
 

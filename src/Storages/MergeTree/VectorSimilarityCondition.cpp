@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/VectorSimilarityCommon.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -23,7 +23,7 @@ namespace
 {
 
 template <typename Literal>
-void extractReferenceVectorFromLiteral(VectorSimilarityInfo::Embedding & reference_vector, Literal literal)
+void extractReferenceVectorFromLiteral(std::vector<float> & reference_vector, Literal literal)
 {
     Float64 float_element_of_reference_vector;
     Int64 int_element_of_reference_vector;
@@ -39,12 +39,12 @@ void extractReferenceVectorFromLiteral(VectorSimilarityInfo::Embedding & referen
     }
 }
 
-VectorSimilarityInfo::Metric stringToMetric(std::string_view metric)
+VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(std::string_view distance_function)
 {
-    if (metric == "L2Distance")
-        return VectorSimilarityInfo::Metric::L2;
+    if (distance_function == "L2Distance")
+        return VectorSimilarityCondition::Info::DistanceFunction::L2;
     else
-        return VectorSimilarityInfo::Metric::Unknown;
+        return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
 }
 
 }
@@ -56,12 +56,12 @@ VectorSimilarityCondition::VectorSimilarityCondition(const SelectQueryInfo & que
     , index_is_useful(checkQueryStructure(query_info))
 {}
 
-bool VectorSimilarityCondition::alwaysUnknownOrTrue(String metric) const
+bool VectorSimilarityCondition::alwaysUnknownOrTrue(String distance_function) const
 {
     if (!index_is_useful)
-        return true; // Query isn't supported
-    // If query is supported, check metrics for match
-    return !(stringToMetric(metric) == query_information->metric);
+        return true; /// Query isn't supported
+    /// If query is supported, check if distance function of index is the same as distance function in query
+    return !(stringToDistanceFunction(distance_function) == query_information->distance_function);
 }
 
 UInt64 VectorSimilarityCondition::getLimit() const
@@ -92,16 +92,16 @@ String VectorSimilarityCondition::getColumnName() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
 }
 
-VectorSimilarityInfo::Metric VectorSimilarityCondition::getMetricType() const
+VectorSimilarityCondition::Info::DistanceFunction VectorSimilarityCondition::getDistanceFunction() const
 {
     if (index_is_useful && query_information.has_value())
-        return query_information->metric;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
+        return query_information->distance_function;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distance function was requested for useless or uninitialized index.");
 }
 
 bool VectorSimilarityCondition::checkQueryStructure(const SelectQueryInfo & query)
 {
-    VectorSimilarityInfo order_by_info;
+    Info order_by_info;
 
     /// Build rpns for query sections
     const auto & select = query.query->as<ASTSelectQuery &>();
@@ -137,11 +137,11 @@ bool VectorSimilarityCondition::checkQueryStructure(const SelectQueryInfo & quer
 
 void VectorSimilarityCondition::traverseAST(const ASTPtr & node, RPN & rpn)
 {
-    // If the node is ASTFunction, it may have children nodes
+    /// If the node is ASTFunction, it may have children nodes
     if (const auto * func = node->as<ASTFunction>())
     {
         const ASTs & children = func->arguments->children;
-        // Traverse children nodes
+        /// Traverse children nodes
         for (const auto & child : children)
             traverseAST(child, rpn);
     }
@@ -250,9 +250,9 @@ void VectorSimilarityCondition::traverseOrderByAST(const ASTPtr & node, RPN & rp
 }
 
 /// Returns true and stores ANNExpr if the query has valid ORDERBY clause
-bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo & vector_similarity_info)
+bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, Info & info)
 {
-    // ORDER BY clause must have at least 3 expressions
+    /// ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
         return false;
 
@@ -265,13 +265,13 @@ bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo 
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
-    vector_similarity_info.metric = stringToMetric(iter->func_name);
+    info.distance_function = stringToDistanceFunction(iter->func_name);
     ++iter;
 
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
     {
         identifier_found = true;
-        vector_similarity_info.column_name = std::move(iter->identifier.value());
+        info.column_name = std::move(iter->identifier.value());
         ++iter;
     }
 
@@ -280,7 +280,7 @@ bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo 
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
-        extractReferenceVectorFromLiteral(vector_similarity_info.reference_vector, iter->array_literal);
+        extractReferenceVectorFromLiteral(info.reference_vector, iter->array_literal);
         ++iter;
     }
 
@@ -295,7 +295,7 @@ bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo 
         ++iter;
         if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
-            extractReferenceVectorFromLiteral(vector_similarity_info.reference_vector, iter->array_literal);
+            extractReferenceVectorFromLiteral(info.reference_vector, iter->array_literal);
             ++iter;
         }
         else
@@ -306,12 +306,12 @@ bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo 
     {
         if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
             iter->function == RPNElement::FUNCTION_INT_LITERAL)
-            vector_similarity_info.reference_vector.emplace_back(getFloatOrIntLiteralOrPanic(iter));
+            info.reference_vector.emplace_back(getFloatOrIntLiteralOrPanic(iter));
         else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
         {
             if (identifier_found)
                 return false;
-            vector_similarity_info.column_name = std::move(iter->identifier.value());
+            info.column_name = std::move(iter->identifier.value());
             identifier_found = true;
         }
         else
@@ -321,7 +321,7 @@ bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo 
     }
 
     /// Final checks of correctness
-    return identifier_found && !vector_similarity_info.reference_vector.empty();
+    return identifier_found && !info.reference_vector.empty();
 }
 
 /// Returns true and stores Length if we have valid LIMIT clause in query

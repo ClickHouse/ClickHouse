@@ -2,7 +2,7 @@
 
 #ifdef ENABLE_USEARCH
 
-#include <Storages/MergeTree/VectorSimilarityCommon.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 
 #if defined(__linux__) && (defined(__x86_64__) || defined (__aarch64__))
 #  define USEARCH_USE_SIMSIMD 1 /// probably works on other platforms too but let's not risk
@@ -107,7 +107,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 };
 
 
-class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexConditionVectorSimilarity
+class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionVectorSimilarity(
@@ -118,7 +118,7 @@ public:
     ~MergeTreeIndexConditionVectorSimilarity() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
     std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
 
 private:
@@ -142,7 +142,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAGPtr &, ContextPtr) const override;
 
-    bool isVectorSearch() const override { return true; }
+    bool isVectorSimilarityIndex() const override { return true; }
 
 private:
     const unum::usearch::metric_kind_t metric_kind;
