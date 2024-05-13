@@ -469,7 +469,7 @@ void StorageS3Queue::threadFunc()
     }
     catch (...)
     {
-        LOG_TEST(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
+        LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
     }
 
     if (!shutdown_called)

@@ -948,7 +948,7 @@ bool S3QueueFilesMetadata::ProcessingNodeHolder::remove(Coordination::Requests *
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-        LOG_TEST(log, "Failed to remove processing node for file {}: {}", path, getCurrentExceptionMessage(true));
+        LOG_ERROR(log, "Failed to remove processing node for file {}: {}", path, getCurrentExceptionMessage(true));
     }
     return false;
 }
@@ -967,7 +967,7 @@ void S3QueueFilesMetadata::cleanupThreadFunc()
     }
     catch (...)
     {
-        LOG_TEST(log, "Failed to cleanup nodes in zookeeper: {}", getCurrentExceptionMessage(true));
+        LOG_ERROR(log, "Failed to cleanup nodes in zookeeper: {}", getCurrentExceptionMessage(true));
     }
 
     if (shutdown)
@@ -1065,7 +1065,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
         }
         catch (...)
         {
-            LOG_TEST(log, "Failed to fetch metadata for node {}: {}", node, getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Failed to fetch metadata for node {}: {}", node, getCurrentExceptionMessage(true));
         }
     }
 
@@ -1085,7 +1085,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
         }
         catch (...)
         {
-            LOG_TEST(log, "Failed to fetch metadata for node {}: {}", path, getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Failed to fetch metadata for node {}: {}", path, getCurrentExceptionMessage(true));
         }
     }
 

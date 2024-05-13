@@ -238,7 +238,7 @@ Chunk StorageS3QueueSource::generate()
                 }
                 catch (...)
                 {
-                    LOG_TEST(log, "Failed to set file {} as failed: {}",
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
                              key_with_info->key, getCurrentExceptionMessage(true));
                 }
 
@@ -265,7 +265,7 @@ Chunk StorageS3QueueSource::generate()
                 }
                 catch (...)
                 {
-                    LOG_TEST(log, "Failed to set file {} as failed: {}",
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
                              key_with_info->key, getCurrentExceptionMessage(true));
                 }
 
