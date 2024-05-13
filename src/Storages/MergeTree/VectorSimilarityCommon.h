@@ -16,13 +16,7 @@ static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
 /// - reference vector from which all distances are calculated
 /// - metric, e.g. L2Distance
 /// - name of column with embeddings
-/// - type of query
 /// - maximum number of returned elements (LIMIT)
-///
-/// And one optional parameter:
-/// - distance to compare with (only for where queries)
-///
-/// This struct holds all these components.
 struct VectorSimilarityInfo
 {
     using Embedding = std::vector<float>;
@@ -38,44 +32,30 @@ struct VectorSimilarityInfo
     String column_name;
     UInt64 limit;
 
-    enum class Type : uint8_t
-    {
-        OrderBy,
-        Where
-    };
-    Type type;
-
     float distance = -1.0;
 };
 
 
 /// Class VectorSimilarityCondition, is responsible for recognizing if the query can utilize vector similarity indexes.
 /// Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
-/// only one argument, the name of the metric with which index was built. Two main patterns of queries are supported
+/// only one argument, the name of the metric with which index was built. This pattern of queries is supported:
 ///
-/// - 1. WHERE queries:
-///   SELECT * FROM * WHERE DistanceFunc(column, reference_vector) < floatLiteral LIMIT count
+///   SELECT *
+///   FROM *
+///   ORDER BY DistanceFunc(column, reference_vector)
+///   LIMIT count
 ///
-/// - 2. ORDER BY queries:
-///   SELECT * FROM * WHERE * ORDER BY DistanceFunc(column, reference_vector) LIMIT count
+/// Queries without LIMIT count are not supported.
+/// The reference_vector should have float coordinates, e.g. (0.2, 0.1, .., 0.5)
 ///
-/// Queries without LIMIT count are not supported
-/// If the query is both of type 1. and 2., than we can't use the index and alwaysUnknownOrTrue returns true.
-/// reference_vector should have float coordinates, e.g. (0.2, 0.1, .., 0.5)
-///
-/// If the query matches one of these two types, then this class extracts the main information needed for vector similarity indexes from the
-/// query.
+/// If the query matches this template, then this class extracts the main information needed for vector similarity indexes from the query.
 ///
 /// From matching query it extracts
 /// - referenceVector
 /// - metricName(DistanceFunction)
-/// - distance to compare(ONLY for search types, otherwise you get exception)
-/// - spaceDimension(which is referenceVector's components count)
+/// - the dimension of the reference vector
 /// - column
 /// - objects count from LIMIT clause(for both queries)
-/// - queryHasOrderByClause and queryHasWhereClause return true if query matches the type
-///
-/// Search query type is also recognized for PREWHERE clause
 class VectorSimilarityCondition
 {
 public:
@@ -83,9 +63,6 @@ public:
 
     /// Returns false if query can be speeded up by a vector similarity index, true otherwise.
     bool alwaysUnknownOrTrue(String metric) const;
-
-    /// Returns the distance to compare with for search query
-    float getComparisonDistanceForWhereQuery() const;
 
     /// Distance should be calculated regarding to referenceVector
     std::vector<float> getReferenceVector() const;
@@ -96,8 +73,6 @@ public:
     String getColumnName() const;
 
     VectorSimilarityInfo::Metric getMetricType() const;
-
-    VectorSimilarityInfo::Type getQueryType() const;
 
     UInt64 getIndexGranularity() const { return index_granularity; }
 
@@ -114,9 +89,6 @@ private:
 
             //array(0.1, ..., 0.1)
             FUNCTION_ARRAY,
-
-            /// Operators <, >, <=, >=
-            FUNCTION_COMPARISON,
 
             /// Numeric float value
             FUNCTION_FLOAT_LITERAL,
@@ -172,24 +144,18 @@ private:
     /// Traverses the AST of ORDERBY section
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
-    /// Returns true and stores ANNExpr if the query has valid WHERE section
-    static bool matchRPNWhere(RPN & rpn, VectorSimilarityInfo & vector_similarity_info);
-
     /// Returns true and stores ANNExpr if the query has valid ORDERBY section
     static bool matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo & vector_similarity_info);
 
     /// Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
-    /* Matches dist function, reference vector, column name */
-    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, VectorSimilarityInfo & vector_similarity_info);
-
     /// Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(const RPN::iterator& iter);
 
     Block block_with_constants;
 
-    /// true if we have one of two supported query types
+    /// Set if the query is supported
     std::optional<VectorSimilarityInfo> query_information;
 
     // Get from settings ANNIndex parameters

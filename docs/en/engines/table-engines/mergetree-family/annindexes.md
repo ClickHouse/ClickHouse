@@ -27,20 +27,10 @@ Function `Distance` computes the distance between two vectors. Often, the Euclid
 distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point, e.g. `(0.17,
 0.33, ...)`, and `N` limits the number of search results.
 
-An alternative formulation of the nearest neighborhood search problem looks as follows:
+This query returns the top-`N` closest points to the reference point. Parameter `N` limits the number of returned values which is useful for
+situations where `MaxDistance` is difficult to determine in advance.
 
-``` sql
-SELECT *
-FROM table
-WHERE Distance(vectors, Point) < MaxDistance
-LIMIT N
-```
-
-While the first query returns the top-`N` closest points to the reference point, the second query returns all points closer to the reference
-point than a maximally allowed radius `MaxDistance`. Parameter `N` limits the number of returned values which is useful for situations where
-`MaxDistance` is difficult to determine in advance.
-
-With brute force search, both queries are expensive (linear in the number of points) because the distance between all points in `vectors` and
+With brute force search, the query is expensive (linear in the number of points) because the distance between all points in `vectors` and
 `Point` must be computed. To speed this process up, Approximate Nearest Neighbor Search Indexes (ANN indexes) store a compact representation
 of the search space (using clustering, search trees, etc.) which allows to compute an approximate answer much quicker (in sub-linear time).
 
@@ -94,9 +84,7 @@ ANN indexes are built during column insertion and merge. As a result, `INSERT` a
 tables. ANNIndexes are ideally used only with immutable or rarely changed data, respectively when are far more read requests than write
 requests.
 
-ANN indexes support two types of queries:
-
-- ORDER BY queries:
+ANN indexes support these queries:
 
   ``` sql
   SELECT *
@@ -105,15 +93,6 @@ ANN indexes support two types of queries:
   ORDER BY Distance(vectors, Point)
   LIMIT N
   ```
-
-- WHERE queries:
-
-   ``` sql
-   SELECT *
-   FROM table
-   WHERE Distance(vectors, Point) < MaxDistance
-   LIMIT N
-   ```
 
 :::tip
 To avoid writing out large vectors, you can use [query
@@ -124,9 +103,8 @@ clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Dista
 ```
 :::
 
-**Restrictions**: Queries that contain both a `WHERE Distance(vectors, Point) < MaxDistance` and an `ORDER BY Distance(vectors, Point)`
-clause cannot use ANN indexes. Also, the approximate algorithms used to determine the nearest neighbors require a limit, hence queries
-without `LIMIT` clause cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
+**Restrictions**: Approximate algorithms used to determine the nearest neighbors require a limit, hence queries without `LIMIT` clause
+cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
 `max_limit_for_ann_queries` (default: 1 million rows). This is a safeguard to prevent large memory allocations by external libraries for
 approximate neighbor search.
 
