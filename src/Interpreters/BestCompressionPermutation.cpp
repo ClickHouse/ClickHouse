@@ -2,7 +2,6 @@
 
 #include <base/sort.h>
 #include <Columns/IColumn.h>
-#include <Common/ErrorCodes.h>
 #include <Common/iota.h>
 #include <Common/PODArray.h>
 #include <Interpreters/sortBlock.h>
@@ -126,8 +125,6 @@ void getBestCompressionPermutation(const Block & block, const SortDescription & 
 {
     if (!block)
         return;
-    if (!permutation.empty() && block.rows() != permutation.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "!permutation.empty() && block.rows() != permutation.size()");
     if (permutation.empty())
     {
         size_t size = block.rows();
