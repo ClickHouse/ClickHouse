@@ -236,7 +236,12 @@ namespace impl_
   * Etc.
   */
 
-enum class OpCase { Vector, LeftConstant, RightConstant };
+enum class OpCase : uint8_t
+{
+    Vector,
+    LeftConstant,
+    RightConstant
+};
 
 constexpr const auto & undec(const auto & x) { return x; }
 constexpr const auto & undec(const is_decimal auto & x) { return x.value; }

@@ -173,10 +173,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             const auto & erase_position = group_exprs.begin() + i;
             group_exprs.erase(erase_position);
             const auto & insert_position = group_exprs.begin() + i;
-            std::remove_copy_if(
-                    std::begin(args_ast->children), std::end(args_ast->children),
-                    std::inserter(group_exprs, insert_position), is_literal
-            );
+            (void)std::remove_copy_if(
+                std::begin(args_ast->children), std::end(args_ast->children),
+                std::inserter(group_exprs, insert_position), is_literal);
         }
         else if (is_literal(group_exprs[i]))
         {

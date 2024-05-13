@@ -11,7 +11,7 @@ namespace DB
 class SortingStep : public ITransformingStep
 {
 public:
-    enum class Type
+    enum class Type : uint8_t
     {
         Full,
         FinishSorting,
