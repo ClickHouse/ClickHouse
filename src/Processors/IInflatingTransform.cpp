@@ -45,8 +45,13 @@ IInflatingTransform::Status IInflatingTransform::prepare()
     {
         if (input.isFinished())
         {
-            output.finish();
-            return Status::Finished;
+            if (is_finished)
+            {
+                output.finish();
+                return Status::Finished;
+            }
+            is_finished = true;
+            return Status::Ready;
         }
 
         input.setNeeded();
@@ -71,16 +76,17 @@ void IInflatingTransform::work()
 
         current_chunk = generate();
         generated = true;
-        can_generate = canGenerate();
+        can_generate = canGenerate(is_finished);
     }
     else
     {
-        if (!has_input)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IInflatingTransform cannot consume chunk because it wasn't read");
+        if (has_input)
+        {
+            consume(std::move(current_chunk));
+            has_input = false;
+        }
 
-        consume(std::move(current_chunk));
-        has_input = false;
-        can_generate = canGenerate();
+        can_generate = canGenerate(is_finished);
     }
 }
 

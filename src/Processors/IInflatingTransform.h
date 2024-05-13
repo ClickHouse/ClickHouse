@@ -10,13 +10,14 @@ namespace DB
 ///    for (chunk : input_chunks)
 ///    {
 ///        transform.consume(chunk);
-///
 ///        while (transform.canGenerate())
 ///        {
 ///            transformed_chunk = transform.generate();
 ///            ... (process transformed chunk)
 ///        }
 ///    }
+///    while (transform.canGenerate(true))
+///        ... (process remaining data)
 ///
 class IInflatingTransform : public IProcessor
 {
@@ -30,7 +31,7 @@ protected:
     bool can_generate = false;
 
     virtual void consume(Chunk chunk) = 0;
-    virtual bool canGenerate() = 0;
+    virtual bool canGenerate(bool is_read_finished) = 0;
     virtual Chunk generate() = 0;
 
 public:
@@ -41,6 +42,9 @@ public:
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
+
+    /// canGenerate can flush data when input is finished.
+    bool is_finished = false;
 };
 
 }
