@@ -48,7 +48,7 @@ public:
 
     struct FileStatus
     {
-        enum class State
+        enum class State : uint8_t
         {
             Processing,
             Processed,
@@ -145,7 +145,7 @@ private:
     void setFileProcessedForOrderedModeImpl(
         const std::string & path, ProcessingNodeHolderPtr holder, const std::string & processed_node_path);
 
-    enum class SetFileProcessingResult
+    enum class SetFileProcessingResult : uint8_t
     {
         Success,
         ProcessingByOtherNode,

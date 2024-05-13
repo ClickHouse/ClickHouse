@@ -192,7 +192,7 @@ private:
         else if (which.isFloat32())
             document.add(name, static_cast<Float64>(column.getFloat32(idx)));
         else if (which.isFloat64())
-            document.add(name, static_cast<Float64>(column.getFloat64(idx)));
+            document.add(name, column.getFloat64(idx));
         else if (which.isDate())
             document.add(name, Poco::Timestamp(DateLUT::instance().fromDayNum(DayNum(column.getUInt(idx))) * 1000000));
         else if (which.isDateTime())

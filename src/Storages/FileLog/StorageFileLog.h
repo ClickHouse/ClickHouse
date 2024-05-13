@@ -63,7 +63,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    enum class FileStatus
+    enum class FileStatus : uint8_t
     {
         OPEN, /// First time open file after table start up.
         NO_CHANGE,
