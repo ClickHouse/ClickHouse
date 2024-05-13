@@ -9,36 +9,9 @@
 namespace DB
 {
 
-static constexpr auto DISTANCE_FUNCTION_L2 = "L2Distance";
-static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
-
-/// Approximate nearest neighbour (vector similarity) queries have a similar structure:
-/// - reference vector from which all distances are calculated
-/// - metric, e.g. L2Distance
-/// - name of column with embeddings
-/// - maximum number of returned elements (LIMIT)
-struct VectorSimilarityInfo
-{
-    using Embedding = std::vector<float>;
-    Embedding reference_vector;
-
-    enum class Metric : uint8_t
-    {
-        Unknown,
-        L2
-    };
-    Metric metric;
-
-    String column_name;
-    UInt64 limit;
-
-    float distance = -1.0;
-};
-
-
 /// Class VectorSimilarityCondition, is responsible for recognizing if the query can utilize vector similarity indexes.
 /// Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
-/// only one argument, the name of the metric with which index was built. This pattern of queries is supported:
+/// only one argument, the name of the distance function with which index was built. This pattern of queries is supported:
 ///
 ///   SELECT *
 ///   FROM *
@@ -46,38 +19,48 @@ struct VectorSimilarityInfo
 ///   LIMIT count
 ///
 /// Queries without LIMIT count are not supported.
-/// The reference_vector should have float coordinates, e.g. (0.2, 0.1, .., 0.5)
+/// The reference_vector should have float coordinates, e.g. [0.2, 0.1, 0.5]
 ///
 /// If the query matches this template, then this class extracts the main information needed for vector similarity indexes from the query.
 ///
 /// From matching query it extracts
 /// - referenceVector
-/// - metricName(DistanceFunction)
+/// - distance function
 /// - the dimension of the reference vector
 /// - column
 /// - objects count from LIMIT clause(for both queries)
 class VectorSimilarityCondition
 {
 public:
+    static constexpr auto L2Distance = "L2Distance";
+    static constexpr auto CosineDistance = "cosineDistance";
+
     VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
     /// Returns false if query can be speeded up by a vector similarity index, true otherwise.
-    bool alwaysUnknownOrTrue(String metric) const;
+    bool alwaysUnknownOrTrue(String distance_function) const;
 
-    /// Distance should be calculated regarding to referenceVector
+    struct Info
+    {
+        enum class DistanceFunction : uint8_t
+        {
+            Unknown,
+            L2
+        };
+        DistanceFunction distance_function;
+        std::vector<float> reference_vector;
+        String column_name;
+        UInt64 limit;
+        float distance = -1.0;
+    };
+
     std::vector<float> getReferenceVector() const;
-
-    /// Reference vector's dimension count
     size_t getDimensions() const;
-
+    UInt64 getLimit() const;
     String getColumnName() const;
-
-    VectorSimilarityInfo::Metric getMetricType() const;
+    Info::DistanceFunction getDistanceFunction() const;
 
     UInt64 getIndexGranularity() const { return index_granularity; }
-
-    /// Length's value from LIMIT clause
-    UInt64 getLimit() const;
 
 private:
     struct RPNElement
@@ -110,13 +93,11 @@ private:
 
             /// name of type in cast function
             FUNCTION_STRING_LITERAL,
-        };
 
+        };
         explicit RPNElement(Function function_ = FUNCTION_UNKNOWN)
             : function(function_)
             , func_name("Unknown")
-            , float_literal(std::nullopt)
-            , identifier(std::nullopt)
         {}
 
         Function function;
@@ -145,7 +126,7 @@ private:
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
     /// Returns true and stores ANNExpr if the query has valid ORDERBY section
-    static bool matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo & vector_similarity_info);
+    static bool matchRPNOrderBy(RPN & rpn, Info & info);
 
     /// Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
@@ -156,9 +137,9 @@ private:
     Block block_with_constants;
 
     /// Set if the query is supported
-    std::optional<VectorSimilarityInfo> query_information;
+    std::optional<Info> query_information;
 
-    // Get from settings ANNIndex parameters
+    /// Get from settings ANNIndex parameters
     const UInt64 index_granularity;
 
     /// only queries with a lower limit can be considered to avoid memory overflow

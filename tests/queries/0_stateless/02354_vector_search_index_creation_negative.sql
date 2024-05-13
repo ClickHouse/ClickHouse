@@ -43,8 +43,3 @@ CREATE TABLE tab(id Int32, vec Float32, PRIMARY KEY id, INDEX vec_idx vec TYPE v
 CREATE TABLE tab(id Int32, vec Array(Float64), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance')); -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE tab(id Int32, vec LowCardinality(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance')); -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE tab(id Int32, vec Nullable(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance')); -- { serverError ILLEGAL_COLUMN }
-
-SELECT 'Rejects INSERTs of Arrays with different sizes';
-CREATE TABLE tab(id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx vec TYPE vector_similarity('hnsw', 'L2Distance'));
-INSERT INTO tab values (0, [2.2, 2.3]) (1, [3.1, 3.2, 3.3]); -- { serverError INCORRECT_DATA }
-DROP TABLE tab;

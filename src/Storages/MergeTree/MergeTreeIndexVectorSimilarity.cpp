@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 
 #include <Columns/ColumnArray.h>
+#include <Common/BitHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -38,13 +39,16 @@ namespace ErrorCodes
 namespace
 {
 
+/// The only index type currently supported by USearch
 std::set<String> methods = {"hnsw"};
 
-std::unordered_map<String, unum::usearch::metric_kind_t> nameToMetricKind = {
+/// Maps from user-facing name to internal name
+std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
     {"cosineDistance", unum::usearch::metric_kind_t::cos_k}};
 
-std::unordered_map<String, unum::usearch::scalar_kind_t> nameToScalarKind = {
+/// Maps from user-facing name to internal name
+std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
     {"i8", unum::usearch::scalar_kind_t::i8_k}};
@@ -79,10 +83,10 @@ String joinByComma(const T & t)
 }
 
 USearchIndexWithSerialization::USearchIndexWithSerialization(
-        size_t dimensions,
-        unum::usearch::metric_kind_t metric_kind,
-        unum::usearch::scalar_kind_t scalar_kind,
-        UsearchHnswParams usearch_hnsw_params)
+    size_t dimensions,
+    unum::usearch::metric_kind_t metric_kind,
+    unum::usearch::scalar_kind_t scalar_kind,
+    UsearchHnswParams usearch_hnsw_params)
     : Base(Base::make(unum::usearch::metric_punned_t(dimensions, metric_kind, scalar_kind),
                       unum::usearch::index_dense_config_t(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search)))
 {
@@ -116,12 +120,7 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_)
-    : index_name(index_name_)
-    , index_sample_block(index_sample_block_)
-    , metric_kind(metric_kind_)
-    , scalar_kind(scalar_kind_)
-    , usearch_hnsw_params(usearch_hnsw_params_)
-    , index(nullptr)
+    : MergeTreeIndexGranuleVectorSimilarity(index_name_, index_sample_block_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr)
 {
 }
 
@@ -137,7 +136,7 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
-    , index(std::move(index_))
+    , index(index_)
 {
 }
 
@@ -145,7 +144,7 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
 {
     /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
-    writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr); // write dimension
+    writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr);
     index->serialize(ostr);
 }
 
@@ -235,7 +234,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
             index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
         /// Add all rows of block
-        if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
+        if (!index->reserve(roundUpToPowerOfTwoOrZero(index->size() + num_rows)))
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
 
         for (size_t row = 0; row < num_rows; ++row)
@@ -272,14 +271,14 @@ bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexG
 
 bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
 {
-    String distance_function;
+    String index_distance_function;
     switch (metric_kind)
     {
-        case unum::usearch::metric_kind_t::l2sq_k: distance_function = "L2Distance"; break;
-        case unum::usearch::metric_kind_t::cos_k:  distance_function = "cosineDistance"; break;
+        case unum::usearch::metric_kind_t::l2sq_k: index_distance_function = "L2Distance"; break;
+        case unum::usearch::metric_kind_t::cos_k:  index_distance_function = "cosineDistance"; break;
         default: std::unreachable();
     }
-    return condition.alwaysUnknownOrTrue(distance_function);
+    return condition.alwaysUnknownOrTrue(index_distance_function);
 }
 
 std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
@@ -358,7 +357,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 {
     const bool has_six_args = (index.arguments.size() == 6);
 
-    unum::usearch::metric_kind_t metric_kind = nameToMetricKind.at(index.arguments[1].get<String>());
+    unum::usearch::metric_kind_t metric_kind = distanceFunctionToMetricKind.at(index.arguments[1].get<String>());
 
     /// use defaults for the other parameters
     unum::usearch::scalar_kind_t scalar_kind = unum::usearch::scalar_kind_t::f32_k;
@@ -366,7 +365,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 
     if (has_six_args)
     {
-        scalar_kind = nameToScalarKind.at(index.arguments[2].get<String>());
+        scalar_kind = quantizationToScalarKind.at(index.arguments[2].get<String>());
         usearch_hnsw_params = {.m               = index.arguments[3].get<UInt64>(),
                                .ef_construction = index.arguments[4].get<UInt64>(),
                                .ef_search       = index.arguments[5].get<UInt64>()};
@@ -386,7 +385,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /*attac
     if (index.arguments[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector index (method) must be of type String");
     if (index.arguments[1].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector index (metric) must be of type String");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector index (distance function) must be of type String");
     if (has_six_args)
     {
         if (index.arguments[2].getType() != Field::Types::String)
@@ -402,12 +401,12 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /*attac
     /// Check that passed arguments are supported
     if (!methods.contains(index.arguments[0].get<String>()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "First argument (method) of vector index is not supported. Supported kinds are: {}", joinByComma(methods));
-    if (!nameToMetricKind.contains(index.arguments[1].get<String>()))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (metric) of vector index is not supported. Supported kinds are: {}", joinByComma(nameToMetricKind));
+    if (!distanceFunctionToMetricKind.contains(index.arguments[1].get<String>()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector index is not supported. Supported kinds are: {}", joinByComma(distanceFunctionToMetricKind));
     if (has_six_args)
     {
-        if (!nameToScalarKind.contains(index.arguments[2].get<String>()))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (quantization) of vector index is not supported. Supported quantizations are: {}", joinByComma(nameToScalarKind));
+        if (!quantizationToScalarKind.contains(index.arguments[2].get<String>()))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (quantization) of vector index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
         if (index.arguments[3].get<UInt64>() < 2)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (M) of vector index must be > 1");
         if (index.arguments[4].get<UInt64>() < 1)
