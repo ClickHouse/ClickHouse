@@ -80,6 +80,13 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
     USearchIndexWithSerializationPtr index;
+
+private:
+    /// The version of the persistence format of vector similarity index. Increment whenever you change the format.
+    /// Note: Usearch prefixes the serialized data with its own version header. We can't rely on that because 1. vector similarity indexes
+    /// are (at least in theory) agnostic of specific vector search libraries, and 2. additional data (e.g. the number of dimensions)
+    /// outside usearch exists which we should keep it separately versioned.
+    static constexpr UInt64 FileFormatVersion = 1;
 };
 
 
