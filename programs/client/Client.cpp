@@ -323,7 +323,8 @@ try
 
     processConfig();
     adjustSettings();
-    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")),
+        toProgressOption(config().getString("progress-table", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {

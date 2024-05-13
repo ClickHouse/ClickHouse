@@ -4,6 +4,7 @@
 #include "Common/NamePrompter.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
+#include <Common/ProgressTable.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
@@ -192,7 +193,7 @@ protected:
 
     void setDefaultFormatsFromConfiguration();
 
-    void initTTYBuffer(ProgressOption progress);
+    void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -278,7 +279,9 @@ protected:
     String server_display_name;
 
     ProgressIndication progress_indication;
+    ProgressTable progress_table;
     bool need_render_progress = true;
+    bool need_render_progress_table = true;
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
