@@ -50,10 +50,24 @@ std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetri
     {VectorSimilarityCondition::DotProduct, unum::usearch::metric_kind_t::ip_k}};
 
 /// Maps from user-facing name to internal name
+/// Most of them are commented out because usearch goes boom, see tests/queries/0_stateless/02354_vector_search_hnsw_quantization.sql
 std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
+    /// the usual suspects:
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
+    /// {"f8", unum::usearch::scalar_kind_t::f8_k},
+    /// {"u64", unum::usearch::scalar_kind_t::u64_k},
+    /// {"u32", unum::usearch::scalar_kind_t::u32_k},
+    /// {"u16", unum::usearch::scalar_kind_t::u16_k},
+    /// {"u8", unum::usearch::scalar_kind_t::u8_k},
+    /// {"i64", unum::usearch::scalar_kind_t::i64_k},
+    /// {"i32", unum::usearch::scalar_kind_t::i32_k},
+    /// {"i16", unum::usearch::scalar_kind_t::i16_k},
     {"i8", unum::usearch::scalar_kind_t::i8_k}};
+    /// Usearch-specific
+    /// {"b1x8", unum::usearch::scalar_kind_t::b1x8_k},
+    /// {"u40", unum::usearch::scalar_kind_t::u40_k}};
+
 
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
