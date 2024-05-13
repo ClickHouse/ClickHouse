@@ -56,6 +56,7 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
     if (column_names.empty())
         return result_query;
 
+    /// The initial query the VIEW references to is wrapped here with another SELECT query to allow reading only necessary columns.
     auto select_query = std::make_shared<ASTSelectQuery>();
 
     auto result_table_expression_ast = std::make_shared<ASTTableExpression>();
