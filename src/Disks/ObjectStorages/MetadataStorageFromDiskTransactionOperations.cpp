@@ -371,10 +371,10 @@ void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & meta
     }
 }
 
-void TruncateMetadataFileOperation::undo()
+void TruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 {
     if (write_operation)
-        write_operation->undo();
+        write_operation->undo(lock);
 }
 
 

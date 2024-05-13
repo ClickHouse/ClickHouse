@@ -300,7 +300,7 @@ struct TruncateMetadataFileOperation final : public IMetadataOperation
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
-    void undo() override;
+    void undo(std::unique_lock<SharedMutex> & lock) override;
 
 private:
     std::string path;
