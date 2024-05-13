@@ -177,7 +177,7 @@ private:
         //               Paused
         //
         // If max_decoding_threads <= 1: NotStarted -> Complete.
-        enum class Status
+        enum class Status : uint8_t
         {
             NotStarted,
             Running,

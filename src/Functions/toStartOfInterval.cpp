@@ -52,12 +52,14 @@ public:
         };
 
         const DataTypeInterval * interval_type = nullptr;
-        enum class ResultType
+
+        enum class ResultType : uint8_t
         {
             Date,
             DateTime,
             DateTime64
         };
+
         ResultType result_type;
         auto check_second_argument = [&]
         {

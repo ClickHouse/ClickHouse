@@ -336,7 +336,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                                 /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                                 if (!aggregate_descriptions.empty() || group_size > 1)
                                 {
-                                    if (j + 1 < static_cast<ssize_t>(group_size))
+                                    if (j + 1 < group_size)
                                         group_elements_ast[j] = std::move(group_elements_ast.back());
 
                                     group_elements_ast.pop_back();
@@ -390,7 +390,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                             if (!aggregate_descriptions.empty() || size > 1)
                             {
-                                if (i + 1 < static_cast<ssize_t>(size))
+                                if (i + 1 < size)
                                     group_asts[i] = std::move(group_asts.back());
 
                                 group_asts.pop_back();
