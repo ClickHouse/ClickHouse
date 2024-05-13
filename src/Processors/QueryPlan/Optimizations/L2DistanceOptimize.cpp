@@ -17,31 +17,46 @@ namespace QueryPlanOptimizations
 
 size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
-    if (!parent_node->as<QueryPlan::ExpressionStep>())
+    if (!parent_node)
         return 0;
 
-    auto & expression_step = parent_node->as<QueryPlan::ExpressionStep>();
+    size_t num_changes = 0;
 
-    // Check if the expression is a call to L2Distance
-    if (expression_step.function_base->name != "L2Distance")
-        return 0;
+    // Check if the parent node is a FunctionStep and if it calls L2Distance function
+    auto * function_step = parent_node->as<FunctionStep>();
+    if (!function_step || function_step->getFunctionName() != "L2Distance")
+        return num_changes;
 
-    // Replace the function name with L2SquaredDistance
-    expression_step.function_base->name = "L2SquaredDistance";
+    // Replace L2Distance function with sqrt(L2SquaredDistance(...))
+    auto & arguments = function_step->getArguments();
+    if (arguments.size() != 2)
+        return num_changes;
 
-    // Add sqrt function as a parent of L2SquaredDistance
-    auto sqrt_function = std::make_shared<Function>("sqrt", FunctionFactory::instance());
-    auto l2_squared_distance_function = expression_step.function_base;
-    expression_step.function_base = sqrt_function;
+    auto squared_distance_function = std::make_shared<FunctionNode>("L2SquaredDistance");
+    squared_distance_function->getArguments().getNodes().insert(squared_distance_function->getArguments().getNodes().end(), arguments.begin(), arguments.end());
+    squared_distance_function->resolveAsFunction(FunctionFactory::instance().get("L2SquaredDistance"));
 
-    auto l2_squared_distance_argument = l2_squared_distance_function->arguments[0];
-    l2_squared_distance_function->arguments.clear();
-    sqrt_function->arguments.push_back(l2_squared_distance_argument);
+    auto sqrt_function = std::make_shared<FunctionNode>("sqrt");
+    sqrt_function->getArguments().getNodes().push_back(squared_distance_function);
+    sqrt_function->resolveAsFunction(FunctionFactory::instance().get("sqrt"));
 
-    // Add L2SquaredDistance as an argument to the sqrt function
-    sqrt_function->arguments.push_back(l2_squared_distance_function);
+    // Replace the FunctionStep node with the new sqrt(L2SquaredDistance(...)) function node
+    function_step->setFunctionName("sqrt");
+    function_step->setArguments(std::move(sqrt_function->getArguments()));
 
-    return 1;
+    // Update the node in the list of nodes
+    for (auto & node : nodes)
+    {
+        if (node.get() == function_step)
+        {
+            node = std::move(sqrt_function);
+            break;
+        }
+    }
+
+    num_changes++;
+
+    return num_changes;
 }
 
 }
