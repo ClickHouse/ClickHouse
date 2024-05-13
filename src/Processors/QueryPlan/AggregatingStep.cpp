@@ -24,6 +24,7 @@
 #include <Common/JSONBuilder.h>
 
 #include "Interpreters/JoinSwitcher.h"
+#include "Interpreters/PasteJoin.h"
 #include "Processors/DelayedPortsProcessor.h"
 #include "Processors/ForkProcessor.h"
 #include "Processors/Transforms/JoiningTransform.h"
@@ -347,21 +348,27 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 const auto & header = ports[set_counter]->getHeader();
 
                 auto tableJoin = std::make_shared<TableJoin>(SizeLimits{}, true,
-                    columns.empty() ? JoinKind::Paste : JoinKind::Left, JoinStrictness::Any, columns);
+                    JoinKind::Left, JoinStrictness::Any, columns);
                 tableJoin->getOnlyClause().key_names_left = columns;
 
                 auto join = std::make_shared<JoinSwitcher>(tableJoin, header);
+                auto output_h = JoiningTransform::transformHeader(new_port->getHeader(), join);
 
-                std::cout << "Join has delayed blocks " << join->hasDelayedBlocks() << std::endl;
+                if (columns.empty()) {
+                    Blocks headers = {new_port->getHeader(), header};
+                    auto pasteJoinTransform = std::make_shared<MergeJoinTransform>(join, std::move(headers), output_h, max_block_size);
+                    connect(*new_port, pasteJoinTransform->getInputs().front());
+                    connect(*ports[set_counter], pasteJoinTransform->getInputs().back());
+                    new_port = &pasteJoinTransform->getOutputs().front();
+                    processors.emplace_back(std::move(pasteJoinTransform));
+                    continue;
+                }
 
                 auto rightJoining = std::make_shared<FillingRightJoinSideTransform>(header, join);
                 auto & rightJoiningInputs = rightJoining->getInputs();
 
                 connect(*ports[set_counter], rightJoiningInputs.front());
 
-                std::cout << "Pipeline getNumStreams " << pipeline.getNumStreams() << std::endl;
-
-                auto output_h = JoiningTransform::transformHeader(new_port->getHeader(), join);
                 auto joining = std::make_shared<JoiningTransform>(new_port->getHeader(), output_h, join, max_block_size, false, false, finish_counter);
                 connect(*new_port, joining->getInputs().front());
                 connect(rightJoining->getOutputs().front(), joining->getInputs().back());
