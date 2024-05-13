@@ -139,7 +139,7 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
 
 
 def exec_query_with_retry(
-    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}
+    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}, timeout=30
 ):
     exception = None
     for cnt in range(retry_count):

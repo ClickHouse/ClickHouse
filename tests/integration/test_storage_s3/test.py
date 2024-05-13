@@ -1133,6 +1133,7 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1142,6 +1143,7 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(
@@ -1169,6 +1171,7 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1178,6 +1181,7 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        timeout=100,
     )
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
