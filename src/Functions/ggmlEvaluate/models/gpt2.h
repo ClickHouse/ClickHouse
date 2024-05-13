@@ -68,13 +68,6 @@ struct Gpt2ModelState
 
     //
     struct ggml_context * ctx_w;
-    struct ggml_context * ctx_kv;
-
-    ggml_backend_t backend = nullptr;
-
-    ggml_backend_buffer_t buffer_w;
-    ggml_backend_buffer_t buffer_kv;
-
     std::map<std::string, struct ggml_tensor *> tensors;
 };
 
@@ -83,11 +76,6 @@ class Gpt2Model : public IGgmlModel
 public:
     ~Gpt2Model() override
     {
-        ggml_gallocr_free(allocr);
-        ggml_backend_buffer_free(state.buffer_w);
-        ggml_backend_buffer_free(state.buffer_kv);
-        ggml_backend_free(state.backend);
-
         ggml_free(state.ctx_w);
     }
 
@@ -96,7 +84,10 @@ private:
     std::string evalImpl(const std::string & input, const GgmlModelParams & user_params) override;
 
     ggml_cgraph * gpt2_graph(int n_past, int n_tokens);
-    bool gpt2_eval(int n_threads, int n_past, std::vector<GptVocab::id> & embd_inp, std::vector<float> & embd_w);
+    bool gpt2_eval(int n_threads,
+        int n_past, const std::vector<GptVocab::id> & embd_inp,
+              std::vector<float>         & embd_w,
+              size_t                     & mem_per_token);
     GptVocab gpt_vocab;
     Gpt2ModelState state;
     GptParams gpt_params;
