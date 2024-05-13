@@ -24,7 +24,7 @@ set(GGML_HDRS
 
 set(GGML_ARCH_FLAGS "")
 
-if ((${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") OR (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64"))
+if (ARCH_AARCH64)
     # ARM architecture
 
     if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv6")
@@ -37,16 +37,35 @@ if ((${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") OR (${CMAKE_SYSTEM_PROCESSOR} MATC
         list(APPEND GGML_ARCH_FLAGS -mno-unaligned-access)
     endif()
 
-elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "^(x86_64|i686|AMD64)$")
+elseif (ARCH_AMD64)
     # x86 architecture
 
-    list(APPEND GGML_ARCH_FLAGS -march=native)
-    # TODO: Add GGML avx and fma optimizations
+    macro(ggml_append_intrinsic intrin darwin_intrin)
+        if (OS_DARWIN)
+            execute_process(COMMAND sysctl hw.optional.${darwin_intrin} OUTPUT_VARIABLE GGML_${intrin})
+        elseif(OS_LINUX)
+            execute_process(COMMAND grep "${intrin} " /proc/cpuinfo OUTPUT_VARIABLE GGML_${intrin})
+        endif()
 
-elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "ppc64le")
+        if ((OS_DARWIN AND "GGML_${intrin}" MATCHES "${darwin_intrin}") OR (OS_LINUX AND "GGML_${intrin}" MATCHES "${intrin}"))
+            list(APPEND GGML_ARCH_FLAGS "-m${intrin}")
+        endif()
+    endmacro()
+
+    ggml_append_intrinsic(f16c f16c)
+    ggml_append_intrinsic(avx avx1_0)
+    ggml_append_intrinsic(avx2 avx2_0)
+    ggml_append_intrinsic(fma fma)
+    ggml_append_intrinsic(avx512f avx512f)
+    ggml_append_intrinsic(avx512vbmi avx512vbmi)
+
+elseif (ARCH_PPC64LE)
     # PowerPC64LE CPU architecture (ClickHouse supports little-endian ppc64 only)
 
     list(APPEND GGML_ARCH_FLAGS -mcpu=powerpc64le)
+    if (POWER9)
+        list(APPEND GGML_ARCH_FLAGS -mpower9-vector)
+    endif()
 endif()
 
 #
