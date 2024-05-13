@@ -1016,17 +1016,14 @@ Chunk StorageS3Source::generate()
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = reader.getInputFormat()->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+            String file_name = reader.getFile();
             VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                chunk,
-                requested_virtual_columns,
-                reader.getPath(),
-                reader.getFileSize(),
-                reader.isArchive() ? (&reader.getFile()) : nullptr);
+                chunk, requested_virtual_columns, reader.getPath(), reader.getFileSize(), reader.isArchive() ? (&file_name) : nullptr);
             return chunk;
         }
 
         if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
-            addNumRowsToCache(reader.getFileExtended(), total_rows_in_file);
+            addNumRowsToCache(reader.getPath(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
@@ -1045,9 +1042,9 @@ Chunk StorageS3Source::generate()
     return {};
 }
 
-void StorageS3Source::addNumRowsToCache(const String & key, size_t num_rows)
+void StorageS3Source::addNumRowsToCache(const String & bucket_with_key, size_t num_rows)
 {
-    String source = fs::path(url_host_and_port) / bucket / key;
+    String source = fs::path(url_host_and_port) / bucket_with_key;
     auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());
     StorageS3::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
@@ -1963,8 +1960,7 @@ public:
             {
                 for (const auto & key_with_info : read_keys)
                 {
-                    if (auto format_from_file_name
-                        = FormatFactory::instance().tryGetFormatFromFileName(key_with_info->formatInferenceName()))
+                    if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(key_with_info->getFileName()))
                     {
                         format = format_from_file_name;
                         break;
@@ -2011,8 +2007,7 @@ public:
                 {
                     for (auto it = read_keys.begin() + prev_read_keys_size; it != read_keys.end(); ++it)
                     {
-                        if (auto format_from_file_name
-                            = FormatFactory::instance().tryGetFormatFromFileName((*it)->formatInferenceName()))
+                        if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->getFileName()))
                         {
                             format = format_from_file_name;
                             break;
@@ -2067,7 +2062,6 @@ public:
             if (!getContext()->getSettingsRef().s3_skip_empty_files || !impl->eof())
             {
                 first = false;
-                // We do not need to use any data decompression algorithm if we take data from an archive because it will be decompressed automatically.
                 return {
                     wrapReadBufferWithCompressionMethod(
                         std::move(impl),

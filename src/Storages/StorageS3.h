@@ -65,8 +65,8 @@ public:
         std::optional<String> path_in_archive;
         std::shared_ptr<IArchiveReader> archive_reader;
 
-        String getPath() { return path_in_archive.has_value() ? (key + "::" + path_in_archive.value()) : key; }
-        String formatInferenceName() { return path_in_archive.has_value() ? path_in_archive.value() : key; }
+        String getPath() const { return path_in_archive.has_value() ? (key + "::" + path_in_archive.value()) : key; }
+        String getFileName() const { return path_in_archive.has_value() ? path_in_archive.value() : key; }
     };
 
     using KeyWithInfoPtr = std::shared_ptr<KeyWithInfo>;
@@ -266,21 +266,8 @@ private:
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        String getPath() const
-        {
-            return key_with_info->path_in_archive.has_value()
-                ? (bucket + "/" + key_with_info->key + "::" + key_with_info->path_in_archive.value())
-                : (bucket + "/" + key_with_info->key);
-        }
-        const String & getFile() const
-        {
-            return key_with_info->path_in_archive.has_value() ? key_with_info->path_in_archive.value() : key_with_info->key;
-        }
-        String getFileExtended() const
-        {
-            return key_with_info->path_in_archive.has_value() ? (String{key_with_info->key} + "::" + key_with_info->path_in_archive.value())
-                                                              : key_with_info->key;
-        }
+        String getPath() const { return bucket + "/" + key_with_info->getPath(); }
+        String getFile() const { return key_with_info->getFileName(); }
         bool isArchive() { return key_with_info->path_in_archive.has_value(); }
         const KeyWithInfo & getKeyWithInfo() const { return *key_with_info; }
         std::optional<size_t> getFileSize() const { return key_with_info->info ? std::optional(key_with_info->info->size) : std::nullopt; }
@@ -320,7 +307,7 @@ private:
     ReaderHolder createReader(size_t idx = 0);
     std::future<ReaderHolder> createReaderAsync(size_t idx = 0);
 
-    void addNumRowsToCache(const String & key, size_t num_rows);
+    void addNumRowsToCache(const String & bucket_with_key, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const KeyWithInfo & key_with_info);
 };
 
