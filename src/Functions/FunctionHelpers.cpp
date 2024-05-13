@@ -298,4 +298,31 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
     return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
 }
 
+void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments [[maybe_unused]], size_t input_rows_count [[maybe_unused]])
+{
+    if (!arguments.empty())
+    {
+        /// Note that ideally this check should be simpler and we should check that all columns should either be const
+        /// or have exactly size input_rows_count
+        /// For historical reasons this is not the case, and many functions rely on the size of the first column
+        /// to decide which is the size of all the inputs
+        /// Hopefully this will be slowly improved in the future
+
+        if (!isColumnConst(*arguments[0].column))
+        {
+            size_t expected_size = arguments[0].column->size();
+
+            for (size_t i = 1; i < arguments.size(); i++)
+                if (!isColumnConst(*arguments[i].column) && arguments[i].column->size() != expected_size)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected the #{} column ({} of type {}) to have {} rows, but it has {}",
+                        i + 1,
+                        arguments[i].name,
+                        arguments[i].type->getName(),
+                        expected_size,
+                        arguments[i].column->size());
+        }
+    }
+}
 }
