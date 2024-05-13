@@ -3,11 +3,12 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
-#include <Core/ValuesWithType.h>
-#include <Core/Names.h>
 #include <Core/IResolvedFunction.h>
-#include <Common/Exception.h>
+#include <Core/Names.h>
+#include <Core/ValuesWithType.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
+#include <Common/Exception.h>
 
 #include "config.h"
 
@@ -136,7 +137,11 @@ public:
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        bool dry_run = false) const;
+        bool dry_run = false) const
+    {
+        checkFunctionArgumentSizes(arguments, input_rows_count);
+        return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+    }
 
     /// Get the main function name.
     virtual String getName() const = 0;

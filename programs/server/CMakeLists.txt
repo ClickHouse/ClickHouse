@@ -15,8 +15,6 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_table_functions
         string_utils
 
-    ${LINK_RESOURCE_LIB}
-
     PUBLIC
         daemon
 )
