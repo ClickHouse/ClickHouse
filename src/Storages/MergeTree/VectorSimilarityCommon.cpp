@@ -43,8 +43,6 @@ VectorSimilarityInfo::Metric stringToMetric(std::string_view metric)
 {
     if (metric == "L2Distance")
         return VectorSimilarityInfo::Metric::L2;
-    else if (metric == "LpDistance")
-        return VectorSimilarityInfo::Metric::Lp;
     else
         return VectorSimilarityInfo::Metric::Unknown;
 }
@@ -109,13 +107,6 @@ VectorSimilarityInfo::Metric VectorSimilarityCondition::getMetricType() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
 }
 
-float VectorSimilarityCondition::getPValueForLpDistance() const
-{
-    if (index_is_useful && query_information.has_value())
-        return query_information->p_for_lp_dist;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
-}
-
 VectorSimilarityInfo::Type VectorSimilarityCondition::getQueryType() const
 {
     if (index_is_useful && query_information.has_value())
@@ -151,7 +142,8 @@ bool VectorSimilarityCondition::checkQueryStructure(const SelectQueryInfo & quer
     if (select.limitLength())
         traverseAtomAST(select.limitLength(), rpn_limit);
 
-    if (select.orderBy()) // If query has ORDERBY clause
+    /// If query has ORDER BY clause
+    if (select.orderBy())
         traverseOrderByAST(select.orderBy(), rpn_order_by_clause);
 
     /// Reverse RPNs for conveniences during parsing
@@ -199,7 +191,7 @@ void VectorSimilarityCondition::traverseAST(const ASTPtr & node, RPN & rpn)
     {
         const ASTs & children = func->arguments->children;
         // Traverse children nodes
-        for (const auto& child : children)
+        for (const auto & child : children)
             traverseAST(child, rpn);
     }
 
@@ -223,8 +215,7 @@ bool VectorSimilarityCondition::traverseAtomAST(const ASTPtr & node, RPNElement 
             function->name == "L2Distance" ||
             function->name == "LinfDistance" ||
             function->name == "cosineDistance" ||
-            function->name == "dotProduct" ||
-            function->name == "LpDistance")
+            function->name == "dotProduct")
             out.function = RPNElement::FUNCTION_DISTANCE;
         else if (function->name == "array")
             out.function = RPNElement::FUNCTION_ARRAY;
@@ -315,7 +306,6 @@ void VectorSimilarityCondition::traverseOrderByAST(const ASTPtr & node, RPN & rp
 /// Returns true and stores VectorSimilarityInfo if the query has valid WHERE clause
 bool VectorSimilarityCondition::matchRPNWhere(RPN & rpn, VectorSimilarityInfo & vector_similarity_info)
 {
-    /// Fill query type field
     vector_similarity_info.type = VectorSimilarityInfo::Type::Where;
 
     /// WHERE section must have at least 5 expressions
@@ -370,7 +360,6 @@ bool VectorSimilarityCondition::matchRPNWhere(RPN & rpn, VectorSimilarityInfo & 
 /// Returns true and stores ANNExpr if the query has valid ORDERBY clause
 bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, VectorSimilarityInfo & vector_similarity_info)
 {
-    /// Fill query type field
     vector_similarity_info.type = VectorSimilarityInfo::Type::OrderBy;
 
     // ORDER BY clause must have at least 3 expressions
@@ -395,7 +384,7 @@ bool VectorSimilarityCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
     return false;
 }
 
-/// Matches dist function, referencer vector, column name
+/// Matches dist function, reference vector, column name
 bool VectorSimilarityCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, VectorSimilarityInfo & vector_similarity_info)
 {
     bool identifier_found = false;
@@ -406,15 +395,6 @@ bool VectorSimilarityCondition::matchMainParts(RPN::iterator & iter, const RPN::
 
     vector_similarity_info.metric = stringToMetric(iter->func_name);
     ++iter;
-
-    if (vector_similarity_info.metric == VectorSimilarityInfo::Metric::Lp)
-    {
-        if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
-            iter->function != RPNElement::FUNCTION_INT_LITERAL)
-            return false;
-        vector_similarity_info.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
-        ++iter;
-    }
 
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
     {

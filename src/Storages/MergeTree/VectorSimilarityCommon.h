@@ -14,13 +14,12 @@ static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
 
 /// Approximate nearest neighbour (vector similarity) queries have a similar structure:
 /// - reference vector from which all distances are calculated
-/// - metric name (e.g L2Distance, LpDistance, etc.)
+/// - metric, e.g. L2Distance
 /// - name of column with embeddings
 /// - type of query
 /// - maximum number of returned elements (LIMIT)
 ///
-/// And two optional parameters:
-/// - p for LpDistance function
+/// And one optional parameter:
 /// - distance to compare with (only for where queries)
 ///
 /// This struct holds all these components.
@@ -32,8 +31,7 @@ struct VectorSimilarityInfo
     enum class Metric : uint8_t
     {
         Unknown,
-        L2,
-        Lp
+        L2
     };
     Metric metric;
 
@@ -47,7 +45,6 @@ struct VectorSimilarityInfo
     };
     Type type;
 
-    float p_for_lp_dist = -1.0;
     float distance = -1.0;
 };
 
@@ -72,7 +69,6 @@ struct VectorSimilarityInfo
 /// From matching query it extracts
 /// - referenceVector
 /// - metricName(DistanceFunction)
-/// - dimension size if query uses LpDistance
 /// - distance to compare(ONLY for search types, otherwise you get exception)
 /// - spaceDimension(which is referenceVector's components count)
 /// - column
@@ -100,9 +96,6 @@ public:
     String getColumnName() const;
 
     VectorSimilarityInfo::Metric getMetricType() const;
-
-    /// The P- value if the metric is 'LpDistance'
-    float getPValueForLpDistance() const;
 
     VectorSimilarityInfo::Type getQueryType() const;
 
