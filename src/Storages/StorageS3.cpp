@@ -2296,17 +2296,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 
 void registerStorageS3(StorageFactory & factory)
 {
-    return registerStorageS3Impl("S3", factory);
-}
-
-void registerStorageCOS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("COSN", factory);
-}
-
-void registerStorageOSS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("OSS", factory);
+    registerStorageS3Impl("S3", factory);
+    registerStorageS3Impl("COSN", factory);
+    registerStorageS3Impl("OSS", factory);
 }
 
 bool StorageS3::supportsPartitionBy() const

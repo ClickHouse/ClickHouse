@@ -238,7 +238,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids);
+        source_storage->remove(ids); // NOLINT
         need_rollback = true;
         destination_storage->insert(to_move, ids);
     }

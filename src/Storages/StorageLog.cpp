@@ -833,8 +833,7 @@ Pipe StorageLog::read(
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    if (num_streams > max_streams)
-        num_streams = max_streams;
+    num_streams = std::min(num_streams, max_streams);
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);

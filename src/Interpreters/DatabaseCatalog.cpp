@@ -1438,7 +1438,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(

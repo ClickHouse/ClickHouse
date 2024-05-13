@@ -154,16 +154,6 @@ inline bool isPunctuationASCII(char c)
 }
 
 
-inline bool isValidIdentifier(std::string_view str)
-{
-    return !str.empty()
-        && isValidIdentifierBegin(str[0])
-        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
-        /// NULL is not a valid identifier in SQL, any case.
-        && !(str.size() == strlen("null") && 0 == strncasecmp(str.data(), "null", strlen("null")));
-}
-
-
 inline bool isNumberSeparator(bool is_start_of_block, bool is_hex, const char * pos, const char * end)
 {
     if (*pos != '_')
@@ -328,4 +318,17 @@ inline void trim(std::string & str, char c = ' ')
 constexpr bool containsGlobs(const std::string & str)
 {
     return str.find_first_of("*?{") != std::string::npos;
+}
+
+inline bool isValidIdentifier(std::string_view str)
+{
+    return !str.empty()
+        && isValidIdentifierBegin(str[0])
+        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
+        /// NULL is not a valid identifier in SQL, any case.
+        && !(str.size() == strlen("null")
+            && toLowerIfAlphaASCII(str[0]) == 'n'
+            && toLowerIfAlphaASCII(str[1]) == 'u'
+            && toLowerIfAlphaASCII(str[2]) == 'l'
+            && toLowerIfAlphaASCII(str[3]) == 'l');
 }

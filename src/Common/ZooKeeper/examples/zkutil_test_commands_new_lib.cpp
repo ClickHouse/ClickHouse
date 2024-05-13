@@ -33,7 +33,7 @@ try
     for (size_t i = 0; i < hosts_strings.size(); ++i)
     {
         std::string host_string = hosts_strings[i];
-        bool secure = bool(startsWith(host_string, "secure://"));
+        bool secure = startsWith(host_string, "secure://");
 
         if (secure)
             host_string.erase(0, strlen("secure://"));
