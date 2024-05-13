@@ -624,6 +624,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Version collapsing is the only engine which add additional column to sorting key.
         additional_sorting_key_columns = KeyDescription::AdditionalColumns{
+            .ext_columns_front = {},
             .ext_columns_back = {merging_params.version_column},
         };
     }
