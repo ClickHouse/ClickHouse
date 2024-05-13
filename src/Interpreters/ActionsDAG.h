@@ -51,7 +51,7 @@ class ActionsDAG
 {
 public:
 
-    enum class ActionType
+    enum class ActionType : uint8_t
     {
         /// Column which must be in input.
         INPUT,
@@ -288,7 +288,7 @@ public:
     /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node);
 
-    enum class MatchColumnsMode
+    enum class MatchColumnsMode : uint8_t
     {
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
