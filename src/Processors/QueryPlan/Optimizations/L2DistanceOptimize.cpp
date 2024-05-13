@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Nodes/ExpressionActions.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
