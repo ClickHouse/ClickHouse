@@ -9,8 +9,8 @@
 #include <Analyzer/IdentifierNode.h>
 
 #include <Functions/FunctionFactory.h>
-
-#include <Parsers/formatAST.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -83,6 +83,10 @@ public:
             NamesAndTypes primary_keys;
             for (size_t i = 0; i < primary_keys_col.column_names.size(); i++)
                 primary_keys.emplace_back(primary_keys_col.column_names.at(i), primary_keys_col.data_types.at(i));
+
+            // include virtual column "_part" into select query
+            auto part_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            primary_keys.emplace_back("_part", part_type);
 
             auto new_node = pkOptimization(projections, node, primary_keys);
             query_node->getWhere() = std::move(new_node);
