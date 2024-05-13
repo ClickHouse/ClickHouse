@@ -626,8 +626,12 @@ bool extractRequiredColumnsFromStorage(
     const Names & columns_names,
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
+    const QueryProcessingStage::Enum processed_stage,
     Names & extracted_column_names)
 {
+    if (processed_stage != QueryProcessingStage::FetchColumns)
+        return false;
+
     if (std::dynamic_pointer_cast<StorageMerge>(storage))
         return false;
 
@@ -927,7 +931,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 Names extracted_column_names;
                 const auto has_table_virtual_column
-                    = extractRequiredColumnsFromStorage(columns_names, storage, storage_snapshot, extracted_column_names);
+                    = extractRequiredColumnsFromStorage(columns_names, storage, storage_snapshot, from_stage, extracted_column_names);
 
                 storage->read(
                     query_plan,
@@ -939,11 +943,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     max_block_size,
                     max_streams);
 
-                const auto & data_stream = query_plan.getCurrentDataStream();
-                if (has_table_virtual_column && query_plan.isInitialized() && !data_stream.header.findByName("_table"))
+                if (has_table_virtual_column && query_plan.isInitialized())
                 {
-                    auto adding_virtual_column_step = createAddingVirtualColumnsStep(data_stream, storage);
-                    query_plan.addStep(std::move(adding_virtual_column_step));
+                    const auto & data_stream = query_plan.getCurrentDataStream();
+                    if (!data_stream.header.findByName("_table"))
+                    {
+                        auto adding_virtual_column_step = createAddingVirtualColumnsStep(data_stream, storage);
+                        query_plan.addStep(std::move(adding_virtual_column_step));
+                    }
                 }
 
                 const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
