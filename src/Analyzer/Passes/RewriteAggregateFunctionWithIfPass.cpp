@@ -71,7 +71,7 @@ public:
 
                 new_arguments[1] = std::move(if_arguments_nodes[0]);
                 function_arguments_nodes = std::move(new_arguments);
-                resolveAsAggregateFunctionWithIf(*function_node);
+                resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName() + "If");
             }
         }
         else if (first_const_node)
@@ -100,17 +100,9 @@ public:
                 new_arguments[1] = std::move(not_function);
 
                 function_arguments_nodes = std::move(new_arguments);
-                resolveAsAggregateFunctionWithIf(*function_node);
+                resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName() + "If");
             }
         }
-    }
-
-private:
-    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node)
-    {
-        auto result_type = function_node.getResultType();
-        const auto * suffix = result_type->isNullable() ? "OrNullIf" : "If";
-        resolveAggregateFunctionNodeByName(function_node, function_node.getFunctionName() + suffix);
     }
 };
 
