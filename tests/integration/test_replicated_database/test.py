@@ -60,7 +60,7 @@ all_nodes = [
 ]
 
 bad_settings_node = cluster.add_instance(
-    "snapshot_recovering_node",
+    "bad_settings_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
