@@ -13,6 +13,7 @@ public:
     explicit MergeTreeReadInfo(size_t part_level, bool virtual_row_) :
         origin_merge_tree_part_level(part_level), virtual_row(virtual_row_) { }
     size_t origin_merge_tree_part_level = 0;
+    /// If virtual_row is true, the chunk must contain the virtual row only.
     bool virtual_row = false;
 };
 
