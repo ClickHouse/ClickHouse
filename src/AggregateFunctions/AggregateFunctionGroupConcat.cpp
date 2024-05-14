@@ -255,7 +255,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Incorrect number of parameters for aggregate function {}, should be 0, 1 or 2", name);
 
-    if (parameters.size() >= 1)
+    if (!parameters.empty())
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::String)
