@@ -319,7 +319,7 @@ namespace
         data_types.push_back(variant_type);
         type_indexes.insert(TypeIndex::Variant);
 
-        // push it back again
+        // make the second type variant as well
         data_types.push_back(variant_type);
         type_indexes.insert(TypeIndex::Variant);
     }
@@ -669,7 +669,6 @@ namespace
             if (settings.json.infer_variant_from_multitype_array)
             {
                 transformVariant(data_types, type_indexes);
-                return;
             }
 
             /// Convert numbers inferred from strings back to strings if needed.
@@ -703,7 +702,6 @@ namespace
             if (settings.json.infer_variant_from_multitype_array)
             {
                 transformVariant(data_types, type_indexes);
-                return;
             }
 
             /// Convert JSON tuples with same nested types to arrays.
@@ -1438,6 +1436,15 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
             data_type = std::make_shared<DataTypeTuple>(nested_types);
         }
 
+        return;
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(data_type.get()))
+    {
+        auto nested_types = variant_type->getVariants();
+        for (auto & nested_type : nested_types)
+            transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
+        data_type = std::make_shared<DataTypeVariant>(nested_types);
         return;
     }
 }
