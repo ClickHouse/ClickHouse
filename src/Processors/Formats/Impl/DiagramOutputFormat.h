@@ -30,6 +30,8 @@ class DiagramOutputFormat : public IOutputFormat
         ssize_t points[4][2] = {{-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}};
         ssize_t getColor() const;
         UInt8 getSymbolNum() const;
+
+    private:
     };
     static inline const std::unordered_map<String, DiagramType> diagram_type
         = {{"SCATTER", DiagramType::SCATTER},
@@ -40,8 +42,8 @@ class DiagramOutputFormat : public IOutputFormat
 
     static inline const String color_reset = "\033[0m";
     std::vector<Chunk> chunks;
-    size_t height = 30;
-    size_t width = 75;
+    size_t height = 0;
+    size_t width = 0;
 
 public:
     DiagramOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
@@ -81,5 +83,19 @@ protected:
     const FormatSettings format_settings;
     Serializations serializations;
     bool is_ascii_symbols = false;
+
+    // Constats
+    struct DiagramConstants
+    {
+        static const size_t BRAILE_BLOCK_HEIGHT = 4;
+        static const size_t BRAILE_BLOCK_WIDTH = 2;
+        static const size_t EXPEXTED_COLUMN_NUMBER = 2;
+        static const size_t FIELD_SIZE = 11;
+        static const size_t MAX_COLOR_MODULE = 256;
+        static const size_t DEFAULT_HEIGHT = 30;
+        static const size_t DEFAULT_WIEDTH = 75;
+        static inline Color GRADIENT_START = {0, 0, 0};
+        static inline Color GRADIENT_END = {255, 87, 51};
+    };
 };
 }

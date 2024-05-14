@@ -85,7 +85,12 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
+    {"24.4", {{"diagram_output_format_diagram_type", "SCATTER", "SCATTER", "Allow to set the type of diagram"},
+              {"diagram_output_format_title", "", "", "Allow to set the title of plot"},
+              {"diagram_output_format_is_ascii_set", false, false, "Allow to set the charset for printing plot"},
+              {"diagram_output_format_limit_height", -1, -1, "Allow to limit num of rows in plot"},
+              {"diagram_output_format_limit_width", -1, -1, "Allow to limit num of columns in plot"},
+              {"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"ignore_drop_queries_probability", 0, 0, "Allow to ignore drop queries in server with specified probability for testing purposes"},
               {"lightweight_deletes_sync", 2, 2, "The same as 'mutation_sync', but controls only execution of lightweight deletes"},
               {"query_cache_system_table_handling", "save", "throw", "The query cache no longer caches results of queries against system tables"},

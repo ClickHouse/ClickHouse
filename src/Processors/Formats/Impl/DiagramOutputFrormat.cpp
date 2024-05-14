@@ -1,12 +1,11 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
-#include <sstream>
 #include <Core/SortDescription.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/sortBlock.h>
 #include <Processors/Formats/Impl/DiagramOutputFormat.h>
 #include <Common/UTF8Helpers.h>
-#include "Interpreters/sortBlock.h"
 
 namespace DB
 {
@@ -74,6 +73,7 @@ DiagramSymbols ascii_diagram_symbols{"+", "+", "+", "+", "+", "+", "+", "+", "+"
                                      "+", "+", "+", "-", "-", "|", "|", "#", "~", "^"};
 }
 
+
 void DiagramOutputFormat::write()
 {
     if (!diagram_type.contains(format_settings.diagram.diagram_type))
@@ -99,6 +99,8 @@ DiagramOutputFormat::DiagramOutputFormat(WriteBuffer & out_, const Block & heade
     : IOutputFormat(header_, out_), format_settings{format_settings_}, serializations(header_.getSerializations())
 {
     is_ascii_symbols = format_settings_.diagram.is_ascii_symbols;
+    height = DiagramConstants::DEFAULT_HEIGHT;
+    width = DiagramConstants::DEFAULT_WIEDTH;
 }
 
 void DiagramOutputFormat::consume(Chunk chunk)
@@ -117,15 +119,15 @@ void DiagramOutputFormat::writeScatter()
     std::vector<std::vector<BraileSymbol>> plot = std::vector<std::vector<BraileSymbol>>(height, std::vector<BraileSymbol>(width));
 
     // Calculate data limits for scaling
-    height *= 4;
-    width *= 2;
+    height *= DiagramConstants::BRAILE_BLOCK_HEIGHT;
+    width *= DiagramConstants::BRAILE_BLOCK_WIDTH;
     Float64 max_x = std::numeric_limits<Float64>::min();
     Float64 max_y = std::numeric_limits<Float64>::min();
     Float64 min_x = std::numeric_limits<Float64>::max();
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (const auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != 2)
+        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
             throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
 
         const auto x_column = chunk.getColumns()[0];
@@ -142,11 +144,11 @@ void DiagramOutputFormat::writeScatter()
             max_x = std::max(max_x, x_column->getFloat64(i));
             max_y = std::max(max_y, y_column->getFloat64(i));
             min_x = std::min(min_x, x_column->getFloat64(i));
-            min_y = std::min(min_y, x_column->getFloat64(i));
+            min_y = std::min(min_y, y_column->getFloat64(i));
         }
     }
-    Float64 x_len = max_x - min_x > 10e-5 ? max_x - min_x : 1.0;
-    Float64 y_len = max_y - min_y > 10e-5 ? max_y - min_y : 1.0;
+    Float64 x_len = std::fabs(max_x - min_x) > std::numeric_limits<Float64>::epsilon() ? max_x - min_x : 1;
+    Float64 y_len = std::fabs(max_y - min_y) > std::numeric_limits<Float64>::epsilon() ? max_y - min_y : 1;
     Float64 scale_coef_x = static_cast<Float64>(width - 1) / x_len;
     Float64 scale_coef_y = static_cast<Float64>(height - 1) / y_len;
 
@@ -158,15 +160,15 @@ void DiagramOutputFormat::writeScatter()
         {
             Float64 x = x_column->getFloat64(j);
             Float64 y = y_column->getFloat64(j);
-            size_t plot_x = static_cast<size_t>(std::ceil((x - min_x) * scale_coef_x));
-            size_t plot_y = static_cast<size_t>(std::ceil((y - min_y) * scale_coef_y));
+            size_t plot_x = static_cast<size_t>(std::round((x - min_x) * scale_coef_x));
+            size_t plot_y = static_cast<size_t>(std::round((y - min_y) * scale_coef_y));
             if (plot_x < width && plot_y < height)
             {
                 plot_y = height - plot_y - 1;
-                size_t braille_block_x = plot_x / 2;
-                size_t braille_block_y = plot_y / 4;
-                size_t x_block = plot_x % 2;
-                size_t y_block = plot_y % 4;
+                size_t braille_block_x = plot_x / DiagramConstants::BRAILE_BLOCK_WIDTH;
+                size_t braille_block_y = plot_y / DiagramConstants::BRAILE_BLOCK_HEIGHT;
+                size_t x_block = plot_x % DiagramConstants::BRAILE_BLOCK_WIDTH;
+                size_t y_block = plot_y % DiagramConstants::BRAILE_BLOCK_HEIGHT;
                 plot[braille_block_y][braille_block_x].points[y_block][x_block] = i;
             }
         }
@@ -174,26 +176,25 @@ void DiagramOutputFormat::writeScatter()
 
     // Write plot
     if (!format_settings.diagram.title.empty())
-        writeString(String(11, ' ') + format_settings.diagram.title + "\n", out);
-    String x_max_str = limitNumSize(max_x, 10);
-    String y_max_str = limitNumSize(max_y, 10);
-    String x_min_str = limitNumSize(min_x, 10);
-    String y_min_str = limitNumSize(min_y, 10);
-    y_max_str = String(10 - y_max_str.size(), ' ') + y_max_str + " ";
-    y_min_str = String(10 - y_min_str.size(), ' ') + y_min_str + " ";
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + format_settings.diagram.title + "\n", out);
+
+    String x_max_str = limitNumSize(max_x, DiagramConstants::FIELD_SIZE);
+    String y_max_str = limitNumSize(max_y, DiagramConstants::FIELD_SIZE);
+    String x_min_str = limitNumSize(min_x, DiagramConstants::FIELD_SIZE);
+    String y_min_str = limitNumSize(min_y, DiagramConstants::FIELD_SIZE);
     writeString(
-        y_max_str + diagram_symbols.left_top_corner + genRepeatString(diagram_symbols.dash, width / 2) + diagram_symbols.right_top_corner
-            + '\n',
+        y_max_str + diagram_symbols.left_top_corner + genRepeatString(diagram_symbols.dash, width / DiagramConstants::BRAILE_BLOCK_WIDTH)
+            + diagram_symbols.right_top_corner + '\n',
         out);
     for (const auto & row : plot)
     {
-        writeString(String(11, ' ') + diagram_symbols.bar, out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + diagram_symbols.bar, out);
         for (const auto & el : row)
         {
             ssize_t color = el.getColor();
             String colored_string;
             if (color != -1)
-                colored_string = "\033[38;5;" + std::to_string((color + 1) % 256) + "m"
+                colored_string = "\033[38;5;" + std::to_string((color + 1) % DiagramConstants::MAX_COLOR_MODULE) + "m"
                     + (is_ascii_symbols ? "." : braille_symbols[el.getSymbolNum()]) + color_reset;
             else
                 colored_string = (is_ascii_symbols ? " " : braille_symbols[el.getSymbolNum()]);
@@ -202,13 +203,16 @@ void DiagramOutputFormat::writeScatter()
         writeString(String(diagram_symbols.bar) + "\n", out);
     }
     writeString(
-        y_min_str + diagram_symbols.left_bottom_corner + genRepeatString(diagram_symbols.dash, width / 2)
+        y_min_str + diagram_symbols.left_bottom_corner + genRepeatString(diagram_symbols.dash, width / DiagramConstants::BRAILE_BLOCK_WIDTH)
             + diagram_symbols.right_bottom_corner + '\n',
         out);
-    if (width / 2 < x_min_str.size() + x_max_str.size())
-        writeString(String(11, ' ') + x_min_str + ' ' + x_max_str, out);
+    if (width / DiagramConstants::BRAILE_BLOCK_WIDTH < x_min_str.size() + x_max_str.size())
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + x_min_str + ' ' + x_max_str, out);
     else
-        writeString(String(11, ' ') + x_min_str + String(width / 2 - x_min_str.size() - x_max_str.size(), ' ') + x_max_str, out);
+        writeString(
+            String(DiagramConstants::FIELD_SIZE, ' ') + x_min_str
+                + String(width / DiagramConstants::BRAILE_BLOCK_WIDTH - x_min_str.size() - x_max_str.size(), ' ') + x_max_str,
+            out);
 }
 String DiagramOutputFormat::genRepeatString(String s, size_t n)
 {
@@ -234,7 +238,7 @@ void DiagramOutputFormat::writeHistogram()
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (const auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != 2)
+        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
             throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
 
         const auto x_column = chunk.getColumns()[0];
@@ -249,46 +253,53 @@ void DiagramOutputFormat::writeHistogram()
             min_y = std::min(min_y, y);
         }
     }
-    Float64 y_len = max_y - min_y > 10e-5 ? max_y - min_y : 1.0;
-    Float64 scale_coef_y = std::max(0.0, static_cast<Float64>(width) - 12.0) / y_len;
+
+
+    Float64 y_len = std::fabs(max_y - min_y) > std::numeric_limits<Float64>::epsilon() ? max_y - min_y : 1;
+    Float64 scale_coef_y = std::max(0.0, static_cast<Float64>(width) - static_cast<Float64>(DiagramConstants::FIELD_SIZE + 1)) / y_len;
 
     // Write plot
     if (!format_settings.diagram.title.empty())
-        writeString(String(11, ' ') + format_settings.diagram.title + "\n", out);
-    writeString(String(11, ' ') + diagram_symbols.left_top_corner + String(width, ' ') + diagram_symbols.right_top_corner, out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + format_settings.diagram.title + "\n", out);
+    writeString(
+        String(DiagramConstants::FIELD_SIZE, ' ') + diagram_symbols.left_top_corner + String(width, ' ') + diagram_symbols.right_top_corner,
+        out);
     writeCString("\n", out);
     size_t printed_strings = 0;
     for (size_t i = 0; i < chunks.size(); ++i)
     {
         const auto x_column = chunks[i].getColumns()[0];
         const auto y_column = chunks[i].getColumns()[1];
-        String color = "\033[38;5;" + std::to_string((i + 1) % 256) + "m";
+        String color = "\033[38;5;" + std::to_string((i + 1) % DiagramConstants::MAX_COLOR_MODULE) + "m";
         for (size_t j = 0; j < chunks[i].getNumRows(); ++j)
         {
             if (printed_strings >= height)
                 break;
-            auto [size, serialized_str] = getSerialzedStr(*x_column, *serializations[0], j, 10);
-            String x_string = String(11, ' ');
-            x_string = String(10 - size, ' ') + serialized_str + " ";
+            auto [size, serialized_str] = getSerialzedStr(*x_column, *serializations[0], j, DiagramConstants::FIELD_SIZE - 1);
+            String x_string = String(DiagramConstants::FIELD_SIZE, ' ');
+            x_string = String(DiagramConstants::FIELD_SIZE - 1 - size, ' ') + serialized_str + " ";
             Float64 y = y_column->getFloat64(j);
-            size_t hist_block_cnt = static_cast<size_t>(std::ceil((y - min_y) * scale_coef_y)) + 1;
-            std::string y_str = limitNumSize(y, 10);
+            size_t hist_block_cnt = static_cast<size_t>(std::round((y - min_y) * scale_coef_y)) + 1;
+            String y_str = limitNumSize(y, DiagramConstants::FIELD_SIZE - 1);
             writeString(
                 x_string + diagram_symbols.right_separator + color + genRepeatString(diagram_symbols.hist_block, hist_block_cnt)
                     + color_reset + " " + y_str + "\n",
                 out);
             ++printed_strings;
             if ((j + 1 != chunks[i].getNumRows() || i + 1 != chunks.size()) && printed_strings + 1 < height)
-                writeString(String(11, ' ') + diagram_symbols.bar + String(width, ' ') + "\n", out);
+                writeString(String(DiagramConstants::FIELD_SIZE, ' ') + diagram_symbols.bar + String(width, ' ') + "\n", out);
             else if (printed_strings + 1 >= height)
                 break;
         }
         if (printed_strings >= height)
             break;
     }
-    writeString(String(11, ' ') + diagram_symbols.left_bottom_corner + String(width, ' ') + diagram_symbols.right_bottom_corner, out);
+    writeString(
+        String(DiagramConstants::FIELD_SIZE, ' ') + diagram_symbols.left_bottom_corner + String(width, ' ')
+            + diagram_symbols.right_bottom_corner,
+        out);
     if (printed_strings >= height)
-        writeString(String(11, ' ') + "To much data to print all.", out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + "To much data to print all.", out);
 }
 
 
@@ -302,9 +313,6 @@ void DiagramOutputFormat::writeHeatMap()
     if (format_settings.diagram.limit_width > 0)
         width = format_settings.diagram.limit_width;
 
-    Color gradient_start = {212, 20, 90};
-    Color gradient_end = {251, 176, 59};
-
     // Calculate data limits for scaling
     Float64 max_x = std::numeric_limits<Float64>::min();
     Float64 max_y = std::numeric_limits<Float64>::min();
@@ -312,7 +320,7 @@ void DiagramOutputFormat::writeHeatMap()
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (const auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != 2)
+        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
             throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
 
         const auto x_column = chunk.getColumns()[0];
@@ -333,8 +341,8 @@ void DiagramOutputFormat::writeHeatMap()
             min_y = std::min(min_y, y);
         }
     }
-    Float64 x_len = max_x - min_x > 10e-5 ? max_x - min_x : 1.0;
-    Float64 y_len = max_y - min_y > 10e-5 ? max_y - min_y : 1.0;
+    Float64 x_len = std::fabs(max_x - min_x) > std::numeric_limits<Float64>::epsilon() ? max_x - min_x : 1;
+    Float64 y_len = std::fabs(max_y - min_y) > std::numeric_limits<Float64>::epsilon() ? max_y - min_y : 1;
     Float64 scale_coef_x = static_cast<Float64>(width - 1) / x_len;
     Float64 scale_coef_y = static_cast<Float64>(height - 1) / y_len;
     size_t heat_min = std::numeric_limits<size_t>::max();
@@ -348,8 +356,8 @@ void DiagramOutputFormat::writeHeatMap()
         {
             Float64 x = x_column->getFloat64(i);
             Float64 y = y_column->getFloat64(i);
-            size_t plot_x = static_cast<size_t>(std::ceil((x - min_x) * scale_coef_x));
-            size_t plot_y = static_cast<size_t>(std::ceil((y - min_y) * scale_coef_y));
+            size_t plot_x = static_cast<size_t>(std::round((x - min_x) * scale_coef_x));
+            size_t plot_y = static_cast<size_t>(std::round((y - min_y) * scale_coef_y));
             if (plot_x < width && plot_y < height)
                 ++heat_map[plot_y][plot_x];
         }
@@ -366,29 +374,30 @@ void DiagramOutputFormat::writeHeatMap()
 
     // Write plot
     if (!format_settings.diagram.title.empty())
-        writeString(String(11, ' ') + format_settings.diagram.title + "\n", out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + format_settings.diagram.title + "\n", out);
 
-    String x_max_str = limitNumSize(max_x, 10);
-    String y_max_str = limitNumSize(max_y, 10);
-    String x_min_str = limitNumSize(min_x, 10);
-    String y_min_str = limitNumSize(min_y, 10);
-    y_max_str = String(10 - y_max_str.size(), ' ') + y_max_str + " ";
-    y_min_str = String(10 - y_min_str.size(), ' ') + y_min_str + " ";
+    String x_max_str = limitNumSize(max_x, DiagramConstants::FIELD_SIZE);
+    String y_max_str = limitNumSize(max_y, DiagramConstants::FIELD_SIZE);
+    String x_min_str = limitNumSize(min_x, DiagramConstants::FIELD_SIZE);
+    String y_min_str = limitNumSize(min_y, DiagramConstants::FIELD_SIZE);
     writeString(
         y_max_str + diagram_symbols.left_top_corner + genRepeatString(diagram_symbols.dash, width) + diagram_symbols.right_top_corner
             + '\n',
         out);
     for (const auto & row : heat_map)
     {
-        writeString(String(11, ' ') + diagram_symbols.bar, out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + diagram_symbols.bar, out);
         for (const auto & el : row)
         {
             size_t r_chanel = static_cast<size_t>(
-                gradient_start.r + static_cast<Float64>(el - heat_min) / heat_len * (gradient_end.r - gradient_start.r));
+                DiagramConstants::GRADIENT_START.r
+                + static_cast<Float64>(el - heat_min) / heat_len * (DiagramConstants::GRADIENT_END.r - DiagramConstants::GRADIENT_START.r));
             size_t g_chanel = static_cast<size_t>(
-                gradient_start.g + static_cast<Float64>(el - heat_min) / heat_len * (gradient_end.g - gradient_start.g));
+                DiagramConstants::GRADIENT_START.g
+                + static_cast<Float64>(el - heat_min) / heat_len * (DiagramConstants::GRADIENT_END.g - DiagramConstants::GRADIENT_START.g));
             size_t b_chanel = static_cast<size_t>(
-                gradient_start.b + static_cast<Float64>(el - heat_min) / heat_len * (gradient_end.b - gradient_start.b));
+                DiagramConstants::GRADIENT_START.b
+                + static_cast<Float64>(el - heat_min) / heat_len * (DiagramConstants::GRADIENT_END.b - DiagramConstants::GRADIENT_START.b));
             String colored_string = "\033[48;2;" + std::to_string(r_chanel) + ";" + std::to_string(g_chanel) + ";"
                 + std::to_string(b_chanel) + "m" + " " + "\033[0m";
             writeString(colored_string, out);
@@ -400,9 +409,11 @@ void DiagramOutputFormat::writeHeatMap()
             + '\n',
         out);
     if (width < x_min_str.size() + x_max_str.size())
-        writeString(String(11, ' ') + x_min_str + ' ' + x_max_str, out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + x_min_str + ' ' + x_max_str, out);
     else
-        writeString(String(11, ' ') + x_min_str + String(width - x_min_str.size() - x_max_str.size(), ' ') + x_max_str, out);
+        writeString(
+            String(DiagramConstants::FIELD_SIZE, ' ') + x_min_str + String(width - x_min_str.size() - x_max_str.size(), ' ') + x_max_str,
+            out);
 }
 void DiagramOutputFormat::writeLineplot()
 {
@@ -416,15 +427,15 @@ void DiagramOutputFormat::writeLineplot()
     std::vector<std::vector<BraileSymbol>> plot = std::vector<std::vector<BraileSymbol>>(height, std::vector<BraileSymbol>(width));
 
     // Calculate data limits for scaling
-    height *= 4;
-    width *= 2;
+    height *= DiagramConstants::BRAILE_BLOCK_HEIGHT;
+    width *= DiagramConstants::BRAILE_BLOCK_WIDTH;
     Float64 max_x = std::numeric_limits<Float64>::min();
     Float64 max_y = std::numeric_limits<Float64>::min();
     Float64 min_x = std::numeric_limits<Float64>::max();
     Float64 min_y = std::numeric_limits<Float64>::max();
     for (auto & chunk : chunks)
     {
-        if (chunk.getNumColumns() != 2)
+        if (chunk.getNumColumns() != DiagramConstants::EXPEXTED_COLUMN_NUMBER)
             throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Incorrect number of columns");
         const auto x_column = chunk.getColumns()[0];
         const auto y_column = chunk.getColumns()[1];
@@ -451,11 +462,11 @@ void DiagramOutputFormat::writeLineplot()
             max_x = std::max(max_x, x_column->getFloat64(i));
             max_y = std::max(max_y, y_column->getFloat64(i));
             min_x = std::min(min_x, x_column->getFloat64(i));
-            min_y = std::min(min_y, x_column->getFloat64(i));
+            min_y = std::min(min_y, y_column->getFloat64(i));
         }
     }
-    Float64 x_len = max_x - min_x > 10e-5 ? max_x - min_x : 1.0;
-    Float64 y_len = max_y - min_y > 10e-5 ? max_y - min_y : 1.0;
+    Float64 x_len = std::fabs(max_x - min_x) > std::numeric_limits<Float64>::epsilon() ? max_x - min_x : 1;
+    Float64 y_len = std::fabs(max_y - min_y) > std::numeric_limits<Float64>::epsilon() ? max_y - min_y : 1;
     Float64 scale_coef_x = static_cast<Float64>(width - 1) / x_len;
     Float64 scale_coef_y = static_cast<Float64>(height - 1) / y_len;
 
@@ -467,50 +478,46 @@ void DiagramOutputFormat::writeLineplot()
         {
             Float64 x1 = x_column->getFloat64(j);
             Float64 y1 = y_column->getFloat64(j);
-            Int64 plot_x1 = static_cast<Int64>(std::ceil((x1 - min_x) * scale_coef_x));
-            Int64 plot_y1 = static_cast<Int64>(std::ceil((y1 - min_y) * scale_coef_y));
+            Int64 plot_x1 = static_cast<Int64>(std::round((x1 - min_x) * scale_coef_x));
+            Int64 plot_y1 = static_cast<Int64>(std::round((y1 - min_y) * scale_coef_y));
             Float64 x2 = x_column->getFloat64(j + 1);
             Float64 y2 = y_column->getFloat64(j + 1);
-            Int64 plot_x2 = static_cast<Int64>(std::ceil((x2 - min_x) * scale_coef_x));
-            Int64 plot_y2 = static_cast<Int64>(std::ceil((y2 - min_y) * scale_coef_y));
+            Int64 plot_x2 = static_cast<Int64>(std::round((x2 - min_x) * scale_coef_x));
+            Int64 plot_y2 = static_cast<Int64>(std::round((y2 - min_y) * scale_coef_y));
             std::vector<std::pair<size_t, size_t>> line_points = drawLine({plot_x1, plot_y1}, {plot_x2, plot_y2});
             for (auto & [x, y] : line_points)
             {
                 if (x < width && y < height)
                 {
                     y = height - y - 1;
-                    size_t braille_block_x = x / 2;
-                    size_t braille_block_y = y / 4;
-                    size_t x_block = x % 2;
-                    size_t y_block = y % 4;
+                    size_t braille_block_x = x / DiagramConstants::BRAILE_BLOCK_WIDTH;
+                    size_t braille_block_y = y / DiagramConstants::BRAILE_BLOCK_HEIGHT;
+                    size_t x_block = x % DiagramConstants::BRAILE_BLOCK_WIDTH;
+                    size_t y_block = y % DiagramConstants::BRAILE_BLOCK_HEIGHT;
                     plot[braille_block_y][braille_block_x].points[y_block][x_block] = i;
                 }
             }
         }
     }
-
-    // Write plot
-    String x_max_str = limitNumSize(max_x, 10);
-    String y_max_str = limitNumSize(max_y, 10);
-    String x_min_str = limitNumSize(min_x, 10);
-    String y_min_str = limitNumSize(min_y, 10);
-    y_max_str = String(10 - y_max_str.size(), ' ') + y_max_str + " ";
-    y_min_str = String(10 - y_min_str.size(), ' ') + y_min_str + " ";
+    String x_max_str = limitNumSize(max_x, DiagramConstants::FIELD_SIZE);
+    String y_max_str = limitNumSize(max_y, DiagramConstants::FIELD_SIZE);
+    String x_min_str = limitNumSize(min_x, DiagramConstants::FIELD_SIZE);
+    String y_min_str = limitNumSize(min_y, DiagramConstants::FIELD_SIZE);
     if (!format_settings.diagram.title.empty())
-        writeString(String(11, ' ') + format_settings.diagram.title + "\n", out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + format_settings.diagram.title + "\n", out);
     writeString(
-        y_max_str + diagram_symbols.left_top_corner + genRepeatString(diagram_symbols.dash, width / 2) + diagram_symbols.right_top_corner
-            + '\n',
+        y_max_str + diagram_symbols.left_top_corner + genRepeatString(diagram_symbols.dash, width / DiagramConstants::BRAILE_BLOCK_WIDTH)
+            + diagram_symbols.right_top_corner + '\n',
         out);
     for (const auto & row : plot)
     {
-        writeString(String(11, ' ') + diagram_symbols.bar, out);
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + diagram_symbols.bar, out);
         for (const auto & el : row)
         {
             ssize_t color = el.getColor();
             String colored_string;
             if (color != -1)
-                colored_string = "\033[38;5;" + std::to_string((color + 1) % 256) + "m"
+                colored_string = "\033[38;5;" + std::to_string((color + 1) % DiagramConstants::MAX_COLOR_MODULE) + "m"
                     + (is_ascii_symbols ? "." : braille_symbols[el.getSymbolNum()]) + color_reset;
             else
                 colored_string = is_ascii_symbols ? " " : braille_symbols[el.getSymbolNum()];
@@ -519,35 +526,28 @@ void DiagramOutputFormat::writeLineplot()
         writeString(String(diagram_symbols.bar) + "\n", out);
     }
     writeString(
-        y_min_str + diagram_symbols.left_bottom_corner + genRepeatString(diagram_symbols.dash, width / 2)
+        y_min_str + diagram_symbols.left_bottom_corner + genRepeatString(diagram_symbols.dash, width / DiagramConstants::BRAILE_BLOCK_WIDTH)
             + diagram_symbols.right_bottom_corner + '\n',
         out);
-    if (width / 2 < x_min_str.size() + x_max_str.size())
-        writeString(String(11, ' ') + x_min_str + ' ' + x_max_str, out);
+    if (width / DiagramConstants::BRAILE_BLOCK_WIDTH < x_min_str.size() + x_max_str.size())
+        writeString(String(DiagramConstants::FIELD_SIZE, ' ') + x_min_str + ' ' + x_max_str, out);
     else
-        writeString(String(11, ' ') + x_min_str + String(width / 2 - x_min_str.size() - x_max_str.size(), ' ') + x_max_str, out);
+        writeString(
+            String(DiagramConstants::FIELD_SIZE, ' ') + x_min_str
+                + String(width / DiagramConstants::BRAILE_BLOCK_WIDTH - x_min_str.size() - x_max_str.size(), ' ') + x_max_str,
+            out);
 }
 String DiagramOutputFormat::limitNumSize(Float64 num, size_t limit) const
 {
-    std::ostringstream oss;
-    oss << num;
-    std::string y_str = oss.str();
-    if (y_str.size() > limit)
-    {
-        oss = std::ostringstream();
-        Float64 lg_y = std::floor(std::log10(num));
-        num = num / std::pow(10, lg_y);
-        oss << std::fixed << std::setprecision(2) << num;
-        if (!std::isnan(num) && !std::isinf(num) && static_cast<Int64>(std::abs(lg_y)) != 0)
-        {
-            oss << 'e';
-            if (lg_y > 0)
-                oss << '+';
-            oss << std::fixed << std::setprecision(0) << lg_y;
-        }
-        y_str = oss.str();
-    }
-    return y_str;
+    const int buffer_len = 100;
+    const int precision = 2;
+    char buffer[buffer_len];
+    int chars_written = std::snprintf(buffer, buffer_len, "%.*e", precision, num);
+    String str(buffer, chars_written);
+    if (chars_written < static_cast<int>(limit))
+        str = String(limit - 1 - static_cast<size_t>(chars_written), ' ') + str;
+    str += ' ';
+    return str;
 }
 
 void DiagramOutputFormat::writeSuffix()
