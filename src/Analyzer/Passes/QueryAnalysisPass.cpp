@@ -3524,20 +3524,25 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     JoinKind join_kind = from_join_node.getKind();
 
-    auto check_resolved_identifier_result_type = [this, &resolved_identifier, &join_using_column_name_to_column_node, &scope](const QueryTreeNodePtr & resolved_identifier_candidate)
+    auto convert_resolved_result_type_if_needed = [](
+        const QueryTreeNodePtr & resolved_identifier_candidate,
+        const std::unordered_map<std::string, ColumnNodePtr> & using_column_name_to_column_node,
+        QueryTreeNodePtr & resolve_result,
+        IdentifierResolveScope & current_scope,
+        std::unordered_map<QueryTreeNodePtr, ProjectionName> & projection_name_mapping)
     {
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
-        auto using_column_node_it = join_using_column_name_to_column_node.find(resolved_column.getColumnName());
-        if (using_column_node_it != join_using_column_name_to_column_node.end() &&
+        auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
+        if (using_column_node_it != using_column_name_to_column_node.end() &&
             !using_column_node_it->second->getColumnType()->equals(*resolved_column.getColumnType()))
         {
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
             resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
-            node_to_projection_name[resolved_column_clone] = node_to_projection_name.at(resolved_identifier_candidate);
-            resolved_identifier = std::move(resolved_column_clone);
+            projection_name_mapping[resolved_column_clone] = projection_name_mapping.at(resolved_identifier_candidate);
+            resolve_result = std::move(resolved_column_clone);
 
-            if (!resolved_identifier->isEqual(*using_column_node_it->second))
-                scope.join_columns_with_changed_types[resolved_identifier] = using_column_node_it->second;
+            if (!resolve_result->isEqual(*using_column_node_it->second))
+                current_scope.join_columns_with_changed_types[resolve_result] = using_column_node_it->second;
         }
     };
 
@@ -3651,7 +3656,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         }
         else
         {
-            check_resolved_identifier_result_type(left_resolved_identifier);
+            convert_resolved_result_type_if_needed(left_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
     else if (right_resolved_identifier)
@@ -3665,7 +3670,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         }
         else
         {
-            check_resolved_identifier_result_type(right_resolved_identifier);
+            convert_resolved_result_type_if_needed(right_resolved_identifier, join_using_column_name_to_column_node, resolved_identifier, scope, node_to_projection_name);
         }
     }
 
