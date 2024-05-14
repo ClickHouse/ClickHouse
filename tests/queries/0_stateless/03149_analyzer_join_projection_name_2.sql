@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 CREATE TABLE users (uid Int16, name String, gid LowCardinality(String), gname LowCardinality(String))
   ENGINE=MergeTree order by tuple();
 CREATE TABLE groups (gid LowCardinality(String), gname LowCardinality(String)) 
