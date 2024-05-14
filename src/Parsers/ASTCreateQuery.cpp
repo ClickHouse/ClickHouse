@@ -1,14 +1,13 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-
-#include "ASTIdentifier.h"
 
 
 namespace DB
