@@ -16,9 +16,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().group_by_to_distinct_optimization)
-            return;
-
+        
         auto * query_node = node->as<QueryNode>();
 
         // Проверяем, что запрос содержит только SELECT
@@ -53,7 +51,7 @@ public:
         distinct_query_node->getLimit() = query_node->getLimit();
 
         // Заменяем текущий узел запроса узлом с оператором DISTINCT
-        query_node->swap(*distinct_query_node);
+        query_node = std::move(distinct_query_node);
     }
 };
 
