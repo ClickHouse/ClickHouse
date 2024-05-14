@@ -23,40 +23,39 @@ IProcessor::Status PlanSquashingTransform::prepare()
     {
         switch (planning_status)
         {
-            case PlanningStatus::INIT:
+            case INIT:
             {
                 status = init();
                 break;
             }
-            case PlanningStatus::READ_IF_CAN:
+            case READ_IF_CAN:
             {
                 status = prepareConsume();
                 break;
             }
-            case PlanningStatus::WAIT_IN:
+            case PUSH:
             {
-                status = waitForDataIn();
+                status = push();
                 break;
             }
-            case PlanningStatus::WAIT_OUT_AND_PUSH:
-            {
-                status = prepareSend();
-                break;
-            }
-            case PlanningStatus::WAIT_OUT_FLUSH:
-            {
-                status = prepareSendFlush();
-                break;
-            }
+            case WAIT_IN:
+                return waitForDataIn();
+            case WAIT_OUT:
+                return prepareSend();
+            case WAIT_OUT_FLUSH:
+                return prepareSendFlush();
             case FINISH:
-            {
-                status = finish();
-                break;
-            }
+                break; /// never reached
         }
     }
+    status = finish();
 
     return status;
+}
+
+void PlanSquashingTransform::work()
+{
+    prepare();
 }
 
 IProcessor::Status PlanSquashingTransform::init()
@@ -93,7 +92,7 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
             available_inputs--;
             if (chunk.hasChunkInfo())
             {
-                planning_status = PlanningStatus::WAIT_OUT_AND_PUSH;
+                planning_status = PlanningStatus::WAIT_OUT;
                 return Status::Ready;
             }
         }
@@ -198,6 +197,21 @@ void PlanSquashingTransform::transform(Chunk & chunk_)
     }
 }
 
+IProcessor::Status PlanSquashingTransform::push()
+{
+    if (!free_output)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There should be a free output in push()");
+
+    if (finished)
+        planning_status = PlanningStatus::FINISH;
+    else
+        planning_status = PlanningStatus::READ_IF_CAN;
+
+    free_output->push(std::move(chunk));
+    free_output = nullptr;
+    return Status::Ready;
+}
+
 IProcessor::Status PlanSquashingTransform::prepareSend()
 {
     if (!chunk)
@@ -208,11 +222,10 @@ IProcessor::Status PlanSquashingTransform::prepareSend()
 
     for (auto &output : outputs)
     {
-
         if (output.canPush())
         {
-            planning_status = PlanningStatus::READ_IF_CAN;
-            output.push(std::move(chunk));
+            planning_status = PlanningStatus::PUSH;
+            free_output = &output;
             return Status::Ready;
         }
     }
@@ -232,8 +245,8 @@ IProcessor::Status PlanSquashingTransform::prepareSendFlush()
 
         if (output.canPush())
         {
-            planning_status = PlanningStatus::FINISH;
-            output.push(std::move(chunk));
+            planning_status = PlanningStatus::PUSH;
+            free_output = &output;
             return Status::Ready;
         }
     }
