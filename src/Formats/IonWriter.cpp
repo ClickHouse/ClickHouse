@@ -112,24 +112,33 @@ void IonWriter::writeBool(bool value)
     ion_writer_write_bool(ion_writer, value);
 }
 
+static std::vector<BYTE> getIonEndianBytes(const char * value, size_t n) {
+    std::vector<BYTE> big_int_buffer(n);
+    if constexpr (std::endian::native == std::endian::little)
+        for (size_t i = 0; i < n; ++i)
+            big_int_buffer[n - i - 1] = value[i];
+    else
+        for (size_t i = 0; i < n; ++i)
+            big_int_buffer[i] = value[i];
+    return big_int_buffer;
+}
+
 void IonWriter::writeBigInt(const char * value, size_t n)
 {
-    std::vector<BYTE> big_int_buffer(n);
-    for (size_t i = 0; i < n; ++i)
-        big_int_buffer[n - i - 1] = value[i];
+    std::vector<BYTE> big_int_buffer = getIonEndianBytes(value, n);
     ION_INT * ion_int_ptr = nullptr;
     ion_int_alloc(nullptr, &ion_int_ptr);
+    // big endian byte order is expected
     ion_int_from_bytes(ion_int_ptr, big_int_buffer.data(), static_cast<SIZE>(big_int_buffer.size()));
     ion_writer_write_ion_int(ion_writer, ion_int_ptr);
 }
 
 void IonWriter::writeBigUInt(const char * value, size_t n)
 {
-    std::vector<BYTE> big_int_buffer(n);
-    for (size_t i = 0; i < n; ++i)
-        big_int_buffer[n - i - 1] = value[i];
+    std::vector<BYTE> big_int_buffer = getIonEndianBytes(value, n);
     ION_INT * ion_int_ptr = nullptr;
     ion_int_alloc(nullptr, &ion_int_ptr);
+    // big endian byte order is expected
     ion_int_from_abs_bytes(ion_int_ptr, big_int_buffer.data(), static_cast<SIZE>(big_int_buffer.size()), false);
     ion_writer_write_ion_int(ion_writer, ion_int_ptr);
 }
@@ -171,9 +180,7 @@ void IonWriter::writeDecimal128(const char * value, size_t n)
     ION_DECIMAL decimal_value;
     decContext set;
     decContextDefault(&set, DEC_INIT_DECIMAL128);
-    std::vector<BYTE> buffer(n);
-    for (size_t i = 0; i < n; ++i)
-        buffer[n - i - 1] = value[i];
+    std::vector<BYTE> buffer = getIonEndianBytes(value, n);
     SIZE bytes_count = static_cast<SIZE>(n);
     ION_INT * value_ion_int = nullptr;
     ion_int_alloc(nullptr, &value_ion_int);
@@ -192,9 +199,7 @@ void IonWriter::writeDecimal256(const char * value, size_t n)
     set.digits = IonDecimal256Configs::DigitsCount;
     set.emin = IonDecimal256Configs::MaxNegativeExp;
     set.emax = IonDecimal256Configs::MaxPositiveExp;
-    std::vector<BYTE> buffer(n);
-    for (size_t i = 0; i < n; ++i)
-        buffer[n - i - 1] = value[i];
+    std::vector<BYTE> buffer = getIonEndianBytes(value, n);
     SIZE bytes_count = static_cast<SIZE>(n);
     ION_INT * value_ion_int = nullptr;
     ion_int_alloc(nullptr, &value_ion_int);
