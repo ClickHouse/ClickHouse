@@ -16,6 +16,7 @@ node = cluster.add_instance(
     stay_alive=True,
     with_installed_binary=True,
 )
+sanitizer_check_node = cluster.add_instance("sanitizer_check_node")
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +38,7 @@ def test_trace_log_build_id(started_cluster):
     # We make queries to create entries in trace_log, then restart with new version and verify if the old
     # trace_log table is renamed and a new trace_log table is created.
 
-    if node.is_built_with_sanitizer():
+    if sanitizer_check_node.is_built_with_sanitizer():
         pytest.skip(
             "Sanitizers are skipped, because trace_log is disabled with sanitizers."
         )
@@ -67,7 +68,7 @@ def test_trace_log_build_id(started_cluster):
         )
     """
     node.query(
-        "SELECT sleep(1)",
+        "SELECT sleep(2)",
         query_id=NEW_TEST_QUERY_ID,
     )
     node.query("SYSTEM FLUSH LOGS")
