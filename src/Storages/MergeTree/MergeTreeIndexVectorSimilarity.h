@@ -4,6 +4,8 @@
 
 #include <Storages/MergeTree/VectorSimilarityCondition.h>
 
+#include <Common/Logger.h>
+
 #if defined(__linux__) && (defined(__x86_64__) || defined (__aarch64__))
 #  define USEARCH_USE_SIMSIMD 1 /// probably works on other platforms too but let's not risk
 /// #  define SIMSIMD_DYNAMIC_DISPATCH 1
@@ -42,12 +44,32 @@ class USearchIndexWithSerialization : public USearchIndexImpl
 
 public:
     USearchIndexWithSerialization(
+            const String & index_name_,
             size_t dimensions,
             unum::usearch::metric_kind_t metric_kind,
             unum::usearch::scalar_kind_t scalar_kind,
             UsearchHnswParams usearch_hnsw_params);
+
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
+
+    struct Statistics
+    {
+        size_t max_level;
+        size_t connectivity;
+        size_t size;
+        size_t capacity;
+        size_t memory_usage;
+        /// advanced stats:
+        size_t bytes_per_vector;
+        size_t scalar_words;
+        Base::stats_t statistics;
+    };
+    Statistics getStatistics() const;
+
+private:
+    const String index_name;
+
 };
 
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
@@ -88,6 +110,8 @@ private:
     /// are (at least in theory) agnostic of specific vector search libraries, and 2. additional data (e.g. the number of dimensions)
     /// outside usearch exists which we should keep it separately versioned.
     static constexpr UInt64 FILE_FORMAT_VERSION = 1;
+
+    LoggerPtr logger = getLogger("VectorSimilarityIndex");
 };
 
 

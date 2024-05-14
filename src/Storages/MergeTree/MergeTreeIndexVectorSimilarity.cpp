@@ -4,6 +4,9 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/BitHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -99,12 +102,14 @@ String joinByComma(const T & t)
 }
 
 USearchIndexWithSerialization::USearchIndexWithSerialization(
+    const String & index_name_,
     size_t dimensions,
     unum::usearch::metric_kind_t metric_kind,
     unum::usearch::scalar_kind_t scalar_kind,
     UsearchHnswParams usearch_hnsw_params)
     : Base(Base::make(unum::usearch::metric_punned_t(dimensions, metric_kind, scalar_kind),
                       unum::usearch::index_dense_config_t(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search)))
+    , index_name(index_name_)
 {
 }
 
@@ -118,7 +123,7 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
 
     auto result = Base::save_to_stream(callback);
     if (result.error)
-        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not save vector similarity index, error: " + String(result.error.release()));
+        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, String("Could not save vector similarity index ") + backQuote(index_name) + ", error: " + result.error.release());
 }
 
 void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
@@ -133,8 +138,22 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
     if (result.error)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
         throw Exception::createRuntime(
-                ErrorCodes::INCORRECT_DATA,
-                "Could not load vector similarity index, error: " + String(result.error.release()) + " Please drop the index and create it again.");
+            ErrorCodes::INCORRECT_DATA,
+            String("Could not load vector similarity index ") + backQuote(index_name) + ", error: " + result.error.release() + " Please drop the index and create it again.");
+}
+
+USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
+{
+    Statistics statistics = {
+        .max_level = max_level(),
+        .connectivity = connectivity(),
+        .size = size(),                         /// number of vectors
+        .capacity = capacity(),                 /// number of vectors reserved
+        .memory_usage = memory_usage(),         /// in bytes, the value is not exact
+        .bytes_per_vector = bytes_per_vector(),
+        .scalar_words = scalar_words(),
+        .statistics = stats()};
+    return statistics;
 }
 
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
@@ -172,6 +191,10 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
     writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr);
 
     index->serialize(ostr);
+
+    auto statistics = index->getStatistics();
+    LOG_TRACE(logger, "Wrote vector similarity index {}, statistics: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+                      backQuote(index_name), statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, ReadableSize(statistics.memory_usage));
 }
 
 void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
@@ -185,15 +208,20 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
         /// keep it simple for now.
         throw Exception(
             ErrorCodes::FORMAT_VERSION_TOO_OLD,
-            "Vector similarity index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
+            "Vector similarity index {} could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
+            backQuote(index_name),
             FILE_FORMAT_VERSION,
             file_format);
 
     UInt64 dimension;
     readIntBinary(dimension, istr);
 
-    index = std::make_shared<USearchIndexWithSerialization>(dimension, metric_kind, scalar_kind, usearch_hnsw_params);
+    index = std::make_shared<USearchIndexWithSerialization>(index_name, dimension, metric_kind, scalar_kind, usearch_hnsw_params);
     index->deserialize(istr);
+
+    auto statistics = index->getStatistics();
+    LOG_TRACE(logger, "Loaded vector similarity index {}, statistics: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+                      backQuote(index_name), statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, ReadableSize(statistics.memory_usage));
 }
 
 MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilarity(
@@ -271,7 +299,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
 
         if (!index)
-            index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+            index = std::make_shared<USearchIndexWithSerialization>(index_name, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
         /// Reserving space is mandatory
         if (!index->reserve(roundUpToPowerOfTwoOrZero(index->size() + num_rows)))
