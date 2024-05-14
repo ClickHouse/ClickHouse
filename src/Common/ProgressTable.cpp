@@ -11,6 +11,7 @@
 #include <Common/formatReadable.h>
 
 #include <format>
+#include <numeric>
 
 namespace DB
 {
@@ -62,7 +63,7 @@ auto createEventToValueTypeMap()
 std::string_view setColorForProgress(double progress, double max_progress)
 {
     static const std::string_view colors[] = {
-        "\033[38;5;65m", /// Pale green
+        "",
         "\033[38;5;34m", /// Green
         "\033[38;5;154m", /// Yellow-green
         "\033[38;5;220m", /// Yellow
@@ -255,8 +256,8 @@ ProgressTable::MetricInfo::MetricInfo(ProfileEvents::Type t) : type(t)
 void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
 {
     /// If the value has not been updated for a long time
-    /// reset the time in snapshots.
-    if (new_time - new_snapshot.time >= 0.25 || new_snapshot.time == 0)
+    /// reset the time in snapshots to a second ago.
+    if (new_time - new_snapshot.time >= 0.5 || new_snapshot.time == 0)
     {
         prev_shapshot = {new_snapshot.value, new_time - 1.0};
         cur_shapshot = {new_snapshot.value, new_time - 1.0};
@@ -273,14 +274,14 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
     }
     new_snapshot.time = new_time;
 
-    if (new_snapshot.time - cur_shapshot.time >= 0.25)
+    if (new_snapshot.time - cur_shapshot.time >= 0.5)
         prev_shapshot = std::exchange(cur_shapshot, new_snapshot);
 }
 
 double ProgressTable::MetricInfo::calculateProgress(double time_now) const
 {
     /// If the value has not been updated for a long time, the progress is 0.
-    if (time_now - new_snapshot.time >= 0.25)
+    if (time_now - new_snapshot.time >= 0.5)
         return 0;
 
     return (cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
