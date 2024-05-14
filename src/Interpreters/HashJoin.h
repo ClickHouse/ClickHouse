@@ -15,6 +15,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/CacheBase.h>
 #include <Storages/TableLockHolder.h>
 
 #include <Columns/ColumnString.h>
@@ -455,6 +456,9 @@ private:
 
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
+
+    /// It is used to keep cache of decompressed blocks if 'hash_join_compression' is true
+    mutable CacheBase<const Block *, Block> decompressed_cache;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
