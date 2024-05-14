@@ -184,6 +184,9 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
 
 void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) const
 {
+    if (empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
+
     writeIntBinary(FILE_FORMAT_VERSION, ostr);
 
     /// Number of dimensions is required in the index constructor,
