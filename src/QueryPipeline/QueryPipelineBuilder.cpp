@@ -301,7 +301,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         if (pipeline.max_threads > max_threads_limit)
             max_threads_limit = pipeline.max_threads;
 
-        // Use concurrency control if at least on of pipelines is using it
+        // Use concurrency control if at least one of pipelines is using it
         if (pipeline.tryGetConcurrencyControl().has_value())
         {
             if (concurrency_control.has_value())
