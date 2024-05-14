@@ -4,8 +4,6 @@
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -191,10 +189,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 , tcp_keep_alive_timeout_in_sec);
         }
 
-        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
         in->setAsyncCallback(async_callback);
 
-        out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
+        out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
         out->setAsyncCallback(async_callback);
         connected = true;
         setDescription();
@@ -204,6 +202,12 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
+
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+        {
+            in->enableChunked();
+            out->enableChunked();
+        }
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
@@ -567,6 +571,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
 
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
+        out->finishPacket();
         out->next();
 
         if (in->eof())
@@ -611,6 +616,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
+    out->finishPacket();
     out->next();
 
     UInt64 response_type = 0;
@@ -762,6 +768,8 @@ void Connection::sendQuery(
     block_profile_events_in.reset();
     block_out.reset();
 
+    out->finishPacket();
+
     /// Send empty block which means end of data.
     if (!with_pending_data)
     {
@@ -778,6 +786,7 @@ void Connection::sendCancel()
         return;
 
     writeVarUInt(Protocol::Client::Cancel, *out);
+    out->finishPacket();
     out->next();
 }
 
@@ -804,6 +813,8 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
 
     block_out->write(block);
     maybe_compressed_out->next();
+    if (!block)
+        out->finishPacket();
     out->next();
 
     if (throttler)
@@ -814,6 +825,7 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
     writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
     writeVectorBinary(uuids, *out);
+    out->finishPacket();
     out->next();
 }
 
@@ -823,6 +835,7 @@ void Connection::sendReadTaskResponse(const String & response)
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
     writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
     writeStringBinary(response, *out);
+    out->finishPacket();
     out->next();
 }
 
@@ -831,6 +844,7 @@ void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & resp
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
     response.serialize(*out);
+    out->finishPacket();
     out->next();
 }
 
@@ -848,6 +862,8 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
         copyData(input, *out);
     else
         copyData(input, *out, size);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -875,6 +891,8 @@ void Connection::sendScalarsData(Scalars & data)
         rows += elem.second.rows();
         sendData(elem.second, elem.first, true /* scalar */);
     }
+
+    out->finishPacket();
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
@@ -1018,13 +1036,13 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
-    return static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_microseconds);
+    return in->poll(timeout_microseconds);
 }
 
 
 bool Connection::hasReadPendingData() const
 {
-    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+    return last_input_packet_type.has_value() || in->hasPendingData();
 }
 
 

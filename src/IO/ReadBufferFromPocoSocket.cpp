@@ -32,25 +32,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool ReadBufferFromPocoSocket::nextImpl()
+size_t ReadBufferFromPocoSocket::readSocket(Position begin, size_t size)
 {
     ssize_t bytes_read = 0;
-    Stopwatch watch;
-
-    SCOPE_EXIT({
-        /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
-        ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
-    });
 
     /// Add more details to exceptions.
     try
     {
-        CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
-
-        if (internal_buffer.size() > INT_MAX)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
-
         /// If async_callback is specified, set socket to non-blocking mode
         /// and try to read data from it, if socket is not ready for reading,
         /// run async_callback and try again later.
@@ -61,7 +49,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
             socket.setBlocking(false);
             SCOPE_EXIT(socket.setBlocking(true));
             bool secure = socket.secure();
-            bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
+            bytes_read = socket.impl()->receiveBytes(begin, static_cast<int>(size));
 
             /// Check EAGAIN and ERR_SSL_WANT_READ/ERR_SSL_WANT_WRITE for secure socket (reading from secure socket can write too).
             while (bytes_read < 0 && (errno == EAGAIN || (secure && (checkSSLWantRead(bytes_read) || checkSSLWantWrite(bytes_read)))))
@@ -73,12 +61,12 @@ bool ReadBufferFromPocoSocket::nextImpl()
                     async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
 
                 /// Try to read again.
-                bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
+                bytes_read = socket.impl()->receiveBytes(begin, static_cast<int>(size));
             }
         }
         else
         {
-            bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
+            bytes_read = socket.impl()->receiveBytes(begin, static_cast<int>(size));
         }
     }
     catch (const Poco::Net::NetException & e)
@@ -98,6 +86,40 @@ bool ReadBufferFromPocoSocket::nextImpl()
 
     if (bytes_read < 0)
         throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket (peer: {}, local: {})", peer_address.toString(), socket.address().toString());
+
+    return bytes_read;
+}
+
+bool ReadBufferFromPocoSocket::readSocketExact(Position begin, size_t size)
+{
+    for (size_t bytes_left = size; bytes_left > 0;)
+    {
+        size_t ret = readSocket(begin + size - bytes_left, bytes_left);
+        if (ret == 0)
+            return false;
+        bytes_left -= ret;
+    }
+
+    return true;
+}
+
+bool ReadBufferFromPocoSocket::nextImpl()
+{
+    ssize_t bytes_read = 0;
+    Stopwatch watch;
+
+    SCOPE_EXIT({
+        /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
+        ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
+    });
+
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
+
+    if (internal_buffer.size() > INT_MAX)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
+
+    bytes_read = readSocket(internal_buffer.begin(), internal_buffer.size());
 
     if (read_event != ProfileEvents::end())
         ProfileEvents::increment(read_event, bytes_read);

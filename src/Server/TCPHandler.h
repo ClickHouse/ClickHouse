@@ -19,6 +19,8 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromPocoSocketChunked.h>
+#include <IO/WriteBufferFromPocoSocketChunked.h>
 
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
@@ -204,8 +206,8 @@ private:
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBuffer> in;
-    std::shared_ptr<WriteBuffer> out;
+    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
+    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;

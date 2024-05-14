@@ -32,6 +32,9 @@ public:
 
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
+    size_t readSocket(Position begin, size_t size);
+    bool readSocketExact(Position begin, size_t size);
+
 private:
     AsyncCallback async_callback;
     std::string socket_description;

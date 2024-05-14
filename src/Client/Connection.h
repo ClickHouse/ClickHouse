@@ -8,8 +8,8 @@
 #include <Core/Defines.h>
 
 
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/ReadBufferFromPocoSocketChunked.h>
+#include <IO/WriteBufferFromPocoSocketChunked.h>
 
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/Context_fwd.h>
@@ -207,8 +207,8 @@ private:
     String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
-    std::shared_ptr<WriteBufferFromPocoSocket> out;
+    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
+    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
     std::optional<UInt64> last_input_packet_type;
 
     String query_id;

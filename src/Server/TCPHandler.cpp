@@ -19,8 +19,6 @@
 #include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -253,8 +251,8 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
+    in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
+    out = std::make_shared<WriteBufferFromPocoSocketChunked>(socket(), write_event);
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -289,6 +287,12 @@ void TCPHandler::runImpl()
             if (!default_database.empty())
                 session->sessionContext()->setCurrentDatabase(default_database);
         }
+
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+        {
+            in->enableChunked();
+            out->enableChunked();
+        }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
@@ -320,7 +324,7 @@ void TCPHandler::runImpl()
         {
             Stopwatch idle_time;
             UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
-            while (tcp_server.isOpen() && !server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+            while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_ms))
             {
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
@@ -788,7 +792,7 @@ bool TCPHandler::readDataNext()
     /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
     while (true)
     {
-        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_us))
+        if (in->poll(timeout_us))
         {
             /// If client disconnected.
             if (in->eof())
@@ -1154,6 +1158,8 @@ void TCPHandler::processTablesStatusRequest()
     }
 
     response.write(*out, client_tcp_protocol_version);
+
+    out->finishPacket();
 }
 
 void TCPHandler::receiveUnexpectedTablesStatusRequest()
@@ -1174,6 +1180,8 @@ void TCPHandler::sendPartUUIDs()
 
         writeVarUInt(Protocol::Server::PartUUIDs, *out);
         writeVectorBinary(uuids, *out);
+
+        out->finishPacket();
         out->next();
     }
 }
@@ -1182,6 +1190,8 @@ void TCPHandler::sendPartUUIDs()
 void TCPHandler::sendReadTaskRequestAssumeLocked()
 {
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -1190,6 +1200,8 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRanges
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
     announcement.serialize(*out);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -1198,6 +1210,8 @@ void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest re
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -1206,6 +1220,8 @@ void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -1221,6 +1237,8 @@ void TCPHandler::sendTotals(const Block & totals)
 
         state.block_out->write(totals);
         state.maybe_compressed_out->next();
+
+        out->finishPacket();
         out->next();
     }
 }
@@ -1237,6 +1255,8 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
         state.block_out->write(extremes);
         state.maybe_compressed_out->next();
+
+        out->finishPacket();
         out->next();
     }
 }
@@ -1254,6 +1274,8 @@ void TCPHandler::sendProfileEvents()
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
+
+        out->finishPacket();
         out->next();
 
         auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
@@ -1291,6 +1313,8 @@ void TCPHandler::sendTimezone()
     LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
     writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
     writeStringBinary(tz, *out);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -1636,6 +1660,7 @@ bool TCPHandler::receivePacket()
 
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
+            out->finishPacket();
             out->next();
             return false;
 
@@ -2152,7 +2177,7 @@ QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
     after_check_cancelled.restart();
 
     /// During request execution the only packet that can come from the client is stopping the query.
-    if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
+    if (in->poll(0))
     {
         if (in->eof())
         {
@@ -2216,6 +2241,8 @@ void TCPHandler::sendData(const Block & block)
 
         state.block_out->write(block);
         state.maybe_compressed_out->next();
+
+        out->finishPacket();
         out->next();
     }
     catch (...)
@@ -2251,6 +2278,8 @@ void TCPHandler::sendLogData(const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -2262,6 +2291,7 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
     writeStringBinary("", *out);
     writeStringBinary(columns.toString(), *out);
 
+    out->finishPacket();
     out->next();
 }
 
@@ -2271,6 +2301,8 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -2281,6 +2313,8 @@ void TCPHandler::sendEndOfStream()
     state.io.setAllDataSent();
 
     writeVarUInt(Protocol::Server::EndOfStream, *out);
+
+    out->finishPacket();
     out->next();
 }
 
@@ -2299,6 +2333,8 @@ void TCPHandler::sendProgress()
     increment.elapsed_ns = current_elapsed_ns - state.prev_elapsed_ns;
     state.prev_elapsed_ns = current_elapsed_ns;
     increment.write(*out, client_tcp_protocol_version);
+
+    out->finishPacket();
     out->next();
 }
 
