@@ -79,7 +79,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = std::shared_ptr<Columns>;
+    using Index = std::shared_ptr<const Columns>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -368,7 +368,8 @@ public:
     int32_t metadata_version;
 
     Index getIndex() const;
-    void setIndex(Index index_);
+    void setIndex(const Columns & index_);
+    void setIndex(Columns && index_);
     void unloadIndex();
 
     /// For data in RAM ('index')
