@@ -1074,12 +1074,6 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
             /// Will retry with a new zk connection.
             throw;
         }
-        catch (...)
-        {
-            LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-            chassert(false);
-            throw;
-        }
     }
 
     for (const auto & node : failed_nodes)
@@ -1105,12 +1099,6 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
             }
 
             /// Will retry with a new zk connection.
-            throw;
-        }
-        catch (...)
-        {
-            LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-            chassert(false);
             throw;
         }
     }

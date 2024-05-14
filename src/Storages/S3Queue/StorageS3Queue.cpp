@@ -170,14 +170,7 @@ StorageS3Queue::StorageS3Queue(
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
 
-    try
-    {
-        createOrCheckMetadata(storage_metadata);
-    }
-    catch (...)
-    {
-        throw;
-    }
+    createOrCheckMetadata(storage_metadata);
 
     /// Get metadata manager from S3QueueMetadataFactory,
     /// it will increase the ref count for the metadata object.
@@ -562,17 +555,21 @@ void StorageS3Queue::createOrCheckMetadata(const StorageInMemoryMetadata & stora
             requests.emplace_back(zkutil::makeCreateRequest(zk_path / "metadata", metadata, zkutil::CreateMode::Persistent));
         }
 
-        Coordination::Responses responses;
-        auto code = zookeeper->tryMulti(requests, responses);
-        if (code == Coordination::Error::ZNODEEXISTS)
+        if (!requests.empty())
         {
-            LOG_INFO(log, "It looks like the table {} was created by another server at the same moment, will retry", zk_path.string());
-            continue;
+            Coordination::Responses responses;
+            auto code = zookeeper->tryMulti(requests, responses);
+            if (code == Coordination::Error::ZNODEEXISTS)
+            {
+                LOG_INFO(log, "It looks like the table {} was created by another server at the same moment, will retry", zk_path.string());
+                continue;
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                zkutil::KeeperMultiException::check(code, requests, responses);
+            }
         }
-        else if (code != Coordination::Error::ZOK)
-        {
-            zkutil::KeeperMultiException::check(code, requests, responses);
-        }
+
         return;
     }
 
