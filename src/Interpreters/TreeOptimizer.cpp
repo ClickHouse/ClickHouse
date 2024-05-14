@@ -790,7 +790,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_redundant_functions_in_order_by)
         optimizeRedundantFunctionsInOrderBy(select_query, context);
 
-    optimizeL2DistanceSubstitution(query);
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
         optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns, result);

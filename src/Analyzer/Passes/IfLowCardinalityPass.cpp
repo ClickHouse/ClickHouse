@@ -7,7 +7,7 @@ namespace DB
     void IfConstantBranchesToLowCardinalityPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
     {
         /// Implement your optimization logic here
-        IfNodePtr if_node = query_tree_node->as<IfNode>();
+        IfTreePtr if_node = std::dynamic_pointer_cast<IfTree>(query_tree_node);
         if (!if_node)
             return;
 
@@ -17,13 +17,13 @@ namespace DB
         auto transformConstantBranchesToLowCardinality = [&](ASTPtr & node) {
             if (!node)
                 return;
-            if (auto * func_node = node->as<FunctionNode>()) {
-                if (func_node->getFunctionName() == "if") {
+            if (auto * func_node = typeid_cast<FunctionNode *>(node.get())) {
+                if (func_node->name == "if") {
                     for (size_t i = 1; i < func_node->arguments.size(); ++i) {
                         transformConstantBranchesToLowCardinality(func_node->arguments[i]);
                     }
                 }
-            } else if (auto * literal_node = node->as<LiteralNode>()) {
+            } else if (auto * literal_node = typeid_cast<LiteralNode *>(node.get())) {
                 if (literal_node->value.getType() == Field::Types::String) {
                     literal_node->value = LowCardinality(literal_node->value.get<String>());
                 }
