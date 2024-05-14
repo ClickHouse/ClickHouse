@@ -22,45 +22,33 @@ const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 namespace DB::QueryPlanOptimizations {
 
 size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node *parent_node, QueryPlan::Nodes &nodes) {
-    if (parent_node->children.size() != 1)
+    if (!parent_node || parent_node->children.empty())
         return 0;
 
-    auto *child_node = parent_node->children.front();
-    auto &parent_step = parent_node->step;
-    auto &child_step = child_node->step;
-    auto *sorting_step = dynamic_cast<SortingStep *>(parent_step.get());
-    auto *expression_step = dynamic_cast<ExpressionStep *>(child_step.get());
+    auto & children = parent_node->children;
 
-    if (!sorting_step || !expression_step)
-        return 0;
+    for (size_t i = 0; i < children.size(); ++i)
+    {
+        auto & child = children[i];
+        
+        // If the child node is of type ExpressionStep and represents L2Distance function
+        if (child->type == QueryPlanNodeType::ExpressionStep &&
+            child->expression == "L2Distance")
+        {
+            // Replace L2Distance with sqrt(L2SquaredDistance)
+            child->expression = "sqrt";
+            child->arguments.clear();
+            child->arguments.emplace_back("L2SquaredDistance");
+            // No need to continue the loop as we've made the replacement
+            return 1;
+        }
+        
+        // Recursively apply the optimization to the child nodes
+        if (tryReplaceL2DistanceWithL2Squared(child.get(), nodes) > 0)
+            return 1;
+    }
 
-    auto &expressions = expression_step->getExpression();
-    if (expressions.size() != 1)
-        return 0;
-
-    auto &function_expr = expressions.front();
-    if (function_expr->getFunctionName() != "L2Distance")
-        return 0;
-
-    auto l2_squared_distance_function = FunctionFactory::instance().get("l2SquaredDistance");
-    auto sqrt_function = FunctionFactory::instance().get("sqrt");
-
-    if (!l2_squared_distance_function || !sqrt_function)
-        return 0;
-
-    auto sqrt_l2_squared_distance = std::make_shared<FunctionExpression>(sqrt_function, function_expr->getArguments()->clone());
-    auto l2_squared_distance = std::make_shared<FunctionExpression>(l2_squared_distance_function, function_expr->getArguments()->clone());
-
-    auto &node_with_l2_squared = nodes.emplace_back();
-    std::swap(node_with_l2_squared.children, child_node->children);
-    child_node->children = {&node_with_l2_squared};
-
-    node_with_l2_squared.step = std::make_unique<ExpressionStep>(child_step->getOutputStream(), std::move(l2_squared_distance));
-    node_with_l2_squared.step->setStepDescription(child_step->getStepDescription());
-
-    sorting_step->updateInputStream(node_with_l2_squared.step->getOutputStream());
-
-    return 3;
+    return 0;
 }
 
 }
