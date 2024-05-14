@@ -496,6 +496,8 @@ static void updateDataStreams(QueryPlan::Node & root)
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
@@ -520,10 +522,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
-
-        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
-        {
-        }
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;
