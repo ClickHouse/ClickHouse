@@ -161,7 +161,7 @@ struct SortedLookupVectorBase
     virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
-    virtual RowRef findAsof(const IColumn &, size_t) = 0;
+    virtual RowRef * findAsof(const IColumn &, size_t) = 0;
 };
 
 
