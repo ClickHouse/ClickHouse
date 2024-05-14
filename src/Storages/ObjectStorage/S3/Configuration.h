@@ -15,12 +15,14 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     static constexpr auto type_name = "s3";
+    static constexpr auto namespace_name = "bucket";
 
     StorageS3Configuration() = default;
     StorageS3Configuration(const StorageS3Configuration & other);
 
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return url.storage_name; }
+    std::string getNamespaceType() const override { return namespace_name; }
 
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }

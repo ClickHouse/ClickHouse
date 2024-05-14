@@ -31,7 +31,7 @@ public:
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration,
         const ReadFromFormatInfo & info,
-        std::optional<FormatSettings> format_settings_,
+        const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,

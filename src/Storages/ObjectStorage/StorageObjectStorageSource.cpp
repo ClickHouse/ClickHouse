@@ -43,7 +43,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     const ReadFromFormatInfo & info,
-    std::optional<FormatSettings> format_settings_,
+    const std::optional<FormatSettings> & format_settings_,
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
@@ -95,7 +95,8 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             local_context->getSettingsRef().max_threads);
 
     if (configuration->isNamespaceWithGlobs())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expression can not have wildcards inside {} name", configuration->getNamespaceType());
 
     auto settings = configuration->getQuerySettings(local_context);
 
@@ -425,15 +426,13 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
 {
     std::lock_guard lock(next_mutex);
     auto object_info = nextImplUnlocked(processor);
-    if (object_info)
+    if (first_iteration && !object_info && throw_on_zero_files_match)
     {
-        if (first_iteration)
-            first_iteration = false;
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
+                        "Can not match any files with path {}",
+                        configuration->getPath());
     }
-    else if (first_iteration && throw_on_zero_files_match)
-    {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files");
-    }
+    first_iteration = false;
     return object_info;
 }
 
@@ -456,8 +455,6 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
             }
 
             new_batch = std::move(result.value());
-            LOG_TEST(logger, "Batch size: {}", new_batch.size());
-
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
                 if (!recursive && !re2::RE2::FullMatch((*it)->relative_path, *matcher))

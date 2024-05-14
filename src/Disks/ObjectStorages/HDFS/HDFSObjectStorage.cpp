@@ -224,7 +224,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                     {}}));
         }
 
-        if (children.size() >= max_keys)
+        if (max_keys && children.size() >= max_keys)
             break;
     }
 }

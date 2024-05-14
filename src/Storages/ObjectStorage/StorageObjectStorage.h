@@ -151,6 +151,9 @@ public:
     virtual std::string getTypeName() const = 0;
     /// Engine name: S3, HDFS, Azure.
     virtual std::string getEngineName() const = 0;
+    /// Sometimes object storages have something similar to chroot or namespace, for example
+    /// buckets in S3. If object storage doesn't have any namepaces return empty string.
+    virtual std::string getNamespaceType() const { return "namespace"; }
 
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
@@ -159,8 +162,6 @@ public:
     virtual void setPaths(const Paths & paths) = 0;
 
     virtual String getDataSourceDescription() = 0;
-    /// Sometimes object storages have something similar to chroot or namespace, for example
-    /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getNamespace() const = 0;
 
     virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;
