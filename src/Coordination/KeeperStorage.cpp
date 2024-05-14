@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
@@ -1172,8 +1174,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             else if (parent_cversion > node.cversion)
                 node.cversion = parent_cversion;
 
-            if (zxid > node.pzxid)
-                node.pzxid = zxid;
+            node.pzxid = std::max(zxid, node.pzxid);
             node.increaseNumChildren();
         };
 
@@ -1351,9 +1352,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     [zxid](KeeperStorage::Node & parent)
                     {
-                        if (parent.pzxid < zxid)
-                            parent.pzxid = zxid;
-                   }
+                        parent.pzxid = std::max(parent.pzxid, zxid);
+                    }
                 }
             );
         };
@@ -2708,3 +2708,5 @@ String KeeperStorage::generateDigest(const String & userdata)
 
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

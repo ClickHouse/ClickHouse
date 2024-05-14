@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <azure/storage/common/storage_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -383,6 +384,7 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
         }
 
         std::unique_ptr<BlobServiceClient> blob_service_client;
+        size_t pos = configuration.connection_url.find('?');
         std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential;
         if (storage_shared_key_credential)
         {
@@ -390,12 +392,20 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
         }
         else
         {
-            managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
+            /// If conneciton_url does not have '?', then its not SAS
+            if (pos == std::string::npos)
+            {
+                auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, workload_identity_credential);
+            }
+            else
+            {
+                managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+                blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
+            }
         }
 
         std::string final_url;
-        size_t pos = configuration.connection_url.find('?');
         if (pos != std::string::npos)
         {
             auto url_without_sas = configuration.connection_url.substr(0, pos);
@@ -420,7 +430,16 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
             if (storage_shared_key_credential)
                 result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
             else
-                result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+            {
+                /// If conneciton_url does not have '?', then its not SAS
+                if (pos == std::string::npos)
+                {
+                    auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+                    result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
+                }
+                else
+                    result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+            }
         }
         else
         {
@@ -441,7 +460,16 @@ AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration co
                     if (storage_shared_key_credential)
                         result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
                     else
-                        result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+                    {
+                        /// If conneciton_url does not have '?', then its not SAS
+                        if (pos == std::string::npos)
+                        {
+                            auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+                            result = std::make_unique<BlobContainerClient>(final_url, workload_identity_credential);
+                        }
+                        else
+                            result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+                    }
                 }
                 else
                 {
@@ -463,6 +491,13 @@ Poco::URI StorageAzureBlob::Configuration::getConnectionURL() const
     return Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
 }
 
+bool StorageAzureBlob::Configuration::withGlobsIgnorePartitionWildcard() const
+{
+    if (!withPartitionWildcard())
+        return withGlobs();
+
+    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+}
 
 StorageAzureBlob::StorageAzureBlob(
     const Configuration & configuration_,
@@ -782,7 +817,7 @@ void StorageAzureBlob::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (partition_by && configuration.withWildcard())
+    if (partition_by && configuration.withPartitionWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned Azure storage is not implemented yet");
 
     auto this_ptr = std::static_pointer_cast<StorageAzureBlob>(shared_from_this());
@@ -869,13 +904,17 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
 SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    if (configuration.withGlobsIgnorePartitionWildcard())
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
+
     auto path = configuration.blobs_paths.front();
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(path, configuration.compression_method);
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && configuration.withWildcard();
+    bool is_partitioned_implementation = partition_by_ast && configuration.withPartitionWildcard();
 
     if (is_partitioned_implementation)
     {
@@ -891,10 +930,6 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
     }
     else
     {
-        if (configuration.withGlobs())
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
-
         if (auto new_path = checkAndGetNewFileOnInsertIfNeeded(local_context, object_storage.get(), path, configuration.blobs_paths.size()))
         {
             configuration.blobs_paths.push_back(*new_path);

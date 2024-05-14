@@ -305,7 +305,7 @@ protected:
         }
 
         if constexpr (nullable)
-            null_map = &checkAndGetColumn<ColumnNullable>(column)->getNullMapColumn();
+            null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
     template <typename Data, typename KeyHolder>

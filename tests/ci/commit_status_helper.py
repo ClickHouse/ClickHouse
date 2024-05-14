@@ -17,9 +17,15 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
-from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
+from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription, StatusNames
+from env_helper import (
+    GITHUB_REPOSITORY,
+    GITHUB_RUN_URL,
+    GITHUB_UPSTREAM_REPOSITORY,
+    TEMP_PATH,
+)
+from lambda_shared_package.lambda_shared.pr import Labels
+from pr_info import PRInfo
 from report import (
     ERROR,
     FAILURE,
@@ -28,6 +34,7 @@ from report import (
     StatusType,
     TestResult,
     TestResults,
+    get_status,
     get_worst_status,
 )
 from s3_helper import S3Helper
@@ -35,9 +42,7 @@ from upload_result_helper import upload_results
 
 RETRY = 5
 CommitStatuses = List[CommitStatus]
-MERGEABLE_NAME = "Mergeable Check"
 GH_REPO = None  # type: Optional[Repository]
-CI_STATUS_NAME = "CI running"
 STATUS_FILE_PATH = Path(TEMP_PATH) / "status.json"
 
 
@@ -86,13 +91,13 @@ def post_commit_status(
     check_name: Optional[str] = None,
     pr_info: Optional[PRInfo] = None,
     dump_to_file: bool = False,
-) -> None:
+) -> CommitStatus:
     """The parameters are given in the same order as for commit.create_status,
     if an optional parameter `pr_info` is given, the `set_status_comment` functions
     is invoked to add or update the comment with statuses overview"""
     for i in range(RETRY):
         try:
-            commit.create_status(
+            commit_status = commit.create_status(
                 state=state,
                 target_url=report_url if report_url is not None else NotSet,
                 description=description if description is not None else NotSet,
@@ -129,6 +134,8 @@ def post_commit_status(
             pr_num=pr_info.number,
         ).dump_status()
 
+    return commit_status
+
 
 STATUS_ICON_MAP = defaultdict(
     str,
@@ -158,16 +165,16 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     if not statuses:
         return
 
-    if not [status for status in statuses if status.context == CI_STATUS_NAME]:
+    if not [status for status in statuses if status.context == StatusNames.CI]:
         # This is the case, when some statuses already exist for the check,
-        # but not the CI_STATUS_NAME. We should create it as pending.
+        # but not the StatusNames.CI. We should create it as pending.
         # W/o pr_info to avoid recursion, and yes, one extra create_ci_report
         post_commit_status(
             commit,
             PENDING,
             create_ci_report(pr_info, statuses),
             "The report for running CI",
-            CI_STATUS_NAME,
+            StatusNames.CI,
         )
 
     # We update the report in generate_status_comment function, so do it each
@@ -299,7 +306,7 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             )
         )
     return upload_results(
-        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI_STATUS_NAME
+        S3Helper(), pr_info.number, pr_info.sha, test_results, [], StatusNames.CI
     )
 
 
@@ -426,44 +433,52 @@ def set_mergeable_check(
     commit: Commit,
     description: str = "",
     state: StatusType = SUCCESS,
-) -> None:
-    commit.create_status(
-        context=MERGEABLE_NAME,
-        description=format_description(description),
-        state=state,
-        target_url=GITHUB_RUN_URL,
+    hide_url: bool = False,
+) -> CommitStatus:
+    report_url = GITHUB_RUN_URL
+    if hide_url:
+        report_url = ""
+    return post_commit_status(
+        commit,
+        state,
+        report_url,
+        format_description(description),
+        StatusNames.MERGEABLE,
     )
 
 
-def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
+def update_mergeable_check(
+    commit: Commit, pr_info: PRInfo, check_name: str
+) -> Optional[CommitStatus]:
     "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
-        pr_info.labels.intersection({SKIP_MERGEABLE_CHECK_LABEL, "release"})
+        pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
         or check_name not in REQUIRED_CHECKS
         or pr_info.release_pr
         or pr_info.number == 0
     )
 
-    # FIXME: For now, always set mergeable check in the Merge Queue. It's required to pass MQ
-    if not_run and not pr_info.is_merge_queue:
+    if not_run:
         # Let's avoid unnecessary work
-        return
+        return None
 
     logging.info("Update Mergeable Check by %s", check_name)
 
     statuses = get_commit_filtered_statuses(commit)
-    trigger_mergeable_check(commit, statuses)
+    return trigger_mergeable_check(commit, statuses)
 
 
-def trigger_mergeable_check(commit: Commit, statuses: CommitStatuses) -> None:
-    """calculate and update MERGEABLE_NAME"""
+def trigger_mergeable_check(
+    commit: Commit, statuses: CommitStatuses, hide_url: bool = False
+) -> CommitStatus:
+    """calculate and update StatusNames.MERGEABLE"""
     required_checks = [
         status for status in statuses if status.context in REQUIRED_CHECKS
     ]
 
     mergeable_status = None
     for status in statuses:
-        if status.context == MERGEABLE_NAME:
+        if status.context == StatusNames.MERGEABLE:
             mergeable_status = status
             break
 
@@ -488,4 +503,63 @@ def trigger_mergeable_check(commit: Commit, statuses: CommitStatuses) -> None:
     description = format_description(description)
 
     if mergeable_status is None or mergeable_status.description != description:
-        set_mergeable_check(commit, description, state)
+        return set_mergeable_check(commit, description, state, hide_url)
+
+    return mergeable_status
+
+
+def update_upstream_sync_status(
+    upstream_pr_number: int,
+    sync_pr_number: int,
+    gh: Github,
+    mergeable_status: CommitStatus,
+) -> None:
+    upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
+    upstream_pr = upstream_repo.get_pull(upstream_pr_number)
+    sync_repo = gh.get_repo(GITHUB_REPOSITORY)
+    sync_pr = sync_repo.get_pull(sync_pr_number)
+    # Find the commit that is in both repos, upstream and cloud
+    sync_commits = sync_pr.get_commits().reversed
+    upstream_commits = upstream_pr.get_commits()
+    # Github objects are compared by _url attribute. We can't compare them directly and
+    # should compare commits by SHA1
+    upstream_shas = [uc.sha for uc in upstream_commits]
+    logging.info("Commits in upstream PR:\n %s", ", ".join(upstream_shas))
+    sync_shas = [uc.sha for uc in upstream_commits]
+    logging.info("Commits in sync PR:\n %s", ", ".join(reversed(sync_shas)))
+    found = False
+    for commit in sync_commits:
+        try:
+            idx = upstream_shas.index(commit.sha)
+            found = True
+            upstream_commit = upstream_commits[idx]
+            break
+        except ValueError:
+            continue
+
+    if not found:
+        logging.info(
+            "There's no same commits in upstream and sync PRs, probably force-push"
+        )
+        return
+
+    sync_status = get_status(mergeable_status.state)
+    logging.info(
+        "Using commit %s to post the %s status `%s`: [%s]",
+        upstream_commit.sha,
+        sync_status,
+        StatusNames.SYNC,
+        mergeable_status.description,
+    )
+    post_commit_status(
+        upstream_commit,
+        sync_status,
+        "",  # let's won't expose any urls from cloud
+        mergeable_status.description,
+        StatusNames.SYNC,
+    )
+    trigger_mergeable_check(
+        upstream_commit,
+        get_commit_filtered_statuses(upstream_commit),
+        True,
+    )

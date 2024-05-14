@@ -506,10 +506,10 @@ private:
         const ColumnNullable * nullable = nullptr;
 
         if (col_array)
-            nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
+            nullable = checkAndGetColumn<ColumnNullable>(&col_array->getData());
 
         const auto & arg_column = arguments[1].column;
-        const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(*arg_column);
+        const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(&*arg_column);
 
         if (!nullable && !arg_nullable)
         {
@@ -738,7 +738,7 @@ private:
 
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
-        if (const ColumnConst * col_arg_const = checkAndGetColumn<ColumnConst>(*arguments[1].column))
+        if (const ColumnConst * col_arg_const = checkAndGetColumn<ColumnConst>(&*arguments[1].column))
         {
             const IColumnUnique & col_lc_dict = col_lc->getDictionary();
 
@@ -754,7 +754,7 @@ private:
             if (!col_arg_cloned->isNullAt(0))
             {
                 if (col_arg_cloned->isNullable())
-                    col_arg_cloned = checkAndGetColumn<ColumnNullable>(*col_arg_cloned)->getNestedColumnPtr();
+                    col_arg_cloned = checkAndGetColumn<ColumnNullable>(*col_arg_cloned).getNestedColumnPtr();
 
                 StringRef elem = col_arg_cloned->getDataAt(0);
 
@@ -786,7 +786,7 @@ private:
         else if (col_lc->nestedIsNullable()) // LowCardinality(Nullable(T)) and U
         {
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality(); // Nullable(T)
-            const ColumnNullable& left_nullable = *checkAndGetColumn<ColumnNullable>(left_casted.get());
+            const ColumnNullable & left_nullable = checkAndGetColumn<ColumnNullable>(*left_casted);
 
             const NullMap * const null_map_left_casted = &left_nullable.getNullMapColumn().getData();
 
@@ -975,7 +975,7 @@ private:
                     break;
             }
 
-            return result_type->createColumnConst(item_arg->size(), static_cast<ResultType>(current));
+            return result_type->createColumnConst(item_arg->size(), current);
         }
         else
         {

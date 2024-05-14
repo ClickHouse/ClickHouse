@@ -11,6 +11,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
@@ -688,7 +689,13 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         previous_tables_metadata = std::move(tables_metadata);
     });
 
-    enum class MismatchType { ADDED, REMOVED, CHANGED, NONE };
+    enum class MismatchType : uint8_t
+    {
+        ADDED,
+        REMOVED,
+        CHANGED,
+        NONE
+    };
 
     /// Helper function - used to compare the metadata of databases and tables.
     auto find_mismatch = [](const auto & metadata, const auto & previous_metadata)
@@ -758,7 +765,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = database_info.create_database_query;
-        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), nullptr);
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
@@ -775,7 +782,8 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = table_info.create_table_query;
-        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), &table_info.replicated_table_shared_id);
+        table_info.replicated_table_zk_path = extractZooKeeperPathFromReplicatedTableDef(new_create_query->as<const ASTCreateQuery &>(), context);
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
@@ -814,8 +822,8 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         /// If this table is replicated in this case we call IBackupCoordination::addReplicatedDataPath() which will cause
         /// other replicas to fill the storage's data in the backup.
         /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
-        if (table_info.replicated_table_shared_id)
-            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_shared_id, data_path_in_backup);
+        if (table_info.replicated_table_zk_path)
+            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_zk_path, data_path_in_backup);
         return;
     }
 

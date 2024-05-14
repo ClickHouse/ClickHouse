@@ -140,7 +140,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_path = fs::canonical(getContext()->getPath());
+    fs::path metadata_path = fs::weakly_canonical(getContext()->getPath());
+    fs::create_directories(metadata_path / "metadata");
     fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
 
@@ -256,15 +257,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedMySQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialized_mysql to use it");
-    }
-
-    if (create.storage->engine->name == "Replicated"
-        && !getContext()->getSettingsRef().allow_experimental_database_replicated
-        && !internal && !create.attach)
-    {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
-                        "Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it");
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -758,15 +750,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use different index names.", backQuoteIfNeed(index_desc.name));
+
                 const auto & settings = getContext()->getSettingsRef();
-                if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
-                {
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')");
-                }
+                if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings.allow_experimental_inverted_index)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental full-text index feature is not enabled (the setting 'allow_experimental_inverted_index')");
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
-
                 if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index is disabled. Turn on allow_experimental_usearch_index");
 
@@ -1088,7 +1077,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
-    if (!create.sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)

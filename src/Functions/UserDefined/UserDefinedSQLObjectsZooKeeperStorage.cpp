@@ -298,7 +298,6 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     };
 
     Coordination::Stat entity_stat;
-    String object_create_query;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
 }
 

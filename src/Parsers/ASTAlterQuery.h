@@ -236,7 +236,7 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class AlterObjectType
+    enum class AlterObjectType : uint8_t
     {
         TABLE,
         DATABASE,
