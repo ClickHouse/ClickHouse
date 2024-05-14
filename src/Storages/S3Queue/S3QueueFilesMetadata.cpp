@@ -1063,9 +1063,22 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
             else
                 LOG_ERROR(log, "Failed to fetch node metadata {}", path);
         }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
+            {
+                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+                chassert(false);
+            }
+
+            /// Will retry with a new zk connection.
+            throw;
+        }
         catch (...)
         {
-            LOG_ERROR(log, "Failed to fetch metadata for node {}: {}", node, getCurrentExceptionMessage(true));
+            LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+            chassert(false);
+            throw;
         }
     }
 
@@ -1083,9 +1096,22 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
             else
                 LOG_ERROR(log, "Failed to fetch node metadata {}", path);
         }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
+            {
+                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+                chassert(false);
+            }
+
+            /// Will retry with a new zk connection.
+            throw;
+        }
         catch (...)
         {
-            LOG_ERROR(log, "Failed to fetch metadata for node {}: {}", path, getCurrentExceptionMessage(true));
+            LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+            chassert(false);
+            throw;
         }
     }
 
