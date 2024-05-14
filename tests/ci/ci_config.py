@@ -79,6 +79,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
     BINARY_S390X = "binary_s390x"
+    BINARY_LOONGARCH64 = "binary_loongarch64"
     FUZZERS = "fuzzers"
 
 
@@ -1040,6 +1041,12 @@ CI_CONFIG = CIConfig(
             package_type="binary",
             static_binary_name="s390x",
         ),
+        Build.BINARY_LOONGARCH64: BuildConfig(
+            name=Build.BINARY_LOONGARCH64,
+            compiler="clang-18-loongarch64",
+            package_type="binary",
+            static_binary_name="loongarch64",
+        ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-18",
@@ -1070,6 +1077,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
                 Build.BINARY_S390X,
+                Build.BINARY_LOONGARCH64,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,

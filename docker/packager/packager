@@ -149,6 +149,7 @@ def parse_env_variables(
     PPC_SUFFIX = "-ppc64le"
     RISCV_SUFFIX = "-riscv64"
     S390X_SUFFIX = "-s390x"
+    LOONGARCH_SUFFIX = "-loongarch64"
     AMD64_COMPAT_SUFFIX = "-amd64-compat"
     AMD64_MUSL_SUFFIX = "-amd64-musl"
 

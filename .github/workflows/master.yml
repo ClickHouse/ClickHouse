@@ -240,15 +240,13 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
   BuilderBinS390X:
-  # disabled because s390x refused to build in the migration to OpenSSL
-  # BuilderBinS390X:
-  #   needs: [RunConfig, BuilderDebRelease]
-  #   if: ${{ !failure() && !cancelled() }}
-  #   uses: ./.github/workflows/reusable_build.yml
-  #   with:
-  #     build_name: binary_s390x
-  #     data: ${{ needs.RunConfig.outputs.data }}
-  #     checkout_depth: 0
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_s390x
+      data: ${{ needs.RunConfig.outputs.data }}
+      checkout_depth: 0
   BuilderBinLOONGARCH64:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
@@ -308,6 +306,7 @@ jobs:
       - BuilderBinPPC64
       - BuilderBinRISCV64
       - BuilderBinS390X
+      - BuilderBinLOONGARCH64
       - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
