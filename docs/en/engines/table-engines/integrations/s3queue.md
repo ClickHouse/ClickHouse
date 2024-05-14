@@ -268,7 +268,7 @@ For introspection use `system.s3queue` stateless table and `system.s3queue_log` 
     `exception` String
 )
 ENGINE = SystemS3Queue
-COMMENT 'SYSTEM TABLE is built on the fly.' │
+COMMENT 'Contains in-memory state of S3Queue metadata and currently processed rows per file.' │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

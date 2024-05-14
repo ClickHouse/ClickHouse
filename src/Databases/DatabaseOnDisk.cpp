@@ -785,7 +785,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+                            std::make_shared<ASTLiteral>(storage->getInMemoryMetadata().comment));
 
     return create_table_query;
 }
