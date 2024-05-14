@@ -1625,6 +1625,7 @@ fuzzBits
 fuzzJSON
 fuzzer
 fuzzers
+fuzzQuery
 gRPC
 gccMurmurHash
 gcem
