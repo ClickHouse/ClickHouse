@@ -49,7 +49,7 @@ A public disclosure date is negotiated by the ClickHouse maintainers and the bug
 
 ## Embargo Policy
 
-Open source users and support customers may subscribe to receive alerts during the embargo period by visiting [https://trust.clickhouse.com/?product=clickhouseoss](https://trust.clickhouse.com/?product=clickhouseoss), requesting access and subscribing for alerts. Subscribers agree not to make these notifications public, issue communications, share this information with others, or issue public patches before the disclosure date. Accidental disclsosures must be reported immediately to trust@clickhouse.com. Failure to follow this policy or repeated leaks may result in removal from the subscriber list.
+Open source users and support customers may subscribe to receive alerts during the embargo period by visiting [https://trust.clickhouse.com/?product=clickhouseoss](https://trust.clickhouse.com/?product=clickhouseoss), requesting access and subscribing for alerts. Subscribers agree not to make these notifications public, issue communications, share this information with others, or issue public patches before the disclosure date. Accidental disclosures must be reported immediately to trust@clickhouse.com. Failure to follow this policy or repeated leaks may result in removal from the subscriber list.
 
 Participation criteria:
 1. Be a current open source user or support customer with a valid corporate email domain (no @gmail.com, @azure.com, etc.).
