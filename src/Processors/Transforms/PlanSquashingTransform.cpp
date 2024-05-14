@@ -19,7 +19,7 @@ IProcessor::Status PlanSquashingTransform::prepare()
 {
     Status status = Status::Ready;
 
-    while (status == Status::Ready)
+    while (planning_status != PlanningStatus::FINISH)
     {
         switch (planning_status)
         {
@@ -119,18 +119,6 @@ IProcessor::Status PlanSquashingTransform::prepareConsume()
 bool PlanSquashingTransform::checkInputs()
 {
     bool all_finished = true;
-
-    for (auto & output : outputs)
-        if (!output.isFinished())
-            all_finished = false;
-
-    if (all_finished) /// If all outputs are closed, we close inputs (just in case)
-    {
-        planning_status = PlanningStatus::FINISH;
-        return true;
-    }
-
-    all_finished = true;
     for (auto & input : inputs)
         if (!input.isFinished())
             all_finished = false;
@@ -140,11 +128,27 @@ bool PlanSquashingTransform::checkInputs()
         if (balance.isDataLeft()) /// If we have data in balancing, we process this data
         {
             planning_status = PlanningStatus::WAIT_OUT_FLUSH;
-            finished = false;
+            finished = true;
             transform(chunk);
         }
-        else    /// If we don't have data, We send FINISHED
-            planning_status = PlanningStatus::FINISH;
+        // else    /// If we don't have data, We send FINISHED
+        //     planning_status = PlanningStatus::FINISH;
+        return true;
+    }
+    return false;
+}
+
+bool PlanSquashingTransform::checkOutputs()
+{
+    bool all_finished = true;
+
+    for (auto & output : outputs)
+        if (!output.isFinished())
+            all_finished = false;
+
+    if (all_finished) /// If all outputs are closed, we close inputs (just in case)
+    {
+        planning_status = PlanningStatus::FINISH;
         return true;
     }
     return false;
@@ -197,7 +201,10 @@ void PlanSquashingTransform::transform(Chunk & chunk_)
 IProcessor::Status PlanSquashingTransform::prepareSend()
 {
     if (!chunk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should be available in prepareSend");
+    {
+        planning_status = PlanningStatus::FINISH;
+        return Status::Ready;
+    }
 
     for (auto &output : outputs)
     {
@@ -215,7 +222,10 @@ IProcessor::Status PlanSquashingTransform::prepareSend()
 IProcessor::Status PlanSquashingTransform::prepareSendFlush()
 {
     if (!chunk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should be available in prepareSendFlush");
+    {
+        planning_status = PlanningStatus::FINISH;
+        return Status::Ready;
+    }
 
     for (auto &output : outputs)
     {

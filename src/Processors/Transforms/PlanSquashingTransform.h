@@ -37,6 +37,7 @@ public:
     Status finish();
 
     bool checkInputs();
+    bool checkOutputs();
     void transform(Chunk & chunk);
 
 protected:
