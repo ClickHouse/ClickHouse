@@ -1,38 +1,27 @@
--1
--1
--1
--1
--1
--1
--1
--1
--1
--1
--1
+-- test data types --
 -1
 1
+-1
 1
+-1
 1
+-1
 1
+0
 1
+0
 1
+0
 1
+0
 1
-1
-1
-1
-1
+0.2
 0.1
-0.1
-0.1
-0.01
-0.01
+0.02
 0.01
 npy
 npy
-npy
-npy
-npy
+npynpy
 npy
 array	Int8					
 array	Int16					
@@ -46,15 +35,14 @@ array	Float32
 array	Float64					
 array	String					
 array	String					
-[[[1],[2]],[[3],[4]]]
+-- test nested data types --
 [[[1],[2]],[[3],[4]]]
 [[[1],[2]],[[3],[4]]]
 [[0.1],[0.2]]
 [[0.1],[0.2]]
-[[0.1],[0.2]]
-[['a','bb'],['ccc','dddd']]
-[['a','bb'],['ccc','dddd']]
-[['a','bb'],['ccc','dddd']]
+['a','bb']
+['ccc','dddd']
 array	Array(Array(Array(Int8)))					
 array	Array(Array(Float64))					
-array	Array(Array(String))					
+array	Array(String)					
+-- test exceptions --
