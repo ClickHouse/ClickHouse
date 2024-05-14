@@ -32,9 +32,8 @@ CursorData parseDataFromJSON(const Poco::Dynamic::Var & var)
 {
     const auto & json = var.extract<Poco::JSON::Object::Ptr>();
 
-    CursorData data {
-        .tree = buildCursorTree(json->getObject(CURSOR)),
-    };
+    CursorData data;
+    data.tree = buildCursorTree(json->getObject(CURSOR));
 
     if (json->has(KEEPER_KEY))
         data.keeper_key = json->getValue<String>(KEEPER_KEY);
