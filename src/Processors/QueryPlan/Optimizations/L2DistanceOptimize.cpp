@@ -1,11 +1,3 @@
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Common/Exception.h>
-#include <DataTypes/IDataType.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
@@ -17,44 +9,43 @@ namespace QueryPlanOptimizations
 
 size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
-     // Проверяем, является ли родительский узел функцией L2Distance
-    auto * expression_step = typeid_cast<ExpressionStep *>(parent_node->step.get());
+    if (!parent_node || !parent_node->step)
+        return 0;
+
+    auto * expression_step = dynamic_cast<ExpressionStep *>(parent_node->step.get());
     if (!expression_step)
         return 0;
 
-    const auto & function = expression_step->getExpression()->function;
+    auto & actions = expression_step->getActions();
+    for (auto & action : actions)
+    {
+        auto * function = dynamic_cast<FunctionExpression *>(action.get());
+        if (!function)
+            continue;
 
-    if (function->getName() != "L2Distance")
-        return 0;
+        if (function->getName() == "L2Distance")
+        {
+            // Replace L2Distance with sqrt(L2SquaredDistance)
+            auto l2_squared_distance_function = FunctionFactory::instance().get("L2SquaredDistance");
+            if (!l2_squared_distance_function)
+                throw Exception("L2SquaredDistance function not found", ErrorCodes::LOGICAL_ERROR);
 
-    // Создаем новую функцию sqrt(L2SquaredDistance)
-    auto sqrt_function = FunctionFactory::instance().get("sqrt", {});
+            auto sqrt_function = FunctionFactory::instance().get("sqrt");
+            if (!sqrt_function)
+                throw Exception("sqrt function not found", ErrorCodes::LOGICAL_ERROR);
 
-    std::vector<ColumnWithTypeAndName> arguments;
-    arguments.emplace_back(expression_step->getOutputStream(), "");
+            auto sqrt_l2_squared_distance = std::make_shared<FunctionExpression>(sqrt_function);
+            sqrt_l2_squared_distance->addChild(function->arguments->clone());
+            auto l2_squared_distance = std::make_shared<FunctionExpression>(l2_squared_distance_function);
+            l2_squared_distance->addChild(function->arguments->clone());
 
-    auto l2_squared_function = FunctionFactory::instance().get("L2SquaredDistance", {});
+            action = sqrt_l2_squared_distance;
+            nodes.emplace_back(QueryPlan::Node{std::make_unique<ExpressionStep>(l2_squared_distance)});
+            return 1;
+        }
+    }
 
-    auto sqrt_expression = std::make_shared<ASTFunction>();
-    sqrt_expression->name = sqrt_function->getName();
-    sqrt_expression->arguments = arguments;
-
-    auto l2_squared_expression = std::make_shared<ASTFunction>();
-    l2_squared_expression->name = l2_squared_function->getName();
-    l2_squared_expression->arguments = arguments;
-
-    auto sqrt_l2_squared_expression = std::make_shared<ASTFunction>();
-    sqrt_l2_squared_expression->name = sqrt_function->getName();
-    sqrt_l2_squared_expression->arguments.emplace_back(l2_squared_expression);
-
-    // Обновляем выражение в родительском узле
-    expression_step->getExpression()->function = sqrt_l2_squared_expression;
-
-    // Обновляем информацию о функции sqrt как монотонной
-    auto & settings = parent_node->settings;
-    settings.is_function_monotonic[sqrt_function->getName()] = true;
-
-    return 1;
+    return 0;
 }
 
 }
