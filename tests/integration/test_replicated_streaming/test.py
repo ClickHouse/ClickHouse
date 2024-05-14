@@ -37,7 +37,19 @@ def started_cluster():
         cluster.shutdown()
 
 
-def do_inserts(replica_num: int, count: int):
+def do_select(result, replica_num: int, read_count: int):
+    data = (
+        nodes[replica_num]
+        .query(
+            f"SELECT _queue_block_number FROM streaming_test STREAM LIMIT {read_count} FORMAT TabSeparated SETTINGS allow_experimental_streaming=1"
+        )
+        .split()
+    )
+
+    result[replica_num] = list([int(num) for num in data])
+
+
+def do_insert(replica_num: int, count: int):
     settings = ",".join(
         [
             "min_insert_block_size_rows=1",
@@ -61,27 +73,38 @@ def test_streaming_read():
     N = 1000
     T = 3
 
-    insert_threads = [
-        threading.Thread(target=do_inserts, args=(0, N)),
-        threading.Thread(target=do_inserts, args=(1, N)),
-        threading.Thread(target=do_inserts, args=(2, N)),
+    results = [None, None]
+
+    select_threads = [
+        threading.Thread(target=do_select, args=(results, 0, T * N)),
+        threading.Thread(target=do_select, args=(results, 1, T * N)),
     ]
 
+    insert_threads = [
+        threading.Thread(target=do_insert, args=(0, N)),
+        threading.Thread(target=do_insert, args=(1, N)),
+        threading.Thread(target=do_insert, args=(2, N)),
+    ]
+
+    # spawn streaming read from replica-0 before inserts
+    select_threads[0].start()
+
+    # spawn inserts
     for thread in insert_threads:
         thread.start()
 
-    data = (
-        nodes[0]
-        .query(
-            f"SELECT _queue_block_number FROM streaming_test STREAM LIMIT {N * T} FORMAT TabSeparated SETTINGS allow_experimental_streaming=1"
-        )
-        .split()
-    )
+    # spawn streaming read after inserts
+    select_threads[1].start()
+
+    for thread in select_threads:
+        thread.join()
 
     for thread in insert_threads:
         thread.join()
 
-    data_numbers = [int(num) for num in data]
-    assert len(data_numbers) == N * T
-    assert sorted(data_numbers) == data_numbers
-    assert data_numbers == [i for i in range(T * N)]
+    for res in results:
+        assert len(res) == N * T
+        assert sorted(res) == res
+        assert res == [i for i in range(T * N)]
+
+    assert results[0] == results[1]
