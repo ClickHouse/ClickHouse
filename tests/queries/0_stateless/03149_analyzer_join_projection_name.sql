@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 CREATE TABLE users (uid Int16, name String, gid LowCardinality(String), gname LowCardinality(String))
   ENGINE=MergeTree order by tuple();
 CREATE TABLE groups (gid LowCardinality(String), gname LowCardinality(String)) 
@@ -10,7 +8,7 @@ CREATE DICTIONARY groups_dict (
 )
 PRIMARY KEY gid, gname
 LAYOUT(COMPLEX_KEY_HASHED())
-SOURCE(CLICKHOUSE(QUERY 'select * from groups'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' DB currentDatabase() QUERY 'select * from groups'))
 LIFETIME(MIN 0 MAX 0);
 
 
