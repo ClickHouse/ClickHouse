@@ -234,7 +234,7 @@ static void injectionImpl(
         && sleep_time_us_max > 0
         && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
     {
-        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max)) * 1000); /*may sleep(0)*/
+        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max * 1000))); /*may sleep(0)*/
     }
 }
 
