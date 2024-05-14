@@ -43,12 +43,20 @@ name: Testing workflow
       secret_envs:
         description: if given, it's passed to the environments
         required: false
-
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
 
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   CHECK_NAME: ${{inputs.test_name}}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 jobs:
   runner_labels_setup:

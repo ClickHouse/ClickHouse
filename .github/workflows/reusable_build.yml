@@ -5,6 +5,9 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   CLICKHOUSE_STABLE_VERSION_SUFFIX: altinitystable
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 name: Build ClickHouse
 'on':
@@ -34,6 +37,16 @@ name: Build ClickHouse
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
 
 jobs:
   Build:
