@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/IfLowCardinality.h>
+#include <Analyzer/Passes/IfLowCardinalityPass.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
