@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-format="RowBinary"
+format="Pretty"
 
 function query {
     # bash isn't able to store \0 bytes, so use [1; 255] random range
