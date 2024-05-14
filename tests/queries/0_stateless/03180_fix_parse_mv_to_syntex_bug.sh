@@ -25,7 +25,6 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM mv_target ORDER BY id"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv"
 
 ${CLICKHOUSE_CURL} -sS ${url} -d "CREATE MATERIALIZED VIEW {mv_db_name: Identifier}.{mv_name: Identifier} TO {target: Identifier}  AS SELECT * FROM {src: Identifier};"
-
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS mv_target"
