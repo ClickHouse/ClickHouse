@@ -39,6 +39,7 @@ public:
         bool lazy_initialize)
         : config(config_)
         , settings(std::move(settings_))
+        , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
         const size_t begin_of_path = hdfs_root_path_.find('/', hdfs_root_path_.find("//") + 2);
         url = hdfs_root_path_;
@@ -134,6 +135,8 @@ private:
     std::string url;
     std::string url_without_path;
     std::string data_directory;
+
+    LoggerPtr log;
 };
 
 }

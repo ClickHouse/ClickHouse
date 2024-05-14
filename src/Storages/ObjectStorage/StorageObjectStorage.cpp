@@ -61,10 +61,6 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
-        objects.emplace_back(key);
-
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
     setInMemoryMetadata(metadata);
 }
@@ -93,7 +89,7 @@ void StorageObjectStorage::updateConfiguration(ContextPtr context)
 {
     /// FIXME: we should be able to update everything apart from client if static_configuration == true.
     if (!configuration->isStaticConfiguration())
-        object_storage->applyNewSettings(context->getConfigRef(), "s3.", context);
+        object_storage->applyNewSettings(context->getConfigRef(), configuration->getTypeName() + ".", context);
 }
 
 namespace

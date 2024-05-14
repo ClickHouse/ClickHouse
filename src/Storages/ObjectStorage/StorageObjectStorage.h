@@ -124,7 +124,6 @@ protected:
 
     ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    const std::string engine_name;
     const std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;
@@ -148,7 +147,9 @@ public:
         ContextPtr local_context,
         bool with_table_structure);
 
+    /// Storage type: s3, hdfs, azure.
     virtual std::string getTypeName() const = 0;
+    /// Engine name: S3, HDFS, Azure.
     virtual std::string getEngineName() const = 0;
 
     virtual Path getPath() const = 0;
@@ -158,7 +159,10 @@ public:
     virtual void setPaths(const Paths & paths) = 0;
 
     virtual String getDataSourceDescription() = 0;
+    /// Sometimes object storages have something similar to chroot or namespace, for example
+    /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getNamespace() const = 0;
+
     virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;
     virtual void addStructureAndFormatToArgs(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;

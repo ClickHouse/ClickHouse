@@ -38,9 +38,9 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Object in bucket {} with key {} already exists. "
-        "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-        "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-        configuration.getNamespace(), key);
+        "If you want to overwrite it, enable setting {}_truncate_on_insert, if you "
+        "want to create a new file on each insert, enable setting {}_create_new_file_on_insert",
+        configuration.getNamespace(), key, configuration.getTypeName(), configuration.getTypeName());
 }
 
 void resolveSchemaAndFormat(

@@ -3665,6 +3665,16 @@ Possible values:
 
 Default value: `0`.
 
+## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
+
+Ignore ansense of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3694,6 +3704,46 @@ Enables or disables skipping empty files in [HDFS](../../engines/table-engines/i
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
+
+Default value: `0`.
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
+
+Ignore ansense of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
+
+Throw an error if matched zero files according to glob expansion rules.
+
+Possible values:
+- 1 — `SELECT` throws an exception.
+- 0 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
+
+Ignore ansense of file if it does not exist when reading certain keys.
+
+Possible values:
+- 1 — `SELECT` returns empty result.
+- 0 — `SELECT` throws an exception.
 
 Default value: `0`.
 

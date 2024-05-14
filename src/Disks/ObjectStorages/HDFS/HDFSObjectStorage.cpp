@@ -186,7 +186,6 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) co
 void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     initializeHDFSFS();
-    auto * log = &Poco::Logger::get("HDFSObjectStorage");
     LOG_TEST(log, "Trying to list files for {}", path);
 
     HDFSFileInfo ls;
@@ -210,9 +209,6 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
     for (int i = 0; i < ls.length; ++i)
     {
         const String file_path = fs::path(ls.file_info[i].mName).lexically_normal();
-        const size_t last_slash = file_path.rfind('/');
-        const String file_name = file_path.substr(last_slash);
-
         const bool is_directory = ls.file_info[i].mKind == 'D';
         if (is_directory)
         {
@@ -227,6 +223,9 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                     Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
                     {}}));
         }
+
+        if (children.size() >= max_keys)
+            break;
     }
 }
 
