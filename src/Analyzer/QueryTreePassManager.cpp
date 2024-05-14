@@ -277,7 +277,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
-    manager.addPass(std::make_unique<IfConstantBranchesToLowCardinalityPass>());
+    ///manager.addPass(std::make_unique<IfConstantBranchesToLowCardinalityPass>());
     manager.addPass(std::make_unique<L2DistanceOptimizationPass>());
 
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
