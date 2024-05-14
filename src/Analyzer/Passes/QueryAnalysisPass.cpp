@@ -2329,7 +2329,7 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 pos = value;
             else
             {
-                if (static_cast<size_t>(std::abs(value)) > projection_nodes.size())
+                if (value < -static_cast<Int64>(projection_nodes.size()))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]. In scope {}",
@@ -4610,7 +4610,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
     for (auto & table_expression : table_expressions_stack)
     {
-        bool table_expression_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression.get());
+        bool table_expression_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(table_expression.get());
 
         if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
         {
