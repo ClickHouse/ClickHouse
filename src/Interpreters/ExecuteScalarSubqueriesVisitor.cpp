@@ -192,6 +192,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
+            io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef().use_concurrency_control);
             while (block.rows() == 0 && executor.pull(block))
             {
             }

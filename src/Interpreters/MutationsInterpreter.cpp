@@ -205,6 +205,7 @@ bool isStorageTouchedByMutations(
     }
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
+    io.pipeline.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
