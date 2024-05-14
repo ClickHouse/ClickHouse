@@ -1851,9 +1851,7 @@ NO_INLINE size_t joinRightColumns(
     added_columns.flag_per_row = flag_per_row;
     if (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right))
         added_columns.flag_per_row = false;
-
     Arena pool;
-
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
