@@ -247,6 +247,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
+    format_settings.sqlite.table_name = settings.input_format_sqlite_table_name;
     format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
     format_settings.sql_insert.include_column_names = settings.output_format_sql_insert_include_column_names;
     format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;

@@ -1195,6 +1195,8 @@ class IColumn;
     M(String, input_format_mysql_dump_table_name, "", "Name of the table in MySQL dump from which to read data", 0) \
     M(Bool, input_format_mysql_dump_map_column_names, true, "Match columns from table in MySQL dump and columns from ClickHouse table by names", 0) \
     \
+    M(String, input_format_sqlite_table_name, "", "Name of the table in SQLite db file from which to read data", 0) \
+    \
     M(UInt64, output_format_sql_insert_max_batch_size, DEFAULT_BLOCK_SIZE, "The maximum number  of rows in one INSERT statement.", 0) \
     M(String, output_format_sql_insert_table_name, "table", "The name of table in the output INSERT query", 0) \
     M(Bool, output_format_sql_insert_include_column_names, true, "Include column names in INSERT query", 0) \
