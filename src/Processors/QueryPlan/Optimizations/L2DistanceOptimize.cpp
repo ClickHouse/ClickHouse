@@ -1,3 +1,11 @@
+#include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
