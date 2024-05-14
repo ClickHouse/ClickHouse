@@ -269,7 +269,7 @@ builds_job_config = JobConfig(
             "./tests/performance",
         ],
         exclude_files=[".md"],
-        docker=["clickhouse/binary-builder"],
+        docker=["altinityinfra/binary-builder"],
         git_submodules=True,
     ),
     run_command="build_check.py $BUILD_NAME",
@@ -338,11 +338,11 @@ LabelConfigs = Dict[str, LabelConfig]
 # common digests configs
 compatibility_check_digest = DigestConfig(
     include_paths=["./tests/ci/compatibility_check.py"],
-    docker=["clickhouse/test-old-ubuntu", "clickhouse/test-old-centos"],
+    docker=["altinityinfra/test-old-ubuntu", "altinityinfra/test-old-centos"],
 )
 install_check_digest = DigestConfig(
     include_paths=["./tests/ci/install_check.py"],
-    docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
+    docker=["altinityinfra/install-deb-test", "altinityinfra/install-rpm-test"],
 )
 stateless_check_digest = DigestConfig(
     include_paths=[
@@ -353,7 +353,7 @@ stateless_check_digest = DigestConfig(
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/stateless-test"],
+    docker=["altinityinfra/stateless-test"],
 )
 stateful_check_digest = DigestConfig(
     include_paths=[
@@ -364,7 +364,7 @@ stateful_check_digest = DigestConfig(
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/stateful-test"],
+    docker=["altinityinfra/stateful-test"],
 )
 
 stress_check_digest = DigestConfig(
@@ -376,13 +376,13 @@ stress_check_digest = DigestConfig(
         "./tests/*.txt",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/stress-test"],
+    docker=["altinityinfra/stress-test"],
 )
 # FIXME: which tests are upgrade? just python?
 upgrade_check_digest = DigestConfig(
     include_paths=["./tests/ci/upgrade_check.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/upgrade-check"],
+    docker=["altinityinfra/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
     include_paths=[
@@ -402,7 +402,7 @@ ast_fuzzer_check_digest = DigestConfig(
 unit_check_digest = DigestConfig(
     include_paths=["./tests/ci/unit_tests_check.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/unit-test"],
+    docker=["altinityinfra/unit-test"],
 )
 perf_check_digest = DigestConfig(
     include_paths=[
@@ -410,7 +410,7 @@ perf_check_digest = DigestConfig(
         "./tests/performance/",
     ],
     exclude_files=[".md"],
-    docker=["clickhouse/performance-comparison"],
+    docker=["altinityinfra/performance-comparison"],
 )
 sqllancer_check_digest = DigestConfig(
     # include_paths=["./tests/ci/sqlancer_check.py"],
@@ -420,12 +420,12 @@ sqllancer_check_digest = DigestConfig(
 sqllogic_check_digest = DigestConfig(
     include_paths=["./tests/ci/sqllogic_test.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/sqllogic-test"],
+    docker=["altinityinfra/sqllogic-test"],
 )
 sqltest_check_digest = DigestConfig(
     include_paths=["./tests/ci/sqltest.py"],
     exclude_files=[".md"],
-    docker=["clickhouse/sqltest"],
+    docker=["altinityinfra/sqltest"],
 )
 bugfix_validate_check = DigestConfig(
     include_paths=[
@@ -437,7 +437,7 @@ bugfix_validate_check = DigestConfig(
     exclude_files=[".md"],
     docker=IMAGES.copy()
     + [
-        "clickhouse/stateless-test",
+        "altinityinfra/stateless-test",
     ],
 )
 # common test params
@@ -513,7 +513,7 @@ clickbench_test_params = {
         include_paths=[
             "tests/ci/clickbench.py",
         ],
-        docker=["clickhouse/clickbench"],
+        docker=["altinityinfra/clickbench"],
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
 }
@@ -1074,7 +1074,7 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(
                 digest=DigestConfig(
                     include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
-                    docker=["clickhouse/docs-builder"],
+                    docker=["altinityinfra/docs-builder"],
                 ),
                 run_command="docs_check.py",
             ),
@@ -1086,7 +1086,7 @@ CI_CONFIG = CIConfig(
                 digest=DigestConfig(
                     include_paths=["./tests/queries/0_stateless/"],
                     exclude_files=[".md"],
-                    docker=["clickhouse/fasttest"],
+                    docker=["altinityinfra/fasttest"],
                 ),
             ),
         ),

@@ -31,7 +31,7 @@ from version_helper import (
 )
 from stopwatch import Stopwatch
 
-IMAGE_NAME = "clickhouse/binary-builder"
+IMAGE_NAME = "altinityinfra/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
