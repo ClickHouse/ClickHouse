@@ -21,28 +21,9 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
     /// It should be just empty GET request.
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
 
-    const auto & host = endpoint.getHost();
-    auto resolved_hosts = DNSResolver::instance().resolveHostAll(host);
+    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
 
-    HTTPSessionPtr session;
-
-    for (size_t i = 0; i < resolved_hosts.size(); ++i)
-    {
-        auto resolved_endpoint = endpoint;
-        resolved_endpoint.setHost(resolved_hosts[i].toString());
-        session = makeHTTPSession(HTTPConnectionGroupType::HTTP, resolved_endpoint, timeouts);
-
-        try
-        {
-            session->sendRequest(request);
-            break;
-        }
-        catch (...)
-        {
-            if (i + 1 == resolved_hosts.size())
-                throw;
-        }
-    }
+    session->sendRequest(request);
 
     Poco::Net::HTTPResponse response;
     auto & response_body_stream = session->receiveResponse(response);
