@@ -309,7 +309,7 @@ void registerOutputFormatIon(FormatFactory & factory)
         "Ion",
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings)
         { return std::make_shared<IonRowOutputFormat>(buf, sample, settings); });
-    factory.markOutputFormatSupportsParallelFormatting("Ion");
+    // factory.markOutputFormatSupportsParallelFormatting("Ion");
 }
 }
 
