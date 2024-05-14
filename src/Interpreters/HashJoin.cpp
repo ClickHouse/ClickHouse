@@ -253,7 +253,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , data(std::make_shared<RightTableData>())
     , right_sample_block(right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
-    , decompressed_cache("LRU", 1024, 1024, 0.5l)
+    , decompressed_cache("LRU", table_join->hashJoinCacheByteLimit(), table_join->hashJoinCacheCountLimit(), 0.5l)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
