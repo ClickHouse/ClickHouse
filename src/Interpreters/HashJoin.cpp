@@ -1328,7 +1328,7 @@ template <>
 void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
-    checkBlock(block);
+    checkBlock(*row_ref->block);
 #endif
     if (has_columns_to_add)
     {
@@ -1848,7 +1848,7 @@ NO_INLINE size_t joinRightColumns(
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
-    if ((STRICTNESS == JoinStrictness::All && !flag_per_row) || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right))
+    if (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
         added_columns.output_by_row_list = true;
 
     Arena pool;
