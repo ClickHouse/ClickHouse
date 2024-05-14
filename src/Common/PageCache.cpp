@@ -199,16 +199,17 @@ PageCache::MemoryStats PageCache::getResidentSetSize() const
 {
     MemoryStats stats;
 
-    /// Don't spend time on reading smaps if page cache is not used.
-    if (mmaps.empty())
-        return stats;
-
 #ifdef OS_LINUX
     if (use_madv_free)
     {
         std::unordered_set<UInt64> cache_mmap_addrs;
         {
             std::lock_guard lock(global_mutex);
+
+            /// Don't spend time on reading smaps if page cache is not used.
+            if (mmaps.empty())
+                return stats;
+
             for (const auto & m : mmaps)
                 cache_mmap_addrs.insert(reinterpret_cast<UInt64>(m.ptr));
         }
