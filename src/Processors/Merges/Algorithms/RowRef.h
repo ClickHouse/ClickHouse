@@ -159,6 +159,26 @@ struct RowRef
         return true;
     }
 
+    static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto col_number = (offset + i) % size;
+            auto & cur_column = lhs[col_number];
+            auto & other_column = rhs[col_number];
+
+            if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
+                return col_number;
+        }
+
+        return size + 1;
+    }
+
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
+    {
+        return checkEqualsFirstNonEqual(num_columns, offset, sort_columns, row_num, other.sort_columns, other.row_num);
+    }
+
     bool hasEqualSortColumnsWith(const RowRef & other) const
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
@@ -181,7 +201,7 @@ struct RowRefWithOwnedChunk
 
     UInt64 source_stream_index = 0;
 
-    void swap(RowRefWithOwnedChunk & other) /// NOLINT(performance-noexcept-swap)
+    void swap(RowRefWithOwnedChunk & other)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);
@@ -211,6 +231,12 @@ struct RowRefWithOwnedChunk
         sort_columns = &owned_chunk->sort_columns;
         current_cursor = cursor.impl;
         source_stream_index = cursor.impl->order;
+    }
+
+
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
+    {
+        return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
