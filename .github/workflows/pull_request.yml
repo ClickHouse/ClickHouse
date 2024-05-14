@@ -17,14 +17,14 @@ on:  # yamllint disable-line rule:truthy
 
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: DebugInfo
         uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
@@ -75,25 +75,20 @@ jobs:
       test_name: Style check
       runner_type: style-checker
       run_command: |
-          python3 style_check.py
+          python3 style_check.py --no-push
       data: ${{ needs.RunConfig.outputs.data }}
-    secrets:
-      secret_envs: |
-        ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
-        ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
-        RCSK
   FastTest:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Fast test
-      runner_type: builder
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
           python3 fast_test_check.py
 
-  ################################# Main statges #################################
+  ################################# Main stages #################################
   # for main CI chain
   #
   Builds_1:
@@ -140,7 +135,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   Builds_2_Report:
     # run report check for failed builds to indicate the CI error
@@ -151,7 +146,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
-      runner_type: style-checker-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Stage Final #################################
@@ -159,10 +154,10 @@ jobs:
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
     needs: [Tests_1, Tests_2]
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -186,5 +181,5 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse Keeper Jepsen
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}

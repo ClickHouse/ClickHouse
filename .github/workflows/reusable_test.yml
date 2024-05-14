@@ -51,8 +51,31 @@ env:
   CHECK_NAME: ${{inputs.test_name}}
 
 jobs:
+  runner_labels_setup:
+    name: Compute proper runner labels for the rest of the jobs
+    runs-on: ubuntu-latest
+    outputs:
+      runner_labels: ${{ steps.setVariables.outputs.runner_labels }}
+    steps:
+      - id: setVariables
+        name: Prepare runner_labels variables for the later steps
+        run: |
+
+          # Prepend self-hosted
+          input="self-hosted, ${input}"
+
+          # Remove all whitespace
+          input="$(echo ${input} | tr -d [:space:])"
+          # Make something like a JSON array from comma-separated list
+          input="[ '${input//\,/\'\, \'}' ]"
+
+          echo "runner_labels=$input" >> ${GITHUB_OUTPUT}
+        env:
+          input: ${{ inputs.runner_type }}
+
   Test:
-    runs-on: [self-hosted, '${{inputs.runner_type}}']
+    needs: [runner_labels_setup]
+    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
     if: ${{ !failure() && !cancelled() && contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.test_name) }}
     name: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
     env:
@@ -63,7 +86,7 @@ jobs:
         batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
         with:
           clear-repository: true
           ref: ${{ fromJson(inputs.data).git_ref }}
