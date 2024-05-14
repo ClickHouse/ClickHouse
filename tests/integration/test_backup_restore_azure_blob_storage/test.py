@@ -30,12 +30,12 @@ def generate_cluster_def(port):
     <named_collections>
         <azure_conf1>
             <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
-            <container>cont</container>
+            <container_name>cont</container_name>
             <format>CSV</format>
         </azure_conf1>
         <azure_conf2>
             <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
-            <container>cont</container>
+            <container_name>cont</container_name>
             <format>CSV</format>
             <account_name>devstoreaccount1</account_name>
             <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
