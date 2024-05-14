@@ -86,10 +86,9 @@ DECLARE_AMXBF16_SPECIFIC_CODE(
     {
         // Should be executed once
         static auto load_config = [&] {
-            TileConfig tileinfo{
-                .palette_id=1,
-                .start_row=0,
-            };
+            TileConfig tileinfo;
+            tileinfo.palette_id = 1;
+            tileinfo.start_row = 0;
             tileinfo.rows[0] = tile_size * 4;
             tileinfo.colsb[0] = tile_size;
 
@@ -276,7 +275,6 @@ private:
             for (size_t j = 0; j < normal_count; j += tile_size)
             {
                 for (size_t k = 0; k < dimension; k += tile_size)
-                {
                     multiplyTile(
                         nested_vectors_data,
                         nested_normals_data,
@@ -287,7 +285,6 @@ private:
                         i,
                         j,
                         k);
-                }
             }
         }
     }
@@ -351,12 +348,12 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"vectors", &isArray<IDataType>, nullptr, "Array"},
-            {"normals", &isArray<IDataType>, isColumnConst, "const Array"},
+            {"vectors", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"normals", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array"},
         };
 
         FunctionArgumentDescriptors optional_args{
-            {"offsets", &isArray<IDataType>, isColumnConst, "const Array"},
+            {"offsets", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array"},
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
