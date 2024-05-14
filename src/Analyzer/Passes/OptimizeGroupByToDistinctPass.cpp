@@ -51,7 +51,7 @@ public:
         distinct_query_node->getLimit() = query_node->getLimit();
 
         // Заменяем текущий узел запроса узлом с оператором DISTINCT
-        query_node = std::move(distinct_query_node);
+        query_node = distinct_query_node.get();
     }
 };
 
