@@ -22,10 +22,13 @@ configure_file(${LIBRARY_DIR}/templates/Version.h.in ${LIBRARY_DIR}/include/puls
 add_definitions(-DPULSAR_USE_BOOST_REGEX)
 
 file(GLOB_RECURSE SRCS 
+    "${LIBARARY_DIR}/lib/PulsarApi.pb.h"
+    "${LIBARARY_DIR}/lib/PulsarApi.pb.cc"
     "${LIBRARY_DIR}/lib/*.cc"
     "${LIBRARY_DIR}/lib/*.h"
-    DEPENDS ${LIBRARY_DIR}/lib/PulsarApi.pb.h ${LIBRARY_DIR}/lib/PulsarApi.pb.cc 
 )
+
+set_property(SOURCE ${SRCS} APPEND PROPERTY OBJECT_DEPENDS ${LIBRARY_DIR}/lib/PulsarApi.pb.h)
 
 add_library(_pulsar ${SRCS})
 
