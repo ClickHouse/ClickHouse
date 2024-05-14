@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
-static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
+static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
@@ -60,7 +60,9 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     add_column("name", "data_type_families", false, {});
     add_column("name", "merge_tree_settings", false, {});
     add_column("name", "settings", false, {});
-    add_column("keyword", "keywords", false, {});
+
+    if (server_revision >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE)
+        add_column("keyword", "keywords", false, {});
 
     if (!basic_suggestion)
     {
@@ -88,13 +90,6 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     return query;
 }
 
-static String getLoadKeywordsQuery()
-{
-    return R"""
-SELECT keyword FROM viewIfPermitted(SELECT keyword FROM system.keywords ELSE null('keyword String'));
-    """;
-}
-
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
@@ -108,7 +103,11 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
                 fetch(*connection,
                     connection_parameters.timeouts,
-                    getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>),
+                    getLoadSuggestionQuery(
+                        suggestion_limit,
+                        std::is_same_v<ConnectionType, LocalConnection>,
+                        connection->getServerRevision(connection_parameters.timeouts)
+                    ),
                     my_context->getClientInfo());
             }
             catch (const Exception & e)
@@ -153,10 +152,7 @@ void Suggest::load(IServerConnection & connection,
 {
     try
     {
-        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true), client_info);
-
-        if (connection->getServerRevision(connection_parameters.timeouts) >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE)
-            fetch(connection, timeouts, getLoadKeywordsQuery(), client_info);
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true, connection.getServerRevision(timeouts)), client_info);
     }
     catch (...)
     {
