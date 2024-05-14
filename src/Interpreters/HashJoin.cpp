@@ -1316,7 +1316,7 @@ void AddedColumns<false>::appendFromBlock(const Block & compressed_block, size_t
         applyLazyDefaults();
 
 #ifndef NDEBUG
-    checkBlock(block);
+    checkBlock(compressed_block);
 #endif
     /// Shared ptr needed there because we want to hold a Block if we got it from cache
     std::shared_ptr<Block> shared_block = nullptr;
