@@ -1173,7 +1173,7 @@ public:
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
-    bool flag_per_row = true;
+    bool output_by_row_list = false;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -1848,9 +1848,12 @@ NO_INLINE size_t joinRightColumns(
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
-    added_columns.flag_per_row = flag_per_row;
-    if (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right))
-        added_columns.flag_per_row = false;
+    added_columns.output_by_row_list = !flag_per_row;
+    if (STRICTNESS == JoinStrictness::Asof)
+        added_columns.output_by_row_list = false;
+    else if (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right))
+        added_columns.output_by_row_list = true;
+
     Arena pool;
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
@@ -1892,7 +1895,7 @@ NO_INLINE size_t joinRightColumns(
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
                     auto * row_ref = mapped->findAsof(left_asof_key, i);
-                    if (row_ref)
+                    if (row_ref && row_ref->block)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
                         if constexpr (flag_per_row)
@@ -2185,7 +2188,7 @@ Block HashJoin::joinBlockImpl(
     Block remaining_block = sliceBlock(block, num_joined);
     void (AddedColumns<!join_features.is_any_join>::*func)(MutableColumnPtr &, const RowRef *, size_t);
     func = is_join_get ?
-        &AddedColumns<!join_features.is_any_join>::buildJoinGetOutput : !added_columns.flag_per_row ?
+        &AddedColumns<!join_features.is_any_join>::buildJoinGetOutput : added_columns.output_by_row_list ?
         &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRefList :
         &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRef;
     added_columns.buildOutput(func);
