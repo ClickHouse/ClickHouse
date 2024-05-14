@@ -203,15 +203,17 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
             const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
             if (!column_nullable.isNullAt(row_num))
                 serializeField(column_nullable.getNestedColumn(), nested_type, row_num);
-            else if (isInteger(nested_type))
+            else if (isBool(nested_type))
+                writer->writeTypedNull(NullableIonDataType::Bool);
+            else if (isInteger(nested_type) || isEnum(nested_type) || isDateTime64(nested_type))
                 writer->writeTypedNull(NullableIonDataType::Integer);
             else if (isFloat(nested_type))
                 writer->writeTypedNull(NullableIonDataType::Float);
             else if (isDecimal(nested_type))
                 writer->writeTypedNull(NullableIonDataType::Decimal);
-            else if (isDateOrDate32OrDateTimeOrDateTime64(nested_type))
+            else if (isDateOrDate32(nested_type) || isDateTime(nested_type))
                 writer->writeTypedNull(NullableIonDataType::DateTime);
-            else if (isStringOrFixedString(nested_type) || isIPv4(nested_type) || isIPv6(nested_type))
+            else if (isStringOrFixedString(nested_type) || isIPv4(nested_type) || isIPv6(nested_type) || isUUID(nested_type))
                 writer->writeTypedNull(NullableIonDataType::String);
             else
                 writer->writeNull();
@@ -264,7 +266,7 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
         default:
             break;
     }
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for MsgPack output format", data_type->getName());
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Ion output format", data_type->getName());
 }
 
 void IonRowOutputFormat::writeRowStartDelimiter()

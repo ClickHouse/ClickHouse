@@ -15,6 +15,7 @@ namespace DB
 enum class NullableIonDataType : std::uint8_t
 {
     Integer,
+    Bool,
     Float,
     Decimal,
     DateTime,

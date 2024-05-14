@@ -266,6 +266,10 @@ void IonWriter::writeTypedNull(NullableIonDataType type)
             ion_writer_write_typed_null(ion_writer, tid_INT);
             return;
         }
+        case NullableIonDataType::Bool: {
+            ion_writer_write_typed_null(ion_writer, tid_BOOL);
+            return;
+        }
         case NullableIonDataType::Float: {
             ion_writer_write_typed_null(ion_writer, tid_FLOAT);
             return;
