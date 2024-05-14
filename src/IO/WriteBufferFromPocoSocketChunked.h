@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/NetUtils.h>
 
 
 namespace DB
@@ -42,6 +43,7 @@ protected:
                 LOG_TEST(log, "Packet send continued. Size {}", s);
 
             finished = false;
+            s = hostToNet(s);
             socketSendBytes(reinterpret_cast<const char *>(&s), sizeof(s));
         }
 

@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <Common/logger_useful.h>
+#include <IO/NetUtils.h>
 
 
 namespace DB::ErrorCodes
@@ -9,6 +10,7 @@ namespace DB::ErrorCodes
 
 namespace DB
 {
+
 ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, size_t buf_size)
     : ReadBufferFromPocoSocketChunked(socket_, ProfileEvents::end(), buf_size)
 {}
@@ -40,12 +42,12 @@ void ReadBufferFromPocoSocketChunked::setAsyncCallback(AsyncCallback async_callb
 
 bool ReadBufferFromPocoSocketChunked::startChunk()
 {
-    do {
-        if (buffer_socket.read(reinterpret_cast<char *>(&chunk_left), sizeof(chunk_left)) == 0)
-            return false;
-        if (chunk_left == 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Native protocol: empty chunk received");
-    } while (chunk_left == 0);
+    if (buffer_socket.read(reinterpret_cast<char *>(&chunk_left), sizeof(chunk_left)) == 0)
+        return false;
+    if (chunk_left == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Native protocol: empty chunk received");
+
+    chunk_left = netToHost(chunk_left);
 
     return nextChunk();
 }
@@ -85,6 +87,8 @@ bool ReadBufferFromPocoSocketChunked::nextChunk()
     if (4 > skip_next)
         if (!buffer_socket.readSocketExact(reinterpret_cast<Position>(&chunk_left) + skip_next, 4 - skip_next))
             return false;
+
+    chunk_left = netToHost(chunk_left);
 
     if (chunk_left == 0)
         LOG_TEST(log, "Packet receive ended.");
