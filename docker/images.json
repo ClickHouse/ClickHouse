@@ -5,7 +5,9 @@
     },
     "docker/packager/cctools": {
         "name": "altinityinfra/cctools",
-        "dependent": []
+        "dependent": [
+            "docker/packager/binary-builder"
+        ]
     },
     "docker/test/compatibility/centos": {
         "name": "altinityinfra/test-old-centos",
