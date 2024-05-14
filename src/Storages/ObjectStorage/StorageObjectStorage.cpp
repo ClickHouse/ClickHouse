@@ -402,7 +402,6 @@ void StorageObjectStorage::Configuration::initialize(
     else
         configuration.fromAST(engine_args, local_context, with_table_structure);
 
-    // FIXME: it should be - if (format == "auto" && get_format_from_file)
     if (configuration.format == "auto")
         configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.getPath()).value_or("auto");
     else
