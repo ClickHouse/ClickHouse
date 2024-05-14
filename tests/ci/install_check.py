@@ -21,8 +21,8 @@ from tee_popen import TeePopen
 from ci_utils import set_job_timeout
 
 
-RPM_IMAGE = "clickhouse/install-rpm-test"
-DEB_IMAGE = "clickhouse/install-deb-test"
+RPM_IMAGE = "altinityinfra/install-rpm-test"
+DEB_IMAGE = "altinityinfra/install-deb-test"
 TEMP_PATH = Path(TEMP)
 LOGS_PATH = TEMP_PATH / "tests_logs"
 

@@ -1,5 +1,5 @@
 # rebuild in #33610
-# docker build -t clickhouse/test-base .
+# docker build -t altinityinfra/test-base .
 ARG FROM_TAG=latest
 FROM altinityinfra/test-util:$FROM_TAG
 

@@ -110,7 +110,7 @@ def main():
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image("clickhouse/fasttest"))
+    docker_image = pull_image(get_docker_image("altinityinfra/fasttest"))
 
     workspace = temp_path / "fasttest-workspace"
     workspace.mkdir(parents=True, exist_ok=True)

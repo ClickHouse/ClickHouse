@@ -51,12 +51,12 @@ jobs:
         fetch-depth: 0  # otherwise we will have no version info
         filter: tree:0
         ref: ${{ env.GITHUB_TAG }}
-    - name: Check docker clickhouse/clickhouse-server building
+    - name: Check docker altinityinfra/clickhouse-server building
       run: |
         cd "$GITHUB_WORKSPACE/tests/ci"
         export CHECK_NAME="Docker server image"
         python3 docker_server.py --release-type auto --version "$GITHUB_TAG" --check-name "$CHECK_NAME" --push
-    - name: Check docker clickhouse/clickhouse-keeper building
+    - name: Check docker altinityinfra/clickhouse-keeper building
       run: |
         cd "$GITHUB_WORKSPACE/tests/ci"
         export CHECK_NAME="Docker keeper image"

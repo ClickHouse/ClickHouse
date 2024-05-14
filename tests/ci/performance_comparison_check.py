@@ -31,7 +31,7 @@ from report import FAILURE, SUCCESS, JobReport
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-IMAGE_NAME = "clickhouse/performance-comparison"
+IMAGE_NAME = "altinityinfra/performance-comparison"
 
 
 def get_run_command(
@@ -100,7 +100,7 @@ def main():
     if pr_info.number == 0:
         pr_link = commit.html_url
     else:
-        pr_link = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_info.number}"
+        pr_link = f"https://github.com/altinityinfra/altinityinfra/pull/{pr_info.number}"
 
     docker_env += (
         f' -e CHPC_ADD_REPORT_LINKS="<a href={GITHUB_RUN_URL}>'
@@ -188,7 +188,7 @@ def main():
     def too_many_slow(msg):
         match = re.search(r"(|.* )(\d+) slower.*", msg)
         # This threshold should be synchronized with the value in
-        # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
+        # https://github.com/altinityinfra/altinityinfra/blob/master/docker/test/performance-comparison/report.py#L629
         threshold = 5
         return int(match.group(2).strip()) > threshold if match else False
 

@@ -397,7 +397,7 @@ integration_check_digest = DigestConfig(
 ast_fuzzer_check_digest = DigestConfig(
     # include_paths=["./tests/ci/ast_fuzzer_check.py"],
     # exclude_files=[".md"],
-    # docker=["clickhouse/fuzzer"],
+    # docker=["altinityinfra/fuzzer"],
 )
 unit_check_digest = DigestConfig(
     include_paths=["./tests/ci/unit_tests_check.py"],
@@ -415,7 +415,7 @@ perf_check_digest = DigestConfig(
 sqllancer_check_digest = DigestConfig(
     # include_paths=["./tests/ci/sqlancer_check.py"],
     # exclude_files=[".md"],
-    # docker=["clickhouse/sqlancer-test"],
+    # docker=["altinityinfra/sqlancer-test"],
 )
 sqllogic_check_digest = DigestConfig(
     include_paths=["./tests/ci/sqllogic_test.py"],

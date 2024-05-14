@@ -503,7 +503,7 @@ class ClickhouseIntegrationTestsRunner:
             "--docker-image-version",
         ):
             for img in IMAGES:
-                if img == "clickhouse/integration-tests-runner":
+                if img == "altinityinfra/integration-tests-runner":
                     runner_version = self.get_image_version(img)
                     logging.info(
                         "Can run with custom docker image version %s", runner_version

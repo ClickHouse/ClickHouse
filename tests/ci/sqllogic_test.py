@@ -26,7 +26,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 NO_CHANGES_MSG = "Nothing to run"
-IMAGE_NAME = "clickhouse/sqllogic-test"
+IMAGE_NAME = "altinityinfra/sqllogic-test"
 
 
 def get_run_command(
