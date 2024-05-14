@@ -8042,7 +8042,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             window_node_typed.setParentWindowName({});
         }
 
-        scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
+        auto [_, inserted] = scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
+        if (!inserted)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window '{}' is already defined. In scope {}",
+                window_node_typed.getAlias(),
+                scope.scope_node->formatASTForErrorMessage());
     }
 
     /** Disable identifier cache during JOIN TREE resolve.
