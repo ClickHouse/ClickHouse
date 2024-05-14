@@ -4835,6 +4835,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
+    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    {
+        for (auto & [node, _] : matched_expression_nodes_with_names)
+        {
+            auto it = scope.nullable_group_by_keys.find(node);
+            if (it != scope.nullable_group_by_keys.end())
+            {
+                node = it->node->clone();
+                node->convertToNullable();
+            }
+        }
+    }
+
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
@@ -5028,7 +5041,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             scope.scope_node->formatASTForErrorMessage());
     }
 
+    auto original_ast = matcher_node->getOriginalAST();
     matcher_node = std::move(list);
+    if (original_ast)
+        matcher_node->setOriginalAST(original_ast);
 
     return result_projection_names;
 }
@@ -8043,7 +8059,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             window_node_typed.setParentWindowName({});
         }
 
-        scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
+        auto [_, inserted] = scope.window_name_to_window_node.emplace(window_node_typed.getAlias(), window_node);
+        if (!inserted)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window '{}' is already defined. In scope {}",
+                window_node_typed.getAlias(),
+                scope.scope_node->formatASTForErrorMessage());
     }
 
     /** Disable identifier cache during JOIN TREE resolve.
