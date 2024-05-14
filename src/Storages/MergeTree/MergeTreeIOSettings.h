@@ -13,7 +13,7 @@ namespace DB
 class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 
-enum class CompactPartsReadMethod
+enum class CompactPartsReadMethod : uint8_t
 {
     SingleBuffer,
     MultiBuffer,

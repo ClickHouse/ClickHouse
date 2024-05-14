@@ -1417,8 +1417,7 @@ bool MutationsInterpreter::isAffectingAllColumns() const
 
 void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
 {
-    if (mutation_kind < kind)
-        mutation_kind = kind;
+    mutation_kind = std::max(mutation_kind, kind);
 }
 
 }

@@ -577,7 +577,7 @@ void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, I
         return;
     }
 
-    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
+    getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
 }
 
 void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -590,7 +590,7 @@ void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction
 void ColumnSparse::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                 size_t limit, int null_direction_hint, Permutation & res) const
 {
-    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
+    getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
 void ColumnSparse::updatePermutationWithCollation(
