@@ -88,6 +88,13 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     return query;
 }
 
+static String getLoadKeywordsQuery()
+{
+    return R"""
+SELECT keyword FROM viewIfPermitted(SELECT keyword FROM system.keywords ELSE null('keyword String'));
+    """;
+}
+
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
@@ -147,6 +154,9 @@ void Suggest::load(IServerConnection & connection,
     try
     {
         fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true), client_info);
+
+        if (connection->getServerRevision(connection_parameters.timeouts) >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE)
+            fetch(connection, timeouts, getLoadKeywordsQuery(), client_info);
     }
     catch (...)
     {
