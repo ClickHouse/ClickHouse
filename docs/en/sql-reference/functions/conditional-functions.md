@@ -242,12 +242,12 @@ Constrain the return value between A and B.
 **Syntax**
 
 ``` sql
-clamp(x, min, max)
+clamp(value, min, max)
 ```
 
 **Arguments**
 
-- `x` – Input value.
+- `value` – Input value.
 - `min` – Limit the lower bound.
 - `max` – Limit the upper bound.
 
