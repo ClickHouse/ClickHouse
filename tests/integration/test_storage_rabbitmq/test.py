@@ -2606,7 +2606,7 @@ def test_rabbitmq_bad_args(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.exchange_declare(exchange="f", exchange_type="fanout")
-    instance.query_and_get_error(
+    assert "Unable to declare exchange" in instance.query_and_get_error(
         """
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ

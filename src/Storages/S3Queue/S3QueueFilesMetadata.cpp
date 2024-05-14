@@ -600,11 +600,13 @@ void S3QueueFilesMetadata::setFileProcessed(ProcessingNodeHolderPtr holder)
     {
         case S3QueueMode::ORDERED:
         {
-            return setFileProcessedForOrderedMode(holder);
+            setFileProcessedForOrderedMode(holder);
+            break;
         }
         case S3QueueMode::UNORDERED:
         {
-            return setFileProcessedForUnorderedMode(holder);
+            setFileProcessedForUnorderedMode(holder);
+            break;
         }
     }
 }
@@ -649,7 +651,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
         ? zookeeper_processed_path / toString(getProcessingIdForPath(holder->path))
         : zookeeper_processed_path;
 
-    return setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
+    setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
 }
 
 void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(

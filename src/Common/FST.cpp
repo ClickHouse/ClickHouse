@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include "FST.h"
 #include <algorithm>
 #include <cassert>
@@ -483,3 +485,5 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

@@ -24,7 +24,7 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
 /// Note that number of code points is just a rough approximation of visible string width.
 void PrettyBlockOutputFormat::calculateWidths(
     const Block & header, const Chunk & chunk,
-    WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths)
+    WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, size_t table_border_width)
 {
     size_t num_rows = std::min(chunk.getNumRows(), format_settings.pretty.max_rows);
 
@@ -38,11 +38,11 @@ void PrettyBlockOutputFormat::calculateWidths(
     max_padded_widths.resize_fill(num_columns);
     name_widths.resize(num_columns);
 
-    const bool need_cut_to_width = format_settings.pretty.max_value_width_apply_for_single_value || num_rows != 1 || num_columns != 1 || total_rows != 0;
+    const bool need_cut_to_width = format_settings.pretty.preserve_border_for_multiline_string && (format_settings.pretty.max_value_width_apply_for_single_value || num_rows != 1 || num_columns != 1 || total_rows != 0);
 
     /// Calculate widths of all values.
     String serialized_value;
-    size_t prefix = 2; // Tab character adjustment
+    size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + table_border_width : table_border_width; // Tab character adjustment
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & elem = header.getByPosition(i);
@@ -187,7 +187,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    calculateWidths(header, chunk, widths, max_widths, name_widths, 2);
 
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
                                        utf8_grid_symbols :
@@ -321,6 +321,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
         std::vector<String> transferred_row(num_columns);
         bool has_transferred_row = false;
+        size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 2 : 2;
 
         for (size_t j = 0; j < num_columns; ++j)
         {
@@ -333,12 +334,14 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
                 serializations[j]->serializeText(*columns[j], i, out_serialize, format_settings);
             }
-            if (cut_to_width)
-                splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width);
-            has_transferred_row |= !transferred_row[j].empty() && cur_width <= cut_to_width;
+            if (cut_to_width && format_settings.pretty.preserve_border_for_multiline_string)
+                splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width, cut_to_width, prefix);
+            has_transferred_row |= !transferred_row[j].empty();
 
             writeValueWithPadding(serialized_value, cur_width, max_widths[j], cut_to_width,
                 type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[j].empty(), false);
+
+            prefix += max_widths[j] + 3;
         }
 
         writeCString(grid_symbols.bar, out);
@@ -499,6 +502,7 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
 
     std::vector<String> new_transferred_row(num_columns);
     bool has_transferred_row = false;
+    size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 2 : 2;
 
     for (size_t j = 0; j < num_columns; ++j)
     {
@@ -510,11 +514,13 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
         const auto & type = *header.getByPosition(j).type;
         size_t cur_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(transferred_row[j].data()), transferred_row[j].size());
         if (cut_to_width)
-            splitValueAtBreakLine(transferred_row[j], new_transferred_row[j], cur_width);
-        has_transferred_row |= !new_transferred_row[j].empty() && cur_width <= cut_to_width;
+            splitValueAtBreakLine(transferred_row[j], new_transferred_row[j], cur_width, cut_to_width, prefix);
+        has_transferred_row |= !new_transferred_row[j].empty();
 
         writeValueWithPadding(transferred_row[j], cur_width, max_widths[j], cut_to_width,
             type.shouldAlignRightInPrettyFormats(), isNumber(type), !new_transferred_row[j].empty(), !transferred_row[j].empty());
+
+        prefix += max_widths[j] + 3;
     }
 
     if (!space_block)
@@ -525,13 +531,14 @@ void PrettyBlockOutputFormat::writeTransferredRow(const Widths & max_widths, con
         writeTransferredRow(max_widths, header, new_transferred_row, cut_to_width, space_block);
 }
 
-void PrettyBlockOutputFormat::splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width)
+void PrettyBlockOutputFormat::splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width, size_t cut_to_width, size_t prefix)
 {
     if (size_t break_line_pos = value.find_first_of('\n'); break_line_pos != String::npos)
     {
-        transferred_value = value.substr(break_line_pos + 1);
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(value.data()), break_line_pos, prefix);
+        if (value_width <= cut_to_width)
+            transferred_value = value.substr(break_line_pos + 1);
         value = value.substr(0, break_line_pos);
-        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(value.data()), value.size());
     }
 }
 

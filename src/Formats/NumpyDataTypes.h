@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-enum class NumpyDataTypeIndex
+enum class NumpyDataTypeIndex : uint8_t
 {
     Int8,
     Int16,
