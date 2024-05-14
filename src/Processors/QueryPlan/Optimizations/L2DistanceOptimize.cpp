@@ -34,7 +34,7 @@ size_t tryReplaceL2DistanceWithL2Squared(QueryPlan::Node *parent_node, QueryPlan
     if (!sorting_step || !expression_step)
         return 0;
 
-    auto &expressions = expression_step->getExpressions();
+    auto &expressions = expression_step->getExpression();
     if (expressions.size() != 1)
         return 0;
 
