@@ -47,7 +47,10 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
     switch (data_type->getTypeId())
     {
         case TypeIndex::UInt8: {
-            writer->writeInt(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
+            if (isBool(data_type))
+                writer->writeBool(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
+            else
+                writer->writeInt(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
             return;
         }
         case TypeIndex::Date: {

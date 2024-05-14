@@ -107,6 +107,11 @@ void IonWriter::writeInt(int64_t value)
     ion_writer_write_int64(ion_writer, value);
 }
 
+void IonWriter::writeBool(bool value)
+{
+    ion_writer_write_bool(ion_writer, value);
+}
+
 void IonWriter::writeBigInt(const char * value, size_t n)
 {
     std::vector<BYTE> big_int_buffer(n);

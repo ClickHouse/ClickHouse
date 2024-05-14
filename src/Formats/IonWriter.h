@@ -55,6 +55,7 @@ public:
 
     // Writes methods
     void writeInt(Int64 value);
+    void writeBool(bool value);
     void writeBigInt(const char * value, size_t n);
     void writeBigUInt(const char * value, size_t n);
     void writeFloat(float value);
