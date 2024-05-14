@@ -219,10 +219,6 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
                 writer->writeNull();
             return;
         }
-        case TypeIndex::Nothing: {
-            writer->writeNull();
-            return;
-        }
         case TypeIndex::Map: {
             const auto & map_column = assert_cast<const ColumnMap &>(column);
             const auto & nested_column = map_column.getNestedColumn();
