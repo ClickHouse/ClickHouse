@@ -118,7 +118,7 @@ namespace
         {
             if (!current_columns.contains(key))
             {
-                logDebug("aggregation key NOT found: {}", key);
+                logDebug("aggregation key NOT found", key);
                 return false;
             }
         }
@@ -191,6 +191,9 @@ namespace
 
         if (aggregation_before_distinct)
         {
+            if (actions_chain.empty())
+                actions_chain.push_back(std::move(dag_stack));
+
             const auto distinct_columns = getDistinctColumns(distinct_step);
 
             if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(aggregation_before_distinct); aggregating_step)
