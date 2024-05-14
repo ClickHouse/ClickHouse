@@ -28,6 +28,7 @@
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
+#include <Analyzer/Passes/OptimizeGroupByToDistinctPass.h>
 #include <Analyzer/Passes/IfLowCardinalityPass.h>
 #include <Analyzer/Passes/OptimizeL2DistancePass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
@@ -277,6 +278,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
+    manager.addPass(std::make_unique<OptimizeGroupByToDistinctPass>());
     ///manager.addPass(std::make_unique<IfConstantBranchesToLowCardinalityPass>());
     manager.addPass(std::make_unique<L2DistanceOptimizationPass>());
 
