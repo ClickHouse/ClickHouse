@@ -1024,21 +1024,21 @@ private:
         if (is_lambda_node)
         {
             if (scope.alias_name_to_expression_node.contains(alias))
-                scope.nodes_with_duplicated_aliases.insert(node);
+                scope.nodes_with_duplicated_aliases.insert(node->clone());
 
             auto [_, inserted] = scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
             if (!inserted)
-                scope.nodes_with_duplicated_aliases.insert(node);
+                scope.nodes_with_duplicated_aliases.insert(node->clone());
 
             return;
         }
 
         if (scope.alias_name_to_lambda_node.contains(alias))
-            scope.nodes_with_duplicated_aliases.insert(node);
+            scope.nodes_with_duplicated_aliases.insert(node->clone());
 
         auto [_, inserted] = scope.alias_name_to_expression_node.insert(std::make_pair(alias, node));
         if (!inserted)
-            scope.nodes_with_duplicated_aliases.insert(node);
+            scope.nodes_with_duplicated_aliases.insert(node->clone());
 
         /// If node is identifier put it also in scope alias name to lambda node map
         if (node->getNodeType() == QueryTreeNodeType::IDENTIFIER)
@@ -8154,6 +8154,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         auto node = node_with_duplicated_alias;
         auto node_alias = node->getAlias();
+
+        /// Add current alias to non cached set, because in case of cyclic alias identifier should not be substituted from cache.
+        /// See 02896_cyclic_aliases_crash.
+        scope.non_cached_identifier_lookups_during_expression_resolve.insert({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         bool has_node_in_alias_table = false;
