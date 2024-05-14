@@ -827,8 +827,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 void replaceTableVirtualColumn(
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const SelectQueryInfo & modified_query_info,
-    QueryTreeNodePtr & node)
+    SelectQueryInfo & modified_query_info)
 {
     const auto & table_name = storage_snapshot->storage.getStorageID().table_name;
     auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
@@ -851,7 +850,7 @@ void replaceTableVirtualColumn(
     }
 
     if (!column_name_to_node.empty())
-        replaceColumns(node,
+        replaceColumns(modified_query_info.query_tree,
             modified_query_info.table_expression,
             column_name_to_node);
 }
@@ -875,7 +874,7 @@ void StorageDistributed::read(
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         if (!remote_table_function_ptr)
-            replaceTableVirtualColumn(storage_snapshot, local_context, modified_query_info, modified_query_info.query_tree);
+            replaceTableVirtualColumn(storage_snapshot, local_context, modified_query_info);
 
         StorageID remote_storage_id = StorageID::createEmpty();
         if (!remote_table_function_ptr)
