@@ -1830,20 +1830,20 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     if (create.to_table_id || create.to_table)
     {
-        String database_name;
-        String table_name;
-        if (!create.to_table_id)
+        String to_database_name;
+        String to_table_name;
+        if (create.to_table_id)
         {
-            StorageID tmp_to_table_id = create.to_table->as<ASTTableIdentifier>()->getTableId();
-            database_name = tmp_to_table_id.database_name;
-            table_name = tmp_to_table_id.table_name;
+            to_database_name = create.to_table_id.database_name;
+            to_table_name = create.to_table_id.table_name;
         }
         else
         {
-            database_name = create.to_table_id.database_name;
-            table_name = create.to_table_id.table_name;
+            StorageID tmp_to_table_id = create.to_table->as<ASTTableIdentifier>()->getTableId();
+            to_database_name = tmp_to_table_id.database_name;
+            to_table_name = tmp_to_table_id.table_name;
         }
-        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, database_name, table_name);
+        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, to_database_name, to_table_name);
     }
 
     if (create.storage && create.storage->engine)
