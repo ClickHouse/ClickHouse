@@ -1848,7 +1848,9 @@ NO_INLINE size_t joinRightColumns(
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
-    added_columns.flag_per_row = (STRICTNESS != JoinStrictness::All || flag_per_row);
+    added_columns.flag_per_row = flag_per_row;
+    if (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right))
+        added_columns.flag_per_row = false;
 
     Arena pool;
 
