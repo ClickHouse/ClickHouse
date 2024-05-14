@@ -92,7 +92,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistic = context->getSettingsRef().allow_statistic_optimize;
+    where_optimizer_context.use_statistics = context->getSettingsRef().allow_statistics_optimize;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -123,7 +123,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = is_final;
-    where_optimizer_context.use_statistic = context->getSettingsRef().allow_statistic_optimize;
+    where_optimizer_context.use_statistics = context->getSettingsRef().allow_statistics_optimize;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag->findInOutputs(filter_column_name), tree_context);
@@ -276,7 +276,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (cond.viable)
             cond.good = isConditionGood(node, table_columns);
 
-        if (where_optimizer_context.use_statistic)
+        if (where_optimizer_context.use_statistics)
         {
             cond.good = cond.viable;
 

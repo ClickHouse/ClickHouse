@@ -705,7 +705,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         for (const auto & stats : stats_vec)
         {
             metadata.columns.modify(stats.column_name,
-                [&](ColumnDescription & column) { column.stats.merge(stats, column, if_not_exists); });
+                [&](ColumnDescription & column) { column.stats.merge(stats, column.name, column.type, if_not_exists); });
         }
     }
     else if (type == DROP_STATISTICS)

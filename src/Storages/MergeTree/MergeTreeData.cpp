@@ -471,7 +471,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 ConditionSelectivityEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
 {
-    if (!local_context->getSettings().allow_statistic_optimize)
+    if (!local_context->getSettings().allow_statistics_optimize)
         return {};
 
     const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
@@ -3242,8 +3242,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         const auto & new_column = new_metadata.getColumns().get(command.column_name);
                         if (!old_column.type->equals(*new_column.type))
                             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                            "ALTER types of column {} with statistic is not not safe "
-                                            "because it can change the representation of statistic",
+                                            "ALTER types of column {} with statistics is not not safe "
+                                            "because it can change the representation of statistics",
                                             backQuoteIfNeed(command.column_name));
                     }
                 }

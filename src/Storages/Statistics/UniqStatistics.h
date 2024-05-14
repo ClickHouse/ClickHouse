@@ -2,7 +2,6 @@
 
 #include <Common/Arena.h>
 #include <Storages/Statistics/Statistics.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
@@ -10,10 +9,6 @@ namespace DB
 
 class UniqStatistics : public IStatistics
 {
-    std::unique_ptr<Arena> arena;
-    AggregateFunctionPtr uniq_collector;
-    AggregateDataPtr data;
-
 public:
     UniqStatistics(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
 
@@ -26,6 +21,13 @@ public:
     void deserialize(ReadBuffer & buf) override;
 
     void update(const ColumnPtr & column) override;
+
+private:
+
+    std::unique_ptr<Arena> arena;
+    AggregateFunctionPtr collector;
+    AggregateDataPtr data;
+
 };
 
 StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);

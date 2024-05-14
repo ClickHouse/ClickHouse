@@ -8,6 +8,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
+TDigestStatistics::TDigestStatistics(const SingleStatisticsDescription & stat_):
+    IStatistics(stat_)
+{
+}
+
 Float64 TDigestStatistics::estimateLess(Float64 val) const
 {
     return data.getCountLessThan(val);
@@ -49,7 +54,7 @@ void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type
 {
     data_type = removeNullable(data_type);
     if (!data_type->isValueRepresentedByNumber())
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "TDigest does not support type {}", data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' does not support type {}", data_type->getName());
 }
 
 }

@@ -14,8 +14,8 @@
 
 
 /// this is for user-defined statistic.
-constexpr auto STAT_FILE_PREFIX = "statistic_";
-constexpr auto STAT_FILE_SUFFIX = ".stat";
+constexpr auto STATS_FILE_PREFIX = "statistics_";
+constexpr auto STATS_FILE_SUFFIX = ".stats";
 
 namespace DB
 {
@@ -88,11 +88,11 @@ public:
 
     void validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const;
 
-    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stat, DataTypePtr data_type)>;
+    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
 
-    using Validator = std::function<void(const SingleStatisticsDescription & stat, DataTypePtr data_type)>;
+    using Validator = std::function<void(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
 
-    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stat) const;
+    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
 
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 

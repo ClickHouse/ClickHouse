@@ -127,16 +127,16 @@ UInt64 ColumnStatistics::count() const
     return rows;
 }
 
-void MergeTreeStatisticsFactory::registerCreator(StatisticsType stat_type, Creator creator)
+void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)
 {
-    if (!creators.emplace(stat_type, std::move(creator)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistic creator type {} is not unique", stat_type);
+    if (!creators.emplace(stats_type, std::move(creator)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics creator type {} is not unique", stats_type);
 }
 
-void MergeTreeStatisticsFactory::registerValidator(StatisticsType stat_type, Validator validator)
+void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Validator validator)
 {
-    if (!validators.emplace(stat_type, std::move(validator)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistic validator type {} is not unique", stat_type);
+    if (!validators.emplace(stats_type, std::move(validator)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
 
 }
 

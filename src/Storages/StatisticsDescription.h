@@ -31,7 +31,6 @@ struct SingleStatisticsDescription
     bool operator==(const SingleStatisticsDescription & other) const;
 };
 
-struct ColumnDescription;
 class ColumnsDescription;
 
 struct ColumnStatisticsDescription
@@ -42,13 +41,11 @@ struct ColumnStatisticsDescription
 
     bool contains(const String & stat_type) const;
 
-    void merge(const ColumnStatisticsDescription & other, const ColumnDescription & column, bool if_not_exists);
+    void merge(const ColumnStatisticsDescription & other, const String & column_name, DataTypePtr column_type, bool if_not_exists);
 
     void assign(const ColumnStatisticsDescription & other);
 
     void clear();
-
-    void add(StatisticsType stat_type, const SingleStatisticsDescription & desc);
 
     ASTPtr getAST() const;
 

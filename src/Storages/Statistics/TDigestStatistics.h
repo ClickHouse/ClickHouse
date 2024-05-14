@@ -11,9 +11,7 @@ namespace DB
 class TDigestStatistics : public IStatistics
 {
 public:
-    explicit TDigestStatistics(const SingleStatisticsDescription & stat_) : IStatistics(stat_)
-    {
-    }
+    explicit TDigestStatistics(const SingleStatisticsDescription & stat_);
 
     Float64 estimateLess(Float64 val) const;
 
