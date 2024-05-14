@@ -9,6 +9,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -23,6 +24,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeUUID.h>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 namespace DB
@@ -67,9 +70,9 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
             "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
         },
-        {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of parts in this table."},
+        {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
+        {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -221,7 +224,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         const auto access = context->getAccess();
-        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+        const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -345,7 +348,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
-            const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
+            const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
@@ -358,7 +361,7 @@ protected:
                 if (!tables.contains(table_name))
                     continue;
 
-                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
                 StoragePtr table = nullptr;
@@ -696,21 +699,27 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemTables(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
-        ContextPtr context_,
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
-        , context(std::move(context_))
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
     {
     }
 
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
-    ContextPtr context;
     std::vector<UInt8> columns_mask;
     size_t max_block_size;
 
@@ -722,7 +731,7 @@ void StorageSystemTables::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
@@ -734,17 +743,14 @@ void StorageSystemTables::read(
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
     auto reading = std::make_unique<ReadFromSystemTables>(
-        std::move(res_block),
-        context,
-        std::move(columns_mask),
-        max_block_size);
+        column_names, query_info, storage_snapshot, context, std::move(res_block), std::move(columns_mask), max_block_size);
 
     query_plan.addStep(std::move(reading));
 }
 
-void ReadFromSystemTables::applyFilters()
+void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);

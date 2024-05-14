@@ -1,8 +1,10 @@
 import base64
 import errno
+from functools import cache
 import http.client
 import logging
 import os
+import platform
 import stat
 import os.path as p
 import pprint
@@ -55,9 +57,7 @@ from .config_cluster import *
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
-LOCAL_DOCKER_COMPOSE_DIR = p.join(
-    CLICKHOUSE_ROOT_DIR, "docker/test/integration/runner/compose/"
-)
+LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
 
 SANITIZER_SIGN = "=================="
@@ -69,6 +69,11 @@ CLICKHOUSE_START_COMMAND = (
 CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
+
+# Minimum version we use in integration tests to check compatibility with old releases
+# Keep in mind that we only support upgrading between releases that are at most 1 year different.
+# This means that this minimum need to be, at least, 1 year older than the current release
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
 
 
 # to create docker-compose env file
@@ -181,17 +186,7 @@ def get_library_bridge_path():
 
 
 def get_docker_compose_path():
-    compose_path = os.environ.get("DOCKER_COMPOSE_DIR")
-    if compose_path is not None:
-        return os.path.dirname(compose_path)
-    else:
-        if os.path.exists(os.path.dirname("/compose/")):
-            return os.path.dirname("/compose/")  # default in docker runner container
-        else:
-            logging.debug(
-                f"Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {LOCAL_DOCKER_COMPOSE_DIR}"
-            )
-            return LOCAL_DOCKER_COMPOSE_DIR
+    return LOCAL_DOCKER_COMPOSE_DIR
 
 
 def check_kafka_is_available(kafka_id, kafka_port):
@@ -867,12 +862,12 @@ class ClickHouseCluster:
 
     def get_docker_handle(self, docker_id):
         exception = None
-        for i in range(5):
+        for i in range(20):
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
                 print("Got exception getting docker handle", str(ex))
-                time.sleep(i * 2)
+                time.sleep(0.5)
                 exception = ex
         raise exception
 
@@ -1052,6 +1047,8 @@ class ClickHouseCluster:
         env_variables["MYSQL_ROOT_HOST"] = "%"
         env_variables["MYSQL_LOGS"] = self.mysql57_logs_dir
         env_variables["MYSQL_LOGS_FS"] = "bind"
+        env_variables["MYSQL_DOCKER_USER"] = str(os.getuid())
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
         )
@@ -1074,6 +1071,8 @@ class ClickHouseCluster:
         env_variables["MYSQL8_ROOT_HOST"] = "%"
         env_variables["MYSQL8_LOGS"] = self.mysql8_logs_dir
         env_variables["MYSQL8_LOGS_FS"] = "bind"
+        env_variables["MYSQL8_DOCKER_USER"] = str(os.getuid())
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml")]
         )
@@ -1095,6 +1094,7 @@ class ClickHouseCluster:
         env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
         env_variables["MYSQL_CLUSTER_LOGS"] = self.mysql_cluster_logs_dir
         env_variables["MYSQL_CLUSTER_LOGS_FS"] = "bind"
+        env_variables["MYSQL_CLUSTER_DOCKER_USER"] = str(os.getuid())
 
         self.base_cmd.extend(
             [
@@ -1601,7 +1601,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        allow_analyzer=True,
+        use_old_analyzer=None,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -1613,6 +1613,7 @@ class ClickHouseCluster:
         with_installed_binary=False,
         external_dirs=None,
         tmpfs=None,
+        mem_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
         minio_data_dir=None,
@@ -1699,7 +1700,7 @@ class ClickHouseCluster:
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
-            allow_analyzer=allow_analyzer,
+            use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -1723,6 +1724,7 @@ class ClickHouseCluster:
             with_installed_binary=with_installed_binary,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
+            mem_limit=mem_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
         )
@@ -3198,6 +3200,7 @@ services:
             {krb5_conf}
         entrypoint: {entrypoint_cmd}
         tmpfs: {tmpfs}
+        {mem_limit}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -3259,7 +3262,7 @@ class ClickHouseInstance:
         with_coredns,
         with_cassandra,
         with_ldap,
-        allow_analyzer,
+        use_old_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
         library_bridge_bin_path,
@@ -3283,6 +3286,7 @@ class ClickHouseInstance:
         with_installed_binary=False,
         external_dirs=None,
         tmpfs=None,
+        mem_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
     ):
@@ -3294,6 +3298,10 @@ class ClickHouseInstance:
 
         self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
+        if mem_limit is not None:
+            self.mem_limit = "mem_limit : " + mem_limit
+        else:
+            self.mem_limit = ""
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -3348,7 +3356,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
-        self.allow_analyzer = allow_analyzer
+        self.use_old_analyzer = use_old_analyzer
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -3468,6 +3476,7 @@ class ClickHouseInstance:
     ):
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
+        exception_msg = ""
         for i in range(retry_count):
             try:
                 result = self.query(
@@ -3484,13 +3493,20 @@ class ClickHouseInstance:
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
+                # Container is down, this is likely due to server crash.
+                if "No route to host" in str(ex):
+                    raise
+                time.sleep(sleep_time)
             except Exception as ex:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
                 time.sleep(sleep_time)
 
         if result is not None:
             return result
-        raise Exception("Can't execute query {}".format(sql))
+        raise Exception(f"Can't execute query {sql}\n{exception_msg}")
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, sql, *args, **kwargs):
@@ -4389,11 +4405,18 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-        if (
-            os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
-            and self.allow_analyzer
-        ):
-            write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
+
+        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        # If specific version was used there can be no
+        # allow_experimental_analyzer setting, so do this only if it was
+        # explicitly requested.
+        if self.tag:
+            use_old_analyzer = False
+        # Prefer specified in the test option:
+        if self.use_old_analyzer is not None:
+            use_old_analyzer = self.use_old_analyzer
+        if use_old_analyzer:
+            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
@@ -4634,6 +4657,7 @@ class ClickHouseInstance:
                     db_dir=db_dir,
                     external_dirs_volumes=external_dirs_volumes,
                     tmpfs=str(self.tmpfs),
+                    mem_limit=self.mem_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
                     user=os.getuid(),
@@ -4736,3 +4760,8 @@ class ClickHouseKiller(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.start_clickhouse()
+
+
+@cache
+def is_arm():
+    return any(arch in platform.processor().lower() for arch in ("arm, aarch"))

@@ -12,7 +12,7 @@
 namespace DB
 {
 
-namespace FileEncryption { enum class Algorithm; }
+namespace FileEncryption { enum class Algorithm : uint8_t; }
 
 struct DiskEncryptedSettings
 {

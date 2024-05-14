@@ -8,7 +8,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
 #include <boost/algorithm/string/predicate.hpp>
+#include <cctz/time_zone.h>
 
 #include <cmath>
 
@@ -21,6 +23,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_CONVERT_TYPE;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -268,6 +271,10 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
+        if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
+
         return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
     }
 
@@ -539,6 +546,13 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
+{
+    cctz::time_zone validated_tz;
+    if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
+}
+
 String SettingFieldCustom::toString() const
 {
     return value.dump();
@@ -559,6 +573,42 @@ void SettingFieldCustom::readBinary(ReadBuffer & in)
     String str;
     readStringBinary(str, in);
     parseFromString(str);
+}
+
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x) : SettingFieldUInt64(x)
+{
+    checkValueNonZero();
+}
+
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(const DB::Field & f) : SettingFieldUInt64(f)
+{
+    checkValueNonZero();
+}
+
+SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(UInt64 x)
+{
+    SettingFieldUInt64::operator=(x);
+    checkValueNonZero();
+    return *this;
+}
+
+SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(const DB::Field & f)
+{
+    SettingFieldUInt64::operator=(f);
+    checkValueNonZero();
+    return *this;
+}
+
+void SettingFieldNonZeroUInt64::parseFromString(const String & str)
+{
+    SettingFieldUInt64::parseFromString(str);
+    checkValueNonZero();
+}
+
+void SettingFieldNonZeroUInt64::checkValueNonZero() const
+{
+    if (value == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
 }
 
 }

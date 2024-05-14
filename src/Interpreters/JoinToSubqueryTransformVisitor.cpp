@@ -15,11 +15,10 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/re2.h>
 
 namespace DB
 {
@@ -30,6 +29,7 @@ namespace ErrorCodes
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -43,7 +43,7 @@ ASTPtr makeSubqueryTemplate(const String & table_alias)
     String query_template = "(select * from _t)";
     if (!table_alias.empty())
         query_template += " as " + table_alias;
-    ASTPtr subquery_template = parseQuery(parser, query_template, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr subquery_template = parseQuery(parser, query_template, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     if (!subquery_template)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse subquery template");
     return subquery_template;
@@ -168,7 +168,7 @@ private:
                 has_asterisks = true;
 
                 if (!qualified_asterisk->qualifier)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must have a qualifier");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must have a qualifier");
 
                 auto & identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
 
@@ -183,7 +183,7 @@ private:
                             transformer->as<ASTColumnsReplaceTransformer>())
                             IASTColumnsTransformer::transform(transformer, columns);
                         else
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must only have children of IASTColumnsTransformer type");
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must only have children of IASTColumnsTransformer type");
                     }
                 }
             }
@@ -204,11 +204,17 @@ private:
             {
                 has_asterisks = true;
 
+                String pattern = columns_regexp_matcher->getPattern();
+                re2::RE2 regexp(pattern, re2::RE2::Quiet);
+                if (!regexp.ok())
+                    throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                        "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
                 for (auto & table_name : data.tables_order)
                     data.addTableColumns(
                         table_name,
                         columns,
-                        [&](const String & column_name) { return columns_regexp_matcher->isColumnMatching(column_name); });
+                        [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
 
                 if (columns_regexp_matcher->transformers)
                 {

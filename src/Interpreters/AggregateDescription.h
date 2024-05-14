@@ -1,12 +1,15 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/Types.h>
 
 namespace DB
 {
+
+class WriteBuffer;
 
 namespace JSONBuilder { class JSONMap; }
 

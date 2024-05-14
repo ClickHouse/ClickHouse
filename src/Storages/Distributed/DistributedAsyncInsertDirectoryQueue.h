@@ -20,6 +20,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class StorageDistributed;
 class ActionBlocker;
 class BackgroundSchedulePool;
+class SettingsChanges;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -49,17 +50,17 @@ public:
         StorageDistributed & storage_,
         const DiskPtr & disk_,
         const std::string & relative_path_,
-        ConnectionPoolPtr pool_,
+        ConnectionPoolWithFailoverPtr pool_,
         ActionBlocker & monitor_blocker_,
         BackgroundSchedulePool & bg_pool);
 
     ~DistributedAsyncInsertDirectoryQueue();
 
-    static ConnectionPoolPtr createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage);
+    static ConnectionPoolWithFailoverPtr createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage);
 
     void updatePath(const std::string & new_relative_path);
 
-    void flushAllData();
+    void flushAllData(const SettingsChanges & settings_changes);
 
     void shutdownAndDropAllData();
 
@@ -98,9 +99,9 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
-    void processFiles();
-    void processFile(std::string & file_path);
-    void processFilesWithBatching();
+    void processFiles(const SettingsChanges & settings_changes = {});
+    void processFile(std::string & file_path, const SettingsChanges & settings_changes);
+    void processFilesWithBatching(const SettingsChanges & settings_changes);
 
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
@@ -110,7 +111,7 @@ private:
     std::string getLoggerName() const;
 
     StorageDistributed & storage;
-    const ConnectionPoolPtr pool;
+    const ConnectionPoolWithFailoverPtr pool;
 
     DiskPtr disk;
     std::string relative_path;

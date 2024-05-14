@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 #include <unordered_set>
 
@@ -17,29 +18,18 @@ class NamesAndTypesList;
 namespace VirtualColumnUtils
 {
 
-/// Adds to the select query section `WITH value AS column_name`, and uses func
-/// to wrap the value (if any)
-///
-/// For example:
-/// - `WITH 9000 as _port`.
-/// - `WITH toUInt16(9000) as _port`.
-void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value, const String & func = "");
-
-/// Prepare `expression_ast` to filter block. Returns true if `expression_ast` is not trimmed, that is,
-/// `block` provides all needed columns for `expression_ast`, else return false.
-bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast);
-
-/// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
-/// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
-/// If `expression_ast` is passed, use it to filter block.
-void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast = {});
-
 /// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
 /// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
+
+/// Builds sets used by ActionsDAG inplace.
+void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context);
+
+/// Recursively checks if all functions used in DAG are deterministic in scope of query.
+bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
 ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
@@ -56,7 +46,8 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     return res;
 }
 
-NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns);
+NameSet getVirtualNamesForFileLikeStorage();
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
 
 ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 

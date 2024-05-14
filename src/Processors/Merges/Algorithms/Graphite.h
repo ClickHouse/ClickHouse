@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Common/SipHash.h>
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/SipHash.h>
 
 /** Intended for implementation of "rollup" - aggregation (rounding) of older data
   *  for a table with Graphite data (Graphite is the system for time series monitoring).
@@ -123,22 +124,7 @@ struct Pattern
     AggregateFunctionPtr function;
     Retentions retentions;    /// Must be ordered by 'age' descending.
     enum { TypeUndef, TypeRetention, TypeAggregation, TypeAll } type = TypeAll; /// The type of defined pattern, filled automatically
-    void updateHash(SipHash & hash) const
-    {
-        hash.update(rule_type);
-        hash.update(regexp_str);
-        if (function)
-        {
-            hash.update(function->getName());
-            for (const auto & p : function->getParameters())
-                hash.update(toString(p));
-        }
-        for (const auto & r : retentions)
-        {
-            hash.update(r.age);
-            hash.update(r.precision);
-        }
-    }
+    void updateHash(SipHash & hash) const;
 };
 
 bool operator==(const Pattern & a, const Pattern & b);

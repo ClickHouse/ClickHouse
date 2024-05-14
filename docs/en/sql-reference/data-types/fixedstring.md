@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/fixedstring
-sidebar_position: 45
+sidebar_position: 10
 sidebar_label: FixedString(N)
 ---
 
-# FixedString
+# FixedString(N)
 
 A fixed-length string of `N` bytes (neither characters nor code points).
 

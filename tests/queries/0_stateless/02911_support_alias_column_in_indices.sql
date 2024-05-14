@@ -35,6 +35,6 @@ insert into test2 select * from numbers(10);
 insert into test2 select * from numbers(11, 20);
 
 explain indexes = 1 select * from test2 where a2 > 15 settings allow_experimental_analyzer = 0;
-explain indexes = 1 select * from test2 where a2 > 15 settings allow_experimental_analyzer = 1; -- buggy, analyzer does not pick up index i
+explain indexes = 1 select * from test2 where a2 > 15 settings allow_experimental_analyzer = 1;
 
 drop database 02911_support_alias_column_in_indices;

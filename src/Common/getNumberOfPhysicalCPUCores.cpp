@@ -1,5 +1,4 @@
 #include "getNumberOfPhysicalCPUCores.h"
-#include <filesystem>
 
 #if defined(OS_LINUX)
 #    include <cmath>
@@ -8,8 +7,10 @@
 
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <base/cgroupsv2.h>
 #include <base/range.h>
 
+#include <filesystem>
 #include <thread>
 #include <set>
 
@@ -33,26 +34,15 @@ int32_t readFrom(const std::filesystem::path & filename, int default_value)
 uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 {
     uint32_t quota_count = default_cpu_count;
-    std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
     /// cgroupsv2
-    std::ifstream contr_file(default_cgroups_mount / "cgroup.controllers");
-    if (contr_file.is_open())
+    if (cgroupsV2Enabled())
     {
         /// First, we identify the cgroup the process belongs
-        std::ifstream cgroup_name_file("/proc/self/cgroup");
-        if (!cgroup_name_file.is_open())
+        std::string cgroup = cgroupV2OfProcess();
+        if (cgroup.empty())
             return default_cpu_count;
 
-        // cgroup_name_file always starts with '0::/' for v2
-        cgroup_name_file.ignore(4);
-        std::string cgroup_name;
-        cgroup_name_file >> cgroup_name;
-
-        std::filesystem::path current_cgroup;
-        if (cgroup_name.empty())
-            current_cgroup = default_cgroups_mount;
-        else
-            current_cgroup = default_cgroups_mount / cgroup_name;
+        auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
 
         // Looking for cpu.max in directories from the current cgroup to the top level
         // It does not stop on the first time since the child could have a greater value than parent
@@ -72,7 +62,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
             }
             current_cgroup = current_cgroup.parent_path();
         }
-        current_cgroup = default_cgroups_mount / cgroup_name;
+        current_cgroup = default_cgroups_mount / cgroup;
         // Looking for cpuset.cpus.effective in directories from the current cgroup to the top level
         while (current_cgroup != default_cgroups_mount.parent_path())
         {
@@ -178,7 +168,6 @@ catch (...)
 unsigned getNumberOfPhysicalCPUCoresImpl()
 {
     unsigned cores = std::thread::hardware_concurrency(); /// logical cores (with SMT/HyperThreading)
-
 
 #if defined(__x86_64__) && defined(OS_LINUX)
     /// Most x86_64 CPUs have 2-way SMT (Hyper-Threading).

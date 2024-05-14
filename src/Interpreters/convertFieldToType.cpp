@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeVariant.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -251,8 +252,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
-            /// Already in needed type.
-            return src;
+            const auto & from_type = src.get<Decimal64>();
+            const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
+
+            const auto scale_from = from_type.getScale();
+            const auto scale_to = to_type.getScale();
+            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+
+            if (scale_multiplier_diff == 1) /// Already in needed type.
+                return src;
+
+            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
+            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff : from_type.getValue().value * scale_multiplier_diff;
+            return DecimalField(
+                DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
+                scale_to);
         }
 
         /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
@@ -486,6 +500,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             return object;
         }
+    }
+    else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
+    {
+        /// If we have type hint and Variant contains such type, no need to convert field.
+        if (from_type_hint && type_variant->tryGetVariantDiscriminator(*from_type_hint))
+            return src;
+
+        /// Create temporary column and check if we can insert this field to the variant.
+        /// If we can insert, no need to convert anything.
+        auto col = type_variant->createColumn();
+        if (col->tryInsert(src))
+            return src;
     }
 
     /// Conversion from string by parsing.

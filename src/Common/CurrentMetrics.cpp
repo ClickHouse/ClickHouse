@@ -226,7 +226,6 @@
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
-    M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
@@ -264,7 +263,29 @@
     M(RefreshingViews, "Number of materialized views currently executing a refresh") \
     M(StorageBufferFlushThreads, "Number of threads for background flushes in StorageBuffer") \
     M(StorageBufferFlushThreadsActive, "Number of threads for background flushes in StorageBuffer running a task") \
-    M(StorageBufferFlushThreadsScheduled, "Number of queued or active threads for background flushes in StorageBuffer")
+    M(StorageBufferFlushThreadsScheduled, "Number of queued or active threads for background flushes in StorageBuffer") \
+    M(SharedMergeTreeThreads, "Number of threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
+    M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeFetch, "Number of fetches in progress") \
+    M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
+    M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
+    M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
+    M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
+    M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
+    M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
+    \
+    M(StorageConnectionsStored, "Total count of sessions stored in the session pool for storages") \
+    M(StorageConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for storages") \
+    \
+    M(DiskConnectionsStored, "Total count of sessions stored in the session pool for disks") \
+    M(DiskConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for disks") \
+    \
+    M(HTTPConnectionsStored, "Total count of sessions stored in the session pool for http hosts") \
+    M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
+    \
+    M(AddressesActive, "Total count of addresses which are used for creation connections with connection pools") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

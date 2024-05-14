@@ -48,6 +48,7 @@ public:
     struct FilterActionsOptimizeResult
     {
         std::unordered_set<const ActionsDAG::Node *> prewhere_nodes;
+        std::list<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
         bool fully_moved_to_prewhere = false;
     };
 

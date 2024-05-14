@@ -31,7 +31,7 @@ public:
 
         IColumn::Permutation * permutation = nullptr;
 
-        void swap(Input & other)
+        void swap(Input & other) noexcept
         {
             chunk.swap(other.chunk);
             std::swap(skip_last_row, other.skip_last_row);

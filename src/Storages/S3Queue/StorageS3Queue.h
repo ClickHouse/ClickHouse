@@ -14,11 +14,6 @@
 #include <Storages/StorageFactory.h>
 
 
-namespace Aws::S3
-{
-class Client;
-}
-
 namespace DB
 {
 class S3QueueFilesMetadata;
@@ -37,7 +32,8 @@ public:
         const String & comment,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
-        ASTStorage * engine_args);
+        ASTStorage * engine_args,
+        LoadingStrictnessLevel mode);
 
     String getName() const override { return "S3Queue"; }
 
@@ -50,8 +46,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
     const auto & getFormatName() const { return configuration.format; }
 
@@ -71,7 +65,6 @@ private:
     Configuration configuration;
 
     const std::optional<FormatSettings> format_settings;
-    NamesAndTypesList virtual_columns;
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};

@@ -1,9 +1,5 @@
 #include "config.h"
 
-#include <base/sleep.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/randomSeed.h>
-#include <Common/getRandomASCIIString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -12,6 +8,12 @@
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
+#include <base/sleep.h>
+#include <Common/CurrentThread.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/randomSeed.h>
+
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -598,11 +600,13 @@ void S3QueueFilesMetadata::setFileProcessed(ProcessingNodeHolderPtr holder)
     {
         case S3QueueMode::ORDERED:
         {
-            return setFileProcessedForOrderedMode(holder);
+            setFileProcessedForOrderedMode(holder);
+            break;
         }
         case S3QueueMode::UNORDERED:
         {
-            return setFileProcessedForUnorderedMode(holder);
+            setFileProcessedForUnorderedMode(holder);
+            break;
         }
     }
 }
@@ -647,7 +651,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
         ? zookeeper_processed_path / toString(getProcessingIdForPath(holder->path))
         : zookeeper_processed_path;
 
-    return setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
+    setFileProcessedForOrderedModeImpl(holder->path, holder, processed_node_path);
 }
 
 void S3QueueFilesMetadata::setFileProcessedForOrderedModeImpl(

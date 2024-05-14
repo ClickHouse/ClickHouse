@@ -2,9 +2,12 @@ import os
 
 import pytest
 import time
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -1111,6 +1114,56 @@ def test_format_detection(started_cluster):
     )
 
     assert expected_result == result
+
+
+def test_write_to_globbed_partitioned_path(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    error = node.query_and_get_error(
+        "insert into function hdfs('hdfs://hdfs1:9000/test_data_*_{_partition_id}.csv') partition by 42 select 42"
+    )
+
+    assert "DATABASE_ACCESS_DENIED" in error
+
+
+def test_respect_object_existence_on_partitioned_write(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(
+        "insert into function hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV) select 42 settings hdfs_truncate_on_insert=1"
+    )
+
+    result = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
+    )
+
+    assert int(result) == 42
+
+    error = node.query_and_get_error(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 42 settings hdfs_truncate_on_insert=0"
+    )
+
+    assert "BAD_ARGUMENTS" in error
+
+    node.query(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 43 settings hdfs_truncate_on_insert=1"
+    )
+
+    result = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
+    )
+
+    assert int(result) == 43
+
+    node.query(
+        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 44 settings hdfs_truncate_on_insert=0, hdfs_create_new_file_on_insert=1"
+    )
+
+    result = node.query(
+        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.1.csv', CSV)"
+    )
+
+    assert int(result) == 44
 
 
 if __name__ == "__main__":

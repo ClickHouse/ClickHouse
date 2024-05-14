@@ -4,11 +4,12 @@
 namespace DB
 {
 
-enum class LeastSupertypeOnError
+enum class LeastSupertypeOnError : uint8_t
 {
     Throw,
     String,
     Null,
+    Variant,
 };
 
 /** Get data type that covers all possible values of passed data types.

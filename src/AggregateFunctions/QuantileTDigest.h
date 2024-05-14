@@ -234,8 +234,7 @@ public:
                 BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
                 BetterFloat err2 = qr * (1 - qr);
 
-                if (err > err2)
-                    err = err2;
+                err = std::min(err, err2);
 
                 BetterFloat k = count_epsilon_4 * err;
 

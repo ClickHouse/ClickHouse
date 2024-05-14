@@ -3,6 +3,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Core/SettingsEnums.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
@@ -73,12 +74,15 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach, bool is_restore_from_backup);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
+
+    /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
+    static void processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach = false, bool is_materialized_view = false);
 
 private:
     struct TableProperties
@@ -93,14 +97,14 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard);
-    BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties);
+    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
+    BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 

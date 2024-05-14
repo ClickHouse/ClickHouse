@@ -8,10 +8,10 @@
 #include <Common/setThreadName.h>
 
 
-namespace DB
+namespace DB::BackupUtils
 {
 
-DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & elements)
+DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 {
     DDLRenamingMap map;
 
@@ -103,7 +103,7 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
     auto adjust_before_comparison = [&](const IAST & query) -> ASTPtr
     {
         auto new_query = query.clone();
-        adjustCreateQueryForBackup(new_query, global_context, nullptr);
+        adjustCreateQueryForBackup(new_query, global_context);
         ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
         create.setUUID({});
         create.if_not_exists = false;
@@ -118,6 +118,17 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
 {
     return compareRestoredTableDef(restored_database_create_query, create_query_from_backup, global_context);
+}
+
+bool isInnerTable(const QualifiedTableName & table_name)
+{
+    return isInnerTable(table_name.database, table_name.table);
+}
+
+bool isInnerTable(const String & /* database_name */, const String & table_name)
+{
+    /// We skip inner tables of materialized views.
+    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.");
 }
 
 }

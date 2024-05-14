@@ -18,6 +18,7 @@
 
 #include <Common/logger_useful.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -431,13 +432,12 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
-    Block key_virtual_columns = reading.getMergeTreeData().getSampleBlockWithVirtualColumns();
+    const auto metadata = reading.getStorageMetadata();
+    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     AggregateProjectionCandidates candidates;
 
     const auto & parts = reading.getParts();
-
-    const auto metadata = reading.getStorageMetadata();
     ContextPtr context = reading.getContext();
 
     const auto & projections = metadata->projections;
@@ -464,6 +464,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Query DAG: {}", dag.dag->dumpDAG());
 
     candidates.has_filter = dag.filter_node;
+    /// We can't use minmax projection if filter has non-deterministic functions.
+    if (dag.filter_node && !VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
+        can_use_minmax_projection = false;
 
     if (can_use_minmax_projection)
     {
@@ -576,8 +579,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
 
     auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
 
-    const auto & parts = reading->getParts();
-    const auto & alter_conversions = reading->getAlterConvertionsForParts();
     const auto & query_info = reading->getQueryInfo();
     const auto metadata = reading->getStorageMetadata();
     ContextPtr context = reading->getContext();
@@ -589,7 +590,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     }
     else if (!candidates.real.empty())
     {
-        auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
+        auto ordinary_reading_select_result = reading->selectRangesToRead();
         size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
         /// Nothing to read. Ignore projections.
@@ -605,9 +606,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         for (auto & candidate : candidates.real)
         {
             auto required_column_names = candidate.dag->getRequiredColumnsNames();
-            ActionDAGNodes added_filter_nodes;
-            if (candidates.has_filter)
-                added_filter_nodes.nodes.push_back(candidate.dag->getOutputs().front());
 
             bool analyzed = analyzeProjectionCandidate(
                 candidate,
@@ -618,7 +616,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                 query_info,
                 context,
                 max_added_blocks,
-                added_filter_nodes);
+                candidate.dag);
 
             if (!analyzed)
                 continue;
@@ -669,15 +667,16 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
         proj_snapshot->addProjection(best_candidate->projection);
 
-        auto query_info_copy = query_info;
-        query_info_copy.prewhere_info = nullptr;
+        auto projection_query_info = query_info;
+        projection_query_info.prewhere_info = nullptr;
+        projection_query_info.filter_actions_dag = nullptr;
 
         projection_reading = reader.readFromParts(
             /* parts = */ {},
             /* alter_conversions = */ {},
             best_candidate->dag->getRequiredColumnsNames(),
             proj_snapshot,
-            query_info_copy,
+            projection_query_info,
             context,
             reading->getMaxBlockSize(),
             reading->getNumStreams(),

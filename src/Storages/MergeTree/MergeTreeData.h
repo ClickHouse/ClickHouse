@@ -23,9 +23,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
-#include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
@@ -420,7 +418,7 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -442,9 +440,7 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
-    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
-
-    NamesAndTypesList getVirtuals() const override;
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
     /// Snapshot for MergeTree contains the current set of data parts
     /// at the moment of the start of query.
@@ -759,7 +755,6 @@ public:
       */
     PartitionCommandsResultInfo freezePartition(
         const ASTPtr & partition,
-        const StorageMetadataPtr & metadata_snapshot,
         const String & with_name,
         ContextPtr context,
         TableLockHolder & table_lock_holder);
@@ -767,7 +762,6 @@ public:
     /// Freezes all parts.
     PartitionCommandsResultInfo freezeAll(
         const String & with_name,
-        const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
@@ -795,6 +789,9 @@ public:
 
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
+
+    /// Moves partition to specified Table
+    void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
 
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -993,15 +990,14 @@ public:
     void removeQueryId(const String & query_id) const;
     void removeQueryIdNoLock(const String & query_id) const TSA_REQUIRES(query_id_set_mutex);
 
-    /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
-    DataTypePtr getPartitionValueType() const;
+    static const Names virtuals_useful_for_filter;
 
     /// Construct a sample block of virtual columns.
-    Block getSampleBlockWithVirtualColumns() const;
+    Block getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const;
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
-    /// If one_part is true, fill in at most one part.
-    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty = false) const;
+    Block getBlockWithVirtualsForFilter(
+        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1088,12 +1084,13 @@ public:
     /// It is used to make a decision whether to enable parallel replicas (distributed processing) or not and how
     /// many to replicas to use
     UInt64 estimateNumberOfRowsToRead(
-        ContextPtr query_context,
-        const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        const ActionDAGNodes & added_filter_nodes) const;
+        ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
+
+    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
+
+    void unloadPrimaryKeys();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1317,7 +1314,7 @@ protected:
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Common part for |freezePartition()| and |freezeAll()|.
-    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, ContextPtr context);
+    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, ContextPtr context);
     PartitionCommandsResultInfo unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr context);
 
     // Partition helpers
@@ -1362,7 +1359,7 @@ protected:
             size_t max_postpone_time_ms;
             size_t max_postpone_power;
 
-            PartMutationInfo(size_t max_postpone_time_ms_)
+            explicit PartMutationInfo(size_t max_postpone_time_ms_)
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)
@@ -1386,7 +1383,7 @@ protected:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated()
+            bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;
@@ -1712,5 +1709,9 @@ struct CurrentlySubmergingEmergingTagger
     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
 }
+
+/// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
+/// Return true if the counter had been updated
+bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove);
 
 }

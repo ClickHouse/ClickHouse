@@ -80,10 +80,6 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
-    static Names getVirtualColumnNames();
-
     static Strings getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.
@@ -104,7 +100,7 @@ public:
     {
         std::vector<std::string> paths_to_archives;
         std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
+        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
 
         bool isSingleFileRead() const
         {
@@ -138,7 +134,7 @@ public:
         const ContextPtr & context,
         size_t & total_bytes_to_read);
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     friend class StorageFileSource;
@@ -197,8 +193,6 @@ private:
     std::atomic<int32_t> readers_counter = 0;
     FileRenamer file_renamer;
     bool was_renamed = false;
-
-    NamesAndTypesList virtual_columns;
     bool distributed_processing = false;
 };
 
@@ -269,7 +263,7 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override;
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
 
@@ -292,7 +286,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     std::shared_ptr<IArchiveReader> archive_reader;
-    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

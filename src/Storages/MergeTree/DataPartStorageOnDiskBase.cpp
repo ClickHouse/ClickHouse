@@ -1,3 +1,4 @@
+#include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -13,6 +14,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -64,7 +66,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
     auto full_relative_path = fs::path(root_path);
     if (detached)
-        full_relative_path /= "detached";
+        full_relative_path /= MergeTreeData::DETACHED_DIR_NAME;
 
     std::optional<String> original_checksums_content;
     std::optional<Strings> original_files_list;
@@ -109,7 +111,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     if (!exists("checksums.txt"))
         return false;
 
-    auto storage_from_detached = create(volume, fs::path(root_path) / "detached", detached_part_path, /*initialize=*/ true);
+    auto storage_from_detached = create(volume, fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME, detached_part_path, /*initialize=*/ true);
     if (!storage_from_detached->exists("checksums.txt"))
         return false;
 
@@ -490,7 +492,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with("detached/");
+    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
     return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 }
 
@@ -618,7 +620,7 @@ void DataPartStorageOnDiskBase::remove(
         if (part_dir_without_slash.has_parent_path())
         {
             auto parent_path = part_dir_without_slash.parent_path();
-            if (parent_path == "detached")
+            if (parent_path == MergeTreeData::DETACHED_DIR_NAME)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Trying to remove detached part {} with path {} in remove function. It shouldn't happen",
@@ -650,6 +652,15 @@ void DataPartStorageOnDiskBase::remove(
                     log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
                 throw;
             }
+        }
+
+        if (!disk->exists(from))
+        {
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            /// We will never touch this part again, so unlocking it from zero-copy
+            if (!can_remove_description)
+                can_remove_description.emplace(can_remove_callback());
+            return;
         }
 
         try
@@ -782,8 +793,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-            request.emplace_back(fs::path(dir) / file);
+        {
+            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
+                continue;
 
+            request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);

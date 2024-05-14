@@ -280,11 +280,12 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
-    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", false));
-    setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", false));
-    setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
-    setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
-    setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
+    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
+    setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
+    setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
+    setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
+    setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
+    setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -606,7 +607,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}",
+                                            std::vector<std::string>{credentials.getUserName()}},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
