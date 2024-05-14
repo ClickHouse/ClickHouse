@@ -1,10 +1,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
-SYSTEM DROP SCHEMA CACHE FOR S3;
 
-select * from s3(s3_conn, filename='03036_archive1.zip :: example{1,2}.csv') order by tuple(*);
-select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache order by file;
+SELECT * FROM s3(s3_conn, filename='03036_archive1.zip :: example{1,2}.csv') ORDER BY tuple(*);
+SELECT schema_inference_mode, splitByChar('/', source)[-1] as file, schema FROM system.schema_inference_cache WHERE file = '03036_archive1.zip::example1.csv' ORDER BY file;
 
-set schema_inference_mode = 'union';
-select * from s3(s3_conn, filename='03036_json_archive.zip :: example{11,12}.jsonl') order by tuple(*);
-select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache order by file;
+SET schema_inference_mode = 'union';
+SELECT * FROM s3(s3_conn, filename='03036_json_archive.zip :: example{11,12}.jsonl') ORDER BY tuple(*);
+SELECT schema_inference_mode, splitByChar('/', source)[-1] as file, schema FROM system.schema_inference_cache WHERE startsWith(file, '03036_json_archive.zip') ORDER BY file;
