@@ -1891,16 +1891,16 @@ NO_INLINE size_t joinRightColumns(
                 {
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-                    auto row_ref = mapped->findAsof(left_asof_key, i);
-                    if (row_ref.block)
+                    auto * row_ref = mapped->findAsof(left_asof_key, i);
+                    if (row_ref)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
                         if constexpr (flag_per_row)
-                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref.block, row_ref.row_num, 0);
+                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref->block, row_ref->row_num, 0);
                         else
                             used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
 
-                        added_columns.appendFromBlock(&row_ref, join_features.add_missing);
+                        added_columns.appendFromBlock(row_ref, join_features.add_missing);
                     }
                     else
                         addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
