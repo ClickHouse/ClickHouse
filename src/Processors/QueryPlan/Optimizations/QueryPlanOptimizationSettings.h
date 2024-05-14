@@ -37,7 +37,7 @@ struct QueryPlanOptimizationSettings
     /// If reorder-functions-after-sorting optimization is enabled.
     bool execute_functions_after_sorting = true;
 
-    bool replace_L2Distance_to_L2Squared = true;
+    ///bool replace_L2Distance_to_L2Squared = true;
 
     /// If window-functions-can-use-storage-sorting optimization is enabled.
     bool reuse_storage_ordering_for_window_functions = true;

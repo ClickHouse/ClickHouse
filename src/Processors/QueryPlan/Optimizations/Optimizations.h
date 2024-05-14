@@ -18,7 +18,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
-/// Optimization (first pass) is a function applied to QueryPlan::Node.
+/// Optimization (first pass) is a functi on applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
 /// It return the number of updated layers of subtree if some change happened.
 /// It must guarantee that the structure of tree is correct.
@@ -80,14 +80,14 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 11> optimizations = {{
+    static const std::array<Optimization, 10> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
-        {tryReplaceL2DistanceWithL2Squared, "ReplaceL2DistanceWithL2Squared", &QueryPlanOptimizationSettings::replace_L2Distance_to_L2Squared},
+        //{tryReplaceL2DistanceWithL2Squared, "ReplaceL2DistanceWithL2Squared", &QueryPlanOptimizationSettings::replace_L2Distance_to_L2Squared},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
