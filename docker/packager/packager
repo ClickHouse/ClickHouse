@@ -418,6 +418,7 @@ def parse_args() -> argparse.Namespace:
             "clang-18-ppc64le",
             "clang-18-riscv64",
             "clang-18-s390x",
+            "clang-18-loongarch64",
             "clang-18-amd64-compat",
             "clang-18-amd64-musl",
             "clang-18-freebsd",
