@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
-enum class AccessType
+enum class AccessType : uint8_t
 {
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
