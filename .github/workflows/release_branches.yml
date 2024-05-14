@@ -7,8 +7,6 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
 on: # yamllint disable-line rule:truthy
   pull_request:
@@ -73,12 +71,14 @@ jobs:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_docker.yml
+    secrets: inherit
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckX86:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Compatibility check (amd64)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -87,6 +87,7 @@ jobs:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Compatibility check (aarch64)
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
@@ -98,6 +99,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_release
       checkout_depth: 0
@@ -108,6 +110,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_aarch64
       checkout_depth: 0
@@ -118,6 +121,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_asan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -125,6 +129,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_ubsan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -132,6 +137,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_tsan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -139,6 +145,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_msan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -146,6 +153,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
@@ -153,6 +161,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: binary_darwin
       checkout_depth: 0
@@ -163,6 +172,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: binary_darwin_aarch64
       checkout_depth: 0
@@ -176,6 +186,7 @@ jobs:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Docker server image
       runner_type: altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -184,6 +195,7 @@ jobs:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Docker keeper image
       runner_type: altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -204,6 +216,7 @@ jobs:
       - BuilderDebMsan
       - BuilderDebDebug
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: ClickHouse build check
       runner_type: altinity-on-demand, altinity-type-cax11, altinity-in-hel1, altinity-image-arm-app-docker-ce
@@ -216,6 +229,7 @@ jobs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: ClickHouse special build check
       runner_type: altinity-on-demand, altinity-type-cax11, altinity-in-hel1, altinity-image-arm-app-docker-ce
@@ -227,7 +241,7 @@ jobs:
       - BuilderBinDarwinAarch64
       - BuilderDebRelease
       - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-in-hel1, altinity-image-arm-app-docker-ce]
     steps:
       - name: Debug
         run: |
@@ -258,6 +272,7 @@ jobs:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Install packages (amd64)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -268,6 +283,7 @@ jobs:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Install packages (arm64)
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
@@ -281,6 +297,7 @@ jobs:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (release)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -289,6 +306,7 @@ jobs:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (aarch64)
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
@@ -297,6 +315,7 @@ jobs:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (asan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -305,6 +324,7 @@ jobs:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (tsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -313,6 +333,7 @@ jobs:
     needs: [RunConfig, BuilderDebMsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (msan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -321,6 +342,7 @@ jobs:
     needs: [RunConfig, BuilderDebUBsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (ubsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -329,6 +351,7 @@ jobs:
     needs: [RunConfig, BuilderDebDebug]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (debug)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -340,6 +363,7 @@ jobs:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (release)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -348,6 +372,7 @@ jobs:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (aarch64)
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
@@ -356,6 +381,7 @@ jobs:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (asan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -364,6 +390,7 @@ jobs:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (tsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -372,6 +399,7 @@ jobs:
     needs: [RunConfig, BuilderDebMsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (msan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -380,6 +408,7 @@ jobs:
     needs: [RunConfig, BuilderDebUBsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (ubsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -388,6 +417,7 @@ jobs:
     needs: [RunConfig, BuilderDebDebug]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (debug)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -399,6 +429,7 @@ jobs:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (asan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -407,6 +438,7 @@ jobs:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (tsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -415,6 +447,7 @@ jobs:
     needs: [RunConfig, BuilderDebMsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (msan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -423,6 +456,7 @@ jobs:
     needs: [RunConfig, BuilderDebUBsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (ubsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -431,6 +465,7 @@ jobs:
     needs: [RunConfig, BuilderDebDebug]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (debug)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -442,6 +477,7 @@ jobs:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (asan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -450,6 +486,7 @@ jobs:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (asan, old analyzer)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -458,6 +495,7 @@ jobs:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (tsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -466,6 +504,7 @@ jobs:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (release)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
