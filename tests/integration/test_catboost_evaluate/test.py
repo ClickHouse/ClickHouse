@@ -30,7 +30,7 @@ def ch_cluster():
             dest_name = source_name
             if machine in source_name:
                 machine_suffix = "_" + machine
-                dest_name = source_name[:-len(machine_suffix)]
+                dest_name = source_name[: -len(machine_suffix)]
 
             os.system(
                 "docker cp {local} {cont_id}:{dist}".format(
