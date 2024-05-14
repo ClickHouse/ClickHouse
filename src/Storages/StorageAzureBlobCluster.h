@@ -35,7 +35,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     void updateBeforeRead(const ContextPtr & /*context*/) override {}

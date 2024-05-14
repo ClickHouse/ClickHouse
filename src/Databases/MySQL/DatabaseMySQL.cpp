@@ -105,7 +105,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
@@ -341,7 +341,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
-    (void)fs::remove_all(getMetadataPath());
+    fs::remove_all(getMetadataPath());
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
@@ -390,7 +390,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
     if (fs::exists(remove_flag))
-        (void)fs::remove(remove_flag);
+        fs::remove(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)

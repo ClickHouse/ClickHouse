@@ -85,7 +85,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, StringRef(field_name, field_name_len), format_settings.json);
+            skipJSONField(buf, StringRef(field_name, field_name_len));
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
@@ -219,9 +219,9 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
-                readJSONString(result, buf, format_settings.json);
+                readJSONString(result, buf);
             else
-                readJSONField(result, buf, format_settings.json);
+                readJSONField(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);

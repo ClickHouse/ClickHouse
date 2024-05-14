@@ -50,7 +50,7 @@ def main():
 
     builds_for_check = CI_CONFIG.get_builds_for_report(
         build_check_name,
-        release=pr_info.is_release,
+        release=pr_info.is_release(),
         backport=pr_info.head_ref.startswith("backport/"),
     )
     required_builds = len(builds_for_check)

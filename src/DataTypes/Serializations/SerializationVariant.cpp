@@ -494,8 +494,10 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
         {
             auto [elem_nested_depth, elem_priority, elem_simple_nested_depth] = getTypeTextDeserializePriority(elem, nested_depth + 1, simple_nested_depth, priority_map);
             sum_priority += elem_priority;
-            max_nested_depth = std::max(elem_nested_depth, max_nested_depth);
-            max_simple_nested_depth = std::max(elem_simple_nested_depth, max_simple_nested_depth);
+            if (elem_nested_depth > max_nested_depth)
+                max_nested_depth = elem_nested_depth;
+            if (elem_simple_nested_depth > max_simple_nested_depth)
+                max_simple_nested_depth = elem_simple_nested_depth;
         }
 
         return {max_nested_depth, sum_priority + priority_map.at(TypeIndex::Tuple), max_simple_nested_depth};
@@ -516,9 +518,12 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
         for (const auto & variant : variant_type->getVariants())
         {
             auto [variant_max_depth, variant_priority, variant_simple_nested_depth] = getTypeTextDeserializePriority(variant, nested_depth, simple_nested_depth, priority_map);
-            max_priority = std::max(variant_priority, max_priority);
-            max_depth = std::max(variant_max_depth, max_depth);
-            max_simple_nested_depth = std::max(variant_simple_nested_depth, max_simple_nested_depth);
+            if (variant_priority > max_priority)
+                max_priority = variant_priority;
+            if (variant_max_depth > max_depth)
+                max_depth = variant_max_depth;
+            if (variant_simple_nested_depth > max_simple_nested_depth)
+                max_simple_nested_depth = variant_simple_nested_depth;
         }
 
         return {max_depth, max_priority, max_simple_nested_depth};
@@ -795,7 +800,7 @@ void SerializationVariant::serializeTextJSON(const IColumn & column, size_t row_
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    if (!tryReadJSONField(field, istr, settings.json))
+    if (!tryReadJSONField(field, istr))
         return false;
     return tryDeserializeTextJSONImpl(column, field, settings);
 }
@@ -803,7 +808,7 @@ bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer &
 void SerializationVariant::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readJSONField(field, istr, settings.json);
+    readJSONField(field, istr);
     if (!tryDeserializeTextJSONImpl(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON value of type {} here: {}", variant_name, field);
 }

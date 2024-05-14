@@ -8,7 +8,7 @@ namespace zkutil
 class ZooKeeperCachingGetter : boost::noncopyable
 {
 public:
-    enum class SessionStatus : uint8_t
+    enum class SessionStatus
     {
         New,
         Cached

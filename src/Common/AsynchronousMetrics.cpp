@@ -56,7 +56,7 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 
 AsynchronousMetrics::AsynchronousMetrics(
-    unsigned update_period_seconds,
+    int update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
@@ -671,7 +671,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     ReadableSize(rss),
                     ReadableSize(difference));
 
-            MemoryTracker::setRSS(rss, free_memory_in_allocator_arenas);
+            total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
         }
     }
 
@@ -1159,7 +1159,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                     core_id = std::stoi(s.substr(core_id_start));
                 }
-                else if (s.starts_with("cpu MHz"))
+                else if (s.rfind("cpu MHz", 0) == 0)
                 {
                     if (auto colon = s.find_first_of(':'))
                     {

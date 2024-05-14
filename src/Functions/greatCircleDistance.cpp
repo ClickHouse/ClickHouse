@@ -41,7 +41,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class Method : uint8_t
+enum class Method
 {
     SPHERE_DEGREES,
     SPHERE_METERS,

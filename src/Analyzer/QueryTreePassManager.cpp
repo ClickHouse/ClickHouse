@@ -85,9 +85,9 @@ public:
     void visitImpl(QueryTreeNodePtr & node) const
     {
         if (auto * column = node->as<ColumnNode>())
-            visitColumn(column);
+            return visitColumn(column);
         else if (auto * function = node->as<FunctionNode>())
-            visitFunction(function);
+            return visitFunction(function);
     }
 private:
     void visitColumn(ColumnNode * column) const
@@ -147,7 +147,7 @@ private:
                     continue;
 
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} expects argument {} to have {} type but receives {} after running {} pass",
+                    "Function {} expects {} argument to have {} type but receives {} after running {} pass",
                     function->toAST()->formatForErrorMessage(),
                     i + 1,
                     expected_argument_type->getName(),
@@ -165,6 +165,7 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
+  * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
 
@@ -258,6 +259,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<RewriteSumFunctionWithSumAndCountPass>());
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
+    manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
+    manager.addPass(std::make_unique<SumIfToCountIfPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
@@ -274,12 +277,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
     manager.addPass(std::make_unique<OptimizeGroupByInjectiveFunctionsPass>());
 
-    /// The order here is important as we want to keep collapsing in order
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
-    manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
-    manager.addPass(std::make_unique<SumIfToCountIfPass>());
 
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
@@ -290,6 +290,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 
+
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
@@ -299,6 +300,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
+
 }
 
 }

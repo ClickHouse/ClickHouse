@@ -75,7 +75,6 @@ private:
         bool finalized = false;
 
         bool exception_is_written = false;
-        std::function<void(WriteBuffer &, const String &)> exception_writer;
 
         inline bool hasDelayed() const
         {

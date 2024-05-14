@@ -1389,15 +1389,14 @@ struct URLHierarchyHashImpl
             ++pos;
 
         /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
-          * (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
-          * For the rest, simply return the full URL as the only element of the hierarchy.
-          */
-        if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
+        *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
+        *    For the rest, simply return the full URL as the only element of the hierarchy.
+        */
+        if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
         {
-            return 0 == level ? end - begin : 0;
+            pos = end;
+            return 0 == level ? pos - begin : 0;
         }
-        else
-            pos += 3;
 
         /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -1471,6 +1470,7 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -1518,11 +1518,15 @@ private:
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
-        const auto * col_untyped = arguments.front().column.get();
-        size_t size = col_untyped->size();
+        if (!isColumnConst(*level_col))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
 
+        const auto level = level_col->get64(0);
+
+        const auto * col_untyped = arguments.front().column.get();
         if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
+            const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
@@ -1533,29 +1537,11 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 out[i] = URLHierarchyHashImpl::apply(
-                    level_col->getUInt(i),
+                    level,
                     reinterpret_cast<const char *>(&chars[current_offset]),
                     offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
-            }
-
-            return col_to;
-        }
-        else if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
-        {
-            auto col_to = ColumnUInt64::create(size);
-            auto & out = col_to->getData();
-
-            const auto & chars = col_const_from->getChars();
-            const auto & offsets = col_const_from->getOffsets();
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                out[i] = URLHierarchyHashImpl::apply(
-                    level_col->getUInt(i),
-                    reinterpret_cast<const char *>(chars.data()),
-                    offsets[0] - 1);
             }
 
             return col_to;

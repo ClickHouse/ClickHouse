@@ -12,8 +12,8 @@
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <Core/Types.h>
-
+#include "Core/Types.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -443,6 +443,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     /// Build rpn of query filters
     KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
 
+
     if (condition.extractPlainRanges(ranges))
     {
         /// Intersect ranges with table range
@@ -503,6 +504,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 }
             }
         }
+
 
         /// ranges is blank, return a source who has no data
         if (intersected_ranges.empty())

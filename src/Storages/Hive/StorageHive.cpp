@@ -921,7 +921,9 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     }
 
     sources_info->hive_files = std::move(*hive_files);
-    num_streams = std::min(num_streams, sources_info->hive_files.size());
+
+    if (num_streams > sources_info->hive_files.size())
+        num_streams = sources_info->hive_files.size();
 
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)

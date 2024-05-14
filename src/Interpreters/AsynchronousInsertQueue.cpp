@@ -281,19 +281,10 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
 
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
-    try
-    {
-        pool.scheduleOrThrowOnError(
-            [this, key, global_context, shard_num, my_data = data_shared]() mutable
-            { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
-            priority);
-    }
-    catch (...)
-    {
-        for (auto & entry : (**data_shared).entries)
-            entry->finish(std::current_exception());
-    }
+    pool.scheduleOrThrowOnError(
+        [this, key, global_context, shard_num, my_data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
+        { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
+        priority);
 }
 
 void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context)
@@ -303,7 +294,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 
     InterpreterInsertQuery interpreter(query, query_context, query_context->getSettingsRef().insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
-    auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
+    auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);

@@ -151,7 +151,11 @@ size_t DataTypeVariant::getMaximumSizeOfValueInMemory() const
 {
     size_t max_size = 0;
     for (const auto & elem : variants)
-        max_size = std::max(max_size, elem->getMaximumSizeOfValueInMemory());
+    {
+        size_t elem_max_size = elem->getMaximumSizeOfValueInMemory();
+        if (elem_max_size > max_size)
+            max_size = elem_max_size;
+    }
     return max_size;
 }
 
