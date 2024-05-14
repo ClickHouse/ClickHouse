@@ -42,13 +42,13 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, Strin
 
 const EVP_CIPHER * getCipherByName(StringRef name);
 
-enum class CompatibilityMode
+enum class CompatibilityMode : uint8_t
 {
     MySQL,
     OpenSSL
 };
 
-enum class CipherMode
+enum class CipherMode : uint8_t
 {
     MySQLCompatibility,   // with key folding
     OpenSSLCompatibility, // just as regular openssl's enc application does (AEAD modes, like GCM and CCM are not supported)

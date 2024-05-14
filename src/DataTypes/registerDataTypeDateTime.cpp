@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-enum class ArgumentKind
+enum class ArgumentKind : uint8_t
 {
     Optional,
     Mandatory

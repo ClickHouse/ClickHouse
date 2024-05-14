@@ -216,7 +216,7 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     {
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
-            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column))
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column))
                 column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
 
         JoinCommon::removeColumnNullability(column);

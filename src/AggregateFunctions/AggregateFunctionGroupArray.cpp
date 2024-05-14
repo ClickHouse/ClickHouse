@@ -43,7 +43,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class Sampler
+enum class Sampler : uint8_t
 {
     NONE,
     RNG,
@@ -735,14 +735,14 @@ IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type
 template <typename Trait, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, parameters, args...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
-        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
+        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, args...);
 
-    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
+    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, args...);
 }
 
 size_t getMaxArraySize()

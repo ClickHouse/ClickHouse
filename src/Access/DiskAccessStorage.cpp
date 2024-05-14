@@ -71,7 +71,7 @@ namespace
         SCOPE_EXIT(
         {
             if (!succeeded)
-                std::filesystem::remove(tmp_file_path);
+                (void)std::filesystem::remove(tmp_file_path);
         });
 
         /// Write the file.
@@ -302,7 +302,7 @@ void DiskAccessStorage::writeLists()
     }
 
     /// The list files was successfully written, we don't need the 'need_rebuild_lists.mark' file any longer.
-    std::filesystem::remove(getNeedRebuildListsMarkFilePath(directory_path));
+    (void)std::filesystem::remove(getNeedRebuildListsMarkFilePath(directory_path));
     types_of_lists_to_write.clear();
 }
 
@@ -419,7 +419,7 @@ void DiskAccessStorage::removeAllExceptInMemory(const boost::container::flat_set
         const auto & id = it->first;
         ++it; /// We must go to the next element in the map `entries_by_id` here because otherwise removeNoLock() can invalidate our iterator.
         if (!ids_to_keep.contains(id))
-            removeNoLock(id, /* throw_if_not_exists */ true, /* write_on_disk= */ false);
+            (void)removeNoLock(id, /* throw_if_not_exists */ true, /* write_on_disk= */ false);
     }
 }
 
@@ -549,7 +549,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     if (name_collision && (id_by_name != id))
     {
         assert(replace_if_exists);
-        removeNoLock(id_by_name, /* throw_if_not_exists= */ false, write_on_disk);
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ false, write_on_disk); // NOLINT
     }
 
     if (id_collision)
@@ -574,7 +574,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             return true;
         }
 
-        removeNoLock(id, /* throw_if_not_exists= */ false, write_on_disk);
+        removeNoLock(id, /* throw_if_not_exists= */ false, write_on_disk); // NOLINT
     }
 
     /// Do insertion.

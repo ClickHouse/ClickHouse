@@ -265,7 +265,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
         if (fs::exists(detached_permanently_flag))
-            fs::remove(detached_permanently_flag);
+            (void)fs::remove(detached_permanently_flag);
     }
     catch (Exception & e)
     {
@@ -289,7 +289,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        (void)fs::remove(table_metadata_tmp_path);
         throw;
     }
 }
@@ -338,7 +338,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
         fs::path table_data_dir(local_context->getPath() + table_data_path_relative);
         if (fs::exists(table_data_dir))
-            fs::remove_all(table_data_dir);
+            (void)fs::remove_all(table_data_dir);
     }
     catch (...)
     {
@@ -349,7 +349,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         throw;
     }
 
-    fs::remove(table_metadata_path_drop);
+    (void)fs::remove(table_metadata_path_drop);
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
@@ -468,7 +468,7 @@ void DatabaseOnDisk::renameTable(
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
 
-    fs::remove(table_metadata_path);
+    (void)fs::remove(table_metadata_path);
 
     if (from_atomic_to_ordinary)
     {
@@ -548,15 +548,15 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
-        fs::remove_all(local_context->getPath() + getDataPath());
-        fs::remove_all(getMetadataPath());
+        (void)fs::remove_all(local_context->getPath() + getDataPath());
+        (void)fs::remove_all(getMetadataPath());
     }
     else
     {
         try
         {
-            fs::remove(local_context->getPath() + getDataPath());
-            fs::remove(getMetadataPath());
+            (void)fs::remove(local_context->getPath() + getDataPath());
+            (void)fs::remove(getMetadataPath());
         }
         catch (const fs::filesystem_error & e)
         {
@@ -610,7 +610,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
         else
         {
             LOG_INFO(log, "Removing file {}", getMetadataPath() + file_name);
-            fs::remove(getMetadataPath() + file_name);
+            (void)fs::remove(getMetadataPath() + file_name);
         }
     };
 
@@ -642,7 +642,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
         {
             /// There are files .sql.tmp - delete
             LOG_INFO(log, "Removing file {}", dir_it->path().string());
-            fs::remove(dir_it->path());
+            (void)fs::remove(dir_it->path());
         }
         else if (endsWith(file_name, ".sql"))
         {
@@ -708,7 +708,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     {
         if (logger)
             LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
-        fs::remove(metadata_file_path);
+        (void)fs::remove(metadata_file_path);
         return nullptr;
     }
 
