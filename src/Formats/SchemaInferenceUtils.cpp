@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -305,6 +306,22 @@ namespace
 
         type_indexes.erase(TypeIndex::Int64);
         type_indexes.erase(TypeIndex::UInt64);
+    }
+
+    /// if setting input_format_json_infer_variant_from_multitype_array is true
+    /// and nested types are not equal then we convert to type variant.
+    void transformVariant(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        auto variant_type = std::make_shared<DataTypeVariant>(data_types);
+        /// replace separate types with a single variant type
+        data_types.clear();
+        type_indexes.clear();
+        data_types.push_back(variant_type);
+        type_indexes.insert(TypeIndex::Variant);
+
+        // push it back again
+        data_types.push_back(variant_type);
+        type_indexes.insert(TypeIndex::Variant);
     }
 
     /// If we have only Date and DateTime types, convert Date to DateTime,
@@ -649,6 +666,12 @@ namespace
 
             /// Check settings specific for JSON formats.
 
+            if (settings.json.infer_variant_from_multitype_array)
+            {
+                transformVariant(data_types, type_indexes);
+                return;
+            }
+
             /// Convert numbers inferred from strings back to strings if needed.
             if (settings.json.try_infer_numbers_from_strings || settings.json.read_numbers_as_strings)
                 transformJSONNumbersBackToString(data_types, settings, type_indexes, json_info);
@@ -676,6 +699,12 @@ namespace
 
             if constexpr (!is_json)
                 return;
+
+            if (settings.json.infer_variant_from_multitype_array)
+            {
+                transformVariant(data_types, type_indexes);
+                return;
+            }
 
             /// Convert JSON tuples with same nested types to arrays.
             transformTuplesWithEqualNestedTypesToArrays(data_types, type_indexes);
@@ -822,7 +851,6 @@ namespace
 
             if (checkIfTypesAreEqual(nested_types_copy))
                 return std::make_shared<DataTypeArray>(nested_types_copy.back());
-
             return std::make_shared<DataTypeTuple>(nested_types);
         }
         else
@@ -1480,6 +1508,20 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
         auto nested_type = makeNullableRecursively(array_type->getNestedType());
         return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
+    }
+
+    if (which.isVariant())
+    {
+        const auto * variant_type = assert_cast<const DataTypeVariant *>(type.get());
+        DataTypes nested_types;
+        for (const auto & nested_type: variant_type->getVariants())
+        {
+            /// unlike tuple or array, here we do not want to make any of the variants nullable
+            /// so we do not call makeNullableRecursively
+            nested_types.push_back(nested_type);
+        }
+
+        return std::make_shared<DataTypeVariant>(nested_types);
     }
 
     if (which.isTuple())

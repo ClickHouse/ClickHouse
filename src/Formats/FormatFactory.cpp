@@ -137,6 +137,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.read_arrays_as_strings = settings.input_format_json_read_arrays_as_strings;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
     format_settings.json.infer_incomplete_types_as_strings = settings.input_format_json_infer_incomplete_types_as_strings;
+    format_settings.json.infer_variant_from_multitype_array = settings.input_format_json_infer_variant_from_multitype_array;
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
