@@ -4,6 +4,7 @@
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
+  CLICKHOUSE_STABLE_VERSION_SUFFIX: altinitystable
 
 name: Build ClickHouse
 'on':
@@ -35,35 +36,12 @@ name: Build ClickHouse
         type: string
 
 jobs:
-  runner_labels_setup:
-    name: Compute proper runner labels for the rest of the jobs
-    runs-on: ubuntu-latest
-    outputs:
-      runner_labels: ${{ steps.setVariables.outputs.runner_labels }}
-    steps:
-      - id: setVariables
-        name: Prepare runner_labels variables for the later steps
-        run: |
-
-          # Prepend self-hosted
-          input="self-hosted, ${input}"
-
-          # Remove all whitespace
-          input="$(echo ${input} | tr -d [:space:])"
-          # Make something like a JSON array from comma-separated list
-          input="[ '${input//\,/\'\, \'}' ]"
-
-          echo "runner_labels=$input" >> ${GITHUB_OUTPUT}
-        env:
-          input: ${{ inputs.runner_type }}
-
   Build:
     name: Build-${{inputs.build_name}}
     if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
-    needs: [runner_labels_setup]
-    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
+    runs-on: [self-hosted, altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-app-docker-ce]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f

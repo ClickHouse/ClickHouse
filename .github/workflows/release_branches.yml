@@ -6,20 +6,30 @@ env:
   PYTHONUNBUFFERED: 1
 
 on: # yamllint disable-line rule:truthy
+  pull_request:
+    types:
+      - synchronize
+      - reopened
+      - opened
+    branches:
+      # Anything/24.3 (e.g customizations/24.3.x)
+      - '**/24.3*'
+  release:
+    types:
+      - published
+      - prereleased
   push:
     branches:
-      # 22.1 and 22.10
-      - '2[1-9].[1-9][0-9]'
-      - '2[1-9].[1-9]'
+      - 'releases/24.3**'
 
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
@@ -66,7 +76,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Compatibility check (amd64)
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckAarch64:
     needs: [RunConfig, BuilderDebAarch64]
@@ -74,7 +84,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Compatibility check (aarch64)
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
@@ -163,7 +173,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Docker server image
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   DockerKeeperImage:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
@@ -171,7 +181,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Docker keeper image
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
@@ -191,7 +201,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax11, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderSpecialReport:
     # run report check for failed builds to indicate the CI error
@@ -203,7 +213,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
-      runner_type: style-checker-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax11, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
@@ -230,7 +240,7 @@ jobs:
         run: exit 1
       - name: Check out repository code
         if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
       - name: Mark Commit Release Ready
         if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         run: |
@@ -245,7 +255,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Install packages (amd64)
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
         python3 install_check.py "$CHECK_NAME"
@@ -255,7 +265,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Install packages (arm64)
-      runner_type: style-checker-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
         python3 install_check.py "$CHECK_NAME"
@@ -268,7 +278,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (release)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestAarch64:
     needs: [RunConfig, BuilderDebAarch64]
@@ -276,7 +286,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (aarch64)
-      runner_type: func-tester-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestAsan:
     needs: [RunConfig, BuilderDebAsan]
@@ -284,7 +294,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (asan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -292,7 +302,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (tsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestMsan:
     needs: [RunConfig, BuilderDebMsan]
@@ -300,7 +310,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (msan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
@@ -308,7 +318,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (ubsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestDebug:
     needs: [RunConfig, BuilderDebDebug]
@@ -316,7 +326,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (debug)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
@@ -327,7 +337,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (release)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAarch64:
     needs: [RunConfig, BuilderDebAarch64]
@@ -335,7 +345,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (aarch64)
-      runner_type: func-tester-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAsan:
     needs: [RunConfig, BuilderDebAsan]
@@ -343,7 +353,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (asan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -351,7 +361,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (tsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestMsan:
     needs: [RunConfig, BuilderDebMsan]
@@ -359,7 +369,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (msan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
@@ -367,7 +377,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (ubsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestDebug:
     needs: [RunConfig, BuilderDebDebug]
@@ -375,7 +385,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (debug)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
 ######################################### STRESS TESTS #######################################
@@ -386,7 +396,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (asan)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -394,7 +404,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (tsan)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestMsan:
     needs: [RunConfig, BuilderDebMsan]
@@ -402,7 +412,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (msan)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
@@ -410,7 +420,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (ubsan)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestDebug:
     needs: [RunConfig, BuilderDebDebug]
@@ -418,7 +428,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (debug)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
@@ -429,7 +439,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (asan)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAnalyzerAsan:
     needs: [RunConfig, BuilderDebAsan]
@@ -437,7 +447,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (asan, old analyzer)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -445,7 +455,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (tsan)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsRelease:
     needs: [RunConfig, BuilderDebRelease]
@@ -453,8 +463,68 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (release)
-      runner_type: stress-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
+#############################################################################################
+##################################### REGRESSION TESTS ######################################
+#############################################################################################
+  RegressionTestsRelease:
+    needs: [BuilderReport]
+    uses: ./.github/workflows/regression.yml
+    secrets: inherit
+    with:
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression
+      commit: 17a81c07fc1f41fbee651e0ef0ca4b44e537e5b1
+      arch: release 
+      build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  RegressionTestsAarch64:
+    needs: [BuilderReport]
+    uses: ./.github/workflows/regression.yml
+    secrets: inherit
+    with:
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
+      commit: 17a81c07fc1f41fbee651e0ef0ca4b44e537e5b1
+      arch: aarch64
+      build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  SignRelease:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-app-docker-ce]
+    timeout-minutes: 180
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/signed
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Sign release
+        env:
+          GPG_BINARY_SIGNING_KEY: ${{ secrets.GPG_BINARY_SIGNING_KEY }}
+          GPG_BINARY_SIGNING_PASSPHRASE: ${{ secrets.GPG_BINARY_SIGNING_PASSPHRASE }}
+          REPORTS_PATH: ${{ env.REPORTS_PATH }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 sign_release.py
+      - name: Upload signed hashes
+        uses: actions/upload-artifact@v2
+        with:
+          name: signed-hashes
+          path: ${{ env.TEMP_PATH }}/*.gpg
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
     needs:
@@ -487,10 +557,13 @@ jobs:
       - IntegrationTestsRelease
       - CompatibilityCheckX86
       - CompatibilityCheckAarch64
-    runs-on: [self-hosted, style-checker]
+      - RegressionTestsRelease
+      - RegressionTestsAarch64
+      - SignRelease
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
         with:
           clear-repository: true
       - name: Finish label

@@ -2,7 +2,7 @@
 # It's based on the assumption that we don't care of the cctools version so much
 # It event does not depend on the clickhouse/fasttest in the `docker/images.json`
 ARG FROM_TAG=latest
-FROM clickhouse/fasttest:$FROM_TAG as builder
+FROM altinityinfra/fasttest:$FROM_TAG as builder
 
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
