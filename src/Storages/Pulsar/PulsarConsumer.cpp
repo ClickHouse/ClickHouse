@@ -8,13 +8,12 @@
 namespace DB
 {
 
-PulsarConsumer::PulsarConsumer(LoggerPtr logger_) : logger(logger_)
+PulsarConsumer::PulsarConsumer(LoggerPtr logger_) : log(logger_)
 {
 }
 
 ReadBufferPtr PulsarConsumer::getNextMessage()
 {
-    LOG_TRACE(logger, "getting next message");
     if (next_message == polled_messages.end())
         return nullptr;
     const auto * data = reinterpret_cast<const unsigned char *>(next_message->getData());
@@ -22,7 +21,7 @@ ReadBufferPtr PulsarConsumer::getNextMessage()
 
     {
         auto msg = next_message->getDataAsString();
-        LOG_TRACE(logger, "message: {}", msg);
+        LOG_TRACE(log, "Message recieved: {}", msg);
     }
 
     ++next_message;
@@ -35,17 +34,26 @@ ReadBufferPtr PulsarConsumer::getNextMessage()
 
 ReadBufferPtr PulsarConsumer::consume()
 {
-    LOG_TRACE(logger, "trying consume");
     if (hasPolledMessages())
     {
-        LOG_TRACE(logger, "got the message B)");
         return getNextMessage();
+    }
+    if (!polled_messages.empty())
+    {
+        pulsar::MessageIdList message_ids;
+        for (size_t i = 0; i < polled_messages.size(); ++i)
+        {
+            message_ids.emplace_back(polled_messages[i].getMessageId());
+        }
+        consumer.acknowledge(message_ids);
     }
     pulsar::Messages new_messages;
     consumer.batchReceive(new_messages);
+    if (!new_messages.empty()) {
+        LOG_TRACE(log, "polled messages: {}", new_messages.size());
+    }
     polled_messages = std::move(new_messages);
     next_message = polled_messages.begin();
-    LOG_TRACE(logger, "here's the message B)");
     return getNextMessage();
 }
 

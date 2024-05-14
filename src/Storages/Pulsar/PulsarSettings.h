@@ -12,10 +12,11 @@ const auto PULSAR_RESCHEDULE_MS = 500;
 const auto PULSAR_MAX_THREAD_WORK_DURATION_MS = 60'000;
 
 #define PULSAR_RELATED_SETTINGS(M, ALIAS) \
-    M(String, pulsar_broker_address, "", "A broker address for Pulsar engine.", 0) \
+    M(String, pulsar_service_url, "", "A broker url for Pulsar engine.", 0) \
     M(String, pulsar_topic_list, "", "A list of Pulsar topics.", 0) \
-    M(UInt64, pulsar_num_consumers, 1, "The number of consumers per table for Pulsar engine.", 0) \
+    M(String, pulsar_group_name, "", "Client group id string. All Pulsar consumers sharing the same group.id belong to the same group.", 0) \
     M(String, pulsar_format, "", "The message format for Pulsar engine.", 0) \
+    M(UInt64, pulsar_num_consumers, 1, "The number of consumers per table for Pulsar engine.", 0) \
     M(UInt64, pulsar_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Pulsar.", 0) \
     M(Milliseconds, pulsar_poll_timeout_ms, 0, "Timeout for single poll from Pulsar.", 0) \
     M(UInt64, pulsar_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Pulsar poll.", 0) \
@@ -45,8 +46,6 @@ DECLARE_SETTINGS_TRAITS(PulsarSettingsTraits, LIST_OF_PULSAR_SETTINGS)
 struct PulsarSettings : public BaseSettings<PulsarSettingsTraits>
 {
     void loadFromQuery(ASTStorage & storage_def);
-
-    // void sanityCheck() const;
 };
 
 }

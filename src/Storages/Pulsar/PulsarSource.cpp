@@ -52,26 +52,18 @@ Chunk PulsarSource::generateImpl()
     }
 
     if (is_finished || !consumer)
-    {
-        LOG_TRACE(log, "Can't generate chunk");
         return {};
-    }
 
     Stopwatch stopwatch;
-    LOG_TRACE(log, "Start generate chunk");
 
     is_finished = true;
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
-
-
-    LOG_TRACE(log, "Got virtaul columns");
 
     auto put_error_to_stream = handle_error_mode == StreamingHandleErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
-    LOG_TRACE(log, "Format? Gottem!");
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -101,24 +93,14 @@ Chunk PulsarSource::generateImpl()
         }
     };
 
-    LOG_TRACE(log, "Create executor");
-
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
-
-    LOG_TRACE(log, "Start consuming");
 
     while (true)
     {
         size_t new_rows = 0;
         exception_message.reset();
         if (auto buf = consumer->consume())
-        {
-            LOG_TRACE(log, "Got non-empty buffer");
             new_rows = executor.execute(*buf);
-            LOG_TRACE(log, "executed :)");
-        }
-
-        LOG_TRACE(log, "virtual columns size: {}", virtual_columns.size());
 
         if (new_rows)
         {
@@ -159,12 +141,7 @@ Chunk PulsarSource::generateImpl()
                     }
                 }
             }
-
             total_rows += new_rows;
-        }
-        else
-        {
-            break;
         }
 
         if (total_rows >= max_block_size || (max_execution_time != 0 && stopwatch.elapsedMilliseconds() > max_execution_time))

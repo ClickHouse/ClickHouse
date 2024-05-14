@@ -27,7 +27,7 @@ public:
     String currentPayload() const { return next_message[-1].getDataAsString(); }
 
 private:
-    LoggerPtr logger;
+    LoggerPtr log;
     pulsar::Consumer consumer;
     pulsar::Messages polled_messages;
     pulsar::Messages::const_iterator next_message;

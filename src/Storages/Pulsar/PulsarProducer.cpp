@@ -44,7 +44,7 @@ void PulsarProducer::produce(const String & message, size_t /* rows_in_message *
 
     auto final_message = builder.build();
 
-    while (!shutdown_called)
+    while (!shutdown_called.load())
     {
         auto result = producer->send(final_message);
         if (result != pulsar::ResultOk)

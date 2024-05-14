@@ -32,6 +32,5 @@ private:
     std::atomic<bool> & shutdown_called;
 
     std::optional<size_t> key_column_index;
-    std::optional<size_t> timestamp_column_index;
 };
 }

@@ -24,7 +24,7 @@ add_definitions(-DPULSAR_USE_BOOST_REGEX)
 file(GLOB_RECURSE SRCS 
     "${LIBRARY_DIR}/lib/*.cc"
     "${LIBRARY_DIR}/lib/*.h"
-    DEPENDS ${LIBRARY_DIR}/lib/PulsarApi.pb.h ${LIBRARY_DIR}/lib/PulsarApi.pb.cc
+    DEPENDS ${LIBRARY_DIR}/lib/PulsarApi.pb.h ${LIBRARY_DIR}/lib/PulsarApi.pb.cc 
 )
 
 add_library(_pulsar ${SRCS})

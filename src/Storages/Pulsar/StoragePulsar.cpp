@@ -73,7 +73,8 @@ private:
 
         // Claim as many consumers as requested, but don't block
         for (size_t i = 0; i < pulsar_storage.num_consumers; ++i)
-            pipes.emplace_back(std::make_shared<PulsarSource>(pulsar_storage, storage_snapshot, modified_context, column_names, 1, pulsar_storage.log, 0));
+            pipes.emplace_back(
+                std::make_shared<PulsarSource>(pulsar_storage, storage_snapshot, modified_context, column_names, 1, pulsar_storage.log, 0));
 
         return Pipe::unitePipes(std::move(pipes));
     }
@@ -92,7 +93,7 @@ StoragePulsar::StoragePulsar(
     , num_consumers(pulsar_settings->pulsar_num_consumers.value)
     , max_rows_per_message(pulsar_settings->pulsar_max_rows_per_message.value)
     , log(getLogger("Storage Pulsar(" + table_id_.table_name + ")"))
-    , pulsar_client(pulsar_settings->pulsar_broker_address.value)
+    , pulsar_client(pulsar_settings->pulsar_service_url.value)
     , topics(parseTopics(pulsar_settings->pulsar_topic_list.value))
     , semaphore(0, static_cast<int>(num_consumers))
 {
@@ -119,8 +120,9 @@ void StoragePulsar::startup()
 void StoragePulsar::shutdown(bool /* is_drop */)
 {
     shutdown_called.store(true);
-    for (size_t i = 0; i < num_consumers; ++i)
-        popConsumer()->consumer.close();
+    streamer->deactivate();
+    // for (size_t i = 0; i < num_consumers; ++i)
+    //     popConsumer()->consumer.close();
     pulsar_client.close();
 }
 
@@ -194,7 +196,8 @@ ProducerPtr StoragePulsar::createProducer()
     config.setSendTimeout(static_cast<int>(poll_timeout));
     config.setBlockIfQueueFull(true);
 
-    chassert(topics.size() == 1);
+    if (topics.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Pulsar table with multiple topics!");
 
     pulsar_client.createProducer(topics[0], config, *producer);
     return producer;
@@ -204,9 +207,9 @@ void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
 {
     pulsar::ConsumerConfiguration config;
     config.setConsumerType(pulsar::ConsumerType::ConsumerShared);
-    config.setBatchReceivePolicy({0, 0, static_cast<long>(getPollTimeoutMilliseconds())});
+    config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(getPollTimeoutMilliseconds())});
 
-    pulsar_client.subscribe(topics, "clickhouse", config, consumer);
+    pulsar_client.subscribe(topics, pulsar_settings->pulsar_group_name.value, config, consumer);
 }
 
 size_t StoragePulsar::getPollTimeoutMilliseconds() const
@@ -254,7 +257,7 @@ VirtualColumnsDescription StoragePulsar::createVirtuals()
     if (pulsar_settings->pulsar_handle_error_mode.value == StreamingHandleErrorMode::STREAM)
     {
         desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("д", std::make_shared<DataTypeString>(), "");
     }
 
     return desc;
@@ -301,11 +304,10 @@ void StoragePulsar::streaming()
 
             mv_attached.store(true);
 
-            while (!stream_cancelled.load())
+            while (!shutdown_called.load())
             {
                 if (!checkDependencies(table_id))
                     break;
-
 
                 streamToViews();
 
@@ -323,7 +325,7 @@ void StoragePulsar::streaming()
     mv_attached.store(false);
 
     // Wait for attached views
-    if (!stream_cancelled.load())
+    if (!shutdown_called.load())
         streamer->scheduleAfter(PULSAR_RESCHEDULE_MS);
 }
 
@@ -418,8 +420,11 @@ void registerStoragePulsar(StorageFactory & factory)
         if (args.storage_def->settings)
             pulsar_settings->loadFromQuery(*args.storage_def);
 
-        if (!pulsar_settings->pulsar_broker_address.changed)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_broker_address` settings");
+        if (!pulsar_settings->pulsar_service_url.changed)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_service_url` settings");
+
+        if (!pulsar_settings->pulsar_group_name.changed)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_group_name` settings");
 
         if (!pulsar_settings->pulsar_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_format` setting");

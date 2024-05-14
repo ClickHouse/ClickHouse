@@ -80,7 +80,6 @@ private:
 
     std::atomic<bool> shutdown_called{false};
     std::atomic<bool> mv_attached{false};
-    std::atomic<bool> stream_cancelled{false};
 
     Names topics;
 
