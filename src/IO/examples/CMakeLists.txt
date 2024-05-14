@@ -78,4 +78,5 @@ if (TARGET ch_contrib::hdfs)
     target_link_libraries (read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
 endif ()
 
-
+clickhouse_add_executable (rapidgzip_read_buffer rapidgzip_read_buffer.cpp)
+target_link_libraries (rapidgzip_read_buffer PRIVATE clickhouse_rapidgzip clickhouse_common_io)
