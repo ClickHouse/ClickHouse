@@ -1305,7 +1305,8 @@ private:
                         resolved_identifier->formatASTForErrorMessage(),
                         join_node.formatASTForErrorMessage());
                 }
-                result = table_side;
+                if (table_side)
+                    result = *table_side;
             }
             return result;
         }

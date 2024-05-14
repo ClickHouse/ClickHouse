@@ -256,26 +256,26 @@ namespace
 /// 1) there should be separate thread pools for BACKUP and RESTORE;
 /// 2) a task from a thread pool can't wait another task from the same thread pool. (Because if it schedules and waits
 /// while the thread pool is still occupied with the waiting task then a scheduled task can be never executed).
-enum class BackupsWorker::ThreadPoolId : uint8_t
+enum class BackupsWorker::ThreadPoolId
 {
     /// "BACKUP ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
-    BACKUP_ASYNC_ON_CLUSTER = 0,
+    BACKUP_ASYNC_ON_CLUSTER,
 
     /// "BACKUP ASYNC" waits in background while all file infos are built and then it copies the backup's files.
-    BACKUP_ASYNC = 1,
+    BACKUP_ASYNC,
 
     /// Making a list of files to copy and copying of those files is always sequential, so those operations can share one thread pool.
-    BACKUP_MAKE_FILES_LIST = 2,
+    BACKUP_MAKE_FILES_LIST,
     BACKUP_COPY_FILES = BACKUP_MAKE_FILES_LIST,
 
     /// "RESTORE ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
-    RESTORE_ASYNC_ON_CLUSTER = 3,
+    RESTORE_ASYNC_ON_CLUSTER,
 
     /// "RESTORE ASYNC" waits in background while the data of all tables are restored.
-    RESTORE_ASYNC = 4,
+    RESTORE_ASYNC,
 
     /// Restores from backups.
-    RESTORE = 5,
+    RESTORE,
 };
 
 

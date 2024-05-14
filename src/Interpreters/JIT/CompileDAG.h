@@ -33,7 +33,7 @@ class CompileDAG
 {
 public:
 
-    enum class CompileType : uint8_t
+    enum class CompileType
     {
         INPUT = 0,
         CONSTANT = 1,

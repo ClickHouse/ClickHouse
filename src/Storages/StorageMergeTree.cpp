@@ -235,11 +235,16 @@ void StorageMergeTree::read(
                 = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
 
+        ClusterProxy::SelectStreamFactory select_stream_factory =
+            ClusterProxy::SelectStreamFactory(
+                header,
+                {},
+                storage_snapshot,
+                processed_stage);
+
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan,
-            getStorageID(),
-            header,
-            processed_stage,
+            select_stream_factory,
             modified_query_ast,
             local_context,
             query_info.storage_limits);

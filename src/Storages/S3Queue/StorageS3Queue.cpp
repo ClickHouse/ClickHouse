@@ -617,10 +617,10 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
 }
 
-void registerStorageS3Queue(StorageFactory & factory)
+void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
 {
     factory.registerStorage(
-        "S3Queue",
+        name,
         [](const StorageFactory::Arguments & args)
         {
             auto & engine_args = args.engine_args;
@@ -681,6 +681,11 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
         });
+}
+
+void registerStorageS3Queue(StorageFactory & factory)
+{
+    return registerStorageS3QueueImpl("S3Queue", factory);
 }
 
 }

@@ -99,10 +99,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
             try
             {
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
-                fetch(*connection,
-                    connection_parameters.timeouts,
-                    getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>),
-                    my_context->getClientInfo());
+                fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
             }
             catch (const Exception & e)
             {
@@ -141,12 +138,11 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
 void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
-                   Int32 suggestion_limit,
-                   const ClientInfo & client_info)
+                   Int32 suggestion_limit)
 {
     try
     {
-        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true), client_info);
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true));
     }
     catch (...)
     {
@@ -155,10 +151,10 @@ void Suggest::load(IServerConnection & connection,
     }
 }
 
-void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
+void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
 
     while (true)
     {

@@ -1142,7 +1142,8 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return getFailoverOptions(next_uri, max_addresses);
         });
 
-        num_streams = std::min(num_streams, glob_iterator->size());
+        if (num_streams > glob_iterator->size())
+            num_streams = glob_iterator->size();
     }
     else
     {

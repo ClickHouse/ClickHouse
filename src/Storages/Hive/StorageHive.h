@@ -68,12 +68,12 @@ private:
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
 
-    enum class PruneLevel : uint8_t
+    enum class PruneLevel
     {
-        None = 0, /// Do not prune
-        Partition = 1,
-        File = 2,
-        Split = 3,
+        None, /// Do not prune
+        Partition,
+        File,
+        Split,
         Max = Split,
     };
 

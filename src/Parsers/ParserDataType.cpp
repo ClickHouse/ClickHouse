@@ -5,7 +5,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -57,13 +56,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!name_parser.parse(pos, identifier, expected))
         return false;
     tryGetIdentifierNameInto(identifier, type_name);
-
-    /// Don't accept things like Array(`x.y`).
-    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
-    {
-        expected.add(pos, "type name");
-        return false;
-    }
 
     String type_name_upper = Poco::toUpper(type_name);
     String type_name_suffix;

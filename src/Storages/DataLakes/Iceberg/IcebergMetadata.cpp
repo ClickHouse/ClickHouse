@@ -65,14 +65,14 @@ IcebergMetadata::IcebergMetadata(
 namespace
 {
 
-enum class ManifestEntryStatus : uint8_t
+enum class ManifestEntryStatus
 {
     EXISTING = 0,
     ADDED = 1,
     DELETED = 2,
 };
 
-enum class DataFileContent : uint8_t
+enum class DataFileContent
 {
     DATA = 0,
     POSITION_DELETES = 1,

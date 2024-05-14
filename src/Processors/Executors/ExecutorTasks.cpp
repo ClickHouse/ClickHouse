@@ -192,7 +192,8 @@ void ExecutorTasks::fill(Queue & queue)
 void ExecutorTasks::upscale(size_t use_threads_)
 {
     std::lock_guard lock(mutex);
-    use_threads = std::max(use_threads, use_threads_);
+    if (use_threads < use_threads_)
+        use_threads = use_threads_;
 }
 
 void ExecutorTasks::processAsyncTasks()

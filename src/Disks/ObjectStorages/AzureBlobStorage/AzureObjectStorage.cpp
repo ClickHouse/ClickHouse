@@ -69,8 +69,7 @@ private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
-        if (client->GetClickhouseOptions().IsClientForDisk)
-            ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
         batch.clear();
         auto outcome = client->ListBlobs(options);
@@ -131,8 +130,7 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     options.PageSizeHint = 1;
 
     ProfileEvents::increment(ProfileEvents::AzureListObjects);
-    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
-        ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+    ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
     auto blobs_list_response = client_ptr->ListBlobs(options);
     auto blobs_list = blobs_list_response.Blobs;
@@ -166,14 +164,15 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    Azure::Storage::Blobs::ListBlobsPagedResponse blob_list_response;
+
+    while (true)
     {
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
-        if (client_ptr->GetClickhouseOptions().IsClientForDisk)
-            ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
         blob_list_response = client_ptr->ListBlobs(options);
-        const auto & blobs_list = blob_list_response.Blobs;
+        auto blobs_list = blob_list_response.Blobs;
 
         for (const auto & blob : blobs_list)
         {
@@ -194,6 +193,11 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                 break;
             options.PageSizeHint = keys_left;
         }
+
+        if (blob_list_response.HasPage())
+            options.ContinuationToken = blob_list_response.NextPageToken;
+        else
+            break;
     }
 }
 
@@ -294,8 +298,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 void AzureObjectStorage::removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists)
 {
     ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
-    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
-        ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects);
+    ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects);
 
     const auto & path = object.remote_path;
     LOG_TEST(log, "Removing single object: {}", path);
@@ -350,13 +353,12 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) const
 {
+    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
+    ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+
     auto client_ptr = client.get();
     auto blob_client = client_ptr->GetBlobClient(path);
     auto properties = blob_client.GetProperties().Value;
-
-    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
-        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
@@ -389,8 +391,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
     }
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
-    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
-        ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
+    ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
     dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
 }

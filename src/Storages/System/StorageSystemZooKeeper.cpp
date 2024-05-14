@@ -104,7 +104,7 @@ struct ZkNodeCache
             auto request = zkutil::makeSetRequest(path, value, -1);
             requests.push_back(request);
         }
-        for (const auto & [_, child] : children)
+        for (auto [_, child] : children)
             child->generateRequests(requests);
     }
 };
@@ -166,7 +166,7 @@ public:
 };
 
 /// Type of path to be fetched
-enum class ZkPathType : uint8_t
+enum class ZkPathType
 {
     Exact, /// Fetch all nodes under this path
     Prefix, /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)

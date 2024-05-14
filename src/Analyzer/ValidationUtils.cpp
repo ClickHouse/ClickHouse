@@ -266,9 +266,6 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         if (query_node_typed.hasHaving())
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
 
-        if (query_node_typed.hasQualify())
-            validate_group_by_columns_visitor.visit(query_node_typed.getQualify());
-
         if (query_node_typed.hasOrderBy())
             validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
 

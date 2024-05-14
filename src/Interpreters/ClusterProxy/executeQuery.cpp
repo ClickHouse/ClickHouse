@@ -372,9 +372,7 @@ void executeQuery(
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
-    const StorageID & storage_id,
-    const Block & header,
-    QueryProcessingStage::Enum processed_stage,
+    SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
@@ -463,10 +461,9 @@ void executeQueryWithParallelReplicas(
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
         new_cluster,
-        storage_id,
         std::move(coordinator),
-        header,
-        processed_stage,
+        stream_factory.header,
+        stream_factory.processed_stage,
         new_context,
         getThrottler(new_context),
         std::move(scalars),
