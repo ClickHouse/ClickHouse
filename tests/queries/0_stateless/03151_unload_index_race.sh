@@ -65,7 +65,7 @@ export -f thread_query_table
 TIMEOUT=10
 
 thread_alter_settings $TIMEOUT &
-for i in $(seq 1 10);
+for _ in $(seq 1 10);
 do
   thread_query_table $TIMEOUT &
 done
