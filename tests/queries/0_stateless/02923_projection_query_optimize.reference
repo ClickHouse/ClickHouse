@@ -53,65 +53,77 @@ QUERY id: 0
                       FUNCTION id: 15, function_name: in, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 16, nodes: 2
-                            COLUMN id: 17, column_name: src, result_type: String, source_id: 3
-                            QUERY id: 18, is_subquery: 1
+                            FUNCTION id: 17, function_name: tuple, function_type: ordinary, result_type: Tuple(String, LowCardinality(String))
+                              ARGUMENTS
+                                LIST id: 18, nodes: 2
+                                  COLUMN id: 19, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 20, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                            QUERY id: 21, is_subquery: 1
                               PROJECTION COLUMNS
                                 src String
+                                _part LowCardinality(String)
                               PROJECTION
-                                LIST id: 19, nodes: 1
-                                  COLUMN id: 20, column_name: src, result_type: String, source_id: 3
+                                LIST id: 22, nodes: 2
+                                  COLUMN id: 23, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 24, column_name: _part, result_type: LowCardinality(String), source_id: 3
                               JOIN TREE
                                 TABLE id: 3, alias: __table1, table_name: default.test_a
                               WHERE
-                                FUNCTION id: 21, function_name: equals, function_type: ordinary, result_type: UInt8
+                                FUNCTION id: 25, function_name: equals, function_type: ordinary, result_type: UInt8
                                   ARGUMENTS
-                                    LIST id: 22, nodes: 2
-                                      COLUMN id: 23, column_name: c1, result_type: String, source_id: 3
-                                      CONSTANT id: 24, constant_value: \'43\', constant_value_type: String
-                FUNCTION id: 25, function_name: equals, function_type: ordinary, result_type: UInt8
+                                    LIST id: 26, nodes: 2
+                                      COLUMN id: 27, column_name: c1, result_type: String, source_id: 3
+                                      CONSTANT id: 28, constant_value: \'43\', constant_value_type: String
+                FUNCTION id: 29, function_name: equals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 26, nodes: 2
-                      COLUMN id: 27, column_name: c1, result_type: String, source_id: 3
-                      CONSTANT id: 28, constant_value: \'43\', constant_value_type: String
-          FUNCTION id: 29, function_name: equals, function_type: ordinary, result_type: UInt8
-            ARGUMENTS
-              LIST id: 30, nodes: 2
-                COLUMN id: 31, column_name: c2, result_type: String, source_id: 3
-                CONSTANT id: 32, constant_value: \'44\', constant_value_type: String
+                    LIST id: 30, nodes: 2
+                      COLUMN id: 31, column_name: c1, result_type: String, source_id: 3
+                      CONSTANT id: 32, constant_value: \'43\', constant_value_type: String
           FUNCTION id: 33, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 34, nodes: 2
-                COLUMN id: 35, column_name: c3, result_type: String, source_id: 3
-                CONSTANT id: 36, constant_value: \'45\', constant_value_type: String
-          FUNCTION id: 37, function_name: and, function_type: ordinary, result_type: UInt8
+                COLUMN id: 35, column_name: c2, result_type: String, source_id: 3
+                CONSTANT id: 36, constant_value: \'44\', constant_value_type: String
+          FUNCTION id: 37, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 38, nodes: 2
-                FUNCTION id: 39, function_name: indexHint, function_type: ordinary, result_type: UInt8
+                COLUMN id: 39, column_name: c3, result_type: String, source_id: 3
+                CONSTANT id: 40, constant_value: \'45\', constant_value_type: String
+          FUNCTION id: 41, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 42, nodes: 2
+                FUNCTION id: 43, function_name: indexHint, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 40, nodes: 1
-                      FUNCTION id: 41, function_name: in, function_type: ordinary, result_type: UInt8
+                    LIST id: 44, nodes: 1
+                      FUNCTION id: 45, function_name: in, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 42, nodes: 2
-                            COLUMN id: 43, column_name: src, result_type: String, source_id: 3
-                            QUERY id: 44, is_subquery: 1
+                          LIST id: 46, nodes: 2
+                            FUNCTION id: 47, function_name: tuple, function_type: ordinary, result_type: Tuple(String, LowCardinality(String))
+                              ARGUMENTS
+                                LIST id: 48, nodes: 2
+                                  COLUMN id: 49, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 50, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                            QUERY id: 51, is_subquery: 1
                               PROJECTION COLUMNS
                                 src String
+                                _part LowCardinality(String)
                               PROJECTION
-                                LIST id: 45, nodes: 1
-                                  COLUMN id: 46, column_name: src, result_type: String, source_id: 3
+                                LIST id: 52, nodes: 2
+                                  COLUMN id: 53, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 54, column_name: _part, result_type: LowCardinality(String), source_id: 3
                               JOIN TREE
                                 TABLE id: 3, alias: __table1, table_name: default.test_a
                               WHERE
-                                FUNCTION id: 47, function_name: equals, function_type: ordinary, result_type: UInt8
+                                FUNCTION id: 55, function_name: equals, function_type: ordinary, result_type: UInt8
                                   ARGUMENTS
-                                    LIST id: 48, nodes: 2
-                                      COLUMN id: 49, column_name: dst, result_type: String, source_id: 3
-                                      CONSTANT id: 50, constant_value: \'-42\', constant_value_type: String
-                FUNCTION id: 51, function_name: equals, function_type: ordinary, result_type: UInt8
+                                    LIST id: 56, nodes: 2
+                                      COLUMN id: 57, column_name: dst, result_type: String, source_id: 3
+                                      CONSTANT id: 58, constant_value: \'-42\', constant_value_type: String
+                FUNCTION id: 59, function_name: equals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 52, nodes: 2
-                      COLUMN id: 53, column_name: dst, result_type: String, source_id: 3
-                      CONSTANT id: 54, constant_value: \'-42\', constant_value_type: String
+                    LIST id: 60, nodes: 2
+                      COLUMN id: 61, column_name: dst, result_type: String, source_id: 3
+                      CONSTANT id: 62, constant_value: \'-42\', constant_value_type: String
 QUERY id: 0
   PROJECTION COLUMNS
     id String
@@ -135,37 +147,43 @@ QUERY id: 0
                       FUNCTION id: 11, function_name: in, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 12, nodes: 2
-                            COLUMN id: 13, column_name: src, result_type: String, source_id: 3
-                            QUERY id: 14, is_subquery: 1
+                            FUNCTION id: 13, function_name: tuple, function_type: ordinary, result_type: Tuple(String, LowCardinality(String))
+                              ARGUMENTS
+                                LIST id: 14, nodes: 2
+                                  COLUMN id: 15, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 16, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                            QUERY id: 17, is_subquery: 1
                               PROJECTION COLUMNS
                                 src String
+                                _part LowCardinality(String)
                               PROJECTION
-                                LIST id: 15, nodes: 1
-                                  COLUMN id: 16, column_name: src, result_type: String, source_id: 3
+                                LIST id: 18, nodes: 2
+                                  COLUMN id: 19, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 20, column_name: _part, result_type: LowCardinality(String), source_id: 3
                               JOIN TREE
                                 TABLE id: 3, alias: __table1, table_name: default.test_a
                               WHERE
-                                FUNCTION id: 17, function_name: equals, function_type: ordinary, result_type: UInt8
+                                FUNCTION id: 21, function_name: equals, function_type: ordinary, result_type: UInt8
                                   ARGUMENTS
-                                    LIST id: 18, nodes: 2
-                                      FUNCTION id: 19, function_name: lower, function_type: ordinary, result_type: String
+                                    LIST id: 22, nodes: 2
+                                      FUNCTION id: 23, function_name: lower, function_type: ordinary, result_type: String
                                         ARGUMENTS
-                                          LIST id: 20, nodes: 1
-                                            COLUMN id: 21, column_name: c1, result_type: String, source_id: 3
-                                      CONSTANT id: 22, constant_value: \'43\', constant_value_type: String
-                FUNCTION id: 23, function_name: equals, function_type: ordinary, result_type: UInt8
+                                          LIST id: 24, nodes: 1
+                                            COLUMN id: 25, column_name: c1, result_type: String, source_id: 3
+                                      CONSTANT id: 26, constant_value: \'43\', constant_value_type: String
+                FUNCTION id: 27, function_name: equals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 24, nodes: 2
-                      FUNCTION id: 25, function_name: lower, function_type: ordinary, result_type: String
+                    LIST id: 28, nodes: 2
+                      FUNCTION id: 29, function_name: lower, function_type: ordinary, result_type: String
                         ARGUMENTS
-                          LIST id: 26, nodes: 1
+                          LIST id: 30, nodes: 1
                             COLUMN id: 2, column_name: c1, result_type: String, source_id: 3
-                      CONSTANT id: 27, constant_value: \'43\', constant_value_type: String
-          FUNCTION id: 28, function_name: equals, function_type: ordinary, result_type: UInt8
+                      CONSTANT id: 31, constant_value: \'43\', constant_value_type: String
+          FUNCTION id: 32, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 29, nodes: 2
+              LIST id: 33, nodes: 2
                 COLUMN id: 4, column_name: c2, result_type: String, source_id: 3
-                CONSTANT id: 30, constant_value: \'44\', constant_value_type: String
+                CONSTANT id: 34, constant_value: \'44\', constant_value_type: String
 99
 QUERY id: 0
   PROJECTION COLUMNS
@@ -185,26 +203,32 @@ QUERY id: 0
                 FUNCTION id: 8, function_name: in, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 9, nodes: 2
-                      COLUMN id: 10, column_name: src, result_type: String, source_id: 3
-                      QUERY id: 11, is_subquery: 1
+                      FUNCTION id: 10, function_name: tuple, function_type: ordinary, result_type: Tuple(String, LowCardinality(String))
+                        ARGUMENTS
+                          LIST id: 11, nodes: 2
+                            COLUMN id: 12, column_name: src, result_type: String, source_id: 3
+                            COLUMN id: 13, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                      QUERY id: 14, is_subquery: 1
                         PROJECTION COLUMNS
                           src String
+                          _part LowCardinality(String)
                         PROJECTION
-                          LIST id: 12, nodes: 1
-                            COLUMN id: 13, column_name: src, result_type: String, source_id: 3
+                          LIST id: 15, nodes: 2
+                            COLUMN id: 16, column_name: src, result_type: String, source_id: 3
+                            COLUMN id: 17, column_name: _part, result_type: LowCardinality(String), source_id: 3
                         JOIN TREE
                           TABLE id: 3, alias: __table1, table_name: default.test_a
                         WHERE
-                          FUNCTION id: 14, function_name: notEquals, function_type: ordinary, result_type: UInt8
+                          FUNCTION id: 18, function_name: notEquals, function_type: ordinary, result_type: UInt8
                             ARGUMENTS
-                              LIST id: 15, nodes: 2
-                                COLUMN id: 16, column_name: c1, result_type: String, source_id: 3
-                                CONSTANT id: 17, constant_value: \'43\', constant_value_type: String
-          FUNCTION id: 18, function_name: notEquals, function_type: ordinary, result_type: UInt8
+                              LIST id: 19, nodes: 2
+                                COLUMN id: 20, column_name: c1, result_type: String, source_id: 3
+                                CONSTANT id: 21, constant_value: \'43\', constant_value_type: String
+          FUNCTION id: 22, function_name: notEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 19, nodes: 2
-                COLUMN id: 20, column_name: c1, result_type: String, source_id: 3
-                CONSTANT id: 21, constant_value: \'43\', constant_value_type: String
+              LIST id: 23, nodes: 2
+                COLUMN id: 24, column_name: c1, result_type: String, source_id: 3
+                CONSTANT id: 25, constant_value: \'43\', constant_value_type: String
 QUERY id: 0
   PROJECTION COLUMNS
     src2 String
@@ -234,45 +258,48 @@ QUERY id: 0
                             FUNCTION id: 16, function_name: in, function_type: ordinary, result_type: UInt8
                               ARGUMENTS
                                 LIST id: 17, nodes: 2
-                                  FUNCTION id: 18, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                                  FUNCTION id: 18, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                                     ARGUMENTS
-                                      LIST id: 19, nodes: 2
+                                      LIST id: 19, nodes: 3
                                         COLUMN id: 20, column_name: src, result_type: String, source_id: 3
                                         COLUMN id: 21, column_name: src2, result_type: String, source_id: 3
-                                  QUERY id: 22, is_subquery: 1
+                                        COLUMN id: 22, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                                  QUERY id: 23, is_subquery: 1
                                     PROJECTION COLUMNS
                                       src String
                                       src2 String
+                                      _part LowCardinality(String)
                                     PROJECTION
-                                      LIST id: 23, nodes: 2
-                                        COLUMN id: 24, column_name: src, result_type: String, source_id: 3
-                                        COLUMN id: 25, column_name: src2, result_type: String, source_id: 3
+                                      LIST id: 24, nodes: 3
+                                        COLUMN id: 25, column_name: src, result_type: String, source_id: 3
+                                        COLUMN id: 26, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 27, column_name: _part, result_type: LowCardinality(String), source_id: 3
                                     JOIN TREE
                                       TABLE id: 3, alias: __table1, table_name: default.test_b
                                     WHERE
-                                      FUNCTION id: 26, function_name: and, function_type: ordinary, result_type: UInt8
+                                      FUNCTION id: 28, function_name: and, function_type: ordinary, result_type: UInt8
                                         ARGUMENTS
-                                          LIST id: 27, nodes: 2
-                                            FUNCTION id: 28, function_name: equals, function_type: ordinary, result_type: UInt8
+                                          LIST id: 29, nodes: 2
+                                            FUNCTION id: 30, function_name: equals, function_type: ordinary, result_type: UInt8
                                               ARGUMENTS
-                                                LIST id: 29, nodes: 2
-                                                  COLUMN id: 30, column_name: src2, result_type: String, source_id: 3
-                                                  CONSTANT id: 31, constant_value: \'44\', constant_value_type: String
-                                            FUNCTION id: 32, function_name: equals, function_type: ordinary, result_type: UInt8
+                                                LIST id: 31, nodes: 2
+                                                  COLUMN id: 32, column_name: src2, result_type: String, source_id: 3
+                                                  CONSTANT id: 33, constant_value: \'44\', constant_value_type: String
+                                            FUNCTION id: 34, function_name: equals, function_type: ordinary, result_type: UInt8
                                               ARGUMENTS
-                                                LIST id: 33, nodes: 2
-                                                  COLUMN id: 34, column_name: dst, result_type: String, source_id: 3
-                                                  CONSTANT id: 35, constant_value: \'-42\', constant_value_type: String
-                      FUNCTION id: 36, function_name: equals, function_type: ordinary, result_type: UInt8
+                                                LIST id: 35, nodes: 2
+                                                  COLUMN id: 36, column_name: dst, result_type: String, source_id: 3
+                                                  CONSTANT id: 37, constant_value: \'-42\', constant_value_type: String
+                      FUNCTION id: 38, function_name: equals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 37, nodes: 2
-                            COLUMN id: 38, column_name: dst, result_type: String, source_id: 3
-                            CONSTANT id: 39, constant_value: \'-42\', constant_value_type: String
-          FUNCTION id: 40, function_name: equals, function_type: ordinary, result_type: UInt8
+                          LIST id: 39, nodes: 2
+                            COLUMN id: 40, column_name: dst, result_type: String, source_id: 3
+                            CONSTANT id: 41, constant_value: \'-42\', constant_value_type: String
+          FUNCTION id: 42, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 41, nodes: 2
+              LIST id: 43, nodes: 2
                 COLUMN id: 2, column_name: src2, result_type: String, source_id: 3
-                CONSTANT id: 42, constant_value: \'44\', constant_value_type: String
+                CONSTANT id: 44, constant_value: \'44\', constant_value_type: String
 QUERY id: 0
   PROJECTION COLUMNS
     src String
@@ -294,37 +321,40 @@ QUERY id: 0
                       FUNCTION id: 10, function_name: in, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 11, nodes: 2
-                            FUNCTION id: 12, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                            FUNCTION id: 12, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                               ARGUMENTS
-                                LIST id: 13, nodes: 2
+                                LIST id: 13, nodes: 3
                                   COLUMN id: 14, column_name: src, result_type: String, source_id: 3
                                   COLUMN id: 15, column_name: src2, result_type: String, source_id: 3
-                            QUERY id: 16, is_subquery: 1
+                                  COLUMN id: 16, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                            QUERY id: 17, is_subquery: 1
                               PROJECTION COLUMNS
                                 src String
                                 src2 String
+                                _part LowCardinality(String)
                               PROJECTION
-                                LIST id: 17, nodes: 2
-                                  COLUMN id: 18, column_name: src, result_type: String, source_id: 3
-                                  COLUMN id: 19, column_name: src2, result_type: String, source_id: 3
+                                LIST id: 18, nodes: 3
+                                  COLUMN id: 19, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 20, column_name: src2, result_type: String, source_id: 3
+                                  COLUMN id: 21, column_name: _part, result_type: LowCardinality(String), source_id: 3
                               JOIN TREE
                                 TABLE id: 3, alias: __table1, table_name: default.test_b
                               WHERE
-                                FUNCTION id: 20, function_name: in, function_type: ordinary, result_type: UInt8
+                                FUNCTION id: 22, function_name: in, function_type: ordinary, result_type: UInt8
                                   ARGUMENTS
-                                    LIST id: 21, nodes: 2
-                                      COLUMN id: 22, column_name: dst, result_type: String, source_id: 3
-                                      CONSTANT id: 23, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
-                FUNCTION id: 24, function_name: in, function_type: ordinary, result_type: UInt8
+                                    LIST id: 23, nodes: 2
+                                      COLUMN id: 24, column_name: dst, result_type: String, source_id: 3
+                                      CONSTANT id: 25, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
+                FUNCTION id: 26, function_name: in, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 25, nodes: 2
-                      COLUMN id: 26, column_name: dst, result_type: String, source_id: 3
-                      CONSTANT id: 27, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
-          FUNCTION id: 28, function_name: equals, function_type: ordinary, result_type: UInt8
+                    LIST id: 27, nodes: 2
+                      COLUMN id: 28, column_name: dst, result_type: String, source_id: 3
+                      CONSTANT id: 29, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
+          FUNCTION id: 30, function_name: equals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 29, nodes: 2
+              LIST id: 31, nodes: 2
                 COLUMN id: 2, column_name: src, result_type: String, source_id: 3
-                CONSTANT id: 30, constant_value: \'20\', constant_value_type: String
+                CONSTANT id: 32, constant_value: \'20\', constant_value_type: String
 20
 41
 42
@@ -349,32 +379,35 @@ QUERY id: 0
                 FUNCTION id: 8, function_name: in, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 9, nodes: 2
-                      FUNCTION id: 10, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                      FUNCTION id: 10, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                         ARGUMENTS
-                          LIST id: 11, nodes: 2
+                          LIST id: 11, nodes: 3
                             COLUMN id: 12, column_name: src, result_type: String, source_id: 3
                             COLUMN id: 13, column_name: src2, result_type: String, source_id: 3
-                      QUERY id: 14, is_subquery: 1
+                            COLUMN id: 14, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                      QUERY id: 15, is_subquery: 1
                         PROJECTION COLUMNS
                           src String
                           src2 String
+                          _part LowCardinality(String)
                         PROJECTION
-                          LIST id: 15, nodes: 2
-                            COLUMN id: 16, column_name: src, result_type: String, source_id: 3
-                            COLUMN id: 17, column_name: src2, result_type: String, source_id: 3
+                          LIST id: 16, nodes: 3
+                            COLUMN id: 17, column_name: src, result_type: String, source_id: 3
+                            COLUMN id: 18, column_name: src2, result_type: String, source_id: 3
+                            COLUMN id: 19, column_name: _part, result_type: LowCardinality(String), source_id: 3
                         JOIN TREE
                           TABLE id: 3, alias: __table1, table_name: default.test_b
                         WHERE
-                          FUNCTION id: 18, function_name: notIn, function_type: ordinary, result_type: UInt8
+                          FUNCTION id: 20, function_name: notIn, function_type: ordinary, result_type: UInt8
                             ARGUMENTS
-                              LIST id: 19, nodes: 2
-                                COLUMN id: 20, column_name: dst, result_type: String, source_id: 3
-                                CONSTANT id: 21, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
-          FUNCTION id: 22, function_name: notIn, function_type: ordinary, result_type: UInt8
+                              LIST id: 21, nodes: 2
+                                COLUMN id: 22, column_name: dst, result_type: String, source_id: 3
+                                CONSTANT id: 23, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
+          FUNCTION id: 24, function_name: notIn, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 23, nodes: 2
-                COLUMN id: 24, column_name: dst, result_type: String, source_id: 3
-                CONSTANT id: 25, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
+              LIST id: 25, nodes: 2
+                COLUMN id: 26, column_name: dst, result_type: String, source_id: 3
+                CONSTANT id: 27, constant_value: Tuple_(\'-41\', \'-42\', \'-43\'), constant_value_type: Tuple(String, String, String)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -396,45 +429,48 @@ QUERY id: 0
                       FUNCTION id: 10, function_name: in, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 11, nodes: 2
-                            FUNCTION id: 12, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                            FUNCTION id: 12, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                               ARGUMENTS
-                                LIST id: 13, nodes: 2
+                                LIST id: 13, nodes: 3
                                   COLUMN id: 14, column_name: src, result_type: String, source_id: 3
                                   COLUMN id: 15, column_name: src2, result_type: String, source_id: 3
-                            QUERY id: 16, is_subquery: 1
+                                  COLUMN id: 16, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                            QUERY id: 17, is_subquery: 1
                               PROJECTION COLUMNS
                                 src String
                                 src2 String
+                                _part LowCardinality(String)
                               PROJECTION
-                                LIST id: 17, nodes: 2
-                                  COLUMN id: 18, column_name: src, result_type: String, source_id: 3
-                                  COLUMN id: 19, column_name: src2, result_type: String, source_id: 3
+                                LIST id: 18, nodes: 3
+                                  COLUMN id: 19, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 20, column_name: src2, result_type: String, source_id: 3
+                                  COLUMN id: 21, column_name: _part, result_type: LowCardinality(String), source_id: 3
                               JOIN TREE
                                 TABLE id: 3, alias: __table1, table_name: default.test_b
                               WHERE
-                                FUNCTION id: 20, function_name: and, function_type: ordinary, result_type: UInt8
+                                FUNCTION id: 22, function_name: and, function_type: ordinary, result_type: UInt8
                                   ARGUMENTS
-                                    LIST id: 21, nodes: 2
-                                      FUNCTION id: 22, function_name: notEquals, function_type: ordinary, result_type: UInt8
+                                    LIST id: 23, nodes: 2
+                                      FUNCTION id: 24, function_name: notEquals, function_type: ordinary, result_type: UInt8
                                         ARGUMENTS
-                                          LIST id: 23, nodes: 2
-                                            COLUMN id: 24, column_name: src, result_type: String, source_id: 3
-                                            CONSTANT id: 25, constant_value: \'24\', constant_value_type: String
-                                      FUNCTION id: 26, function_name: notEquals, function_type: ordinary, result_type: UInt8
+                                          LIST id: 25, nodes: 2
+                                            COLUMN id: 26, column_name: src, result_type: String, source_id: 3
+                                            CONSTANT id: 27, constant_value: \'24\', constant_value_type: String
+                                      FUNCTION id: 28, function_name: notEquals, function_type: ordinary, result_type: UInt8
                                         ARGUMENTS
-                                          LIST id: 27, nodes: 2
-                                            COLUMN id: 28, column_name: dst, result_type: String, source_id: 3
-                                            CONSTANT id: 29, constant_value: \'-42\', constant_value_type: String
-                FUNCTION id: 30, function_name: notEquals, function_type: ordinary, result_type: UInt8
+                                          LIST id: 29, nodes: 2
+                                            COLUMN id: 30, column_name: dst, result_type: String, source_id: 3
+                                            CONSTANT id: 31, constant_value: \'-42\', constant_value_type: String
+                FUNCTION id: 32, function_name: notEquals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 31, nodes: 2
-                      COLUMN id: 32, column_name: dst, result_type: String, source_id: 3
-                      CONSTANT id: 33, constant_value: \'-42\', constant_value_type: String
-          FUNCTION id: 34, function_name: notEquals, function_type: ordinary, result_type: UInt8
+                    LIST id: 33, nodes: 2
+                      COLUMN id: 34, column_name: dst, result_type: String, source_id: 3
+                      CONSTANT id: 35, constant_value: \'-42\', constant_value_type: String
+          FUNCTION id: 36, function_name: notEquals, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 35, nodes: 2
-                COLUMN id: 36, column_name: src, result_type: String, source_id: 3
-                CONSTANT id: 37, constant_value: \'24\', constant_value_type: String
+              LIST id: 37, nodes: 2
+                COLUMN id: 38, column_name: src, result_type: String, source_id: 3
+                CONSTANT id: 39, constant_value: \'24\', constant_value_type: String
 QUERY id: 0
   PROJECTION COLUMNS
     src String
@@ -456,105 +492,114 @@ QUERY id: 0
                       FUNCTION id: 10, function_name: in, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
                           LIST id: 11, nodes: 2
-                            FUNCTION id: 12, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                            FUNCTION id: 12, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                               ARGUMENTS
-                                LIST id: 13, nodes: 2
+                                LIST id: 13, nodes: 3
                                   COLUMN id: 14, column_name: src, result_type: String, source_id: 3
                                   COLUMN id: 15, column_name: src2, result_type: String, source_id: 3
-                            QUERY id: 16, is_subquery: 1
+                                  COLUMN id: 16, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                            QUERY id: 17, is_subquery: 1
                               PROJECTION COLUMNS
                                 src String
                                 src2 String
+                                _part LowCardinality(String)
                               PROJECTION
-                                LIST id: 17, nodes: 2
-                                  COLUMN id: 18, column_name: src, result_type: String, source_id: 3
-                                  COLUMN id: 19, column_name: src2, result_type: String, source_id: 3
+                                LIST id: 18, nodes: 3
+                                  COLUMN id: 19, column_name: src, result_type: String, source_id: 3
+                                  COLUMN id: 20, column_name: src2, result_type: String, source_id: 3
+                                  COLUMN id: 21, column_name: _part, result_type: LowCardinality(String), source_id: 3
                               JOIN TREE
                                 TABLE id: 3, alias: __table1, table_name: default.test_b
                               WHERE
-                                FUNCTION id: 20, function_name: equals, function_type: ordinary, result_type: UInt8
+                                FUNCTION id: 22, function_name: equals, function_type: ordinary, result_type: UInt8
                                   ARGUMENTS
-                                    LIST id: 21, nodes: 2
-                                      COLUMN id: 22, column_name: c3, result_type: String, source_id: 3
-                                      CONSTANT id: 23, constant_value: \'42\', constant_value_type: String
-                FUNCTION id: 24, function_name: equals, function_type: ordinary, result_type: UInt8
+                                    LIST id: 23, nodes: 2
+                                      COLUMN id: 24, column_name: c3, result_type: String, source_id: 3
+                                      CONSTANT id: 25, constant_value: \'42\', constant_value_type: String
+                FUNCTION id: 26, function_name: equals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 25, nodes: 2
-                      COLUMN id: 26, column_name: c3, result_type: String, source_id: 3
-                      CONSTANT id: 27, constant_value: \'42\', constant_value_type: String
-          FUNCTION id: 28, function_name: or, function_type: ordinary, result_type: UInt8
+                    LIST id: 27, nodes: 2
+                      COLUMN id: 28, column_name: c3, result_type: String, source_id: 3
+                      CONSTANT id: 29, constant_value: \'42\', constant_value_type: String
+          FUNCTION id: 30, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 29, nodes: 2
-                FUNCTION id: 30, function_name: and, function_type: ordinary, result_type: UInt8
+              LIST id: 31, nodes: 2
+                FUNCTION id: 32, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 31, nodes: 2
-                      FUNCTION id: 32, function_name: indexHint, function_type: ordinary, result_type: UInt8
+                    LIST id: 33, nodes: 2
+                      FUNCTION id: 34, function_name: indexHint, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 33, nodes: 1
-                            FUNCTION id: 34, function_name: in, function_type: ordinary, result_type: UInt8
+                          LIST id: 35, nodes: 1
+                            FUNCTION id: 36, function_name: in, function_type: ordinary, result_type: UInt8
                               ARGUMENTS
-                                LIST id: 35, nodes: 2
-                                  FUNCTION id: 36, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                                LIST id: 37, nodes: 2
+                                  FUNCTION id: 38, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                                     ARGUMENTS
-                                      LIST id: 37, nodes: 2
-                                        COLUMN id: 38, column_name: src, result_type: String, source_id: 3
-                                        COLUMN id: 39, column_name: src2, result_type: String, source_id: 3
-                                  QUERY id: 40, is_subquery: 1
+                                      LIST id: 39, nodes: 3
+                                        COLUMN id: 40, column_name: src, result_type: String, source_id: 3
+                                        COLUMN id: 41, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 42, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                                  QUERY id: 43, is_subquery: 1
                                     PROJECTION COLUMNS
                                       src String
                                       src2 String
+                                      _part LowCardinality(String)
                                     PROJECTION
-                                      LIST id: 41, nodes: 2
-                                        COLUMN id: 42, column_name: src, result_type: String, source_id: 3
-                                        COLUMN id: 43, column_name: src2, result_type: String, source_id: 3
+                                      LIST id: 44, nodes: 3
+                                        COLUMN id: 45, column_name: src, result_type: String, source_id: 3
+                                        COLUMN id: 46, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 47, column_name: _part, result_type: LowCardinality(String), source_id: 3
                                     JOIN TREE
                                       TABLE id: 3, alias: __table1, table_name: default.test_b
                                     WHERE
-                                      FUNCTION id: 44, function_name: equals, function_type: ordinary, result_type: UInt8
+                                      FUNCTION id: 48, function_name: equals, function_type: ordinary, result_type: UInt8
                                         ARGUMENTS
-                                          LIST id: 45, nodes: 2
-                                            COLUMN id: 46, column_name: c1, result_type: String, source_id: 3
-                                            CONSTANT id: 47, constant_value: \'39\', constant_value_type: String
-                      FUNCTION id: 48, function_name: equals, function_type: ordinary, result_type: UInt8
+                                          LIST id: 49, nodes: 2
+                                            COLUMN id: 50, column_name: c1, result_type: String, source_id: 3
+                                            CONSTANT id: 51, constant_value: \'39\', constant_value_type: String
+                      FUNCTION id: 52, function_name: equals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 49, nodes: 2
-                            COLUMN id: 50, column_name: c1, result_type: String, source_id: 3
-                            CONSTANT id: 51, constant_value: \'39\', constant_value_type: String
-                FUNCTION id: 52, function_name: and, function_type: ordinary, result_type: UInt8
+                          LIST id: 53, nodes: 2
+                            COLUMN id: 54, column_name: c1, result_type: String, source_id: 3
+                            CONSTANT id: 55, constant_value: \'39\', constant_value_type: String
+                FUNCTION id: 56, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 53, nodes: 2
-                      FUNCTION id: 54, function_name: indexHint, function_type: ordinary, result_type: UInt8
+                    LIST id: 57, nodes: 2
+                      FUNCTION id: 58, function_name: indexHint, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 55, nodes: 1
-                            FUNCTION id: 56, function_name: in, function_type: ordinary, result_type: UInt8
+                          LIST id: 59, nodes: 1
+                            FUNCTION id: 60, function_name: in, function_type: ordinary, result_type: UInt8
                               ARGUMENTS
-                                LIST id: 57, nodes: 2
-                                  FUNCTION id: 58, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                                LIST id: 61, nodes: 2
+                                  FUNCTION id: 62, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                                     ARGUMENTS
-                                      LIST id: 59, nodes: 2
-                                        COLUMN id: 60, column_name: src, result_type: String, source_id: 3
-                                        COLUMN id: 61, column_name: src2, result_type: String, source_id: 3
-                                  QUERY id: 62, is_subquery: 1
-                                    PROJECTION COLUMNS
-                                      src String
-                                      src2 String
-                                    PROJECTION
-                                      LIST id: 63, nodes: 2
+                                      LIST id: 63, nodes: 3
                                         COLUMN id: 64, column_name: src, result_type: String, source_id: 3
                                         COLUMN id: 65, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 66, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                                  QUERY id: 67, is_subquery: 1
+                                    PROJECTION COLUMNS
+                                      src String
+                                      src2 String
+                                      _part LowCardinality(String)
+                                    PROJECTION
+                                      LIST id: 68, nodes: 3
+                                        COLUMN id: 69, column_name: src, result_type: String, source_id: 3
+                                        COLUMN id: 70, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 71, column_name: _part, result_type: LowCardinality(String), source_id: 3
                                     JOIN TREE
                                       TABLE id: 3, alias: __table1, table_name: default.test_b
                                     WHERE
-                                      FUNCTION id: 66, function_name: equals, function_type: ordinary, result_type: UInt8
+                                      FUNCTION id: 72, function_name: equals, function_type: ordinary, result_type: UInt8
                                         ARGUMENTS
-                                          LIST id: 67, nodes: 2
-                                            COLUMN id: 68, column_name: c2, result_type: String, source_id: 3
-                                            CONSTANT id: 69, constant_value: \'41\', constant_value_type: String
-                      FUNCTION id: 70, function_name: equals, function_type: ordinary, result_type: UInt8
+                                          LIST id: 73, nodes: 2
+                                            COLUMN id: 74, column_name: c2, result_type: String, source_id: 3
+                                            CONSTANT id: 75, constant_value: \'41\', constant_value_type: String
+                      FUNCTION id: 76, function_name: equals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 71, nodes: 2
-                            COLUMN id: 72, column_name: c2, result_type: String, source_id: 3
-                            CONSTANT id: 73, constant_value: \'41\', constant_value_type: String
+                          LIST id: 77, nodes: 2
+                            COLUMN id: 78, column_name: c2, result_type: String, source_id: 3
+                            CONSTANT id: 79, constant_value: \'41\', constant_value_type: String
 QUERY id: 0
   PROJECTION COLUMNS
     src String
@@ -584,83 +629,89 @@ QUERY id: 0
                             FUNCTION id: 15, function_name: in, function_type: ordinary, result_type: UInt8
                               ARGUMENTS
                                 LIST id: 16, nodes: 2
-                                  FUNCTION id: 17, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                                  FUNCTION id: 17, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                                     ARGUMENTS
-                                      LIST id: 18, nodes: 2
+                                      LIST id: 18, nodes: 3
                                         COLUMN id: 19, column_name: src, result_type: String, source_id: 3
                                         COLUMN id: 20, column_name: src2, result_type: String, source_id: 3
-                                  QUERY id: 21, is_subquery: 1
+                                        COLUMN id: 21, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                                  QUERY id: 22, is_subquery: 1
                                     PROJECTION COLUMNS
                                       src String
                                       src2 String
+                                      _part LowCardinality(String)
                                     PROJECTION
-                                      LIST id: 22, nodes: 2
-                                        COLUMN id: 23, column_name: src, result_type: String, source_id: 3
-                                        COLUMN id: 24, column_name: src2, result_type: String, source_id: 3
+                                      LIST id: 23, nodes: 3
+                                        COLUMN id: 24, column_name: src, result_type: String, source_id: 3
+                                        COLUMN id: 25, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 26, column_name: _part, result_type: LowCardinality(String), source_id: 3
                                     JOIN TREE
                                       TABLE id: 3, alias: __table1, table_name: default.test_b
                                     WHERE
-                                      FUNCTION id: 25, function_name: and, function_type: ordinary, result_type: UInt8
+                                      FUNCTION id: 27, function_name: and, function_type: ordinary, result_type: UInt8
                                         ARGUMENTS
-                                          LIST id: 26, nodes: 2
-                                            FUNCTION id: 27, function_name: equals, function_type: ordinary, result_type: UInt8
+                                          LIST id: 28, nodes: 2
+                                            FUNCTION id: 29, function_name: equals, function_type: ordinary, result_type: UInt8
                                               ARGUMENTS
-                                                LIST id: 28, nodes: 2
-                                                  COLUMN id: 29, column_name: src, result_type: String, source_id: 3
-                                                  CONSTANT id: 30, constant_value: \'40\', constant_value_type: String
-                                            FUNCTION id: 31, function_name: equals, function_type: ordinary, result_type: UInt8
+                                                LIST id: 30, nodes: 2
+                                                  COLUMN id: 31, column_name: src, result_type: String, source_id: 3
+                                                  CONSTANT id: 32, constant_value: \'40\', constant_value_type: String
+                                            FUNCTION id: 33, function_name: equals, function_type: ordinary, result_type: UInt8
                                               ARGUMENTS
-                                                LIST id: 32, nodes: 2
-                                                  COLUMN id: 33, column_name: c1, result_type: String, source_id: 3
-                                                  CONSTANT id: 34, constant_value: \'39\', constant_value_type: String
-                      FUNCTION id: 35, function_name: equals, function_type: ordinary, result_type: UInt8
+                                                LIST id: 34, nodes: 2
+                                                  COLUMN id: 35, column_name: c1, result_type: String, source_id: 3
+                                                  CONSTANT id: 36, constant_value: \'39\', constant_value_type: String
+                      FUNCTION id: 37, function_name: equals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 36, nodes: 2
-                            COLUMN id: 37, column_name: c1, result_type: String, source_id: 3
-                            CONSTANT id: 38, constant_value: \'39\', constant_value_type: String
-                FUNCTION id: 39, function_name: and, function_type: ordinary, result_type: UInt8
+                          LIST id: 38, nodes: 2
+                            COLUMN id: 39, column_name: c1, result_type: String, source_id: 3
+                            CONSTANT id: 40, constant_value: \'39\', constant_value_type: String
+                FUNCTION id: 41, function_name: and, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 40, nodes: 2
-                      FUNCTION id: 41, function_name: indexHint, function_type: ordinary, result_type: UInt8
+                    LIST id: 42, nodes: 2
+                      FUNCTION id: 43, function_name: indexHint, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 42, nodes: 1
-                            FUNCTION id: 43, function_name: in, function_type: ordinary, result_type: UInt8
+                          LIST id: 44, nodes: 1
+                            FUNCTION id: 45, function_name: in, function_type: ordinary, result_type: UInt8
                               ARGUMENTS
-                                LIST id: 44, nodes: 2
-                                  FUNCTION id: 45, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String)
+                                LIST id: 46, nodes: 2
+                                  FUNCTION id: 47, function_name: tuple, function_type: ordinary, result_type: Tuple(String, String, LowCardinality(String))
                                     ARGUMENTS
-                                      LIST id: 46, nodes: 2
-                                        COLUMN id: 47, column_name: src, result_type: String, source_id: 3
-                                        COLUMN id: 48, column_name: src2, result_type: String, source_id: 3
-                                  QUERY id: 49, is_subquery: 1
+                                      LIST id: 48, nodes: 3
+                                        COLUMN id: 49, column_name: src, result_type: String, source_id: 3
+                                        COLUMN id: 50, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 51, column_name: _part, result_type: LowCardinality(String), source_id: 3
+                                  QUERY id: 52, is_subquery: 1
                                     PROJECTION COLUMNS
                                       src String
                                       src2 String
+                                      _part LowCardinality(String)
                                     PROJECTION
-                                      LIST id: 50, nodes: 2
-                                        COLUMN id: 51, column_name: src, result_type: String, source_id: 3
-                                        COLUMN id: 52, column_name: src2, result_type: String, source_id: 3
+                                      LIST id: 53, nodes: 3
+                                        COLUMN id: 54, column_name: src, result_type: String, source_id: 3
+                                        COLUMN id: 55, column_name: src2, result_type: String, source_id: 3
+                                        COLUMN id: 56, column_name: _part, result_type: LowCardinality(String), source_id: 3
                                     JOIN TREE
                                       TABLE id: 3, alias: __table1, table_name: default.test_b
                                     WHERE
-                                      FUNCTION id: 53, function_name: and, function_type: ordinary, result_type: UInt8
+                                      FUNCTION id: 57, function_name: and, function_type: ordinary, result_type: UInt8
                                         ARGUMENTS
-                                          LIST id: 54, nodes: 2
-                                            FUNCTION id: 55, function_name: equals, function_type: ordinary, result_type: UInt8
-                                              ARGUMENTS
-                                                LIST id: 56, nodes: 2
-                                                  COLUMN id: 57, column_name: src, result_type: String, source_id: 3
-                                                  CONSTANT id: 58, constant_value: \'40\', constant_value_type: String
+                                          LIST id: 58, nodes: 2
                                             FUNCTION id: 59, function_name: equals, function_type: ordinary, result_type: UInt8
                                               ARGUMENTS
                                                 LIST id: 60, nodes: 2
-                                                  COLUMN id: 61, column_name: c2, result_type: String, source_id: 3
-                                                  CONSTANT id: 62, constant_value: \'41\', constant_value_type: String
-                      FUNCTION id: 63, function_name: equals, function_type: ordinary, result_type: UInt8
+                                                  COLUMN id: 61, column_name: src, result_type: String, source_id: 3
+                                                  CONSTANT id: 62, constant_value: \'40\', constant_value_type: String
+                                            FUNCTION id: 63, function_name: equals, function_type: ordinary, result_type: UInt8
+                                              ARGUMENTS
+                                                LIST id: 64, nodes: 2
+                                                  COLUMN id: 65, column_name: c2, result_type: String, source_id: 3
+                                                  CONSTANT id: 66, constant_value: \'41\', constant_value_type: String
+                      FUNCTION id: 67, function_name: equals, function_type: ordinary, result_type: UInt8
                         ARGUMENTS
-                          LIST id: 64, nodes: 2
-                            COLUMN id: 65, column_name: c2, result_type: String, source_id: 3
-                            CONSTANT id: 66, constant_value: \'41\', constant_value_type: String
+                          LIST id: 68, nodes: 2
+                            COLUMN id: 69, column_name: c2, result_type: String, source_id: 3
+                            CONSTANT id: 70, constant_value: \'41\', constant_value_type: String
 40
 21
 40
