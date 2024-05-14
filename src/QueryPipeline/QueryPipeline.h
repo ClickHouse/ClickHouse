@@ -100,9 +100,14 @@ public:
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
 
-    bool getConcurrencyControl() const { return concurrency_control; }
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
-
+    // bool getConcurrencyControl() const { return concurrency_control; }
+    bool getConcurrencyControl() const
+    {
+        if (!concurrency_control.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "concurrency_control is not set yet");
+        return *concurrency_control;
+    }
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
@@ -160,7 +165,7 @@ private:
     IOutputFormat * output_format = nullptr;
 
     size_t num_threads = 0;
-    bool concurrency_control = false;
+    std::optional<bool> concurrency_control;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;

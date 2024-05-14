@@ -220,6 +220,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
 
+    query_plan.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
+
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
 }
 

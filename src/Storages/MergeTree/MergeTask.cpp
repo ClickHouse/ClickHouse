@@ -1118,6 +1118,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     if (!subqueries.empty())
         builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), global_ctx->context);
 
+    // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.
+    // TODO(serxa): Enable concurrency control for merges. This should be done after CPU scheduler introduction.
+    builder->setConcurrencyControl(false);
+
     global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     /// Dereference unique_ptr and pass horizontal_stage_progress by reference
     global_ctx->merged_pipeline.setProgressCallback(MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
