@@ -52,22 +52,21 @@ bool ReadBufferFromPocoSocketChunked::startChunk()
 
 bool ReadBufferFromPocoSocketChunked::nextChunk()
 {
-    static bool start = false;
-
-    if (chunk_left == 0) {
-        start = true;
+    if (chunk_left == 0)
+    {
+        started = true;
         return startChunk();
     }
 
     if (buffer_socket.available() == 0)
         if (!buffer_socket.next())
             return false;
-    if (start)
-        LOG_TEST(log, "Packet recieve started. Message {}, size {}", static_cast<unsigned int>(*buffer_socket.position()), chunk_left);
+    if (started)
+        LOG_TEST(log, "Packet receive started. Message {}, size {}", static_cast<unsigned int>(*buffer_socket.position()), chunk_left);
     else
-        LOG_TEST(log, "Packet recieve continued. Size {}", chunk_left);
+        LOG_TEST(log, "Packet receive continued. Size {}", chunk_left);
 
-    start = false;
+    started = false;
 
     nextimpl_working_buffer_offset = buffer_socket.offset();
 
@@ -88,7 +87,7 @@ bool ReadBufferFromPocoSocketChunked::nextChunk()
             return false;
 
     if (chunk_left == 0)
-        LOG_TEST(log, "Packet recieve ended.");
+        LOG_TEST(log, "Packet receive ended.");
 
     return true;
 }

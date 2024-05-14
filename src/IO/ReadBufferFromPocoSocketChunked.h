@@ -27,6 +27,7 @@ private:
     bool chunked = false;
     UInt32 chunk_left = 0; // chunk left to read from socket
     UInt8 skip_next = 0; // skip already processed bytes in buffer_socket
+    bool started = false;
 };
 
 }
