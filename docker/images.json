@@ -73,7 +73,7 @@
     "docker/test/fasttest": {
         "name": "altinityinfra/fasttest",
         "dependent": [
-            "docker/packager/binary-builder"
+            "docker/packager/cctools"
         ]
     },
     "docker/test/style": {
