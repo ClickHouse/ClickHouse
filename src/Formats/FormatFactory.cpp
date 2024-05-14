@@ -146,6 +146,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
     format_settings.null_as_default = settings.input_format_null_as_default;
+    format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
     format_settings.parquet.row_group_bytes = settings.output_format_parquet_row_group_size_bytes;
@@ -173,6 +174,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.max_value_width_apply_for_single_value = settings.output_format_pretty_max_value_width_apply_for_single_value;
     format_settings.pretty.highlight_digit_groups = settings.output_format_pretty_highlight_digit_groups;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
+    format_settings.pretty.preserve_border_for_multiline_string = settings.output_format_pretty_preserve_border_for_multiline_string;
     format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings.output_format_pretty_single_large_number_tip_threshold;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;

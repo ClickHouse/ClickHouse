@@ -417,6 +417,8 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("Raw", register_func);
     }
 }
 
@@ -448,6 +450,8 @@ void registerTSVSchemaReader(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("Raw", register_func);
     }
 }
 
@@ -521,8 +525,12 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("Raw", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
         markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
+        if (is_raw)
+            markFormatWithNamesAndTypesSupportsSamplingColumns("Raw", factory);
     }
 
     // We can use the same segmentation engine for TSKV.

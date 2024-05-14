@@ -436,7 +436,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             size_t compressed_size;
             snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
 
-            scratch.resize(static_cast<size_t>(compressed_size));
+            scratch.resize(compressed_size);
             return scratch;
         }
 #endif

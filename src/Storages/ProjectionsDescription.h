@@ -22,7 +22,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// Description of projections for Storage
 struct ProjectionDescription
 {
-    enum class Type
+    enum class Type : uint8_t
     {
         Normal,
         Aggregate,

@@ -99,7 +99,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
-    enum class KeyState
+    enum class KeyState : uint8_t
     {
         ACTIVE,
         REMOVING,
@@ -178,7 +178,7 @@ public:
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
-    enum class KeyNotFoundPolicy
+    enum class KeyNotFoundPolicy : uint8_t
     {
         THROW,
         THROW_LOGICAL,

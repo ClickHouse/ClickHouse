@@ -652,7 +652,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
-        // Skip all inverted index files, for they will be rebuilt
+        // Skip all full-text index files, for they will be rebuilt
         if (dynamic_cast<const MergeTreeIndexFullText *>(index.get()))
         {
             auto index_filename = index->getFileName();
@@ -731,7 +731,7 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* is inverted index
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index (aka. full-text-index)
 
             for (const auto & suffix : suffixes)
             {
@@ -1233,7 +1233,7 @@ private:
     void constructTaskForProjectionPartsMerge();
     void finalize();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_MUTATE_ORIGINAL_PART,
@@ -1689,7 +1689,7 @@ private:
         ctx->out.reset();
     }
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,
@@ -1938,8 +1938,7 @@ private:
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
     }
 
-
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,

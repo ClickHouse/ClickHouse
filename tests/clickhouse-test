@@ -908,7 +908,7 @@ class MergeTreeSettingsRandomizer:
         ),
         "cache_populated_by_fetch": lambda: random.randint(0, 1),
         "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
-        "old_parts_lifetime": threshold_generator(0.2, 0.3, 30, 8 * 60),
+        "old_parts_lifetime": threshold_generator(0.2, 0.3, 10, 8 * 60),
     }
 
     @staticmethod
@@ -2950,7 +2950,7 @@ def parse_args():
 
     parser.add_argument("--extract_from_config", help="extract-from-config program")
     parser.add_argument(
-        "--configclient", help="Client config (if you use not default ports)"
+        "--configclient", help="Client config (if you do not use default ports)"
     )
     parser.add_argument(
         "--configserver",
@@ -2970,7 +2970,7 @@ def parse_args():
     parser.add_argument(
         "--global_time_limit",
         type=int,
-        help="Stop if executing more than specified time (after current test finished)",
+        help="Stop if executing more than specified time (after current test is finished)",
     )
     parser.add_argument("test", nargs="*", help="Optional test case name regex")
     parser.add_argument(
