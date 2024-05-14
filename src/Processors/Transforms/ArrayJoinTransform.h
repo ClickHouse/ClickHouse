@@ -26,7 +26,7 @@ public:
 
 protected:
     void consume(Chunk chunk) override;
-    bool canGenerate(bool is_read_finished) override final;
+    bool canGenerate(bool is_read_finished) override;
     Chunk generate() override;
 
 private:
