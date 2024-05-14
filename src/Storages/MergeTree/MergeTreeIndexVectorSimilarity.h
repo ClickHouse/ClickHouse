@@ -4,6 +4,8 @@
 
 #include <Storages/MergeTree/VectorSimilarityCommon.h>
 
+#include <Common/Logger.h>
+
 #if defined(__linux__) && (defined(__x86_64__) || defined (__aarch64__))
 #  define USEARCH_USE_SIMSIMD 1 /// probably works on other platforms too but let's not risk
 #else
@@ -47,6 +49,21 @@ public:
             UsearchHnswParams usearch_hnsw_params);
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
+
+    struct Statistics
+    {
+        size_t max_level;
+        size_t connectivity;
+        size_t size;
+        size_t capacity;
+        size_t memory_usage;
+        /// advanced stats:
+        size_t bytes_per_vector;
+        size_t scalar_words;
+        Base::stats_t statistics;
+    };
+    Statistics getStatistics() const;
+
 };
 
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
@@ -87,6 +104,8 @@ private:
     /// are (at least in theory) agnostic of specific vector search libraries, and 2. additional data (e.g. the number of dimensions)
     /// outside usearch exists which we should keep it separately versioned.
     static constexpr UInt64 FileFormatVersion = 1;
+
+    LoggerPtr logger = getLogger("VectorSimilarity");
 };
 
 

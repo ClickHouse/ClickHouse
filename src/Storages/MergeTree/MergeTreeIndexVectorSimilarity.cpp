@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/BitHelpers.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -137,6 +138,20 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
                 "Could not load vector similarity index, error: " + String(result.error.release()) + " Please drop the index and create it again.");
 }
 
+USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
+{
+    Statistics statistics = {
+        .max_level = max_level(),
+        .connectivity = connectivity(),
+        .size = size(),
+        .capacity = capacity(),
+        .memory_usage = memory_usage(),
+        .bytes_per_vector = bytes_per_vector(),
+        .scalar_words = scalar_words(),
+        .statistics = stats()};
+    return statistics;
+}
+
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     const Block & index_sample_block_,
@@ -172,6 +187,10 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
     writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr);
 
     index->serialize(ostr);
+
+    auto statistics = index->getStatistics();
+    LOG_TRACE(logger, "Wrote vector similarity index, statistics: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+                      statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, statistics.memory_usage);
 }
 
 void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
@@ -194,6 +213,10 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
 
     index = std::make_shared<USearchIndexWithSerialization>(dimension, metric_kind, scalar_kind, usearch_hnsw_params);
     index->deserialize(istr);
+
+    auto statistics = index->getStatistics();
+    LOG_TRACE(logger, "Loaded vector similarity index, statistics: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+                      statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, statistics.memory_usage);
 }
 
 MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilarity(
