@@ -86,7 +86,7 @@ jobs:
         batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
           ref: ${{ fromJson(inputs.data).git_ref }}

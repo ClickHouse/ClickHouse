@@ -29,7 +29,7 @@ jobs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
@@ -240,7 +240,7 @@ jobs:
         run: exit 1
       - name: Check out repository code
         if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
       - name: Mark Commit Release Ready
         if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         run: |
@@ -563,7 +563,7 @@ jobs:
     runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
       - name: Finish label
