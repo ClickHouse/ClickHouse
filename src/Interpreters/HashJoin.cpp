@@ -2183,9 +2183,8 @@ Block HashJoin::joinBlockImpl(
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
     Block remaining_block = sliceBlock(block, num_joined);
-    
     void (AddedColumns<!join_features.is_any_join>::*func)(MutableColumnPtr &, const RowRef *, size_t);
-    func = is_join_get ? 
+    func = is_join_get ?
         &AddedColumns<!join_features.is_any_join>::buildJoinGetOutput : !added_columns.flag_per_row ?
         &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRefList :
         &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRef;
