@@ -860,8 +860,14 @@ def test_max_set_age(started_cluster):
     )
 
     node.query("SYSTEM FLUSH LOGS")
-    assert "Cannot parse input" in node.query("SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv'")
-    assert 1 == int(node.query("SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"))
+    assert "Cannot parse input" in node.query(
+        "SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv'"
+    )
+    assert 1 == int(
+        node.query(
+            "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"
+        )
+    )
 
     time.sleep(max_age + 1)
 
@@ -870,8 +876,14 @@ def test_max_set_age(started_cluster):
     )
 
     node.query("SYSTEM FLUSH LOGS")
-    assert "Cannot parse input" in node.query("SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv' ORDER BY processing_end_time DESC LIMIT 1")
-    assert 2 == int(node.query("SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"))
+    assert "Cannot parse input" in node.query(
+        "SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv' ORDER BY processing_end_time DESC LIMIT 1"
+    )
+    assert 2 == int(
+        node.query(
+            "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"
+        )
+    )
 
 
 def test_max_set_size(started_cluster):
