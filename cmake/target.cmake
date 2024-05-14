@@ -75,7 +75,6 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
             set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
             set (ENABLE_BLAKE3 OFF CACHE INTERNAL "")
-            set (COMPILER_CACHE disabled CACHE INTERNAL "")
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies

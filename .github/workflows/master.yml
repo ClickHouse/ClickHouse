@@ -247,7 +247,7 @@ jobs:
       build_name: binary_s390x
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
-  BuilderBinLOONGARCH64:
+  BuilderBinLoongarch64:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
@@ -306,7 +306,7 @@ jobs:
       - BuilderBinPPC64
       - BuilderBinRISCV64
       - BuilderBinS390X
-      - BuilderBinLOONGARCH64
+      - BuilderBinLoongarch64
       - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
