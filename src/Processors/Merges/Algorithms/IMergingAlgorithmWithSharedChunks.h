@@ -57,10 +57,13 @@ protected:
 
         auto first_non_equal = lhs.firstNonEqualSortColumnsWith(reinterpret_cast<size_t>(weight/count), rhs);
 
+        if (first_non_equal > lhs.sort_columns->size())
+           return false;
+
         weight += reinterpret_cast<unsigned long>(first_non_equal);
         count++;
 
-        return first_non_equal < lhs.sort_columns->size();
+        return true;
     }
 };
 
