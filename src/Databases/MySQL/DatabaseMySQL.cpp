@@ -341,7 +341,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
-    fs::remove_all(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
@@ -390,7 +390,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
     if (fs::exists(remove_flag))
-        fs::remove(remove_flag);
+        (void)fs::remove(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)

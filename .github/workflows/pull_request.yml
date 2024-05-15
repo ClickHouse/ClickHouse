@@ -6,7 +6,6 @@ env:
   PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
-  merge_group:
   pull_request:
     types:
       - synchronize
@@ -30,7 +29,6 @@ jobs:
           fetch-depth: 0 # to get version
           filter: tree:0
       - name: Labels check
-        if: ${{ github.event_name != 'merge_group' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
@@ -58,7 +56,6 @@ jobs:
               echo 'EOF'
             } >> "$GITHUB_OUTPUT"
       - name: Re-create GH statuses for skipped jobs if any
-        if: ${{ github.event_name != 'merge_group' }}
         run: |
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --update-gh-statuses
   BuildDockers:
@@ -83,7 +80,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, BuildDockers]
+    needs: [RunConfig, BuildDockers, StyleCheck]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -163,20 +160,16 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
-      - name: Check sync status
-        if: ${{ github.event_name == 'merge_group' }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 sync_pr.py --status
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 finish_check.py ${{ (contains(needs.*.result, 'failure') && github.event_name == 'merge_group') && '--pipeline-failure' || '' }}
-      - name: Auto merge if approved
-        if: ${{ github.event_name != 'merge_group' }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --check-approved
+          python3 finish_check.py
+      # FIXME: merge on approval does not work with MQ. Could be fixed by using defaul GH's automerge after some corrections in Mergeable Check status
+      # - name: Auto merge if approved
+      #   if: ${{ github.event_name != 'merge_group' }}
+      #   run: |
+      #     cd "$GITHUB_WORKSPACE/tests/ci"
+      #     python3 merge_pr.py --check-approved
 
 
 #############################################################################################
