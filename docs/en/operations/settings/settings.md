@@ -3667,7 +3667,7 @@ Default value: `0`.
 
 ## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
 
-Ignore absense of file if it does not exist when reading certain keys.
+Ignore absence of file if it does not exist when reading certain keys.
 
 Possible values:
 - 1 — `SELECT` returns empty result.
