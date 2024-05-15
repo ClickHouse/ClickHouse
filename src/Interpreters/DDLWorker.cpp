@@ -793,6 +793,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     bool executed_by_us = false;
     bool executed_by_other_leader = false;
 
+    bool extra_attempt_for_replicated_database = false;
+
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
     /// but DDL worker can continue processing other queries.
@@ -837,7 +839,14 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             /// Checking and incrementing counter exclusively.
             size_t counter = parse<int>(zookeeper->get(tries_to_execute_path));
             if (counter > MAX_TRIES_TO_EXECUTE)
-                break;
+            {
+                /// Replicated databases have their own retries, limiting retries here would break outer retries
+                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+                if (is_replicated_database_task)
+                    extra_attempt_for_replicated_database = true;
+                else
+                    break;
+            }
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
@@ -851,6 +860,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 executed_by_us = true;
                 break;
             }
+            else if (extra_attempt_for_replicated_database)
+                break;
         }
 
         /// Waiting for someone who will execute query and change is_executed_path node
@@ -894,7 +905,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         else /// If we exceeded amount of tries
         {
             LOG_WARNING(log, "Task {} was not executed by anyone, maximum number of retries exceeded", task.entry_name);
-            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
+            bool keep_original_error = extra_attempt_for_replicated_database && task.execution_status.code;
+            if (!keep_original_error)
+                task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
         return false;
     }
@@ -1191,8 +1204,12 @@ void DDLWorker::runMainThread()
             }
 
             LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count, message);
-            reset_state();
+
+            /// Sleep before retying
             sleepForSeconds(5);
+            /// Reset state after sleeping, so DatabaseReplicated::canExecuteReplicatedMetadataAlter()
+            /// will have a chance even when the database got stuck in infinite retries
+            reset_state();
         }
     }
 }
