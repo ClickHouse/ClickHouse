@@ -51,7 +51,7 @@ class MergeTreeTransaction;
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
-enum class DataPartRemovalState
+enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
     VISIBLE_TO_TRANSACTIONS,
@@ -79,7 +79,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = Columns;
+    using Index = std::shared_ptr<Columns>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -246,7 +246,7 @@ public:
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
     /// However in some special cases Clickhouse can make a decision without asking keeper.
-    enum class BlobsRemovalPolicyForTemporaryParts
+    enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
@@ -367,8 +367,9 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    const Index & getIndex() const;
-    void setIndex(Columns index_);
+    Index getIndex() const;
+    void setIndex(Index index_);
+    void unloadIndex();
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

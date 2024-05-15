@@ -6,7 +6,6 @@ env:
   PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
-  merge_group:
   pull_request:
     types:
       - synchronize
@@ -15,6 +14,11 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
 
+# Cancel the previous wf run in PRs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -22,7 +26,7 @@ jobs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: DebugInfo
-        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
+        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -30,7 +34,6 @@ jobs:
           fetch-depth: 0 # to get version
           filter: tree:0
       - name: Labels check
-        if: ${{ github.event_name != 'merge_group' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
@@ -58,7 +61,6 @@ jobs:
               echo 'EOF'
             } >> "$GITHUB_OUTPUT"
       - name: Re-create GH statuses for skipped jobs if any
-        if: ${{ github.event_name != 'merge_group' }}
         run: |
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --update-gh-statuses
   BuildDockers:
@@ -83,7 +85,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, BuildDockers]
+    needs: [RunConfig, BuildDockers, StyleCheck]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -158,25 +160,21 @@ jobs:
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [Tests_1, Tests_2, Builds_1_Report, Builds_2_Report]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
-      - name: Check sync status
-        if: ${{ github.event_name == 'merge_group' }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 sync_pr.py --status
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
-      - name: Auto merge if approved
-        if: ${{ github.event_name != 'merge_group' }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --check-approved
+      # FIXME: merge on approval does not work with MQ. Could be fixed by using defaul GH's automerge after some corrections in Mergeable Check status
+      # - name: Auto merge if approved
+      #   if: ${{ github.event_name != 'merge_group' }}
+      #   run: |
+      #     cd "$GITHUB_WORKSPACE/tests/ci"
+      #     python3 merge_pr.py --check-approved
 
 
 #############################################################################################

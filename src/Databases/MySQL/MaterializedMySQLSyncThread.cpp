@@ -151,8 +151,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         {"log_bin", "ON"},
         {"binlog_format", "ROW"},
         {"binlog_row_image", "FULL"},
-        {"default_authentication_plugin", "mysql_native_password"},
-        {"log_bin_use_v1_row_events", "OFF"}
+        {"default_authentication_plugin", "mysql_native_password"}
     };
 
     QueryPipeline pipeline(std::move(variables_input));

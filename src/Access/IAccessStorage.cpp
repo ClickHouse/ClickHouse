@@ -583,7 +583,7 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
         throwBackupNotAllowed();
 
     auto entities = readAllWithIDs(type);
-    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
     if (entities.empty())
         return;

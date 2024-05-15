@@ -27,7 +27,7 @@ WhereConstraintsOptimizer::WhereConstraintsOptimizer(
 namespace
 {
 
-enum class MatchState
+enum class MatchState : uint8_t
 {
     FULL_MATCH, /// a = b
     NOT_MATCH, /// a = not b

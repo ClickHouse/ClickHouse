@@ -7,6 +7,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
@@ -133,8 +134,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (d > MAX_DATETIME_DAY_NUM)
-                d = MAX_DATETIME_DAY_NUM;
+            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
@@ -798,14 +798,14 @@ inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer &
 }
 
 
-enum class ConvertFromStringExceptionMode
+enum class ConvertFromStringExceptionMode : uint8_t
 {
     Throw,  /// Throw exception if value cannot be parsed.
     Zero,   /// Fill with zero or default if value cannot be parsed.
     Null    /// Return ColumnNullable with NULLs when value cannot be parsed.
 };
 
-enum class ConvertFromStringParsingMode
+enum class ConvertFromStringParsingMode : uint8_t
 {
     Normal,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
@@ -1128,7 +1128,7 @@ struct AccurateOrNullConvertStrategyAdditions
     UInt32 scale { 0 };
 };
 
-enum class BehaviourOnErrorFromString
+enum class BehaviourOnErrorFromString : uint8_t
 {
     ConvertDefaultBehaviorTag,
     ConvertReturnNullOnErrorTag,
@@ -3302,7 +3302,7 @@ private:
             /// both columns have type UInt8, but we shouldn't use identity wrapper,
             /// because Bool column can contain only 0 and 1.
             auto res_column = to_type->createColumn();
-            const auto & data_from = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get())->getData();
+            const auto & data_from = checkAndGetColumn<ColumnUInt8>(*arguments[0].column).getData();
             auto & data_to = assert_cast<ColumnUInt8 *>(res_column.get())->getData();
             data_to.resize(data_from.size());
             for (size_t i = 0; i != data_from.size(); ++i)
@@ -3771,6 +3771,12 @@ private:
         }
         else if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type_untyped.get()))
         {
+            if (typeid_cast<const DataTypeNothing *>(from_array->getNestedType().get()))
+                return [nested = to_type->getNestedType()](ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t size)
+                {
+                    return ColumnMap::create(nested->createColumnConstWithDefaultValue(size)->convertToFullColumnIfConst());
+                };
+
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
                 throw Exception(
@@ -4853,7 +4859,7 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
         DataTypeFloat32, DataTypeFloat64,
-        DataTypeDate, DataTypeDate32, DataTypeDateTime,
+        DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64,
         DataTypeString>(return_type.get(), [&](auto & type)
         {
             monotonicity = FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;

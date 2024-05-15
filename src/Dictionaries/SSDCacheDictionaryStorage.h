@@ -728,7 +728,7 @@ public:
                         check_sum);
                 }
 
-                std::forward<FetchBlockFunc>(func)(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
+                func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
 
                 processed[block_to_fetch_index] = true;
             }
