@@ -49,6 +49,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMergeTree.h>
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -866,7 +867,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     max_block_size,
                     max_streams);
 
-                if (storage->isMergeTree() && query_context->canUseParallelReplicasOnInitiator())
+                auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
+                {
+                    if (!table->isMergeTree())
+                        return false;
+
+                    if (std::dynamic_pointer_cast<StorageMergeTree>(table)
+                        && !query_settings.parallel_replicas_for_non_replicated_merge_tree)
+                        return false;
+
+                    return true;
+                };
+
+                if (parallel_replicas_enabled_for_storage(storage, settings) && query_context->canUseParallelReplicasOnInitiator())
                 {
                     // (1) find read step
                     QueryPlan::Node * node = query_plan.getRootNode();
