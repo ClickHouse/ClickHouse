@@ -1921,7 +1921,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         bool uncovered = true;
         for (const auto & part : unexpected_parts_to_load)
         {
-            if (!info.contains(part.info))
+            if (name != part.name && part.info.contains(info))
             {
                 uncovered = false;
                 break;
