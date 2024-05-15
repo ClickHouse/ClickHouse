@@ -369,7 +369,7 @@ public:
 
     Index getIndex() const;
     void setIndex(const Columns & cols_);
-    void setIndex(Columns && index_);
+    void setIndex(Columns && cols_);
     void unloadIndex();
 
     /// For data in RAM ('index')
