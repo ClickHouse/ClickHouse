@@ -4,7 +4,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
-#include "Processors/Chunk.h"
 
 namespace DB
 {
