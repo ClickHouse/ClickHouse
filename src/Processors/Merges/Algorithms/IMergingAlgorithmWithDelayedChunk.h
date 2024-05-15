@@ -36,7 +36,7 @@ protected:
 
         auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
 
-        if (first_non_equal > lhs.sort_columns->size())
+        if (first_non_equal > lhs.num_columns)
            return false;
 
         prev_unequal_column = first_non_equal;
