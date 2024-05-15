@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 MergingSortedAlgorithm::MergingSortedAlgorithm(
     Block header_,
     size_t num_inputs,
@@ -133,6 +138,9 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
             return Status(merged_data.pull());
 
         auto current = queue.current();
+
+        if (getVirtualRowFromChunk(current_inputs[current.impl->order].chunk))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual row is not implemented for Non-batch mode.");
 
         if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
         {

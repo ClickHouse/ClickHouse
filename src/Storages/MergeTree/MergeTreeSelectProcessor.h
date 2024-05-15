@@ -73,6 +73,8 @@ public:
 
     void enableVirtualRow() { enable_virtual_row = true; }
 
+    const KeyDescription & getPrimaryKey() const { return storage_snapshot->metadata->primary_key; }
+
 private:
     /// Sets up range readers corresponding to data readers
     void initializeRangeReaders();

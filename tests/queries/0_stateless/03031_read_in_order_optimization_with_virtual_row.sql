@@ -51,6 +51,7 @@ AND type = 'QueryFinish'
 ORDER BY query_start_time DESC 
 limit 1;
 
+SELECT '========';
 -- Expecting 2 virtual rows + two chunks (8192*2) get filtered out + one chunk for result (8192),
 -- all chunks come from the same part.
 SELECT k
@@ -74,6 +75,7 @@ AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
 LIMIT 1;
 
+SELECT '========';
 -- Expecting 2 virtual rows + one chunk (8192) for result + one extra chunk for next consumption in merge transform (8192),
 -- both chunks come from the same part.
 SELECT x
@@ -96,6 +98,7 @@ AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
 LIMIT 1;
 
+SELECT '========';
 -- Expecting 2 virtual rows + two chunks (8192*2) get filtered out + one chunk for result (8192),
 -- all chunks come from the same part.
 SELECT k
@@ -120,3 +123,18 @@ ORDER BY query_start_time DESC
 LIMIT 1;
 
 DROP TABLE t;
+
+SELECT '========';
+-- from 02149_read_in_order_fixed_prefix
+DROP TABLE IF EXISTS t_read_in_order;
+
+CREATE TABLE t_read_in_order(a UInt32, b UInt32)
+ENGINE = MergeTree ORDER BY (a, b)
+SETTINGS index_granularity = 3;
+
+SYSTEM STOP MERGES t_read_in_order;
+
+INSERT INTO t_read_in_order VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
+INSERT INTO t_read_in_order VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
+
+SELECT a, b FROM t_read_in_order WHERE a = 1 ORDER BY b SETTINGS max_threads = 1;

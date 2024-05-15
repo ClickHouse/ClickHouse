@@ -139,7 +139,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             /// Turn on virtual row just once.
             enable_virtual_row = false;
 
-            const auto & primary_key = storage_snapshot->metadata->primary_key;
+            const auto & primary_key = getPrimaryKey();
 
             MergeTreeReadTask::BlockAndProgress res;
             res.row_count = 1;
