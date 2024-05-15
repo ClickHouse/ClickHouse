@@ -194,12 +194,27 @@ void IonRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data
         case TypeIndex::Tuple: {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
             const auto & nested_types = tuple_type.getElements();
-            const ColumnTuple & column_tuple = assert_cast<const ColumnTuple &>(column);
-            const auto & nested_columns = column_tuple.getColumns();
-            writer->writeStartList();
-            for (size_t i = 0; i < nested_types.size(); ++i)
-                serializeField(*nested_columns[i], nested_types[i], row_num);
-            writer->writeFinishList();
+            const auto & nested_names = tuple_type.getElementNames();
+            const ColumnTuple & tuple_column = assert_cast<const ColumnTuple &>(column);
+            const auto & nested_columns = tuple_column.getColumns();
+
+            if (tuple_type.haveExplicitNames())
+            {
+                writer->writeStartStruct();
+                for (size_t i = 0; i < nested_names.size(); ++i)
+                {
+                    writer->writeStructFieldName(nested_names[i]);
+                    serializeField(*nested_columns[i], nested_types[i], row_num);
+                }
+                writer->writeFinishStruct();
+            }
+            else
+            {
+                writer->writeStartList();
+                for (size_t i = 0; i < nested_types.size(); ++i)
+                    serializeField(*nested_columns[i], nested_types[i], row_num);
+                writer->writeFinishList();
+            }
             return;
         }
         case TypeIndex::Nullable: {
