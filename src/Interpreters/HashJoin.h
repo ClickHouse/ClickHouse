@@ -26,6 +26,7 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
@@ -253,7 +254,7 @@ public:
         M(key_string)                          \
         M(key_fixed_string)
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY,
         CROSS,
@@ -441,6 +442,10 @@ private:
     mutable JoinStuff::JoinUsedFlags used_flags;
     RightTableDataPtr data;
     std::vector<Sizes> key_sizes;
+
+    /// Needed to do external cross join
+    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryFileStream* tmp_stream{nullptr};
 
     /// Block with columns from the right-side table.
     Block right_sample_block;

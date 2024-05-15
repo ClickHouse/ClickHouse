@@ -54,7 +54,7 @@ struct AlterCommand
     };
 
     /// Which property user wants to remove from column
-    enum class RemoveProperty
+    enum class RemoveProperty : uint8_t
     {
         NO_PROPERTY,
         /// Default specifiers

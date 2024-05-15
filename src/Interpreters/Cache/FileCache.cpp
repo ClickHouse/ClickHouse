@@ -1074,7 +1074,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
 
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
 {
-    return metadata.iterate([&](const LockedKey & locked_key)
+    metadata.iterate([&](const LockedKey & locked_key)
     {
         for (const auto & file_segment_metadata : locked_key)
             func(FileSegment::getInfo(file_segment_metadata.second->file_segment));
