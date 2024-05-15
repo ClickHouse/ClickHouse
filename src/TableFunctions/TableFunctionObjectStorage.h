@@ -32,6 +32,7 @@ struct AzureDefinition
                                       " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
                                       " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
                                       " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n";
+    static constexpr auto max_number_of_arguments = 8;
 };
 
 struct S3Definition
@@ -51,6 +52,7 @@ struct S3Definition
                                       " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
                                       " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
                                       "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+    static constexpr auto max_number_of_arguments = 8;
 };
 
 struct GCSDefinition
@@ -58,6 +60,7 @@ struct GCSDefinition
     static constexpr auto name = "gcs";
     static constexpr auto storage_type_name = "GCS";
     static constexpr auto signature = S3Definition::signature;
+    static constexpr auto max_number_of_arguments = S3Definition::max_number_of_arguments;
 };
 
 struct COSNDefinition
@@ -65,6 +68,7 @@ struct COSNDefinition
     static constexpr auto name = "cosn";
     static constexpr auto storage_type_name = "COSN";
     static constexpr auto signature = S3Definition::signature;
+    static constexpr auto max_number_of_arguments = S3Definition::max_number_of_arguments;
 };
 
 struct OSSDefinition
@@ -72,6 +76,7 @@ struct OSSDefinition
     static constexpr auto name = "oss";
     static constexpr auto storage_type_name = "OSS";
     static constexpr auto signature = S3Definition::signature;
+    static constexpr auto max_number_of_arguments = S3Definition::max_number_of_arguments;
 };
 
 struct HDFSDefinition
@@ -82,6 +87,7 @@ struct HDFSDefinition
                                       " - uri, format\n"
                                       " - uri, format, structure\n"
                                       " - uri, format, structure, compression_method\n";
+    static constexpr auto max_number_of_arguments = 4;
 };
 
 template <typename Definition, typename Configuration>
@@ -91,7 +97,7 @@ public:
     static constexpr auto name = Definition::name;
     static constexpr auto signature = Definition::signature;
 
-    static size_t getMaxNumberOfArguments() { return 8; }
+    static size_t getMaxNumberOfArguments() { return Definition::max_number_of_arguments; }
 
     String getName() const override { return name; }
 
@@ -105,7 +111,7 @@ public:
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override
     {
-        return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
+        return configuration->format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
     }
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override

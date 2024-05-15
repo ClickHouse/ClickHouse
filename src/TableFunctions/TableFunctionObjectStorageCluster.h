@@ -17,17 +17,10 @@ class StorageAzureConfiguration;
 
 struct AzureClusterDefinition
 {
-    /**
-    * azureBlobStorageCluster(cluster_name, source, [access_key_id, secret_access_key,] format, compression_method, structure)
-    * A table function, which allows to process many files from Azure Blob Storage on a specific cluster
-    * On initiator it creates a connection to _all_ nodes in cluster, discloses asterisks
-    * in Azure Blob Storage file path and dispatch each file dynamically.
-    * On worker node it asks initiator about next task to process, processes it.
-    * This is repeated until the tasks are finished.
-    */
     static constexpr auto name = "azureBlobStorageCluster";
     static constexpr auto storage_type_name = "AzureBlobStorageCluster";
     static constexpr auto signature = " - cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure]";
+    static constexpr auto max_number_of_arguments = AzureDefinition::max_number_of_arguments + 1;
 };
 
 struct S3ClusterDefinition
@@ -44,6 +37,7 @@ struct S3ClusterDefinition
                                       " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method\n"
                                       " - cluster, url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
                                       "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+    static constexpr auto max_number_of_arguments = S3Definition::max_number_of_arguments + 1;
 };
 
 struct HDFSClusterDefinition
@@ -54,8 +48,17 @@ struct HDFSClusterDefinition
                                       " - cluster_name, uri, format\n"
                                       " - cluster_name, uri, format, structure\n"
                                       " - cluster_name, uri, format, structure, compression_method\n";
+    static constexpr auto max_number_of_arguments = HDFSDefinition::max_number_of_arguments + 1;
 };
 
+/**
+* Class implementing s3/hdfs/azureBlobStorage)Cluster(...) table functions,
+* which allow to process many files from S3/HDFS/Azure blob storage on a specific cluster.
+* On initiator it creates a connection to _all_ nodes in cluster, discloses asterisks
+* in file path and dispatch each file dynamically.
+* On worker node it asks initiator about next task to process, processes it.
+* This is repeated until the tasks are finished.
+*/
 template <typename Definition, typename Configuration>
 class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration>>
 {

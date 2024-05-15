@@ -116,9 +116,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         columns,
         ConstraintsDescription{},
         String{},
-        /// No format_settings for table function Azure
-        std::nullopt,
-        /* distributed_processing */ false,
+        /* format_settings */std::nullopt,
+        /* distributed_processing */false,
         nullptr);
 
     storage->startup();

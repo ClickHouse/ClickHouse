@@ -15,7 +15,7 @@ namespace ErrorCodes
 StorageObjectStorageSink::StorageObjectStorageSink(
     ObjectStoragePtr object_storage,
     ConfigurationPtr configuration,
-    std::optional<FormatSettings> format_settings_,
+    const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block_,
     ContextPtr context,
     const std::string & blob_path)

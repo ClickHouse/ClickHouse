@@ -3675,6 +3675,16 @@ Possible values:
 
 Default value: `0`.
 
+## s3_validate_request_settings {#s3_validate_request_settings}
+
+Enables s3 request settings validation.
+
+Possible values:
+- 1 — validate settings.
+- 0 — do not validate settings.
+
+Default value: `1`.
+
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3744,6 +3754,16 @@ Ignore absence of file if it does not exist when reading certain keys.
 Possible values:
 - 1 — `SELECT` returns empty result.
 - 0 — `SELECT` throws an exception.
+
+Default value: `0`.
+
+## azure_skip_empty_files {#azure_skip_empty_files}
+
+Enables or disables skipping empty files in S3 engine.
+
+Possible values:
+- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
+- 1 — `SELECT` returns empty result for empty file.
 
 Default value: `0`.
 

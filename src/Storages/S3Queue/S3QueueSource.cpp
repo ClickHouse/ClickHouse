@@ -235,7 +235,7 @@ Chunk StorageS3QueueSource::generate()
                 catch (...)
                 {
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             key_with_info->key, getCurrentExceptionMessage(true));
+                             key_with_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
@@ -262,7 +262,7 @@ Chunk StorageS3QueueSource::generate()
                 catch (...)
                 {
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             key_with_info->key, getCurrentExceptionMessage(true));
+                              key_with_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(reader.getRelativePath(), *file_status, processed_rows_from_file, false);
