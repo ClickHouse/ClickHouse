@@ -2,7 +2,7 @@ import random
 import string
 
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 
 cluster = ClickHouseCluster(__file__)
 
@@ -62,6 +62,11 @@ def start_cluster():
 
 
 def test_preconfigured_default_codec(start_cluster):
+    if is_arm():
+        pytest.skip(
+            "Skipping test because it's special test for Intel code (doesn't work on ARM)"
+        )
+
     for node in [node1, node2]:
         node.query(
             """
