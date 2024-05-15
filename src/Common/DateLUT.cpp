@@ -220,8 +220,7 @@ public:
 
     size_t Read(void * buf, size_t bytes) override
     {
-        if (bytes > size)
-            bytes = size;
+        bytes = std::min(bytes, size);
         memcpy(buf, data, bytes);
         data += bytes;
         size -= bytes;
