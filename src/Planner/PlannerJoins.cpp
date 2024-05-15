@@ -1,3 +1,4 @@
+#include <memory>
 #include <Planner/PlannerJoins.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -38,6 +39,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/PasteJoin.h>
+#include <Interpreters/CrossJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -781,6 +783,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
+    if (isCrossOrComma(table_join->kind()) && table_join->allowExperimentalCrossJoinSwapOrder())
+        return std::make_shared<CrossJoin>(table_join, right_table_expression_header);
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
@@ -894,7 +898,12 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
       * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
       */
     if (table_join->kind() == JoinKind::Cross)
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    {
+        if (table_join->allowExperimentalCrossJoinSwapOrder())
+            return std::make_shared<CrossJoin>(table_join, right_table_expression_header);
+        else
+            return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");

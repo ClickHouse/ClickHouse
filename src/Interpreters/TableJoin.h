@@ -148,6 +148,8 @@ private:
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
+    const UInt64 cross_join_max_bytes_to_swap_order = 125_MiB;
+    const bool allow_experimental_cross_join_swap_order = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -290,6 +292,10 @@ public:
     {
         return join_use_nulls && isRightOrFull(kind());
     }
+
+    UInt64 crossJoinMaxBytesToSwapOrder() const { return cross_join_max_bytes_to_swap_order; }
+
+    bool allowExperimentalCrossJoinSwapOrder() const { return allow_experimental_cross_join_swap_order; }
 
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }

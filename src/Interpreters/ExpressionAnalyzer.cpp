@@ -57,6 +57,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/PasteJoin.h>
+#include <Interpreters/CrossJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 
 
@@ -954,6 +955,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 {
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
+    if (isCrossOrComma(analyzed_join->kind()) && analyzed_join->allowExperimentalCrossJoinSwapOrder())
+        return std::make_shared<CrossJoin>(analyzed_join, right_sample_block);
 
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {

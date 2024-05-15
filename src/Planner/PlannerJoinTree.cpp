@@ -1,6 +1,7 @@
 #include <Planner/PlannerJoinTree.h>
 
 #include <Common/scope_guard_safe.h>
+#include "Core/Joins.h"
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -1417,7 +1418,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             return step_raw_ptr;
         };
 
-        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped && join_kind != JoinKind::Paste)
+        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped && join_kind != JoinKind::Paste && !isCrossOrComma(join_kind))
         {
             const auto & join_clause = table_join->getOnlyClause();
 
