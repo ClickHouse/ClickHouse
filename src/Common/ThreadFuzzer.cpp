@@ -153,7 +153,7 @@ bool ThreadFuzzer::isEffective() const
             return true; \
         if (NAME##_before_sleep_probability.load(std::memory_order_relaxed) > 0.0) \
             return true; \
-        if (NAME##_before_sleep_time_us_max.load(std::memory_order_relaxed) > 0.001) \
+        if (NAME##_before_sleep_time_us_max.load(std::memory_order_relaxed) > 0.0) \
             return true; \
 \
         if (NAME##_after_yield_probability.load(std::memory_order_relaxed) > 0.0) \
@@ -162,7 +162,7 @@ bool ThreadFuzzer::isEffective() const
             return true; \
         if (NAME##_after_sleep_probability.load(std::memory_order_relaxed) > 0.0) \
             return true; \
-        if (NAME##_after_sleep_time_us_max.load(std::memory_order_relaxed) > 0.001) \
+        if (NAME##_after_sleep_time_us_max.load(std::memory_order_relaxed) > 0.0) \
             return true;
 
     FOR_EACH_WRAPPED_FUNCTION(CHECK_WRAPPER_PARAMS)
@@ -170,7 +170,7 @@ bool ThreadFuzzer::isEffective() const
 #    undef INIT_WRAPPER_PARAMS
 #endif
 
-    if (explicit_sleep_probability > 0 && sleep_time_us_max > 0.001)
+    if (explicit_sleep_probability > 0 && sleep_time_us_max > 0)
         return true;
 
     if (explicit_memory_exception_probability > 0)
