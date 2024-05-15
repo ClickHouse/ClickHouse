@@ -109,8 +109,10 @@ ENGINE = MergeTree
 ORDER BY (date, file, symbol, pull_request_number, commit_sha, check_name);
 ///
 
+NM=$(command -v llvm-nm || command -v llvm-nm-20 || command -v llvm-nm-19 || command -v llvm-nm-18)
+
 find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | find . -name '*.o' | xargs -P $(nproc) -I {} bash -c "
-  nm --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
+  ${NM} --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
 "
 
 find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs cat > "${OUTPUT_DIR}/binary_symbols.txt"
