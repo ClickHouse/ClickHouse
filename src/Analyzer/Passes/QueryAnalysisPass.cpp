@@ -769,6 +769,7 @@ struct IdentifierResolveScope
 
     /// Nodes with duplicated aliases
     std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
+    std::vector<QueryTreeNodePtr> cloned_nodes_with_duplicated_aliases;
 
     /// Current scope expression in resolve process stack
     ExpressionsStack expressions_in_resolve_process_stack;
@@ -1045,22 +1046,41 @@ private:
         if (is_lambda_node)
         {
             if (scope.alias_name_to_expression_node->contains(alias))
-                scope.nodes_with_duplicated_aliases.insert(node->clone());
+            {
+                scope.nodes_with_duplicated_aliases.emplace(node);
+                auto cloned_node = node->clone();
+                scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
+                scope.nodes_with_duplicated_aliases.emplace(cloned_node);
+            }
 
             auto [_, inserted] = scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
             if (!inserted)
-                scope.nodes_with_duplicated_aliases.insert(node->clone());
+            {
+                scope.nodes_with_duplicated_aliases.emplace(node);
+                auto cloned_node = node->clone();
+                scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
+                scope.nodes_with_duplicated_aliases.emplace(cloned_node);
+            }
 
             return;
         }
 
         if (scope.alias_name_to_lambda_node.contains(alias))
-            scope.nodes_with_duplicated_aliases.insert(node->clone());
+        {
+            scope.nodes_with_duplicated_aliases.emplace(node);
+            auto cloned_node = node->clone();
+            scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
+            scope.nodes_with_duplicated_aliases.emplace(cloned_node);
+        }
 
         auto [_, inserted] = scope.alias_name_to_expression_node->insert(std::make_pair(alias, node));
         if (!inserted)
-            scope.nodes_with_duplicated_aliases.insert(node->clone());
-
+        {
+            scope.nodes_with_duplicated_aliases.emplace(node);
+            auto cloned_node = node->clone();
+            scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
+            scope.nodes_with_duplicated_aliases.emplace(cloned_node);
+        }
         /// If node is identifier put it also in scope alias name to lambda node map
         if (node->getNodeType() == QueryTreeNodeType::IDENTIFIER)
             scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
@@ -6254,6 +6274,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         result_projection_names.push_back(node_alias);
     }
 
+    bool is_duplicated_alias = scope.nodes_with_duplicated_aliases.contains(node);
+    if (is_duplicated_alias)
+        scope.non_cached_identifier_lookups_during_expression_resolve.insert({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
+
     /** Do not use alias table if node has alias same as some other node.
       * Example: WITH x -> x + 1 AS lambda SELECT 1 AS lambda;
       * During 1 AS lambda resolve if we use alias table we replace node with x -> x + 1 AS lambda.
@@ -6264,7 +6288,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
       * alias table because in alias table subquery could be evaluated as scalar.
       */
     bool use_alias_table = true;
-    if (scope.nodes_with_duplicated_aliases.contains(node) || (allow_table_expression && isSubqueryNodeType(node->getNodeType())))
+    if (is_duplicated_alias || (allow_table_expression && isSubqueryNodeType(node->getNodeType())))
         use_alias_table = false;
 
     if (!node_alias.empty() && use_alias_table)
@@ -6568,6 +6592,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         }
     }
 
+    if (is_duplicated_alias)
+        scope.non_cached_identifier_lookups_during_expression_resolve.erase({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
+
     resolved_expressions.emplace(node, result_projection_names);
 
     scope.popExpressionNode();
@@ -6600,7 +6627,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
     {
         auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
-
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
@@ -8208,14 +8234,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * After scope nodes are resolved, we can compare node with duplicate alias with
       * node from scope alias table.
       */
-    for (const auto & node_with_duplicated_alias : scope.nodes_with_duplicated_aliases)
+    for (const auto & node_with_duplicated_alias : scope.cloned_nodes_with_duplicated_aliases)
     {
         auto node = node_with_duplicated_alias;
         auto node_alias = node->getAlias();
 
         /// Add current alias to non cached set, because in case of cyclic alias identifier should not be substituted from cache.
         /// See 02896_cyclic_aliases_crash.
-        scope.non_cached_identifier_lookups_during_expression_resolve.insert({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         bool has_node_in_alias_table = false;
