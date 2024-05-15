@@ -15,8 +15,7 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
-    unsigned long weight = 0;
-    size_t count = 1;
+    size_t prev_unequal_column = 0;
 private:
     Block header;
     SortDescription description;
@@ -55,14 +54,12 @@ protected:
         if (lhs.source_stream_index == rhs.source_stream_index && sources_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
             return true;
 
-        auto first_non_equal = lhs.firstNonEqualSortColumnsWith(reinterpret_cast<size_t>(weight/count), rhs);
+        auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
 
         if (first_non_equal > lhs.sort_columns->size())
            return false;
 
-        weight += reinterpret_cast<unsigned long>(first_non_equal);
-        count++;
-
+        prev_unequal_column = first_non_equal;
         return true;
     }
 };
