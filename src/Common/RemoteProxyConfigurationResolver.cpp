@@ -29,7 +29,7 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
 
     String proxy_host;
 
-    readString(proxy_host, *rw_http_buffer);
+    readStringUntilEOF(proxy_host, *rw_http_buffer);
 
     return proxy_host;
 }
