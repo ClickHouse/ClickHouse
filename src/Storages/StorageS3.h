@@ -76,7 +76,7 @@ public:
     {
     public:
         virtual ~IIterator() = default;
-        virtual KeyWithInfoPtr next(size_t idx = 0) = 0; /// NOLINT
+        virtual KeyWithInfoPtr next() = 0; /// NOLINT
 
         /// Estimates how many streams we need to process all files.
         /// If keys count >= max_threads_count, the returned number may not represent the actual number of the keys.
@@ -100,7 +100,7 @@ public:
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
+        KeyWithInfoPtr next() override; /// NOLINT
         size_t estimatedKeysCount() override;
 
     private:
@@ -121,7 +121,7 @@ public:
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
+        KeyWithInfoPtr next() override; /// NOLINT
         size_t estimatedKeysCount() override;
 
     private:
@@ -135,7 +135,7 @@ public:
     public:
         explicit ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
-        KeyWithInfoPtr next(size_t idx = 0) override; /// NOLINT
+        KeyWithInfoPtr next() override; /// NOLINT
         size_t estimatedKeysCount() override;
 
     private:
@@ -158,7 +158,7 @@ public:
             ContextPtr context_,
             KeysWithInfo * read_keys_);
 
-        KeyWithInfoPtr next(size_t) override; /// NOLINT
+        KeyWithInfoPtr next() override; /// NOLINT
         size_t estimatedKeysCount() override;
         void refreshArchiveReader();
 
@@ -301,11 +301,11 @@ private:
 
     /// Notice: we should initialize reader and future_reader lazily in generate to make sure key_condition
     /// is set before createReader is invoked for key_condition is read in createReader.
-    void lazyInitialize(size_t idx = 0);
+    void lazyInitialize();
 
     /// Recreate ReadBuffer and Pipeline for each file.
-    ReaderHolder createReader(size_t idx = 0);
-    std::future<ReaderHolder> createReaderAsync(size_t idx = 0);
+    ReaderHolder createReader();
+    std::future<ReaderHolder> createReaderAsync();
 
     void addNumRowsToCache(const String & bucket_with_key, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const KeyWithInfo & key_with_info);

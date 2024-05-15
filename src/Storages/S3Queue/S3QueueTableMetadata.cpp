@@ -38,11 +38,15 @@ S3QueueTableMetadata::S3QueueTableMetadata(
     const StorageInMemoryMetadata & storage_metadata)
 {
     format_name = configuration.format;
+    LOG_TEST(getLogger("KSSENII"), "KSSENII SEEEE: {}", engine_settings.after_processing.value);
     after_processing = engine_settings.after_processing.toString();
+    LOG_TEST(getLogger("KSSENII"), "KSSENII SEE 2: {}", after_processing);
     mode = engine_settings.mode.toString();
+    LOG_TEST(getLogger("KSSENII"), "KSSENII SEE 2: {}", mode);
     s3queue_tracked_files_limit = engine_settings.s3queue_tracked_files_limit;
     s3queue_tracked_file_ttl_sec = engine_settings.s3queue_tracked_file_ttl_sec;
-    s3queue_total_shards_num = engine_settings.s3queue_total_shards_num;
+    s3queue_buckets = engine_settings.s3queue_buckets;
+    LOG_TEST(getLogger("KSSENII"), "KSSENII SEE 2: {}", s3queue_buckets);
     s3queue_processing_threads_num = engine_settings.s3queue_processing_threads_num;
     columns = storage_metadata.getColumns().toString();
 }
@@ -54,7 +58,7 @@ String S3QueueTableMetadata::toString() const
     json.set("mode", mode);
     json.set("s3queue_tracked_files_limit", s3queue_tracked_files_limit);
     json.set("s3queue_tracked_file_ttl_sec", s3queue_tracked_file_ttl_sec);
-    json.set("s3queue_total_shards_num", s3queue_total_shards_num);
+    json.set("s3queue_buckets", s3queue_buckets);
     json.set("s3queue_processing_threads_num", s3queue_processing_threads_num);
     json.set("format_name", format_name);
     json.set("columns", columns);
@@ -77,10 +81,10 @@ void S3QueueTableMetadata::read(const String & metadata_str)
     format_name = json->getValue<String>("format_name");
     columns = json->getValue<String>("columns");
 
-    if (json->has("s3queue_total_shards_num"))
-        s3queue_total_shards_num = json->getValue<UInt64>("s3queue_total_shards_num");
+    if (json->has("s3queue_buckets"))
+        s3queue_buckets = json->getValue<UInt64>("s3queue_buckets");
     else
-        s3queue_total_shards_num = 1;
+        s3queue_buckets = 1;
 
     if (json->has("s3queue_processing_threads_num"))
         s3queue_processing_threads_num = json->getValue<UInt64>("s3queue_processing_threads_num");
@@ -148,14 +152,13 @@ void S3QueueTableMetadata::checkImmutableFieldsEquals(const S3QueueTableMetadata
                 from_zk.s3queue_processing_threads_num,
                 s3queue_processing_threads_num);
         }
-        if (s3queue_total_shards_num != from_zk.s3queue_total_shards_num)
+        if (s3queue_buckets != from_zk.s3queue_buckets)
         {
             throw Exception(
                 ErrorCodes::METADATA_MISMATCH,
-                "Existing table metadata in ZooKeeper differs in s3queue_total_shards_num setting. "
+                "Existing table metadata in ZooKeeper differs in s3queue_buckets setting. "
                 "Stored in ZooKeeper: {}, local: {}",
-                from_zk.s3queue_total_shards_num,
-                s3queue_total_shards_num);
+                from_zk.s3queue_buckets, s3queue_buckets);
         }
     }
 }

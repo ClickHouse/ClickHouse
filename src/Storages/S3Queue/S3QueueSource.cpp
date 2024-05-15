@@ -43,85 +43,207 @@ StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
 StorageS3QueueSource::FileIterator::FileIterator(
     std::shared_ptr<S3QueueFilesMetadata> metadata_,
     std::unique_ptr<GlobIterator> glob_iterator_,
-    size_t current_shard_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr logger_)
     : metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
+    , current_processor(getRandomASCIIString(10)) /// TODO: add server uuid?
     , shutdown_called(shutdown_called_)
     , log(logger_)
-    , sharded_processing(metadata->isShardedProcessing())
-    , current_shard(current_shard_)
 {
-    if (sharded_processing)
+}
+
+StorageS3QueueSource::FileIterator::~FileIterator()
+{
+    releaseAndResetCurrentBucket();
+}
+
+void StorageS3QueueSource::FileIterator::releaseAndResetCurrentBucket()
+{
+    try
     {
-        for (const auto & id : metadata->getProcessingIdsForShard(current_shard))
-            sharded_keys.emplace(id, std::deque<KeyWithInfoPtr>{});
+        if (current_bucket.has_value())
+        {
+            metadata->releaseBucket(current_bucket.value());
+            current_bucket.reset();
+        }
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+        {
+            LOG_TRACE(log, "Session expired while releasing bucket");
+        }
+        if (e.code == Coordination::Error::ZNONODE)
+        {
+            LOG_TRACE(log, "Bucket {} does not exist. "
+                      "This could happen because of an exprired session",
+                      current_bucket.value());
+        }
+        else
+        {
+            LOG_ERROR(log, "Got unexpected exception while releasing bucket: {}",
+                      getCurrentExceptionMessage(true));
+            chassert(false);
+        }
+        current_bucket.reset();
     }
 }
 
-StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(size_t idx)
+StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::getNextKeyFromAcquiredBucket()
 {
-    while (!shutdown_called)
+    /// We need this lock to maintain consistency between listing s3 directory
+    /// and getting/putting result into listed_keys_cache.
+    std::lock_guard lock(buckets_mutex);
+
+    while (true)
     {
-        KeyWithInfoPtr val{nullptr};
-
+        /// Each processing thread gets next path from glob_iterator->next()
+        /// and checks if corresponding bucket is already acquired by someone.
+        /// In case it is already acquired, they put the key into listed_keys_cache,
+        /// so that the thread who acquired the bucket will be able to see
+        /// those keys without the need to list s3 directory once again.
+        if (current_bucket.has_value())
         {
-            std::unique_lock lk(sharded_keys_mutex, std::defer_lock);
-            if (sharded_processing)
+            auto it = listed_keys_cache.find(current_bucket.value());
+            if (it != listed_keys_cache.end())
             {
-                /// To make sure order on keys in each shard in sharded_keys
-                /// we need to check sharded_keys and to next() under lock.
-                lk.lock();
+                /// `bucket_keys` -- keys we iterated so far and which were not taken for processing.
+                /// `processor` -- processor id of the thread which has acquired the bucket.
+                auto & [bucket_keys, processor] = it->second;
 
-                if (auto it = sharded_keys.find(idx); it != sharded_keys.end())
+                /// Check correctness just in case.
+                if (!processor.has_value() || processor.value() != current_processor)
                 {
-                    auto & keys = it->second;
-                    if (!keys.empty())
-                    {
-                        val = keys.front();
-                        keys.pop_front();
-                        chassert(idx == metadata->getProcessingIdForPath(val->key));
-                    }
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected current processor {} to be equal to bucket's {} processor, "
+                        "but have {}", current_processor, current_bucket.value(),
+                        processor.has_value() ? processor.value() : Processor{});
                 }
-                else
+
+                /// Take next key to process
+                if (!bucket_keys.empty())
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                    "Processing id {} does not exist (Expected ids: {})",
-                                    idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
+                    /// Take the key from the front, the order is important.
+                    auto key_with_info = bucket_keys.front();
+                    bucket_keys.pop_front();
+                    return key_with_info;
                 }
+
+                /// No more keys in bucket, remove it from cache.
+                listed_keys_cache.erase(it);
             }
 
-            if (!val)
+            if (iterator_finished)
             {
-                val = glob_iterator->next();
-                if (val && sharded_processing)
-                {
-                    const auto processing_id_for_key = metadata->getProcessingIdForPath(val->key);
-                    if (idx != processing_id_for_key)
-                    {
-                        if (metadata->isProcessingIdBelongsToShard(processing_id_for_key, current_shard))
-                        {
-                            LOG_TEST(log, "Putting key {} into queue of processor {} (total: {})",
-                                     val->key, processing_id_for_key, sharded_keys.size());
+                /// Bucket is fully processed - release the bucket.
+                releaseAndResetCurrentBucket();
+            }
+        }
+        /// If processing thread has already acquired some bucket
+        /// and while listing s3 directory gets a key which is in a different bucket,
+        /// it puts the key into listed_keys_cache to allow others to process it,
+        /// because one processing thread can acquire only one bucket at a time.
+        /// Once a thread is finished with its acquired bucket, it checks listed_keys_cache
+        /// to see if there are keys from buckets not acquired by anyone.
+        if (!current_bucket.has_value())
+        {
+            for (auto it = listed_keys_cache.begin(); it != listed_keys_cache.end();)
+            {
+                auto & [bucket, bucket_info] = *it;
+                auto & [bucket_keys, processor] = bucket_info;
 
-                            if (auto it = sharded_keys.find(processing_id_for_key); it != sharded_keys.end())
-                            {
-                                it->second.push_back(val);
-                            }
-                            else
-                            {
-                                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                                "Processing id {} does not exist (Expected ids: {})",
-                                                processing_id_for_key, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
-                            }
-                        }
-                        continue;
-                    }
+                if (processor.has_value())
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing by {} (keys: {})",
+                             bucket, processor.value(), bucket_keys.size());
+                    ++it;
+                    continue;
                 }
+
+                if (bucket_keys.empty())
+                {
+                    /// No more keys in bucket, remove it from cache.
+                    /// We still might add new keys to this bucket if !iterator_finished.
+                    it = listed_keys_cache.erase(it);
+                    continue;
+                }
+
+                if (!metadata->tryAcquireBucket(bucket, current_processor))
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})",
+                             bucket, bucket_keys.size());
+                    ++it;
+                    continue;
+                }
+
+                current_bucket = bucket;
+                processor = current_processor;
+
+                /// Take the key from the front, the order is important.
+                auto key_with_info = bucket_keys.front();
+                bucket_keys.pop_front();
+                return key_with_info;
             }
         }
 
+        if (iterator_finished)
+        {
+            LOG_TEST(log, "Reached the end of file iterator and nothing left in keys cache");
+            return {};
+        }
+
+        auto key_with_info = glob_iterator->next();
+        if (key_with_info)
+        {
+            const auto bucket = metadata->getBucketForPath(key_with_info->key);
+
+            LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}",
+                     key_with_info->getFileName(), bucket,
+                     current_bucket.has_value() ? toString(current_bucket.value()) : "None");
+
+            if (current_bucket.has_value())
+            {
+                if (current_bucket.value() != bucket)
+                {
+                    listed_keys_cache[bucket].keys.emplace_back(key_with_info);
+                    continue;
+                }
+                return key_with_info;
+            }
+            else
+            {
+                if (!metadata->tryAcquireBucket(bucket, current_processor))
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
+                    continue;
+                }
+
+                current_bucket = bucket;
+                return key_with_info;
+            }
+        }
+        else
+        {
+            releaseAndResetCurrentBucket();
+
+            LOG_TEST(log, "Reached the end of file iterator");
+            iterator_finished = true;
+
+            if (listed_keys_cache.empty())
+                return {};
+            else
+                continue;
+        }
+    }
+}
+
+StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
+{
+    while (!shutdown_called)
+    {
+        auto val = metadata->useBucketsForProcessing() ? getNextKeyFromAcquiredBucket() : glob_iterator->next();
         if (!val)
             return {};
 
@@ -138,18 +260,11 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
             return {};
         }
 
-        LOG_TEST(log, "Checking if can process key {} for processing_id {}", val->key, idx);
+        LOG_TEST(log, "Checking if can process key {}", val->key);
 
         if (processing_holder)
         {
             return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder);
-        }
-        else if (sharded_processing
-                 && metadata->getFileStatus(val->key)->state == S3QueueFilesMetadata::FileStatus::State::Processing)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "File {} is processing by someone else in sharded processing. "
-                            "It is a bug", val->key);
         }
     }
     return {};
@@ -165,7 +280,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     const Block & header_,
     std::unique_ptr<StorageS3Source> internal_source_,
     std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
-    size_t processing_id_,
     const S3QueueAction & action_,
     RemoveFileFunc remove_file_func_,
     const NamesAndTypesList & requested_virtual_columns_,
@@ -179,7 +293,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     , WithContext(context_)
     , name(std::move(name_))
     , action(action_)
-    , processing_id(processing_id_)
     , files_metadata(files_metadata_)
     , internal_source(std::move(internal_source_))
     , requested_virtual_columns(requested_virtual_columns_)
@@ -207,7 +320,7 @@ void StorageS3QueueSource::lazyInitialize()
     if (initialized)
         return;
 
-    internal_source->lazyInitialize(processing_id);
+    internal_source->lazyInitialize();
     reader = std::move(internal_source->reader);
     if (reader)
         reader_future = std::move(internal_source->reader_future);
@@ -335,7 +448,7 @@ Chunk StorageS3QueueSource::generate()
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
         internal_source->create_reader_pool.wait();
-        reader_future = internal_source->createReaderAsync(processing_id);
+        reader_future = internal_source->createReaderAsync();
     }
 
     return {};

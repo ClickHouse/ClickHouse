@@ -230,7 +230,7 @@ public:
         expanded_keys_iter++;
     }
 
-    KeyWithInfoPtr next(size_t)
+    KeyWithInfoPtr next()
     {
         std::lock_guard lock(mutex);
         return nextAssumeLocked();
@@ -491,9 +491,9 @@ StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
 {
 }
 
-StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next(size_t idx) /// NOLINT
+StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next() /// NOLINT
 {
-    return pimpl->next(idx);
+    return pimpl->next();
 }
 
 size_t StorageS3Source::DisclosedGlobIterator::estimatedKeysCount()
@@ -535,7 +535,7 @@ public:
         }
     }
 
-    KeyWithInfoPtr next(size_t)
+    KeyWithInfoPtr next()
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= keys.size())
@@ -579,9 +579,9 @@ StorageS3Source::KeysIterator::KeysIterator(
 {
 }
 
-StorageS3Source::KeyWithInfoPtr StorageS3Source::KeysIterator::next(size_t idx) /// NOLINT
+StorageS3Source::KeyWithInfoPtr StorageS3Source::KeysIterator::next() /// NOLINT
 {
-    return pimpl->next(idx);
+    return pimpl->next();
 }
 
 size_t StorageS3Source::KeysIterator::estimatedKeysCount()
@@ -608,7 +608,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
         buffer.emplace_back(std::make_shared<KeyWithInfo>(key_future.get()));
 }
 
-StorageS3Source::KeyWithInfoPtr StorageS3Source::ReadTaskIterator::next(size_t) /// NOLINT
+StorageS3Source::KeyWithInfoPtr StorageS3Source::ReadTaskIterator::next()
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
@@ -663,7 +663,7 @@ StorageS3Source::ArchiveIterator::ArchiveIterator(
     }
 }
 
-StorageS3Source::KeyWithInfoPtr StorageS3Source::ArchiveIterator::next(size_t)
+StorageS3Source::KeyWithInfoPtr StorageS3Source::ArchiveIterator::next()
 {
     if (!path_in_archive.empty())
     {
@@ -789,23 +789,23 @@ StorageS3Source::StorageS3Source(
 {
 }
 
-void StorageS3Source::lazyInitialize(size_t idx)
+void StorageS3Source::lazyInitialize()
 {
     if (initialized)
         return;
 
-    reader = createReader(idx);
+    reader = createReader();
     if (reader)
-        reader_future = createReaderAsync(idx);
+        reader_future = createReaderAsync();
     initialized = true;
 }
 
-StorageS3Source::ReaderHolder StorageS3Source::createReader(size_t idx)
+StorageS3Source::ReaderHolder StorageS3Source::createReader()
 {
     KeyWithInfoPtr key_with_info;
     do
     {
-        key_with_info = file_iterator->next(idx);
+        key_with_info = file_iterator->next();
         if (!key_with_info || key_with_info->key.empty())
             return {};
 
@@ -888,9 +888,9 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader(size_t idx)
     return ReaderHolder{key_with_info, bucket, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader)};
 }
 
-std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync(size_t idx)
+std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(idx); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> createS3ReadBuffer(

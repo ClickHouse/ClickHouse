@@ -59,7 +59,6 @@ private:
 
     const std::unique_ptr<S3QueueSettings> s3queue_settings;
     const fs::path zk_path;
-    const S3QueueAction after_processing;
 
     std::shared_ptr<S3QueueFilesMetadata> files_metadata;
     Configuration configuration;
@@ -86,7 +85,6 @@ private:
     std::shared_ptr<StorageS3QueueSource> createSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
-        size_t processing_id,
         size_t max_block_size,
         ContextPtr local_context);
 

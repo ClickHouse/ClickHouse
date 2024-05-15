@@ -23,7 +23,7 @@ struct S3QueueTableMetadata
     String mode;
     UInt64 s3queue_tracked_files_limit = 0;
     UInt64 s3queue_tracked_file_ttl_sec = 0;
-    UInt64 s3queue_total_shards_num = 1;
+    UInt64 s3queue_buckets = 0;
     UInt64 s3queue_processing_threads_num = 1;
 
     S3QueueTableMetadata() = default;

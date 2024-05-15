@@ -1061,7 +1061,7 @@ def test_processing_threads(started_cluster, mode):
     def get_count(table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(100):
+    for _ in range(30):
         if (get_count(f"{dst_table_name}")) == files_to_generate:
             break
         time.sleep(1)
@@ -1078,7 +1078,7 @@ def test_processing_threads(started_cluster, mode):
 
     if mode == "ordered":
         zk = started_cluster.get_kazoo_client("zoo1")
-        processed_nodes = zk.get_children(f"{keeper_path}/processed/")
+        processed_nodes = zk.get_children(f"{keeper_path}/buckets/")
         assert len(processed_nodes) == processing_threads
 
 
@@ -1112,7 +1112,7 @@ def test_shards(started_cluster, mode, processing_threads):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
-                "s3queue_total_shards_num": shards_num,
+                "s3queue_buckets": shards_num,
             },
         )
         create_mv(node, table, dst_table)
@@ -1125,12 +1125,10 @@ def test_shards(started_cluster, mode, processing_threads):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
     for _ in range(100):
-        if (
-            get_count(f"{dst_table_name}_1")
-            + get_count(f"{dst_table_name}_2")
-            + get_count(f"{dst_table_name}_3")
-        ) == files_to_generate:
+        count = get_count(f"{dst_table_name}_1") + get_count(f"{dst_table_name}_2") + get_count(f"{dst_table_name}_3")
+        if count == files_to_generate:
             break
+        print(f"Current {count}/{files_to_generate}")
         time.sleep(1)
 
     if (
@@ -1138,10 +1136,22 @@ def test_shards(started_cluster, mode, processing_threads):
         + get_count(f"{dst_table_name}_2")
         + get_count(f"{dst_table_name}_3")
     ) != files_to_generate:
+        processed_files = node.query(
+            f"select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' order by file"
+        ).strip().split('\n')
+        logging.debug(f"Processed files: {len(processed_files)}/{files_to_generate}")
+
+        count = get_count(f"{dst_table_name}_1") + get_count(f"{dst_table_name}_2") + get_count(f"{dst_table_name}_3")
+        logging.debug(f"Processed rows: {count}/{files_to_generate}")
+
         info = node.query(
-            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+            f"""
+            select concat('test_',  toString(number), '.csv') as file from numbers(300)
+            where file not in (select splitByChar('/', file_name)[-1] from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed')
+            """
         )
-        logging.debug(info)
+        logging.debug(f"Unprocessed files: {info}")
+
         assert False
 
     res1 = [
@@ -1176,10 +1186,8 @@ def test_shards(started_cluster, mode, processing_threads):
 
     if mode == "ordered":
         zk = started_cluster.get_kazoo_client("zoo1")
-        processed_nodes = zk.get_children(f"{keeper_path}/processed/")
-        assert len(processed_nodes) == shards_num * processing_threads
-        shard_nodes = zk.get_children(f"{keeper_path}/shards/")
-        assert len(shard_nodes) == shards_num
+        processed_nodes = zk.get_children(f"{keeper_path}/buckets/")
+        assert len(processed_nodes) == shards_num
 
 
 @pytest.mark.parametrize(
@@ -1214,7 +1222,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
-                "s3queue_total_shards_num": shards_num,
+                "s3queue_buckets": shards_num,
             },
         )
         i += 1
@@ -1229,7 +1237,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(150):
+    for _ in range(10):
         if (
             get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
         ) == total_rows:
@@ -1239,10 +1247,47 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     if (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) != total_rows:
+        processed_files = node.query(
+            f"""
+select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
+            """
+        ).strip().split('\n')
+        logging.debug(f"Processed files by node 1: {len(processed_files)}/{files_to_generate}")
+        processed_files = node_2.query(
+            f"""
+select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
+            """
+        ).strip().split('\n')
+        logging.debug(f"Processed files by node 2: {len(processed_files)}/{files_to_generate}")
+
+        count = get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+        logging.debug(f"Processed rows: {count}/{files_to_generate}")
+
         info = node.query(
-            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+            f"""
+            select concat('test_',  toString(number), '.csv') as file from numbers(300)
+            where file not in (select splitByChar('/', file_name)[-1] from clusterAllReplicas(default, system.s3queue)
+            where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
+            """
         )
-        logging.debug(info)
+        logging.debug(f"Unprocessed files: {info}")
+
+        files1 = node.query(
+            f"""
+            select splitByChar('/', file_name)[-1] from system.s3queue
+            where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
+            """
+        ).strip().split("\n")
+        files2 = node_2.query(
+            f"""
+            select splitByChar('/', file_name)[-1] from system.s3queue
+            where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
+            """
+        ).strip().split("\n")
+        def intersection(list_a, list_b):
+            return [ e for e in list_a if e in list_b ]
+        logging.debug(f"Intersecting files: {intersection(files1, files2)}")
+
         assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
@@ -1267,10 +1312,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
 
     if mode == "ordered":
         zk = started_cluster.get_kazoo_client("zoo1")
-        processed_nodes = zk.get_children(f"{keeper_path}/processed/")
-        assert len(processed_nodes) == shards_num * processing_threads
-        shard_nodes = zk.get_children(f"{keeper_path}/shards/")
-        assert len(shard_nodes) == shards_num
+        processed_nodes = zk.get_children(f"{keeper_path}/buckets/")
+        assert len(processed_nodes) == shards_num
 
     node.restart_clickhouse()
     time.sleep(10)
@@ -1297,12 +1340,12 @@ def test_settings_check(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 5,
-            "s3queue_total_shards_num": 2,
+            "s3queue_buckets": 2,
         },
     )
 
     assert (
-        "Existing table metadata in ZooKeeper differs in s3queue_total_shards_num setting. Stored in ZooKeeper: 2, local: 3"
+        "Existing table metadata in ZooKeeper differs in s3queue_buckets setting. Stored in ZooKeeper: 2, local: 3"
         in create_table(
             started_cluster,
             node_2,
@@ -1312,7 +1355,7 @@ def test_settings_check(started_cluster):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": 5,
-                "s3queue_total_shards_num": 3,
+                "s3queue_buckets": 3,
             },
             expect_error=True,
         )
@@ -1329,7 +1372,7 @@ def test_settings_check(started_cluster):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": 2,
-                "s3queue_total_shards_num": 2,
+                "s3queue_buckets": 2,
             },
             expect_error=True,
         )
@@ -1419,7 +1462,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_last_processed_path": f"{files_path}/test_5.csv",
-                "s3queue_total_shards_num": 2,
+                "s3queue_buckets": 2,
             },
         )
 
