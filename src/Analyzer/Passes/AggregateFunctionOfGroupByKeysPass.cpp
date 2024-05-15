@@ -120,6 +120,10 @@ private:
                 || function->getFunctionName() == "anyLast"))
             return false;
 
+        if (function->hasByClause()) {
+            return false;
+        }
+
         std::vector<NodeWithInfo> candidates;
         auto & function_arguments = function->getArguments().getNodes();
         if (function_arguments.size() != 1)

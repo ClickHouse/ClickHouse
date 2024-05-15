@@ -1,7 +1,6 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -28,6 +27,7 @@
 #include "Processors/DelayedPortsProcessor.h"
 #include "Processors/ForkProcessor.h"
 #include "Processors/Transforms/JoiningTransform.h"
+#include "Processors/Transforms/JoinOneValueTransform.h"
 #include "Processors/Transforms/MergeJoinTransform.h"
 #include "Processors/Transforms/PasteJoinTransform.h"
 
@@ -228,19 +228,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 auto copier = std::make_shared<CopyAccumulatingTransform>(input_header, by_column_sets_aggregates.size() + 1);
                 connect(*port, copier->getInputPort());
                 copiers.push_back(copier);
-
-                // if (!by_column_sets_aggregates.empty()) {
-                //     auto* portPtr = &copier->getOutputs().front();
-                //     auto nextPortPtr = std::next(copier->getOutputs().begin());
-                //     for (size_t i = 0; i < copier->getOutputs().size() - 1; ++i) {
-                //         auto delay = std::make_shared<DelayedPortsProcessor>(input_header, 2, DelayedPortsProcessor::PortNumbers{1});
-                //         connect(*portPtr, delay->getInputs().front());
-                //         connect(*nextPortPtr, delay->getInputs().back());
-                //         portPtr = &delay->getOutputs().back();
-                //         ++nextPortPtr;
-                //         copiers.push_back(delay);
-                //     }
-                // }
             }
 
             return copiers;
@@ -356,11 +343,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                 if (columns.empty()) {
                     Blocks headers = {new_port->getHeader(), header};
-                    auto pasteJoinTransform = std::make_shared<MergeJoinTransform>(join, std::move(headers), output_h, max_block_size);
-                    connect(*new_port, pasteJoinTransform->getInputs().front());
-                    connect(*ports[set_counter], pasteJoinTransform->getInputs().back());
-                    new_port = &pasteJoinTransform->getOutputs().front();
-                    processors.emplace_back(std::move(pasteJoinTransform));
+                    auto addColumnTransform = std::make_shared<JoinOneValueTransform>(std::move(headers), output_h);
+                    connect(*new_port, addColumnTransform->getInputs().front());
+                    connect(*ports[set_counter], addColumnTransform->getInputs().back());
+                    new_port = &addColumnTransform->getOutputs().front();
+                    processors.emplace_back(std::move(addColumnTransform));
                     continue;
                 }
 
@@ -380,10 +367,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             return processors;
         });
-
-        std::cout << "num threads" << pipeline.getNumThreads() << std::endl;
-
-        std::cout << "num streams" << pipeline.getNumStreams() << std::endl;
 
         aggregating = collector.detachProcessors(0);
 

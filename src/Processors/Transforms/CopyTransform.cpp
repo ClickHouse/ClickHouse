@@ -1,3 +1,4 @@
+#include <iostream>
 #include <Processors/Transforms/CopyTransform.h>
 #include <simdjson/dom/array.h>
 
@@ -223,6 +224,5 @@ IProcessor::Status CopyAccumulatingTransform::prepareGenerate()
 
     return Status::PortFull;
 }
-
 
 }

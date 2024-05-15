@@ -1,0 +1,21 @@
+<test>
+    <name>large_group_aggregation_comparison</name>
+    <substitutions>
+        <substitution>
+            <name>group_scale</name>
+            <values>
+                <value>10000</value>
+                <value>100000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Using new combinators -->
+    <query>SELECT sum(RedirectCount), sum(RedirectCount BY UserID % {group_scale}), sum(RedirectCount TOTALS) FROM hits_100m_obfuscated GROUP BY CounterID, UserID % {group_scale} FORMAT Null</query>
+
+    <!-- Using window functions -->
+    <query>SELECT sum(RedirectCount) OVER (PARTITION BY CounterID, UserID % {group_scale}), sum(RedirectCount) OVER (PARTITION BY UserID % {group_scale}), sum(RedirectCount) OVER () FROM hits_100m_obfuscated FORMAT Null</query>
+    
+    <!-- Using grouping sets -->
+    <query>SELECT sum(RedirectCount) FROM hits_100m_obfuscated GROUP BY GROUPING SETS((CounterID, UserID % {group_scale}), (CounterID),()) FORMAT Null</query>
+</test>

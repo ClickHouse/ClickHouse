@@ -1,0 +1,20 @@
+<test>
+    <name>count_aggregation_comparison</name>
+    <substitutions>
+        <substitution>
+            <name>group_scale</name>
+            <values>
+                <value>1000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Using new combinators -->
+    <query>SELECT count(), count(BY UserID % {group_scale}), count(TOTALS) FROM hits_100m_obfuscated GROUP BY CounterID, UserID % {group_scale} FORMAT Null</query>
+
+    <!-- Using window functions -->
+    <query>SELECT count() OVER (PARTITION BY CounterID, UserID % {group_scale}), count() OVER (PARTITION BY UserID), count() OVER () FROM hits_100m_obfuscated FORMAT Null</query>
+
+    <!-- Using grouping sets -->
+    <query>SELECT count() FROM hits_100m_obfuscated GROUP BY GROUPING SETS((CounterID, UserID % {group_scale}), (CounterID),()) FORMAT Null</query>
+</test>
