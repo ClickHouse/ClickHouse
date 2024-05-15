@@ -80,7 +80,9 @@ UInt8 Element::typeIdFromString(const std::string & type)
         return ElementTraits<std::string>::TypeId;
     else if (type == "Boolean")
         return ElementTraits<bool>::TypeId;
-    throw Poco::NotImplementedException("Cannot get TypeId from type: {}", type);
+    else if (type == "DateTime")
+        return ElementTraits<Poco::Timestamp>::TypeId;
+    throw Poco::NotImplementedException(fmt::format("Cannot get TypeId from type: {}", type));
 }
 
 

@@ -1,8 +1,4 @@
-#pragma once
-
-#include "../Document.h"
-#include "AggregateHandler.h"
-#include "FindHandler.h"
+#include "Handlers.h"
 
 namespace DB
 {

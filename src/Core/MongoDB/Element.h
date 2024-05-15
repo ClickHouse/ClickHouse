@@ -21,6 +21,8 @@ namespace DB
 namespace BSON
 {
 
+template <typename T>
+class ConcreteElement;
 
 class Element
 /// Represents an Element of a Document or an Array.
@@ -44,6 +46,12 @@ public:
     virtual int getType() const = 0;
     /// Returns the MongoDB type of the element.
 
+    template <typename T>
+    static Poco::SharedPtr<ConcreteElement<T>> cast(Ptr ptr)
+    {
+        return ptr.cast<ConcreteElement<T>>();
+    }
+
     static Element::Ptr fromTypeId(UInt8 type, const std::string & name);
     static UInt8 typeIdFromString(const std::string & type);
     static Element::Ptr createElementWithType(const std::string & type, const std::string & name, const std::string & value);
@@ -64,7 +72,7 @@ inline const Element::Key & Element::getName() const
     return this->name;
 }
 
-using ElementSet = std::list<Element::Ptr>;
+using ElementSet = std::vector<Element::Ptr>;
 
 
 template <typename T>
@@ -90,6 +98,14 @@ public:
     int getType() const override { return ElementTraits<T>::TypeId; }
 
     void read(ReadBuffer & reader) override { value = BSONReader(reader).read<T>(); }
+
+    std::pair<std::string, T> deconstruct()
+    {
+        std::pair<std::string, T> pair;
+        pair.first = std::move(name);
+        pair.second = std::move(value);
+        return pair;
+    }
 
     Int32 getLength() const override
     {
@@ -124,7 +140,7 @@ struct ElementTraits<std::string>
     {
         std::ostringstream oss;
 
-        oss << '"';
+        oss << '\'';
 
         for (char it : value)
         {
@@ -160,7 +176,7 @@ struct ElementTraits<std::string>
                 }
             }
         }
-        oss << '"';
+        oss << '\'';
         return oss.str();
     }
 
@@ -368,9 +384,9 @@ struct ElementTraits<Poco::Timestamp>
     static std::string toString(const Poco::Timestamp & value)
     {
         std::string result;
-        result.append(1, '"');
-        result.append(Poco::DateTimeFormatter::format(value, "%Y-%m-%dT%H:%M:%s%z"));
-        result.append(1, '"');
+        result.append(1, '\'');
+        result.append(Poco::DateTimeFormatter::format(value, "%Y-%m-%d %H:%M:%s"));
+        result.append(1, '\'');
         return result;
     }
 

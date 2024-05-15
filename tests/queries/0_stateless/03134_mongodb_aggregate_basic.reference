@@ -1,17 +1,47 @@
 test> switched to db default
 default> [
-  { sum_money: 102, avg_age: 100, c: Long('1') },
-  { sum_money: 10000.123046875, avg_age: 40, c: Long('1') },
-  { sum_money: 102.39999842643738, avg_age: 15, c: Long('2') }
+  {
+    city: 'Moscow',
+    sum_money: 102.39999842643738,
+    avg_age: 15,
+    c: Long('2')
+  },
+  { city: 'Brest', sum_money: 102, avg_age: 100, c: Long('1') },
+  {
+    city: 'Kazan',
+    sum_money: 10000.123046875,
+    avg_age: 40,
+    c: Long('1')
+  }
 ]
 default> [ { c: Long('4') } ]
 default> [ { c: Long('3') } ]
 default> [
   { sum_age: Long('170'), c: Long('4'), avg_money: 2551.1307613253593 }
 ]
-default> [ { c: Long('2') }, { c: Long('1') }, { c: Long('1') } ]
-default> [ { c: Long('1') }, { c: Long('1') }, { c: Long('1') } ]
-default> [ { u: Long('1') }, { u: Long('1') }, { u: Long('2') } ]
-default> [ { c: Long('1') }, { c: Long('1') }, { c: Long('2') } ]
-default> [ { u: Long('1') }, { u: Long('1') }, { u: Long('2') } ]
+default> [
+  { city: 'Brest', c: Long('1') },
+  { city: 'Kazan', c: Long('1') },
+  { city: 'Moscow', c: Long('2') }
+]
+default> [
+  { city: 'Brest', c: Long('1') },
+  { city: 'Kazan', c: Long('1') },
+  { city: 'Moscow', c: Long('1') }
+]
+default> [
+  { city: 'Moscow', u: Long('2') },
+  { city: 'Brest', u: Long('1') },
+  { city: 'Kazan', u: Long('1') }
+]
+default> [
+  { city: 'Moscow', c: Long('2') },
+  { city: 'Brest', c: Long('1') },
+  { city: 'Kazan', c: Long('1') }
+]
+default> [
+  { city: 'Moscow', u: Long('2') },
+  { city: 'Brest', u: Long('1') },
+  { city: 'Kazan', u: Long('1') }
+]
 default> 

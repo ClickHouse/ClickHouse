@@ -94,6 +94,13 @@ const Element::Ptr Document::get(const Document::Key & name) const
     return element;
 }
 
+const Element::Ptr Document::getLast() const
+{
+    if (elements.empty())
+        throw Poco::RuntimeException("Getting last element from an empty document");
+    return elements.back();
+}
+
 
 Element::Ptr Document::take(const Key & name)
 {
@@ -105,6 +112,13 @@ Element::Ptr Document::take(const Key & name)
         return elem;
     }
     return nullptr;
+}
+
+Element::Ptr Document::takeLast()
+{
+    auto last = elements.back();
+    elements.pop_back();
+    return last;
 }
 
 
@@ -133,6 +147,11 @@ Int64 Document::getInteger(const Document::Key & name) const
             return concrete->getValue();
     }
     throw Poco::BadCastException("Invalid type mismatch!");
+}
+
+std::vector<BSON::Element::Ptr> Document::deconstruct() &&
+{
+    return std::move(elements);
 }
 
 

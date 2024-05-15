@@ -56,6 +56,16 @@ public:
     }
 
     template <typename T>
+    T & get(std::size_t pos)
+    /// Returns the element at the given index and tries to convert
+    /// it to the template type. If the element is not found, a
+    /// Poco::NotFoundException will be thrown. If the element cannot be
+    /// converted a BadCastException will be thrown.
+    {
+        return Document::get<T>(Poco::NumberFormatter::format(pos));
+    }
+
+    template <typename T>
     T get(std::size_t pos, const T & deflt) const
     /// Returns the element at the given index and tries to convert
     /// it to the template type. If the element is not found, or

@@ -95,7 +95,31 @@ public:
     /// Returns true if the document has an element with the given name.
 
     template <typename T>
-    T get(const Key & name) const
+    const T & get(const Key & name) const
+    /// Returns the element with the given name and tries to convert
+    /// it to the template type. When the element is not found, a
+    /// NotFoundException will be thrown. When the element can't be
+    /// converted a BadCastException will be thrown.
+    {
+        Element::Ptr element = get(name);
+        if (element.isNull())
+        {
+            throw Poco::NotFoundException(name);
+        }
+        else
+        {
+            if (ElementTraits<T>::TypeId == element->getType())
+            {
+                ConcreteElement<T> * concrete = dynamic_cast<ConcreteElement<T> *>(element.get());
+                if (concrete != nullptr)
+                    return concrete->getValue();
+            }
+            throw Poco::BadCastException("Invalid type mismatch!");
+        }
+    }
+
+    template <typename T>
+    T & get(const Key & name)
     /// Returns the element with the given name and tries to convert
     /// it to the template type. When the element is not found, a
     /// NotFoundException will be thrown. When the element can't be
@@ -142,6 +166,8 @@ public:
     /// Returns the element with the given name.
     /// An empty element will be returned when the element is not found.
 
+    const Element::Ptr getLast() const;
+
     template <typename T>
     T takeValue(const Key & name)
     {
@@ -151,7 +177,15 @@ public:
     }
     /// Returns Element and removes it from document
 
+    template <typename T>
+    T takeLastValue()
+    {
+        const Key & name = getLast()->getName();
+        return takeValue<T>(name);
+    }
+
     Element::Ptr take(const Key & name);
+    Element::Ptr takeLast();
 
     Int64 getInteger(const Key & name) const;
     /// Returns an integer. Useful when MongoDB returns Int32, Int64
@@ -172,6 +206,8 @@ public:
 
         return ElementTraits<T>::TypeId == element->getType();
     }
+
+    std::vector<BSON::Element::Ptr> deconstruct() &&;
 
     Int32 read(ReadBuffer & reader);
     /// Reads a document from the reader

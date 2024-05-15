@@ -8,69 +8,59 @@ namespace DB
 namespace MongoDB
 {
 
+namespace
+{
+enum IncludeStatus
+{
+    Include,
+    NotInclude,
+    Unspecified
+};
+}
+
+
 class ProjectionMap
 {
+    struct Column
+    {
+        Column(std::string && name_, size_t order_, IncludeStatus status_) : name(std::move(name_)), order(order_), status(status_) { }
+
+        std::string name;
+        size_t order;
+        IncludeStatus status;
+
+        bool operator<(const Column & other) const { return name < other.name; }
+    };
+
 public:
-    ProjectionMap() { }
+    ProjectionMap(std::vector<std::string> && columns_)
+    {
+        columns.reserve(columns_.size());
+        for (size_t i = 0; i < columns_.size(); i++)
+            columns.emplace_back(std::move(columns_[i]), i, IncludeStatus::Unspecified);
+        std::sort(columns.begin(), columns.end());
+    }
     ProjectionMap(BSON::Document::Ptr projection);
-
-    bool include(const std::string & column_name) const;
-
     void add(const std::string & column_name, bool status);
 
     bool getDefaultStatus() const { return default_status; }
+    void setDefaultStatus(bool status) { default_status = status; }
+    void resetStatuses();
 
-    std::vector<std::string> getNamesByStatus(bool status) const;
+    std::vector<std::string> getNamesByStatus(bool status) &&;
 
 private:
-    std::unordered_map<std::string, bool> status_map;
+    std::vector<Column> columns;
     bool default_status = true; // include by default
+
+    bool isIncluded(const std::string & column_name) const;
+    bool isIncluded(size_t ind) const;
 };
 
-inline std::vector<std::string> ProjectionMap::getNamesByStatus(bool status_) const
+inline bool ProjectionMap::isIncluded(size_t ind) const
 {
-    std::vector<std::string> names;
-    for (const auto & [name, status] : status_map)
-        if (status == status_)
-            names.push_back(name);
-    return names;
-}
-
-inline void ProjectionMap::add(const std::string & column_name, bool status)
-{
-    if (status)
-        default_status = false;
-    status_map[column_name] = status;
-}
-
-inline bool ProjectionMap::include(const std::string & column_name) const
-{
-    if (status_map.contains(column_name))
-        return status_map.at(column_name);
-    return default_status;
-}
-
-
-ProjectionMap::ProjectionMap(BSON::Document::Ptr projection)
-{
-    if (!projection)
-    {
-        default_status = true;
-        return;
-    }
-    const auto & element_names = projection->elementNames();
-    for (const auto & name : element_names)
-    {
-        BSON::Element::Ptr elem = projection->get(name);
-        if (elem->getType() == BSON::ElementTraits<BSON::Document::Ptr>::TypeId)
-        {
-            LOG_WARNING(getLogger("MongoDB::ProjectionMap"), "Nested queries are not supported");
-            continue;
-        }
-        auto tmp = elem.cast<BSON::ConcreteElement<Int32>>();
-        Int32 value = tmp->getValue();
-        add(name, value > 0);
-    }
+    auto status = columns[ind].status;
+    return status == IncludeStatus::Unspecified ? default_status : status == IncludeStatus::Include;
 }
 
 }
