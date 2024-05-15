@@ -234,10 +234,7 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
         return; /// It is ok if node was deleted meanwhile
 
     if (stat.numChildren >= static_cast<Int32>(threshold))
-    {
         std::cout << static_cast<String>(path) << "\t" << stat.numChildren << "\n";
-        return;
-    }
 
     Strings children;
     auto status = client->zookeeper->tryGetChildren(path, children);
