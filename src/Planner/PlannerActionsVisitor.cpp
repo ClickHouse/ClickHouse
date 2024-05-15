@@ -243,8 +243,24 @@ public:
             }
             case QueryTreeNodeType::LAMBDA:
             {
-                auto lambda_hash = node->getTreeHash();
-                result = "__lambda_" + toString(lambda_hash);
+                WriteBufferFromOwnString buffer;
+
+                const auto & lambda_node = node->as<LambdaNode &>();
+                const auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+
+                size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+                for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
+                {
+                    const auto & lambda_arguments_node = lambda_arguments_nodes[i];
+                    buffer << calculateActionNodeName(lambda_arguments_node);
+
+                    if (i + 1 != lambda_arguments_nodes_size)
+                        buffer << ", ";
+                }
+
+                buffer << " -> " << calculateActionNodeName(lambda_node.getExpression());
+
+                result = buffer.str();
                 break;
             }
             default:
