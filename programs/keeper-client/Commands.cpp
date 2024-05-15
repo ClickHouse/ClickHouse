@@ -230,7 +230,8 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
     auto path = client->getAbsolutePath(query->args[1].safeGet<String>());
 
     Coordination::Stat stat;
-    client->zookeeper->get(path, &stat);
+    if (!client->zookeeper->exists(path, &stat))
+        return; /// It is ok if node was deleted meanwhile
 
     if (stat.numChildren >= static_cast<Int32>(threshold))
     {
@@ -238,11 +239,17 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
         return;
     }
 
-    auto children = client->zookeeper->getChildren(path);
+    Strings children;
+    auto status = client->zookeeper->tryGetChildren(path, children);
+    if (status == Coordination::Error::ZNONODE)
+        return; /// It is ok if node was deleted meanwhile
+    else if (status != Coordination::Error::ZOK)
+        throw DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, "Error {} while getting children of {}", status, path.string());
+
     std::sort(children.begin(), children.end());
+    auto next_query = *query;
     for (const auto & child : children)
     {
-        auto next_query = *query;
         next_query.args[1] = DB::Field(path / child);
         execute(&next_query, client);
     }
