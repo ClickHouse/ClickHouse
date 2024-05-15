@@ -227,7 +227,7 @@ void ColumnDynamic::insertFrom(const DB::IColumn & src_, size_t n)
     auto & variant_col = assert_cast<ColumnVariant &>(*variant_column);
 
     /// If variants are different, we need to extend our variant with new variants.
-    if (auto global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
+    if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
         variant_col.insertFrom(*dynamic_src.variant_column, n, *global_discriminators_mapping);
         return;
@@ -281,7 +281,7 @@ void ColumnDynamic::insertRangeFrom(const DB::IColumn & src_, size_t start, size
     auto & variant_col = assert_cast<ColumnVariant &>(*variant_column);
 
     /// If variants are different, we need to extend our variant with new variants.
-    if (auto global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
+    if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
         variant_col.insertRangeFrom(*dynamic_src.variant_column, start, length, *global_discriminators_mapping);
         return;
@@ -443,7 +443,7 @@ void ColumnDynamic::insertManyFrom(const DB::IColumn & src_, size_t position, si
     auto & variant_col = assert_cast<ColumnVariant &>(*variant_column);
 
     /// If variants are different, we need to extend our variant with new variants.
-    if (auto global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
+    if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
         variant_col.insertManyFrom(*dynamic_src.variant_column, position, length, *global_discriminators_mapping);
         return;

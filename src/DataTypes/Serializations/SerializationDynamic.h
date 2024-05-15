@@ -11,7 +11,7 @@ class SerializationDynamicElement;
 class SerializationDynamic : public ISerialization
 {
 public:
-    SerializationDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_dynamic_types_)
+    explicit SerializationDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_dynamic_types_)
     {
     }
 

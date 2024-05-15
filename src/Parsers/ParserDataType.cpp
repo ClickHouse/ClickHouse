@@ -55,7 +55,7 @@ private:
 class ParserDataTypeArgument : public IParserBase
 {
 public:
-    ParserDataTypeArgument(std::string_view type_name_) : type_name(type_name_)
+    explicit ParserDataTypeArgument(std::string_view type_name_) : type_name(type_name_)
     {
     }
 

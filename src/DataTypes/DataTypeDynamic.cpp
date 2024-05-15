@@ -67,7 +67,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (identifier_name != "max_types")
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected identifier: {}. Dynamic data type argument should be in a form 'max_types=N'", identifier_name);
 
-    auto literal = argument->arguments->children[1]->as<ASTLiteral>();
+    auto * literal = argument->arguments->children[1]->as<ASTLiteral>();
 
     if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() == 0 || literal->value.get<UInt64>() > 255)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'max_types' argument for Dynamic type should be a positive integer between 1 and 255");
