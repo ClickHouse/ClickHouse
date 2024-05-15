@@ -30,7 +30,4 @@ public:
     void writeErrors(WriteBuffer & wb) const override;
 };
 
-
-using PrometheusMetricsWriterPtr = std::shared_ptr<const PrometheusMetricsWriter>;
-
 }

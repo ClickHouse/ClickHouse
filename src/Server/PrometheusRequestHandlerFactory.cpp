@@ -1,9 +1,8 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 
 #include <Server/HTTPHandlerFactory.h>
-#include "Server/PrometheusMetricsWriter.h"
-#include "Server/PrometheusRequestHandler.h"
-#include "Server/PrometheusRequestHandlerConfig.h"
+#include <Server/PrometheusRequestHandlerConfig.h>
+#include <Server/PrometheusMetricsOnlyRequestHandler.h>
 
 
 namespace DB
@@ -11,22 +10,22 @@ namespace DB
 
 namespace
 {
-    std::shared_ptr<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>> createPrometheusHandlerFactoryImpl(
+    template <typename RequestHandlerType>
+    std::shared_ptr<HandlingRuleHTTPHandlerFactory<RequestHandlerType>> createPrometheusHandlerFactoryImpl(
         IServer & server,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const AsynchronousMetrics & asynchronous_metrics,
-        const PrometheusMetricsWriterPtr & metrics_writer,
         bool use_default_filter_by_endpoint_and_http_method = true)
     {
         auto parsed_config = std::make_shared<PrometheusRequestHandlerConfig>(config, config_prefix);
 
-        auto creator = [&server, parsed_config, &asynchronous_metrics, metrics_writer]() -> std::unique_ptr<PrometheusRequestHandler>
+        auto creator = [&server, parsed_config, &asynchronous_metrics]() -> std::unique_ptr<RequestHandlerType>
         {
-            return std::make_unique<PrometheusRequestHandler>(server, parsed_config, asynchronous_metrics, metrics_writer);
+            return std::make_unique<RequestHandlerType>(server, parsed_config, asynchronous_metrics);
         };
 
-        auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
+        auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<RequestHandlerType>>(std::move(creator));
 
         if (use_default_filter_by_endpoint_and_http_method)
         {
@@ -54,8 +53,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryDefault(
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics)
 {
-    auto metrics_writer = std::make_shared<PrometheusMetricsWriter>();
-    return createPrometheusHandlerFactoryImpl(server, config, "prometheus", asynchronous_metrics, metrics_writer);
+    return createPrometheusHandlerFactoryImpl<PrometheusRequestHandler>(server, config, "prometheus", asynchronous_metrics);
 }
 
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForRule(
@@ -64,8 +62,6 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForRule(
     const String & config_prefix,
     const AsynchronousMetrics & asynchronous_metrics)
 {
-    auto metrics_writer = std::make_shared<PrometheusMetricsWriter>();
-
     /// Here `use_default_filter_by_endpoint_and_http_method` is set to `false`
     /// because for http rules inside section <http_handlers>:
     /// <http_handlers>
@@ -84,8 +80,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForRule(
     /// we don't need the default URL filter by the default endpoint `/metrics` because a regular expression in the <url> tag must be used instead.
     bool use_default_filter_by_endpoint_and_http_method = false;
 
-    auto factory = createPrometheusHandlerFactoryImpl(
-        server, config, config_prefix + ".handler", asynchronous_metrics, metrics_writer, use_default_filter_by_endpoint_and_http_method);
+    auto factory = createPrometheusHandlerFactoryImpl<PrometheusRequestHandler>(
+        server, config, config_prefix + ".handler", asynchronous_metrics, use_default_filter_by_endpoint_and_http_method);
 
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
@@ -97,9 +93,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForKeeper(
     const String & name,
     const AsynchronousMetrics & asynchronous_metrics)
 {
-    auto metrics_writer = std::make_shared<KeeperPrometheusMetricsWriter>();
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    factory->addHandler(createPrometheusHandlerFactoryImpl(server, config, "prometheus", asynchronous_metrics, metrics_writer));
+    factory->addHandler(createPrometheusHandlerFactoryImpl<KeeperPrometheusRequestHandler>(server, config, "prometheus", asynchronous_metrics));
     return factory;
 }
 
