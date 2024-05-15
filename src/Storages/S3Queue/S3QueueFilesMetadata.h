@@ -18,8 +18,14 @@ class StorageS3Queue;
 /**
  * A class for managing S3Queue metadata in zookeeper, e.g.
  * the following folders:
- * - <path_to_metadata>/processing
  * - <path_to_metadata>/processed
+ * - <path_to_metadata>/processing
+ * - <path_to_metadata>/failed
+ *
+ * In case we use buckets for processing for Ordered mode, the structure looks like:
+ * - <path_to_metadata>/buckets/<bucket>/processed -- persistent node, information about last processed file.
+ * - <path_to_metadata>/buckets/<bucket>/lock -- ephemeral node, used for acquiring bucket lock.
+ * - <path_to_metadata>/processing
  * - <path_to_metadata>/failed
  *
  * Depending on S3Queue processing mode (ordered or unordered)
@@ -37,12 +43,15 @@ public:
     class ProcessingNodeHolder;
     using ProcessingNodeHolderPtr = std::shared_ptr<ProcessingNodeHolder>;
 
+    using Bucket = size_t;
+    using Processor = std::string;
+
     S3QueueFilesMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_);
 
     ~S3QueueFilesMetadata();
 
     void setFileProcessed(ProcessingNodeHolderPtr holder);
-    void setFileProcessed(const std::string & path, size_t shard_id);
+    void setFileProcessed(const std::string & path);
 
     void setFileFailed(ProcessingNodeHolderPtr holder, const std::string & exception_message);
 
@@ -81,37 +90,12 @@ public:
 
     void deactivateCleanupTask();
 
-    /// Should the table use sharded processing?
-    /// We use sharded processing for Ordered mode of S3Queue table.
-    /// It allows to parallelize processing within a single server
-    /// and to allow distributed processing.
-    bool isShardedProcessing() const;
-
-    /// Register a new shard for processing.
-    /// Return a shard id of registered shard.
-    size_t registerNewShard();
-    /// Register a new shard for processing by given id.
-    /// Throws exception if shard by this id is already registered.
-    void registerNewShard(size_t shard_id);
-    /// Unregister shard from keeper.
-    void unregisterShard(size_t shard_id);
-    bool isShardRegistered(size_t shard_id);
-
-    /// Total number of processing ids.
-    /// A processing id identifies a single processing thread.
-    /// There might be several processing ids per shard.
-    size_t getProcessingIdsNum() const;
-    /// Get processing ids identified with requested shard.
-    std::vector<size_t> getProcessingIdsForShard(size_t shard_id) const;
-    /// Check if given processing id belongs to a given shard.
-    bool isProcessingIdBelongsToShard(size_t id, size_t shard_id) const;
-    /// Get a processing id for processing thread by given thread id.
-    /// thread id is a value in range [0, threads_per_shard].
-    size_t getIdForProcessingThread(size_t thread_id, size_t shard_id) const;
-
+    bool useBucketsForProcessing() const;
     /// Calculate which processing id corresponds to a given file path.
     /// The file will be processed by a thread related to this processing id.
-    size_t getProcessingIdForPath(const std::string & path) const;
+    Bucket getBucketForPath(const std::string & path) const;
+
+    bool tryAcquireBucket(const Bucket & bucket);
 
 private:
     const S3QueueMode mode;
@@ -120,13 +104,13 @@ private:
     const UInt64 max_loading_retries;
     const size_t min_cleanup_interval_ms;
     const size_t max_cleanup_interval_ms;
-    const size_t shards_num;
-    const size_t threads_per_shard;
+    const size_t buckets_num;
 
+    const fs::path zookeeper_path;
     const fs::path zookeeper_processing_path;
     const fs::path zookeeper_processed_path;
     const fs::path zookeeper_failed_path;
-    const fs::path zookeeper_shards_path;
+    const fs::path zookeeper_buckets_path;
     const fs::path zookeeper_cleanup_lock_path;
 
     LoggerPtr log;
@@ -135,15 +119,15 @@ private:
     BackgroundSchedulePool::TaskHolder task;
 
     std::string getNodeName(const std::string & path);
+    fs::path getProcessedPath(const std::string & path) const;
+    fs::path getBucketLockPath(const Bucket & bucket) const;
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     void setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder);
     void setFileProcessedForUnorderedMode(ProcessingNodeHolderPtr holder);
-    std::string getZooKeeperPathForShard(size_t shard_id) const;
 
-    void setFileProcessedForOrderedModeImpl(
-        const std::string & path, ProcessingNodeHolderPtr holder, const std::string & processed_node_path);
+    void setFileProcessedForOrderedModeImpl(const std::string & path, ProcessingNodeHolderPtr holder);
 
     enum class SetFileProcessingResult : uint8_t
     {
