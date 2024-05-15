@@ -16,6 +16,7 @@
 #include <pcg_random.hpp>
 
 #include <Poco/Event.h>
+#include <Common/Exception.h>
 #include <Common/ThreadStatus.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
@@ -25,6 +26,7 @@
 #include <base/scope_guard.h>
 
 class JobWithPriority;
+class TimeoutAndCancellationTaskChecker;
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -109,6 +111,7 @@ public:
     /// of destructors of global static objects and callbacks
     /// added by atexit is undefined for different translation units.
     using OnDestroyCallback = std::function<void()>;
+    using KillChecker = std::shared_ptr<TimeoutAndCancellationTaskChecker>;
     void addOnDestroyCallback(OnDestroyCallback && callback);
 
 private:
@@ -125,6 +128,7 @@ private:
     size_t max_threads;
     size_t max_free_threads;
     size_t queue_size;
+    KillChecker checker;
 
     size_t scheduled_jobs = 0;
     bool shutdown = false;

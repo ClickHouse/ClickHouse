@@ -741,7 +741,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader(size_t idx)
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-    auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+    auto current_reader = std::make_unique<PullingAsyncPipelineExecutor>(*pipeline);
 
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
 

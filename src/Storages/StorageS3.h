@@ -4,6 +4,18 @@
 
 #if USE_AWS_S3
 
+#include <Core/Types.h>
+
+
+#include <Storages/IStorage.h>
+#include <Storages/StorageS3Settings.h>
+
+#include <Processors/SourceWithKeyCondition.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Poco/URI.h>
+#include <IO/S3/getObjectInfo.h>
+
 #include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
 #include <IO/CompressionMethod.h>
@@ -30,7 +42,7 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-class PullingPipelineExecutor;
+class PullingAsyncPipelineExecutor;
 class NamedCollection;
 
 class StorageS3Source : public SourceWithKeyCondition, WithContext
@@ -180,7 +192,7 @@ private:
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
-            std::unique_ptr<PullingPipelineExecutor> reader_)
+            std::unique_ptr<PullingAsyncPipelineExecutor> reader_)
             : key_with_info(key_with_info_)
             , bucket(std::move(bucket_))
             , read_buf(std::move(read_buf_))
@@ -213,8 +225,8 @@ private:
         }
 
         explicit operator bool() const { return reader != nullptr; }
-        PullingPipelineExecutor * operator->() { return reader.get(); }
-        const PullingPipelineExecutor * operator->() const { return reader.get(); }
+        PullingAsyncPipelineExecutor * operator->() { return reader.get(); }
+        const PullingAsyncPipelineExecutor * operator->() const { return reader.get(); }
         String getPath() const { return fs::path(bucket) / key_with_info->key; }
         const String & getFile() const { return key_with_info->key; }
         const KeyWithInfo & getKeyWithInfo() const { return *key_with_info; }
@@ -228,7 +240,7 @@ private:
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
-        std::unique_ptr<PullingPipelineExecutor> reader;
+        std::unique_ptr<PullingAsyncPipelineExecutor> reader;
     };
 
     ReaderHolder reader;
