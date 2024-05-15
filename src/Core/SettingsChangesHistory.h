@@ -85,7 +85,12 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.5", {{"allow_deprecated_functions", true, false, "Allow usage of deprecated functions"},
+    {"24.5", {{"diagram_output_format_diagram_type", "SCATTER", "SCATTER", "Allow to set the type of diagram"},
+              {"diagram_output_format_title", "", "", "Allow to set the title of plot"},
+              {"diagram_output_format_is_ascii_set", false, false, "Allow to set the charset for printing plot"},
+              {"diagram_output_format_limit_height", -1, -1, "Allow to limit num of rows in plot"},
+              {"diagram_output_format_limit_width", -1, -1, "Allow to limit num of columns in plot"},
+              {"allow_deprecated_functions", true, false, "Allow usage of deprecated functions"},
               {"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
               {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
               {"cross_join_min_rows_to_compress", 0, 10000000, "A new setting."},
