@@ -21,6 +21,8 @@ struct AzureBlobStorageEndpoint
     String getEndpoint()
     {
         String url = storage_account_url;
+        if (url.ends_with('/'))
+          url.pop_back();
 
         if (!account_name.empty())
             url += "/" + account_name;

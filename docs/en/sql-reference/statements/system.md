@@ -532,3 +532,15 @@ If there's a refresh in progress for the given view, interrupt and cancel it. Ot
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+### SYSTEM UNLOAD PRIMARY KEY
+
+Unload the primary keys for the given table or for all tables.
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY
+```

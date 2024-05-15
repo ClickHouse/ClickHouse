@@ -25,7 +25,7 @@ SELECT * FROM truncate_test.truncate_test_stripe_log;
 SELECT * FROM truncate_test.truncate_test_merge_tree;
 
 SELECT '======After Truncate And Empty======';
-TRUNCATE ALL TABLES IF EXISTS truncate_test;
+TRUNCATE ALL TABLES FROM IF EXISTS truncate_test;
 SELECT * FROM system.numbers WHERE number NOT IN truncate_test.truncate_test_set LIMIT 1;
 SELECT * FROM truncate_test.truncate_test_log;
 SELECT * FROM truncate_test.truncate_test_memory;
