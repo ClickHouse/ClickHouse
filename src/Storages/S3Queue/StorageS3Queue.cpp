@@ -116,7 +116,7 @@ StorageS3Queue::StorageS3Queue(
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
-    , log(getLogger("StorageS3Queue (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageS3Queue (" + table_id_.getFullTableName() + ")"))
 {
     if (configuration.url.key.empty())
     {
@@ -170,14 +170,7 @@ StorageS3Queue::StorageS3Queue(
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
 
-    try
-    {
-        createOrCheckMetadata(storage_metadata);
-    }
-    catch (...)
-    {
-        throw;
-    }
+    createOrCheckMetadata(storage_metadata);
 
     /// Get metadata manager from S3QueueMetadataFactory,
     /// it will increase the ref count for the metadata object.
@@ -469,7 +462,7 @@ void StorageS3Queue::threadFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
     }
 
     if (!shutdown_called)
@@ -562,17 +555,21 @@ void StorageS3Queue::createOrCheckMetadata(const StorageInMemoryMetadata & stora
             requests.emplace_back(zkutil::makeCreateRequest(zk_path / "metadata", metadata, zkutil::CreateMode::Persistent));
         }
 
-        Coordination::Responses responses;
-        auto code = zookeeper->tryMulti(requests, responses);
-        if (code == Coordination::Error::ZNODEEXISTS)
+        if (!requests.empty())
         {
-            LOG_INFO(log, "It looks like the table {} was created by another server at the same moment, will retry", zk_path.string());
-            continue;
+            Coordination::Responses responses;
+            auto code = zookeeper->tryMulti(requests, responses);
+            if (code == Coordination::Error::ZNODEEXISTS)
+            {
+                LOG_INFO(log, "It looks like the table {} was created by another server at the same moment, will retry", zk_path.string());
+                continue;
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                zkutil::KeeperMultiException::check(code, requests, responses);
+            }
         }
-        else if (code != Coordination::Error::ZOK)
-        {
-            zkutil::KeeperMultiException::check(code, requests, responses);
-        }
+
         return;
     }
 
@@ -614,7 +611,8 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
         *configuration.client, configuration.url, predicate, getVirtualsList(), local_context,
         /* read_keys */nullptr, configuration.request_settings);
 
-    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
+    return std::make_shared<FileIterator>(
+        files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called, log);
 }
 
 void registerStorageS3Queue(StorageFactory & factory)
