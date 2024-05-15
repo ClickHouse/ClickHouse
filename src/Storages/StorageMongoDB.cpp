@@ -101,7 +101,7 @@ public:
         , db_name(db_name_)
         , metadata_snapshot{metadata_snapshot_}
         , connection(connection_)
-        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_))
+        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_, db_name))
     {
     }
 
@@ -192,7 +192,7 @@ private:
         else if (which.isFloat32())
             document.add(name, static_cast<Float64>(column.getFloat32(idx)));
         else if (which.isFloat64())
-            document.add(name, static_cast<Float64>(column.getFloat64(idx)));
+            document.add(name, column.getFloat64(idx));
         else if (which.isDate())
             document.add(name, Poco::Timestamp(DateLUT::instance().fromDayNum(DayNum(column.getUInt(idx))) * 1000000));
         else if (which.isDateTime())

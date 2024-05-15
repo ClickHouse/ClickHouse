@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -233,7 +234,14 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+        {
+            const auto & type = header.getByPosition(i).type;
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", columnName(i), type->getName());
+            else
+                type->insertDefaultInto(*columns[i]);
+        }
+
 
     /// Return info about defaults set.
     /// If defaults_for_omitted_fields is set to 0, we should just leave already inserted defaults.

@@ -860,6 +860,42 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
     }
 }
 
+namespace
+{
+template <typename TMustHaveDataType>
+void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command)
+{
+    if (command.type == AlterCommand::MODIFY_COLUMN)
+    {
+        if (!typeid_cast<const TMustHaveDataType *>(command.data_type.get()))
+        {
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot alter {} column ({}) to type {}, because it must have type {}",
+                column_meta_name,
+                command.column_name,
+                command.data_type->getName(),
+                TypeName<TMustHaveDataType>);
+        }
+    }
+    else if (command.type == AlterCommand::DROP_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER DROP {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
+    else if (command.type == AlterCommand::RENAME_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER RENAME {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
+};
+}
 
 void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const
 {
@@ -985,6 +1021,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Summing)
     {
+        auto columns_to_sum_copy = columns_to_sum;
+        std::sort(columns_to_sum_copy.begin(), columns_to_sum_copy.end());
+        if (const auto it = std::adjacent_find(columns_to_sum_copy.begin(), columns_to_sum_copy.end()); it != columns_to_sum_copy.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} is listed multiple times in the list of columns to sum", *it);
+
         /// If columns_to_sum are set, then check that such columns exist.
         for (const auto & column_to_sum : columns_to_sum)
         {
@@ -993,9 +1034,10 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                 return column_to_sum == Nested::extractTableName(name_and_type.name);
             };
             if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                                "Column {} listed in columns to sum does not exist in table declaration.",
-                                column_to_sum);
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "Column {} listed in columns to sum does not exist in table declaration.",
+                    column_to_sum);
         }
 
         /// Check that summing columns are not in partition key.
@@ -1016,12 +1058,18 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Replacing)
     {
+        if (!version_column.empty() && version_column == is_deleted_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and is_deleted column cannot be the same column ({})", version_column);
+
         check_is_deleted_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
 
     if (mode == MergingParams::VersionedCollapsing)
     {
+        if (!version_column.empty() && version_column == sign_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The version and sign column cannot be the same column ({})", version_column);
+
         check_sign_column(false, "VersionedCollapsingMergeTree");
         check_version_column(false, "VersionedCollapsingMergeTree");
     }
@@ -2960,9 +3008,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     commands.apply(new_metadata, local_context);
 
-    if (AlterCommands::hasInvertedIndex(new_metadata) && !settings.allow_experimental_inverted_index)
+    if (AlterCommands::hasFullTextIndex(new_metadata) && !settings.allow_experimental_inverted_index)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+
+    for (const auto & disk : getDisks())
+        if (!disk->supportsHardLinks())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE is not supported for immutable disk '{}'", disk->getName());
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
@@ -3069,6 +3121,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
             }
+        }
+        else if (command.column_name == merging_params.is_deleted_column)
+        {
+            checkSpecialColumn<DataTypeUInt8>("is_deleted", command);
+        }
+        else if (command.column_name == merging_params.sign_column)
+        {
+            checkSpecialColumn<DataTypeUInt8>("sign", command);
         }
 
         if (command.type == AlterCommand::MODIFY_QUERY)
@@ -3334,7 +3394,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
 {
-    /// Some validation will be added
+    for (const auto & disk : getDisks())
+        if (!disk->supportsHardLinks())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const
@@ -4824,6 +4886,11 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
+    for (const auto & disk : getDisks())
+        if (!disk->supportsHardLinks())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE PARTITION is not supported for immutable disk '{}'", disk->getName());
+
     for (const auto & command : commands)
     {
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
@@ -5294,20 +5361,50 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             &temp_dirs,
             false, false);
 
-        auto projection_parts = part->getProjectionParts();
-        for (const auto & [projection_name, projection_part] : projection_parts)
+        auto backup_projection = [&](IDataPartStorage & storage, IMergeTreeDataPart & projection_part)
         {
-            projection_part->getDataPartStorage().backup(
-                projection_part->checksums,
-                projection_part->getFileNamesWithoutChecksums(),
+            storage.backup(
+                projection_part.checksums,
+                projection_part.getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
                 backup_settings,
                 read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
                 &temp_dirs,
-                projection_part->is_broken,
+                projection_part.is_broken,
                 backup_settings.allow_backup_broken_projections);
+        };
+
+        auto projection_parts = part->getProjectionParts();
+        std::string proj_suffix = ".proj";
+        std::unordered_set<String> defined_projections;
+
+        for (const auto & [projection_name, projection_part] : projection_parts)
+        {
+            defined_projections.emplace(projection_name);
+            backup_projection(projection_part->getDataPartStorage(), *projection_part);
+        }
+
+        /// It is possible that the part has a written but not loaded projection,
+        /// e.g. it is written to parent part's checksums.txt and exists on disk,
+        /// but does not exist in table's projections definition.
+        /// Such a part can appear server was restarted after DROP PROJECTION but before old part was removed.
+        /// In this case, the old part will load only projections from metadata.
+        /// See 031145_non_loaded_projection_backup.sh.
+        for (const auto & [name, _] : part->checksums.files)
+        {
+            auto projection_name = fs::path(name).stem().string();
+            if (endsWith(name, proj_suffix) && !defined_projections.contains(projection_name))
+            {
+                auto projection_storage = part->getDataPartStorage().getProjection(projection_name + proj_suffix);
+                if (projection_storage->exists("checksums.txt"))
+                {
+                    auto projection_part = const_cast<IMergeTreeDataPart &>(*part).getProjectionPartBuilder(
+                        projection_name, /* is_temp_projection */false).withPartFormatFromDisk().build();
+                    backup_projection(projection_part->getDataPartStorage(), *projection_part);
+                }
+            }
         }
 
         if (hold_storage_and_part_ptrs)
@@ -5417,7 +5514,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
-    boost::remove_erase(part_names, "mutations");
+    std::erase(part_names, "mutations");
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
@@ -6811,7 +6908,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()[0];
+                const auto & primary_key_column = *part->getIndex()->at(0);
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, primary_key_column[0]);
             }
@@ -6822,7 +6919,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()[0];
+                const auto & primary_key_column = *part->getIndex()->at(0);
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, primary_key_column[primary_key_column.size() - 1]);
             }
@@ -7233,10 +7330,19 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
-    else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
     else
-        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    {
+        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
+        {
+            auto lock = lockParts();
+            state = data_part->getState();
+        }
+
+        if (state == MergeTreeDataPartState::Active)
+            broken_part_callback(data_part->name);
+        else
+            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    }
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
@@ -8370,6 +8476,14 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
         }
     }
     return true;
+}
+
+void MergeTreeData::unloadPrimaryKeys()
+{
+    for (auto & part : getAllDataPartsVector())
+    {
+        const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
+    }
 }
 
 bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove)

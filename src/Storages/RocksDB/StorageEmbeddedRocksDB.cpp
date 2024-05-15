@@ -1,6 +1,5 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
-#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 #include <Storages/MutationCommands.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -28,8 +27,15 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/RocksDB/RocksDBSettings.h>
+#include <IO/SharedThreadPools.h>
+#include <Disks/DiskLocal.h>
 #include <base/sort.h>
 
+#include <rocksdb/advanced_options.h>
+#include <rocksdb/env.h>
+#include <rocksdb/options.h>
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
 #include <rocksdb/utilities/db_ttl.h>
@@ -38,8 +44,6 @@
 #include <filesystem>
 #include <utility>
 
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -174,6 +178,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const StorageInMemoryMetadata & metadata_,
         LoadingStrictnessLevel mode,
         ContextPtr context_,
+        std::unique_ptr<RocksDBSettings> settings_,
         const String & primary_key_,
         Int32 ttl_,
         String rocksdb_dir_,
@@ -186,6 +191,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     , read_only(read_only_)
 {
     setInMemoryMetadata(metadata_);
+    setSettings(std::move(settings_));
     if (rocksdb_dir.empty())
     {
         rocksdb_dir = context_->getPath() + relative_data_path_;
@@ -205,7 +211,7 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 
-    fs::remove_all(rocksdb_dir);
+    (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
     initDB();
 }
@@ -236,21 +242,19 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
-        MutationsInterpreter::Settings settings(true);
-        settings.return_all_columns = true;
-        settings.return_mutated_rows = true;
+        MutationsInterpreter::Settings mutation_settings(true);
+        mutation_settings.return_all_columns = true;
+        mutation_settings.return_mutated_rows = true;
 
         auto interpreter = std::make_unique<MutationsInterpreter>(
             storage_ptr,
             metadata_snapshot,
             commands,
             context_,
-            settings);
+            mutation_settings);
 
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
-
-        auto sink = std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 
         auto header = interpreter->getUpdatedHeader();
         auto primary_key_pos = header.getPositionByName(primary_key);
@@ -287,16 +291,16 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
-    MutationsInterpreter::Settings settings(true);
-    settings.return_all_columns = true;
-    settings.return_mutated_rows = true;
+    MutationsInterpreter::Settings mutation_settings(true);
+    mutation_settings.return_all_columns = true;
+    mutation_settings.return_mutated_rows = true;
 
     auto interpreter = std::make_unique<MutationsInterpreter>(
         storage_ptr,
         metadata_snapshot,
         commands,
         context_,
-        settings);
+        mutation_settings);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
@@ -352,7 +356,6 @@ void StorageEmbeddedRocksDB::initDB()
     rocksdb::Options base;
 
     base.create_if_missing = true;
-    base.compression = rocksdb::CompressionType::kZSTD;
     base.statistics = rocksdb::CreateDBStatistics();
     /// It is too verbose by default, and in fact we don't care about rocksdb logs at all.
     base.info_log_level = rocksdb::ERROR_LEVEL;
@@ -582,8 +585,11 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr  query_context, bool /*async_insert*/)
 {
+    if (getSettings().optimize_for_bulk_insert)
+        return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
+
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
@@ -622,7 +628,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.mode, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
+    auto settings = std::make_unique<RocksDBSettings>();
+    settings->loadFromQuery(*args.storage_def, args.getContext());
+    if (args.storage_def->settings)
+        metadata.settings_changes = args.storage_def->settings->ptr();
+    else
+    {
+        /// A workaround because embedded rocksdb doesn't have default immutable settings
+        /// But InterpreterAlterQuery requires settings_changes to be set to run ALTER MODIFY
+        /// SETTING queries. So we just add a setting with its default value.
+        auto settings_changes = std::make_shared<ASTSetQuery>();
+        settings_changes->is_standalone = false;
+        settings_changes->changes.insertSetting("optimize_for_bulk_insert", settings->optimize_for_bulk_insert.value);
+        metadata.settings_changes = settings_changes;
+    }
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.mode, args.getContext(), std::move(settings), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
@@ -713,9 +733,9 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     return Chunk(std::move(columns), num_rows);
 }
 
-std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & query_settings) const
 {
-    if (!settings.optimize_trivial_approximate_count_query)
+    if (!query_settings.optimize_trivial_approximate_count_query)
         return {};
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
@@ -737,9 +757,26 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*sett
     return estimated_bytes;
 }
 
+void StorageEmbeddedRocksDB::alter(
+    const AlterCommands & params,
+    ContextPtr query_context,
+    AlterLockHolder & holder)
+{
+    IStorage::alter(params, query_context, holder);
+    auto new_metadata = getInMemoryMetadataPtr();
+    if (new_metadata->settings_changes)
+    {
+        const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
+        auto new_settings = std::make_unique<RocksDBSettings>();
+        new_settings->applyChanges(settings_changes.changes);
+        setSettings(std::move(new_settings));
+    }
+}
+
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
+        .supports_settings = true,
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
@@ -747,4 +784,12 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 
     factory.registerStorage("EmbeddedRocksDB", create, features);
 }
+
+void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
+{
+    for (const auto & command : commands)
+        if (!command.isCommentAlter() && !command.isSettingsAlter())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+}
+
 }

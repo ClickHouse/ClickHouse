@@ -158,7 +158,7 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
@@ -213,7 +213,7 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
@@ -227,7 +227,7 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
@@ -296,7 +296,7 @@ class PRInfo:
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name

@@ -678,6 +678,54 @@ def test_s3_glob_scheherazade(started_cluster):
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
 
 
+# a bit simplified version of scheherazade test
+# checks e.g. `prefix{1,2}/file*.csv`, where there are more than 1000 files under prefix1.
+def test_s3_glob_many_objects_under_selection(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    values = "(1, 1, 1)"
+    jobs = []
+    for thread_num in range(16):
+
+        def create_files(thread_num):
+            for f_num in range(thread_num * 63, thread_num * 63 + 63):
+                path = f"folder1/file{f_num}.csv"
+                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+                    started_cluster.minio_ip,
+                    MINIO_INTERNAL_PORT,
+                    bucket,
+                    path,
+                    table_format,
+                    values,
+                )
+                run_query(instance, query)
+
+        jobs.append(threading.Thread(target=create_files, args=(thread_num,)))
+        jobs[-1].start()
+
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+        started_cluster.minio_ip,
+        MINIO_INTERNAL_PORT,
+        bucket,
+        f"folder2/file0.csv",
+        table_format,
+        values,
+    )
+    run_query(instance, query)
+
+    for job in jobs:
+        job.join()
+
+    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/folder{{1,2}}/file*.csv', 'CSV', '{}')".format(
+        started_cluster.minio_redirect_host,
+        started_cluster.minio_redirect_port,
+        bucket,
+        table_format,
+    )
+    assert run_query(instance, query).splitlines() == ["1009\t1009\t1009\t1009"]
+
+
 def run_s3_mocks(started_cluster):
     script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
     start_mock_servers(
@@ -1768,13 +1816,27 @@ def test_schema_inference_cache(started_cluster):
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
+        check_cache_misses(
+            instance,
+            files,
+            storage_name,
+            started_cluster,
+            bucket,
+            4 if storage_name == "url" else 1,
+        )
 
         instance.query("system drop schema cache")
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
+        check_cache_misses(
+            instance,
+            files,
+            storage_name,
+            started_cluster,
+            bucket,
+            4 if storage_name == "url" else 1,
+        )
 
         instance.query("system drop schema cache")
 

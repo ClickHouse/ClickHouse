@@ -1187,8 +1187,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
     assert(num_streams == requested_num_streams);
-    if (num_streams > settings.max_final_threads)
-        num_streams = settings.max_final_threads;
+    num_streams = std::min<size_t>(num_streams, settings.max_final_threads);
 
     /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
@@ -1365,11 +1364,27 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead() const
+{
+    return selectRangesToReadImpl(
+        prepared_parts,
+        alter_conversions_for_parts,
+        metadata_for_reading,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        all_column_names,
+        log,
+        indexes);
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions) const
 {
-    return selectRangesToRead(
+    return selectRangesToReadImpl(
         std::move(parts),
         std::move(alter_conversions),
         metadata_for_reading,
@@ -1856,10 +1871,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
-    auto result_ptr = analyzed_result_ptr
-        ? analyzed_result_ptr
-        : selectRangesToRead(prepared_parts, alter_conversions_for_parts);
-
+    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
     return *result_ptr;
 }
 
