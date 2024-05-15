@@ -835,7 +835,12 @@ void BaseDaemon::initialize(Application & self)
         }
     }
 
-    /// This must be done before any usage of DateLUT. In particular, before any logging.
+    /// These two parameters must be processed before any usage of DateLUT. In particular, before any logging.
+    if (config().has("prefer_system_tzdata"))
+    {
+        DateLUT::setTZDataSource(config().getBool("prefer_system_tzdata"));
+    }
+
     if (config().has("timezone"))
     {
         const std::string config_timezone = config().getString("timezone");
@@ -844,13 +849,6 @@ void BaseDaemon::initialize(Application & self)
 
         tzset();
         DateLUT::setDefaultTimezone(config_timezone);
-    }
-
-    if (config().has("prefer_system_tzdata"))
-    {
-        const bool prefer_system_tzdata = config().getBool("prefer_system_tzdata");
-        if (0 != setenv("PREFER_SYSTEM_TZDATA", prefer_system_tzdata ? "1" : "0", 1)) // NOLINT(concurrency-mt-unsafe) // ok if not called concurrently with other setenv/getenv
-            throw Poco::Exception("Cannot setenv PREFER_SYSTEM_TZDATA variable");
     }
 
     std::string log_path = config().getString("logger.log", "");

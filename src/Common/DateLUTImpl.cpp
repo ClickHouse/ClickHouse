@@ -22,10 +22,6 @@ namespace ErrorCodes
 }
 }
 
-/// Embedded timezones.
-std::string_view getTimeZone(const char * name);
-
-
 namespace
 {
 
@@ -237,69 +233,4 @@ unsigned int DateLUTImpl::toMillisecond(const DB::DateTime64 & datetime, Int64 s
 
     UInt16 millisecond = static_cast<UInt16>(fractional / divider);
     return millisecond;
-}
-
-
-/// Prefer to load timezones from blobs linked to the binary.
-/// The blobs are provided by "tzdata" library.
-/// This allows to avoid dependency on system tzdata.
-namespace cctz_extension
-{
-    namespace
-    {
-        class Source : public cctz::ZoneInfoSource
-        {
-        public:
-            Source(const char * data_, size_t size_) : data(data_), size(size_) {}
-
-            size_t Read(void * buf, size_t bytes) override
-            {
-                if (bytes > size)
-                    bytes = size;
-                memcpy(buf, data, bytes);
-                data += bytes;
-                size -= bytes;
-                return bytes;
-            }
-
-            int Skip(size_t offset) override
-            {
-                if (offset <= size)
-                {
-                    data += offset;
-                    size -= offset;
-                    return 0;
-                }
-                else
-                {
-                    errno = EINVAL;
-                    return -1;
-                }
-            }
-        private:
-            const char * data;
-            size_t size;
-        };
-
-        std::unique_ptr<cctz::ZoneInfoSource> custom_factory(
-            const std::string & name,
-            const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
-        {
-            const char * prefer_system_tzdata_env = std::getenv("PREFER_SYSTEM_TZDATA"); // NOLINT(concurrency-mt-unsafe)
-            if (prefer_system_tzdata_env && 0 != strcmp(prefer_system_tzdata_env, "0"))
-            {
-                if (auto tz_source = fallback(name))
-                    return tz_source;
-            }
-
-            std::string_view tz_file = getTimeZone(name.data());
-
-            if (!tz_file.empty())
-                return std::make_unique<Source>(tz_file.data(), tz_file.size());
-
-            return fallback(name);
-        }
-    }
-
-    ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
 }
