@@ -48,7 +48,7 @@ public:
 
     struct FileStatus
     {
-        enum class State
+        enum class State : uint8_t
         {
             Processing,
             Processed,
@@ -145,7 +145,7 @@ private:
     void setFileProcessedForOrderedModeImpl(
         const std::string & path, ProcessingNodeHolderPtr holder, const std::string & processed_node_path);
 
-    enum class SetFileProcessingResult
+    enum class SetFileProcessingResult : uint8_t
     {
         Success,
         ProcessingByOtherNode,
@@ -193,7 +193,8 @@ public:
         const std::string & path_,
         const std::string & zk_node_path_,
         FileStatusPtr file_status_,
-        zkutil::ZooKeeperPtr zk_client_);
+        zkutil::ZooKeeperPtr zk_client_,
+        LoggerPtr logger_);
 
     ~ProcessingNodeHolder();
 

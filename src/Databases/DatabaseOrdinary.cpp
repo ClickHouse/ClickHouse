@@ -304,7 +304,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
 
-    fs::remove(convert_to_replicated_flag_path);
+    (void)fs::remove(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
@@ -540,7 +540,7 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        (void)fs::remove(table_metadata_tmp_path);
         throw;
     }
 }

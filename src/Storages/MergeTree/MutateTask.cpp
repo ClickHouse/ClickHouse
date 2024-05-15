@@ -1248,7 +1248,7 @@ private:
     void constructTaskForProjectionPartsMerge();
     void finalize();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_MUTATE_ORIGINAL_PART,
@@ -1704,7 +1704,7 @@ private:
         ctx->out.reset();
     }
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,
@@ -1953,8 +1953,7 @@ private:
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
     }
 
-
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,
