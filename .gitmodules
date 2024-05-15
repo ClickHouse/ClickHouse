@@ -181,7 +181,7 @@
 	url = https://github.com/ClickHouse/nanodbc
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
-	url = https://github.com/apache/datasketches-cpp
+	url = https://github.com/ClickHouse/datasketches-cpp
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse/yaml-cpp
