@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Core/Defines.h>
+#include <Core/Names.h>
+#include <Core/SettingsFields.h>
 #include <base/types.h>
 #include <base/unit.h>
-#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -50,9 +50,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort, /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -432,6 +432,9 @@ struct FormatSettings
     struct
     {
         IonOutputWriterType output_type = IonOutputWriterType::TEXT;
+        bool output_pretty_print = true; // Turns on pretty printing, only valid for text output
+        bool output_small_containers_in_line
+            = false; // Puts "small" containers on a single line instead of putting all values on separate lines
     } ion;
 
     struct MySQLDump

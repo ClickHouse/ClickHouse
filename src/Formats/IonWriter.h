@@ -51,7 +51,7 @@ private:
     };
 
 public:
-    explicit IonWriter(WriteBuffer & out_, bool output_as_binary_);
+    explicit IonWriter(WriteBuffer & out_, bool output_as_binary_, bool pretty_print_, bool small_containers_in_line_);
     ~IonWriter();
 
     // Writes methods

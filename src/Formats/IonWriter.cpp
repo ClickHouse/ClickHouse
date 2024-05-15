@@ -7,14 +7,19 @@
 namespace DB
 {
 
-IonWriter::IonWriter(WriteBuffer & out_, bool output_as_binary_) : out(out_), ion_buffer(out.available())
+IonWriter::IonWriter(WriteBuffer & out_, bool output_as_binary_, bool pretty_print_, bool small_containers_in_line_)
+    : out(out_), ion_buffer(out.available())
 {
     // init output options
     ION_WRITER_OPTIONS ion_options;
     memset(&ion_options, 0, sizeof(ion_options));
-    ion_options.output_as_binary = output_as_binary_; // todo: Fix switch of writer type from format settings
+    ion_options.output_as_binary = output_as_binary_;
     if (!output_as_binary_)
-        ion_options.pretty_print = TRUE;
+    {
+        ion_options.pretty_print = pretty_print_;
+        ion_options.small_containers_in_line = small_containers_in_line_;
+    }
+
 
     // Callback function called when flushing from an output stream
     // flash is called only if we are at the zero nesting level, that is, not in a list or structure,
@@ -112,7 +117,8 @@ void IonWriter::writeBool(bool value)
     ion_writer_write_bool(ion_writer, value);
 }
 
-static std::vector<BYTE> getIonEndianBytes(const char * value, size_t n) {
+static std::vector<BYTE> getIonEndianBytes(const char * value, size_t n)
+{
     std::vector<BYTE> big_int_buffer(n);
     if constexpr (std::endian::native == std::endian::little)
         for (size_t i = 0; i < n; ++i)

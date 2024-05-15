@@ -264,6 +264,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
     format_settings.ion.output_type = settings.output_format_ion_writer_type;
+    format_settings.ion.output_pretty_print = settings.output_format_ion_pretty_print;
+    format_settings.ion.output_small_containers_in_line = settings.output_format_ion_small_containers_in_line;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

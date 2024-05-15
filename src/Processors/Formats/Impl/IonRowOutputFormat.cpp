@@ -37,7 +37,11 @@ extern const int BAD_ARGUMENTS;
 IonRowOutputFormat::IonRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
     , format_settings(format_settings_)
-    , writer(std::make_unique<IonWriter>(out, format_settings.ion.output_type == FormatSettings::IonOutputWriterType::BINARY))
+    , writer(std::make_unique<IonWriter>(
+          out,
+          format_settings.ion.output_type == FormatSettings::IonOutputWriterType::BINARY,
+          format_settings.ion.output_pretty_print,
+          format_settings.ion.output_small_containers_in_line))
     , names(header_.getNames())
 {
 }
@@ -307,7 +311,6 @@ void registerOutputFormatIon(FormatFactory & factory)
         "Ion",
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings)
         { return std::make_shared<IonRowOutputFormat>(buf, sample, settings); });
-    // factory.markOutputFormatSupportsParallelFormatting("Ion");
 }
 }
 
