@@ -5,6 +5,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
@@ -481,6 +482,26 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
+size_t ColumnString::estimateNumberOfDifferent(const Permutation & perm, const EqualRange & range, size_t /*samples*/) const {
+    // TODO: sample random elements
+    size_t range_size = getRangeSize(range);
+    if (range_size <= 1ULL)
+        return range_size;
+
+    StringHashSet elements;
+    size_t unique_elements = 0;
+    for (size_t i = range.first; i < range.second; ++i)
+    {
+        size_t id = perm[i];
+        const Char* from = chars.data() + id;
+        StringRef ref(from, offsets[id + 1] - offsets[id]);
+        bool inserted = false;
+        elements.emplace(ref, inserted);
+        if (inserted)
+            ++unique_elements;
+    } 
+    return unique_elements;
+}
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
