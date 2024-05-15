@@ -14,17 +14,6 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<GroupByToDistinctVisitor>;
     using Base::Base;
 
-    bool hasAggregatesInProjection(const QueryNodePtr & query_node)
-    {
-        auto & projection_nodes = query_node->getProjection().getNodes();
-        for (const auto & node : projection_nodes)
-        {
-            if (isAggregateFunctionNode(node))
-                return true;
-        }
-        return false;
-    }
-
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * query_node = node->as<QueryNode>();
@@ -33,10 +22,7 @@ public:
         if (!query_node)
         return;
 
-        if (!query_node->hasGroupBy() || hasAggregatesInProjection(query_node))
-            return;
-
-        if (!query_node->hasLimit())
+        if (!query_node->hasGroupBy() || !query_node->hasLimit())
             return;
 
         // Получаем список столбцов для группировки
