@@ -85,6 +85,7 @@ public:
     PlanSquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
     Chunk add(Chunk && input_chunk);
+    Chunk flush();
     bool isDataLeft()
     {
         return !chunks_to_merge_vec.empty();

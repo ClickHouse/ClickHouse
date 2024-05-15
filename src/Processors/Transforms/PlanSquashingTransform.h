@@ -10,9 +10,8 @@ enum PlanningStatus
     INIT,
     READ_IF_CAN,
     WAIT_IN,
-    WAIT_OUT,
     PUSH,
-    WAIT_OUT_FLUSH,
+    FLUSH,
     FINISH
 };
 
@@ -32,29 +31,19 @@ public:
 
     Status prepare() override;
     void work() override;
-    Status init();
+    void init();
     Status prepareConsume();
-    Status prepareSend();
-    Status push();
-    Status prepareSendFlush();
+    Status sendOrFlush();
     Status waitForDataIn();
     Status finish();
 
-    bool checkInputs();
-    bool checkOutputs();
     void transform(Chunk & chunk);
-
-protected:
+    void flushChunk();
 
 private:
     Chunk chunk;
     PlanSquashing balance;
     PlanningStatus planning_status = PlanningStatus::INIT;
-    size_t available_inputs = 0;
-    OutputPort* free_output = nullptr;
-
-    /// When consumption is finished we need to release the final chunk regardless of its size.
-    bool finished = false;
 };
 }
 

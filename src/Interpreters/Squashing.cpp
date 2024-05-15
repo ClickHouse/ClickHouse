@@ -198,6 +198,11 @@ PlanSquashing::PlanSquashing(Block header_, size_t min_block_size_rows_, size_t 
 {
 }
 
+Chunk PlanSquashing::flush()
+{
+    return convertToChunk(chunks_to_merge_vec);
+}
+
 Chunk PlanSquashing::add(Chunk && input_chunk)
 {
     return addImpl(std::move(input_chunk));
@@ -206,10 +211,7 @@ Chunk PlanSquashing::add(Chunk && input_chunk)
 Chunk PlanSquashing::addImpl(Chunk && input_chunk)
 {
     if (!input_chunk)
-    {
-        Chunk res_chunk = convertToChunk(chunks_to_merge_vec);
-        return res_chunk;
-    }
+        return {};
 
     if (isEnoughSize(chunks_to_merge_vec))
         chunks_to_merge_vec.clear();
