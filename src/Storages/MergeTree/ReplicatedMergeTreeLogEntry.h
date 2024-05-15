@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
 
-#include <mutex>
 #include <condition_variable>
 
 
@@ -174,7 +173,36 @@ struct ReplicatedMergeTreeLogEntryData
     size_t quorum = 0;
 
     /// Used only in tests for permanent fault injection for particular queue entry.
-    bool fault_injected = false;
+    struct CopyableAtomicFlag
+    {
+        CopyableAtomicFlag() = default;
+
+        CopyableAtomicFlag(const CopyableAtomicFlag & other)
+            : value(other.value.load())
+        {}
+
+        explicit CopyableAtomicFlag(bool value_)
+            : value(value_)
+        {}
+
+        CopyableAtomicFlag & operator=(const CopyableAtomicFlag & other)
+        {
+            value = other.value.load();
+            return *this;
+        }
+
+        CopyableAtomicFlag & operator=(bool value_)
+        {
+            value = value_;
+            return *this;
+        }
+
+        explicit operator bool() const { return value; }
+
+        std::atomic<bool> value = false;
+    };
+
+    CopyableAtomicFlag fault_injected;
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const
