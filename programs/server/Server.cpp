@@ -1205,11 +1205,11 @@ try
     }
 
     {
-        fs::create_directories(path / "data/");
-        fs::create_directories(path / "metadata/");
+        fs::create_directories(path / "data");
+        fs::create_directories(path / "metadata");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(path / "metadata_dropped/");
+        fs::create_directories(path / "metadata_dropped");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))

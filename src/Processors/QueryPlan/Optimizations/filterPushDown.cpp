@@ -253,7 +253,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     bool has_single_clause = table_join.getClauses().size() == 1;
 
-    if (has_single_clause)
+    if (has_single_clause && !filled_join)
     {
         const auto & join_clause = table_join.getClauses()[0];
         size_t key_names_size = join_clause.key_names_left.size();
@@ -428,6 +428,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// of the grouping sets, we could not push the filter down.
         if (aggregating->isGroupingSets())
         {
+            /// Cannot push down filter if type has been changed.
+            if (aggregating->isGroupByUseNulls())
+                return 0;
 
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());

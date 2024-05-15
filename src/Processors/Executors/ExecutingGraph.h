@@ -64,7 +64,7 @@ public:
 
     /// Status for processor.
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
-    enum class ExecStatus
+    enum class ExecStatus : uint8_t
     {
         Idle,  /// prepare returned NeedData or PortFull. Non-owning.
         Preparing,  /// some executor is preparing processor, or processor is in task_queue. Owning.

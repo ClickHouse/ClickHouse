@@ -17,18 +17,18 @@
 #include <boost/math/distributions/normal.hpp>
 
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace DB
 {
 
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -39,7 +39,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
      *the probability of X being greater than Y is equal to the probability of Y being greater than X".
      *Or "the distribution F of first sample equals to the distribution G of second sample".
      *Then alternative for this hypothesis (H1) is "two-sided"(F != G), "less"(F < G), "greater" (F > G). */
-    enum class Alternative
+    enum class Alternative : uint8_t
     {
         TwoSided,
         Less,
@@ -141,7 +141,7 @@ public:
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
         if (params.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require two parameter or less", getName());
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} require two parameter or less", getName());
 
         if (params.empty())
         {

@@ -158,7 +158,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
 {
-    return createDirectory(path);
+    createDirectory(path);
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
