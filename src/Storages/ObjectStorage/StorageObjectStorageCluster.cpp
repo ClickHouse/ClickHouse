@@ -82,11 +82,9 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
-    const auto settings = configuration->getQuerySettings(local_context);
-    auto iterator = std::make_shared<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, virtual_columns, local_context,
-        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match,
-        local_context->getFileProgressCallback());
+    auto iterator = StorageObjectStorageSource::createFileIterator(
+        configuration, object_storage, /* distributed_processing */false, local_context,
+        predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {

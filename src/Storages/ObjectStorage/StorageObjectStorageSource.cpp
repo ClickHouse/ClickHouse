@@ -407,18 +407,9 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
     else
     {
-        const auto object_key = configuration_->getPath();
-        auto object_metadata = object_storage->getObjectMetadata(object_key);
-        auto object_info = std::make_shared<ObjectInfo>(object_key, object_metadata);
-
-        object_infos.emplace_back(object_info);
-        if (read_keys)
-            read_keys->emplace_back(object_info);
-
-        if (file_progress_callback)
-            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
-
-        is_finished = true;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Using glob iterator with path without globs is not allowed (used path: {})",
+                        configuration->getPath());
     }
 }
 
