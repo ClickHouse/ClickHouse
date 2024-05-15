@@ -37,14 +37,11 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
-<<<<<<< HEAD
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-=======
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
->>>>>>> upstream/master
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -800,12 +797,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         auto detach_query = fmt::format("DETACH TABLE {}", full_name);
         auto attach_query = fmt::format("ATTACH TABLE {}", full_name);
 
-        auto detach = executeQuery(detach_query, context, true).second;
+        auto detach = executeQuery(detach_query, context, QueryFlags{.internal = true}).second;
         executeTrivialBlockIO(detach, context);
 
         database->waitDetachedTableNotInUse(uuid);
 
-        auto attach = executeQuery(attach_query, context, true).second;
+        auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
         executeTrivialBlockIO(attach, context);
     }
 
