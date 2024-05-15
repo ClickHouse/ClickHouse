@@ -26,6 +26,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
 
     settings.execute_functions_after_sorting = from.query_plan_enable_optimizations && from.query_plan_execute_functions_after_sorting;
 
+    settings.execute_group_by_distinct = from.query_plan_enable_optimizations && from.query_plan_execute_group_by_distinct;
+
     ///settings.replace_L2Distance_to_L2Squared = from.query_plan_enable_optimizations && from.query_plan_replace_L2Distance_to_L2Squared;
 
     settings.reuse_storage_ordering_for_window_functions = from.query_plan_enable_optimizations && from.query_plan_reuse_storage_ordering_for_window_functions;
