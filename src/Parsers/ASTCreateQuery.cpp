@@ -389,7 +389,15 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         refresh_strategy->formatImpl(settings, state, frame);
     }
 
-    if (to_table_id || to_table)
+    if (to_table_id)
+    {
+        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
+        settings.ostr
+            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
+            << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
+            << backQuoteIfNeed(to_table_id.table_name);
+    }
+    else if (to_table)
     {
         assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
         settings.ostr
