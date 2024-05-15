@@ -873,19 +873,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     ReadFromMergeTree * reading = nullptr;
                     while (node)
                     {
-                        IQueryPlanStep * step = typeid_cast<ISourceStep *>(node->step.get());
-                        if (step)
-                        {
-                            reading = typeid_cast<ReadFromMergeTree *>(step);
+                        reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
+                        if (reading)
                             break;
-                        }
 
                         if (!node->children.empty())
                             node = node->children.at(0);
                     }
 
+                    chassert(reading);
+
                     // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
-                    if (reading && settings.parallel_replicas_min_number_of_rows_per_replica > 0)
+                    if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
                     {
                         auto result_ptr = reading->selectRangesToRead(reading->getParts(), reading->getAlterConvertionsForParts());
 
