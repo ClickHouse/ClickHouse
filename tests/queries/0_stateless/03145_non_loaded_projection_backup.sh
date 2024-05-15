@@ -39,6 +39,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 set send_logs_level='fatal';
 drop table tp_1;
 restore table tp_1 from Disk('backups', '$backup_id');
+system stop merges tp_1;
 " | grep -o "RESTORED"
 
 $CLICKHOUSE_CLIENT -q "select count() from tp_1;"
