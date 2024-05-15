@@ -368,7 +368,7 @@ public:
     int32_t metadata_version;
 
     Index getIndex() const;
-    void setIndex(const Columns & index_);
+    void setIndex(const Columns & cols_);
     void setIndex(Columns && index_);
     void unloadIndex();
 
