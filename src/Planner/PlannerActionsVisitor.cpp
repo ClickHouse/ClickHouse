@@ -251,8 +251,10 @@ public:
                 size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
                 for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
                 {
-                    const auto & lambda_arguments_node = lambda_arguments_nodes[i];
-                    buffer << calculateActionNodeName(lambda_arguments_node);
+                    const auto & lambda_argument_node = lambda_arguments_nodes[i];
+                    buffer << calculateActionNodeName(lambda_argument_node);
+                    buffer << ' ';
+                    buffer << lambda_argument_node->as<ColumnNode &>().getResultType()->getName();
 
                     if (i + 1 != lambda_arguments_nodes_size)
                         buffer << ", ";
