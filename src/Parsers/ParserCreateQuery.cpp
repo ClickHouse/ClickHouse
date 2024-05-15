@@ -1196,7 +1196,17 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         query->children.push_back(query->table);
 
     if (to_table)
-        query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+    {
+        auto * ast_to_table_id = to_table->as<ASTTableIdentifier>();
+        query->to_database = ast_to_table_id->getDatabase();
+        query->to_table = ast_to_table_id->getTable();
+        if (query->to_database)
+            query->children.push_back(query->to_database);
+        if (query->to_table)
+            query->children.push_back(query->to_table);
+        if (!ast_to_table_id->shortName().empty() || ast_to_table_id->uuid != UUIDHelpers::Nil)
+            query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+    }
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
