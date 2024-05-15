@@ -394,6 +394,8 @@ InterserverThreads
 IsPentagon
 IsResClassIII
 IsValid
+isNotDistinctFrom
+isNullable
 JBOD
 JOINed
 JOINs
@@ -1097,6 +1099,8 @@ addQuarters
 addSeconds
 addWeeks
 addYears
+addInterval
+addTupleOfIntervals
 addr
 addressToLine
 addressToLineWithInlines
@@ -2394,6 +2398,7 @@ sharded
 sharding
 shortcircuit
 shortkeys
+showCertificate
 shoutout
 simdjson
 simpleJSON
