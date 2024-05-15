@@ -468,7 +468,7 @@ struct FormatSettings
         bool is_ascii_symbols = false;
         Int64 limit_height = -1;
         Int64 limit_width = -1;
-    } diagram;
+    } diagram{};
 };
 
 }
