@@ -3719,7 +3719,7 @@ Default value: `0`.
 
 ## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
 
-Ignore ansense of file if it does not exist when reading certain keys.
+Ignore absence of file if it does not exist when reading certain keys.
 
 Possible values:
 - 1 — `SELECT` returns empty result.
@@ -3739,7 +3739,7 @@ Default value: `0`.
 
 ## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
 
-Ignore ansense of file if it does not exist when reading certain keys.
+Ignore absence of file if it does not exist when reading certain keys.
 
 Possible values:
 - 1 — `SELECT` returns empty result.
