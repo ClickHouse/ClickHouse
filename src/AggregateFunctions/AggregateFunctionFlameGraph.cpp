@@ -269,9 +269,9 @@ struct AggregateFunctionFlameGraphData
 
     using Entries = HashMap<UInt64, Pair>;
 
-    AggregateFunctionFlameGraphTree tree;
     Entries entries;
     Entry * free_list = nullptr;
+    AggregateFunctionFlameGraphTree tree;
 
     Entry * alloc(Arena * arena)
     {

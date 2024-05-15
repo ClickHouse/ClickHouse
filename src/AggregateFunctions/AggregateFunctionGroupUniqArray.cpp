@@ -275,16 +275,16 @@ template <typename HasLimit, typename ... TArgs>
 IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
-    if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate<HasLimit>(argument_type, std::forward<TArgs>(args)...);
-    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, std::forward<TArgs>(args)...);
-    else if (which.idx == TypeIndex::IPv4) return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate<HasLimit>(argument_type, args...);
+    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, args...);
+    else if (which.idx == TypeIndex::IPv4) return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, args...);
     else
     {
         /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
         if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, std::forward<TArgs>(args)...);
+            return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, args...);
         else
-            return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, std::forward<TArgs>(args)...);
+            return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, args...);
     }
 }
 
@@ -292,10 +292,10 @@ template <typename HasLimit, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupUniqArrayImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
 {
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray, HasLimit, const DataTypePtr &, TArgs...>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray, HasLimit, const DataTypePtr &>(*argument_type, argument_type, args...));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes<HasLimit>(argument_type, std::forward<TArgs>(args)...));
+        res = AggregateFunctionPtr(createWithExtraTypes<HasLimit>(argument_type, args...));
 
     if (!res)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",

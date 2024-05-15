@@ -35,8 +35,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     if (!disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk is not specified");
 
-    if (fs::path prefix_path(prefix); prefix_path.has_parent_path())
-        disk->createDirectories(prefix_path.parent_path());
+    disk->createDirectories((fs::path("") / prefix).parent_path());
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 

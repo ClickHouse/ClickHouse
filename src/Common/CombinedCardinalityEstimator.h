@@ -16,7 +16,12 @@ namespace ErrorCodes
 namespace details
 {
 
-enum class ContainerType : uint8_t { SMALL = 1, MEDIUM = 2, LARGE = 3 };
+enum class ContainerType : uint8_t
+{
+    SMALL = 1,
+    MEDIUM = 2,
+    LARGE = 3
+};
 
 static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
 {

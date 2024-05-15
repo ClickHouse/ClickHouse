@@ -159,11 +159,8 @@ public:
     bool supportParallelWrite() const override { return true; }
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
-    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
 
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
-
-    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { key_generator = gen; }
 
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
