@@ -7,6 +7,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/DNSResolver.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 
 namespace DB
 {
@@ -21,19 +22,14 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
     /// It should be just empty GET request.
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
 
-    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
-
-    session->sendRequest(request);
-
-    Poco::Net::HTTPResponse response;
-    auto & response_body_stream = session->receiveResponse(response);
-
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver returned not OK status: {}", response.getReason());
+    auto rw_http_buffer = BuilderRWBufferFromHTTP(endpoint)
+                            .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                            .withTimeouts(timeouts)
+                            .create({});
 
     String proxy_host;
-    /// Read proxy host as string from response body.
-    Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
+
+    readString(proxy_host, *rw_http_buffer);
 
     return proxy_host;
 }
