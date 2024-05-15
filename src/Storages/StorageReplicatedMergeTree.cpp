@@ -1693,6 +1693,9 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     UInt64 total_rows_on_filesystem = 0;
     for (const auto & part : parts)
         total_rows_on_filesystem += part->rows_count;
+    /// We need to sum the rows count of all unexpected data parts;
+    for (const auto & part : unexpected_data_parts)
+        total_rows_on_filesystem += part.part->rows_count;
 
     const auto storage_settings_ptr = getSettings();
     bool insane = uncovered_unexpected_parts_rows > total_rows_on_filesystem * storage_settings_ptr->replicated_max_ratio_of_wrong_parts;
