@@ -440,7 +440,7 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
     ++sent_initial_requests;
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
 
-    if (sent_initial_requests == replicas_count)
+    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
         setProgressCallback();
 
     /// Sift the queue to move out all invisible segments
