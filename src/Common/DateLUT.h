@@ -60,7 +60,7 @@ protected:
 
 private:
     static DateLUT & getInstance();
-    
+
     static std::string extractTimezoneFromContext(DB::ContextPtr query_context);
 
     const DateLUTImpl & getImplementation(const std::string & time_zone) const;

@@ -2470,6 +2470,18 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 - [session_timezone](../settings/settings.md#session_timezone)
 
+## prefer_system_tzdata {#prefer_system_tzdata}
+
+If set to `true`, the system tzdata library will be preferred over the one embedded in ClickHouse.
+
+The default value is `false`.
+
+**Example**
+
+``` xml
+<prefer_system_tzdata>true</prefer_system_tzdata>
+```
+
 ## tcp_port {#tcp_port}
 
 Port for communicating with clients over the TCP protocol.

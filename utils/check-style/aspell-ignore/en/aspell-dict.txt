@@ -2723,6 +2723,7 @@ tupleModuloByNumber
 turbostat
 txt
 typename
+tzdata
 ubuntu
 uint
 ulid
