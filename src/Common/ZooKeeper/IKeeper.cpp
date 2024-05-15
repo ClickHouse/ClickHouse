@@ -23,7 +23,7 @@ namespace ProfileEvents
 namespace Coordination
 {
 
-void Exception::incrementErrorMetrics(const Error code_)
+void Exception::incrementErrorMetrics(Error code_)
 {
     if (Coordination::isUserError(code_))
         ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
@@ -33,14 +33,14 @@ void Exception::incrementErrorMetrics(const Error code_)
         ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
 }
 
-Exception::Exception(const std::string & msg, const Error code_, int)
+Exception::Exception(const std::string & msg, Error code_, int)
     : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION)
     , code(code_)
 {
     incrementErrorMetrics(code);
 }
 
-Exception::Exception(PreformattedMessage && msg, const Error code_)
+Exception::Exception(PreformattedMessage && msg, Error code_)
     : DB::Exception(std::move(msg), DB::ErrorCodes::KEEPER_EXCEPTION)
     , code(code_)
 {
@@ -48,7 +48,7 @@ Exception::Exception(PreformattedMessage && msg, const Error code_)
     incrementErrorMetrics(code);
 }
 
-Exception::Exception(const Error code_)
+Exception::Exception(Error code_)
     : Exception(code_, "Coordination error: {}", errorMessage(code_))
 {
 }
@@ -144,6 +144,7 @@ const char * errorMessage(Error code)
         case Error::ZCLOSING:                 return "ZooKeeper is closing";
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
+        case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
     }
 
     UNREACHABLE();
@@ -156,7 +157,8 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZSESSIONMOVED
         || zk_return_code == Error::ZCONNECTIONLOSS
         || zk_return_code == Error::ZMARSHALLINGERROR
-        || zk_return_code == Error::ZOPERATIONTIMEOUT;
+        || zk_return_code == Error::ZOPERATIONTIMEOUT
+        || zk_return_code == Error::ZNOTREADONLY;
 }
 
 bool isUserError(Error zk_return_code)
@@ -196,4 +198,3 @@ void MultiResponse::removeRootPath(const String & root_path)
 }
 
 }
-

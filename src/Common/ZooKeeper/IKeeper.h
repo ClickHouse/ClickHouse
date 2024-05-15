@@ -8,6 +8,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <span>
 #include <functional>
 
 /** Generic interface for ZooKeeper-like services.
@@ -109,7 +110,8 @@ enum class Error : int32_t
     ZAUTHFAILED = -115,                 /// Client authentication failed
     ZCLOSING = -116,                    /// ZooKeeper is closing
     ZNOTHING = -117,                    /// (not error) no server responses to process
-    ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
+    ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
+    ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
@@ -445,6 +447,7 @@ enum State
     CONNECTING = 1,
     ASSOCIATING = 2,
     CONNECTED = 3,
+    READONLY = 5,
     NOTCONNECTED = 999
 };
 
@@ -463,37 +466,37 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const Error code_, int); /// NOLINT
-    Exception(PreformattedMessage && msg, const Error code_);
+    Exception(const std::string & msg, Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, Error code_);
 
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    Exception(T && message, const Error code_) : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::forward<T>(message)), code(code_)
+    Exception(T && message, Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
     {
         incrementErrorMetrics(code);
     }
 
-    static void incrementErrorMetrics(const Error code_);
+    static void incrementErrorMetrics(Error code_);
 
 public:
-    explicit Exception(const Error code_); /// NOLINT
+    explicit Exception(Error code_); /// NOLINT
     Exception(const Exception & exc);
 
     template <typename... Args>
-    Exception(const Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+    Exception(Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
         : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
         , code(code_)
     {
         incrementErrorMetrics(code);
     }
 
-    inline static Exception createDeprecated(const std::string & msg, const Error code_)
+    inline static Exception createDeprecated(const std::string & msg, Error code_)
     {
         return Exception(msg, code_, 0);
     }
 
-    inline static Exception fromPath(const Error code_, const std::string & path)
+    inline static Exception fromPath(Error code_, const std::string & path)
     {
         return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
     }
@@ -501,7 +504,7 @@ public:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    inline static Exception fromMessage(const Error code_, T && message)
+    inline static Exception fromMessage(Error code_, T && message)
     {
         return Exception(std::forward<T>(message), code_);
     }
@@ -619,6 +622,10 @@ public:
         std::string_view new_members,
         int32_t version,
         ReconfigCallback callback) = 0;
+
+    virtual void multi(
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) = 0;
 
     virtual void multi(
         const Requests & requests,

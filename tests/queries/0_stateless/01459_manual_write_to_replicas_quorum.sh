@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Tags: replica, no-replicated-database, no-randon-detach
+# Tags: replica, no-replicated-database, no-parallel, no-debug, no-random-settings
 # Tag no-replicated-database: Fails due to additional replicas or shards
-# Tag no-random-detach: it's a bug, will be fixed in https://github.com/ClickHouse/ClickHouse/pull/42509
 
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+# This test does many invocations of clickhouse-client in a loop,
+# leading to "Too many parts" in the system.coverage_log,
+# but we are not interested in client-side coverage here.
+unset CLICKHOUSE_WRITE_COVERAGE
 
 NUM_REPLICAS=10
 

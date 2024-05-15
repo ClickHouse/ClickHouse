@@ -199,7 +199,8 @@ PostgreSQLSource<T>::~PostgreSQLSource()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        connection_holder->setBroken();
+        if (connection_holder)
+            connection_holder->setBroken();
     }
 }
 

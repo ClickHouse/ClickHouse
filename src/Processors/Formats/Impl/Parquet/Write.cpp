@@ -6,14 +6,14 @@
 #include <lz4.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <IO/WriteHelpers.h>
-#include "config_version.h"
+#include <Common/config_version.h>
+#include <Common/formatReadable.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -409,7 +409,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             #pragma clang diagnostic pop
 
             if (max_dest_size > std::numeric_limits<int>::max())
-                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source.size()));
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", ReadableSize(source.size()));
 
             scratch.resize(max_dest_size);
 
@@ -436,7 +436,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             size_t compressed_size;
             snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
 
-            scratch.resize(static_cast<size_t>(compressed_size));
+            scratch.resize(compressed_size);
             return scratch;
         }
 #endif
@@ -448,6 +448,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 std::move(dest_buf),
                 method,
                 /*level*/ 3,
+                /*zstd_window_log*/ 0,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());
@@ -916,7 +917,7 @@ void writeFileFooter(std::vector<parq::RowGroup> row_groups, SchemaElements sche
     meta.row_groups = std::move(row_groups);
     for (auto & r : meta.row_groups)
         meta.num_rows += r.num_rows;
-    meta.__set_created_by(VERSION_NAME " " VERSION_DESCRIBE);
+    meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {

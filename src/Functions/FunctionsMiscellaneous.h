@@ -159,7 +159,6 @@ private:
 class FunctionCapture : public IFunctionBase
 {
 public:
-    using Capture = ExecutableFunctionCapture::Capture;
     using CapturePtr = ExecutableFunctionCapture::CapturePtr;
 
     FunctionCapture(
@@ -201,10 +200,10 @@ public:
 
     FunctionCaptureOverloadResolver(
             ExpressionActionsPtr expression_actions_,
-            const Names & captured_names_,
-            const NamesAndTypesList & lambda_arguments_,
-            const DataTypePtr & function_return_type_,
-            const String & expression_return_name_)
+            const Names & captured_names,
+            const NamesAndTypesList & lambda_arguments,
+            const DataTypePtr & function_return_type,
+            const String & expression_return_name)
         : expression_actions(std::move(expression_actions_))
     {
         /// Check that expression does not contain unusual actions that will break columns structure.
@@ -219,9 +218,9 @@ public:
             arguments_map[arg.name] = arg.type;
 
         DataTypes captured_types;
-        captured_types.reserve(captured_names_.size());
+        captured_types.reserve(captured_names.size());
 
-        for (const auto & captured_name : captured_names_)
+        for (const auto & captured_name : captured_names)
         {
             auto it = arguments_map.find(captured_name);
             if (it == arguments_map.end())
@@ -232,21 +231,21 @@ public:
         }
 
         DataTypes argument_types;
-        argument_types.reserve(lambda_arguments_.size());
-        for (const auto & lambda_argument : lambda_arguments_)
+        argument_types.reserve(lambda_arguments.size());
+        for (const auto & lambda_argument : lambda_arguments)
             argument_types.push_back(lambda_argument.type);
 
-        return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type_);
+        return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type);
 
         name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) + ") -> "
-               + function_return_type_->getName();
+               + function_return_type->getName();
 
         capture = std::make_shared<Capture>(Capture{
-                .captured_names = captured_names_,
+                .captured_names = captured_names,
                 .captured_types = std::move(captured_types),
-                .lambda_arguments = lambda_arguments_,
-                .return_name = expression_return_name_,
-                .return_type = function_return_type_,
+                .lambda_arguments = lambda_arguments,
+                .return_name = expression_return_name,
+                .return_type = function_return_type,
         });
     }
 

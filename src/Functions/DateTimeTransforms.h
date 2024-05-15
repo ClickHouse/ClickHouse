@@ -6,10 +6,12 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
+#include "base/Decimal.h"
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -20,8 +22,11 @@
 namespace DB
 {
 
-static constexpr auto microsecond_multiplier = 1000000;
-static constexpr auto millisecond_multiplier = 1000;
+static constexpr auto millisecond_multiplier = 1'000;
+static constexpr auto microsecond_multiplier = 1'000'000;
+static constexpr auto nanosecond_multiplier = 1'000'000'000;
+
+static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
 namespace ErrorCodes
 {
@@ -29,6 +34,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 /** Transformations.
@@ -44,9 +50,15 @@ namespace ErrorCodes
   *  factor-transformation F is "round to the nearest month" (2015-02-03 -> 2015-02-01).
   */
 
+constexpr time_t MAX_DATETIME64_TIMESTAMP = 10413791999LL;    //  1900-01-01 00:00:00 UTC
+constexpr time_t MIN_DATETIME64_TIMESTAMP = -2208988800LL;    //  2299-12-31 23:59:59 UTC
+constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
+constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
+constexpr time_t MAX_DATETIME_DAY_NUM =  49710;               // 2106-02-07
+
 [[noreturn]] void throwDateIsNotSupported(const char * name);
-[[noreturn]] void throwDateTimeIsNotSupported(const char * name);
 [[noreturn]] void throwDate32IsNotSupported(const char * name);
+[[noreturn]] void throwDateTimeIsNotSupported(const char * name);
 
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
@@ -57,25 +69,51 @@ struct ZeroTransform
     static UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
 };
 
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
 {
     static constexpr auto name = "toDate";
 
     static UInt16 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toDayNum(t.whole));
+        return execute(t.whole, time_zone);
     }
+
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return UInt16(time_zone.toDayNum(t));
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+        {
+            if (t < 0)
+                t = 0;
+            else if (t > MAX_DATE_TIMESTAMP)
+                t = MAX_DATE_TIMESTAMP;
+        }
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (t < 0 || t > MAX_DATE_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
+        }
+        return static_cast<UInt16>(time_zone.toDayNum(t));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return UInt16(time_zone.toDayNum(t));
+        return UInt16(time_zone.toDayNum(t));  /// never causes overflow by design
     }
-    static UInt16 execute(Int32, const DateLUTImpl &)
+    static UInt16 execute(Int32 t, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+        {
+            if (t < 0)
+                return UInt16(0);
+            else if (t > DATE_LUT_MAX_DAY_NUM)
+                return UInt16(DATE_LUT_MAX_DAY_NUM);
+        }
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (t < 0 || t > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
+        }
+        return static_cast<UInt16>(t);
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -438,7 +476,7 @@ struct ToStartOfInterval;
 static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";
 
 template <>
-struct ToStartOfInterval<IntervalKind::Nanosecond>
+struct ToStartOfInterval<IntervalKind::Kind::Nanosecond>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -446,7 +484,7 @@ struct ToStartOfInterval<IntervalKind::Nanosecond>
     }
     static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64)
     {
-        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+        throwDate32IsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
     static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64)
     {
@@ -473,7 +511,7 @@ struct ToStartOfInterval<IntervalKind::Nanosecond>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Microsecond>
+struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -481,7 +519,7 @@ struct ToStartOfInterval<IntervalKind::Microsecond>
     }
     static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64)
     {
-        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+        throwDate32IsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
     static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64)
     {
@@ -502,8 +540,8 @@ struct ToStartOfInterval<IntervalKind::Microsecond>
         else if (scale_multiplier > 1000000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
-            if (t >= 0) [[likely]]
-                return t / microseconds / scale_diff * microseconds;
+            if (t >= 0) [[likely]] /// When we divide the `t` value we should round the result
+                return (t + scale_diff / 2) / (microseconds * scale_diff) * microseconds;
             else
                 return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
         }
@@ -516,7 +554,7 @@ struct ToStartOfInterval<IntervalKind::Microsecond>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Millisecond>
+struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -524,7 +562,7 @@ struct ToStartOfInterval<IntervalKind::Millisecond>
     }
     static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64)
     {
-        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+        throwDate32IsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
     static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64)
     {
@@ -545,8 +583,8 @@ struct ToStartOfInterval<IntervalKind::Millisecond>
         else if (scale_multiplier > 1000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-            if (t >= 0) [[likely]]
-                return t / milliseconds / scale_diff * milliseconds;
+            if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
+                return (t + scale_diff / 2) / (milliseconds * scale_diff) * milliseconds;
             else
                 return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
         }
@@ -559,7 +597,7 @@ struct ToStartOfInterval<IntervalKind::Millisecond>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Second>
+struct ToStartOfInterval<IntervalKind::Kind::Second>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -567,7 +605,7 @@ struct ToStartOfInterval<IntervalKind::Second>
     }
     static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64)
     {
-        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+        throwDate32IsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
     static UInt32 execute(UInt32 t, Int64 seconds, const DateLUTImpl & time_zone, Int64)
     {
@@ -580,7 +618,7 @@ struct ToStartOfInterval<IntervalKind::Second>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Minute>
+struct ToStartOfInterval<IntervalKind::Kind::Minute>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -588,7 +626,7 @@ struct ToStartOfInterval<IntervalKind::Minute>
     }
     static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64)
     {
-        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+        throwDate32IsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
     static UInt32 execute(UInt32 t, Int64 minutes, const DateLUTImpl & time_zone, Int64)
     {
@@ -601,7 +639,7 @@ struct ToStartOfInterval<IntervalKind::Minute>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Hour>
+struct ToStartOfInterval<IntervalKind::Kind::Hour>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -609,7 +647,7 @@ struct ToStartOfInterval<IntervalKind::Hour>
     }
     static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64)
     {
-        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+        throwDate32IsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
     static UInt32 execute(UInt32 t, Int64 hours, const DateLUTImpl & time_zone, Int64)
     {
@@ -622,7 +660,7 @@ struct ToStartOfInterval<IntervalKind::Hour>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Day>
+struct ToStartOfInterval<IntervalKind::Kind::Day>
 {
     static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -643,7 +681,7 @@ struct ToStartOfInterval<IntervalKind::Day>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Week>
+struct ToStartOfInterval<IntervalKind::Kind::Week>
 {
     static UInt16 execute(UInt16 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
     {
@@ -664,7 +702,7 @@ struct ToStartOfInterval<IntervalKind::Week>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Month>
+struct ToStartOfInterval<IntervalKind::Kind::Month>
 {
     static UInt16 execute(UInt16 d, Int64 months, const DateLUTImpl & time_zone, Int64)
     {
@@ -685,7 +723,7 @@ struct ToStartOfInterval<IntervalKind::Month>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Quarter>
+struct ToStartOfInterval<IntervalKind::Kind::Quarter>
 {
     static UInt16 execute(UInt16 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
     {
@@ -706,7 +744,7 @@ struct ToStartOfInterval<IntervalKind::Quarter>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Year>
+struct ToStartOfInterval<IntervalKind::Kind::Year>
 {
     static UInt16 execute(UInt16 d, Int64 years, const DateLUTImpl & time_zone, Int64)
     {
@@ -742,7 +780,7 @@ struct ToTimeImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -750,7 +788,7 @@ struct ToTimeImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToDateImpl;
+    using FactorTransform = ToDateImpl<>;
 };
 
 struct ToStartOfMinuteImpl
@@ -767,7 +805,7 @@ struct ToStartOfMinuteImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -814,7 +852,7 @@ struct ToStartOfSecondImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -862,7 +900,7 @@ struct ToStartOfMillisecondImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -906,7 +944,7 @@ struct ToStartOfMicrosecondImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -944,7 +982,7 @@ struct ToStartOfNanosecondImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -969,7 +1007,7 @@ struct ToStartOfFiveMinutesImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -1001,7 +1039,7 @@ struct ToStartOfTenMinutesImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -1033,7 +1071,7 @@ struct ToStartOfFifteenMinutesImpl
     }
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -1068,7 +1106,7 @@ struct TimeSlotImpl
 
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     static UInt32 execute(UInt16, const DateLUTImpl &)
@@ -1107,7 +1145,7 @@ struct ToStartOfHourImpl
 
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     static UInt32 execute(UInt16, const DateLUTImpl &)
@@ -1131,7 +1169,10 @@ struct ToStartOfHourImpl
 struct ToYearImpl
 {
     static constexpr auto name = "toYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYear(t);
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toYear(t);
@@ -1179,7 +1220,10 @@ struct ToWeekYearImpl
     static constexpr auto name = "toWeekYear";
 
     static constexpr Int8 week_mode = 3;
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearWeek(t, week_mode).first;
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toYearWeek(t, week_mode).first;
@@ -1203,7 +1247,10 @@ struct ToWeekYearImpl
 struct ToWeekOfWeekYearImpl
 {
     static constexpr auto name = "toWeekOfWeekYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(t);
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOWeek(t);
@@ -1227,7 +1274,10 @@ struct ToWeekOfWeekYearImpl
 struct ToQuarterImpl
 {
     static constexpr auto name = "toQuarter";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toQuarter(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toQuarter(t);
@@ -1252,7 +1302,10 @@ struct ToQuarterImpl
 struct ToMonthImpl
 {
     static constexpr auto name = "toMonth";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMonth(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toMonth(t);
@@ -1277,7 +1330,10 @@ struct ToMonthImpl
 struct ToDayOfMonthImpl
 {
     static constexpr auto name = "toDayOfMonth";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfMonth(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfMonth(t);
@@ -1303,7 +1359,10 @@ struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
     static constexpr bool value_may_be_string = true;
-
+    static UInt8 execute(UInt64 t, UInt8 mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfWeek(t, mode);
+    }
     static UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfWeek(t, mode);
@@ -1327,7 +1386,10 @@ struct ToDayOfWeekImpl
 struct ToDayOfYearImpl
 {
     static constexpr auto name = "toDayOfYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfYear(t);
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfYear(t);
@@ -1352,10 +1414,11 @@ struct ToDayOfYearImpl
 struct ToDaysSinceYearZeroImpl
 {
 private:
-    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528; /// 01 January, each. Constant taken from Java LocalDate. Consistent with MySQL's TO_DAYS().
     static constexpr auto SECONDS_PER_DAY = 60 * 60 * 24;
 
 public:
+    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528; /// 01 January, each. Constant taken from Java LocalDate. Consistent with MySQL's TO_DAYS().
+
     static constexpr auto name = "toDaysSinceYearZero";
 
     static UInt32 execute(Int64 t, const DateLUTImpl & time_zone)
@@ -1382,7 +1445,10 @@ public:
 struct ToHourImpl
 {
     static constexpr auto name = "toHour";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toHour(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toHour(t);
@@ -1393,7 +1459,7 @@ struct ToHourImpl
     }
     static UInt8 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt8 execute(UInt16, const DateLUTImpl &)
     {
@@ -1401,13 +1467,16 @@ struct ToHourImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToDateImpl;
+    using FactorTransform = ToDateImpl<>;
 };
 
 struct TimezoneOffsetImpl
 {
     static constexpr auto name = "timezoneOffset";
-
+    static time_t execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.timezoneOffset(t);
+    }
     static time_t execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.timezoneOffset(t);
@@ -1420,7 +1489,7 @@ struct TimezoneOffsetImpl
 
     static time_t execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     static time_t execute(UInt16, const DateLUTImpl &)
@@ -1435,7 +1504,10 @@ struct TimezoneOffsetImpl
 struct ToMinuteImpl
 {
     static constexpr auto name = "toMinute";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMinute(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toMinute(t);
@@ -1446,7 +1518,7 @@ struct ToMinuteImpl
     }
     static UInt8 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt8 execute(UInt16, const DateLUTImpl &)
     {
@@ -1460,7 +1532,10 @@ struct ToMinuteImpl
 struct ToSecondImpl
 {
     static constexpr auto name = "toSecond";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toSecond(t);
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toSecond(t);
@@ -1471,7 +1546,7 @@ struct ToSecondImpl
     }
     static UInt8 execute(Int32, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
     static UInt8 execute(UInt16, const DateLUTImpl &)
     {
@@ -1482,10 +1557,39 @@ struct ToSecondImpl
     using FactorTransform = ToStartOfMinuteImpl;
 };
 
+struct ToMillisecondImpl
+{
+    static constexpr auto name = "toMillisecond";
+
+    static UInt16 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMillisecond(datetime64, scale_multiplier);
+    }
+
+    static UInt16 execute(UInt32, const DateLUTImpl &)
+    {
+        return 0;
+    }
+    static UInt16 execute(Int32, const DateLUTImpl &)
+    {
+        throwDate32IsNotSupported(name);
+    }
+    static UInt16 execute(UInt16, const DateLUTImpl &)
+    {
+        throwDateIsNotSupported(name);
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToISOYearImpl
 {
     static constexpr auto name = "toISOYear";
-
+    static UInt16 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOYear(time_zone.toDayNum(t));
+    }
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOYear(time_zone.toDayNum(t));
@@ -1542,7 +1646,10 @@ struct ToStartOfISOYearImpl
 struct ToISOWeekImpl
 {
     static constexpr auto name = "toISOWeek";
-
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(time_zone.toDayNum(t));
+    }
     static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOWeek(time_zone.toDayNum(t));
@@ -1564,7 +1671,7 @@ struct ToISOWeekImpl
     using FactorTransform = ToISOYearImpl;
 };
 
-enum class ResultPrecision
+enum class ResultPrecision : uint8_t
 {
     Standard,
     Extended
@@ -1583,7 +1690,7 @@ struct ToRelativeYearNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int16>(time_zone.toYear(t));
+            return time_zone.toYear(t);
         else
             return static_cast<UInt16>(time_zone.toYear(t));
     }
@@ -1594,7 +1701,7 @@ struct ToRelativeYearNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int16>(time_zone.toYear(ExtendedDayNum(d)));
+            return time_zone.toYear(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toYear(ExtendedDayNum(d)));
     }
@@ -1615,7 +1722,7 @@ struct ToRelativeQuarterNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeQuarterNum(t));
+            return time_zone.toRelativeQuarterNum(t);
         else
             return static_cast<UInt16>(time_zone.toRelativeQuarterNum(t));
     }
@@ -1626,7 +1733,7 @@ struct ToRelativeQuarterNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeQuarterNum(ExtendedDayNum(d)));
+            return time_zone.toRelativeQuarterNum(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toRelativeQuarterNum(ExtendedDayNum(d)));
     }
@@ -1647,7 +1754,7 @@ struct ToRelativeMonthNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeMonthNum(t));
+            return time_zone.toRelativeMonthNum(t);
         else
             return static_cast<UInt16>(time_zone.toRelativeMonthNum(t));
     }
@@ -1658,7 +1765,7 @@ struct ToRelativeMonthNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeMonthNum(ExtendedDayNum(d)));
+            return time_zone.toRelativeMonthNum(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toRelativeMonthNum(ExtendedDayNum(d)));
     }
@@ -1679,7 +1786,7 @@ struct ToRelativeWeekNumImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeWeekNum(t));
+            return time_zone.toRelativeWeekNum(t);
         else
             return static_cast<UInt16>(time_zone.toRelativeWeekNum(t));
     }
@@ -1690,7 +1797,7 @@ struct ToRelativeWeekNumImpl
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)));
+            return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
         else
             return static_cast<UInt16>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)));
     }
@@ -1839,9 +1946,10 @@ struct ToRelativeSubsecondNumImpl
 {
     static constexpr auto name = "toRelativeSubsecondNumImpl";
 
-    static Int64 execute(const DateTime64 & t, DateTime64::NativeType scale, const DateLUTImpl &)
+    static Int64 execute(const DateTime64 & t, const DateTime64::NativeType scale, const DateLUTImpl &)
     {
-        static_assert(scale_multiplier == 1000 || scale_multiplier == 1000000);
+        static_assert(
+            scale_multiplier == millisecond_multiplier || scale_multiplier == microsecond_multiplier || scale_multiplier == nanosecond_multiplier);
         if (scale == scale_multiplier)
             return t.value;
         if (scale > scale_multiplier)
@@ -1967,13 +2075,14 @@ struct DateTimeComponentsWithFractionalPart : public DateLUTImpl::DateTimeCompon
 {
     UInt16  millisecond;
     UInt16  microsecond;
+    UInt16  nanosecond;
 };
 
 struct ToDateTimeComponentsImpl
 {
     static constexpr auto name = "toDateTimeComponents";
 
-    static DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
+    static DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, const DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
         auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
 
@@ -1982,28 +2091,33 @@ struct ToDateTimeComponentsImpl
             components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
             --components.whole;
         }
-        Int64 fractional = components.fractional;
-        if (scale_multiplier > microsecond_multiplier)
-            fractional = fractional / (scale_multiplier / microsecond_multiplier);
-        else if (scale_multiplier < microsecond_multiplier)
-            fractional = fractional * (microsecond_multiplier / scale_multiplier);
 
-        constexpr Int64 divider = microsecond_multiplier/ millisecond_multiplier;
-        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
-        UInt16 microsecond = static_cast<UInt16>(fractional % divider);
-        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond};
+        // Normalize the dividers between microseconds and nanoseconds w.r.t. the scale.
+        Int64 microsecond_divider = (millisecond_multiplier * scale_multiplier) / microsecond_multiplier;
+        Int64 nanosecond_divider = scale_multiplier / microsecond_multiplier;
+
+        // Protect against division by zero for smaller scale multipliers.
+        microsecond_divider = (microsecond_divider ? microsecond_divider : 1);
+        nanosecond_divider = (nanosecond_divider ? nanosecond_divider : 1);
+
+        const Int64 & fractional = components.fractional;
+        UInt16 millisecond = static_cast<UInt16>(fractional / microsecond_divider);
+        UInt16 microsecond = static_cast<UInt16>((fractional % microsecond_divider) / nanosecond_divider);
+        UInt16 nanosecond = static_cast<UInt16>(fractional % nanosecond_divider);
+
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond, nanosecond};
     }
     static DateTimeComponentsWithFractionalPart execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t)), 0, 0};
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t)), 0, 0, 0};
     }
     static DateTimeComponentsWithFractionalPart execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(ExtendedDayNum(d)), 0, 0};
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(ExtendedDayNum(d)), 0, 0, 0};
     }
     static DateTimeComponentsWithFractionalPart execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(DayNum(d)), 0, 0};
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(DayNum(d)), 0, 0, 0};
     }
 
     using FactorTransform = ZeroTransform;
@@ -2031,7 +2145,6 @@ struct Transformer
                     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
                     bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)

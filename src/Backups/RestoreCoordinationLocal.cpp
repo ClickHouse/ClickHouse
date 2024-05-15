@@ -6,7 +6,7 @@
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() : log(&Poco::Logger::get("RestoreCoordinationLocal"))
+RestoreCoordinationLocal::RestoreCoordinationLocal() : log(getLogger("RestoreCoordinationLocal"))
 {
 }
 
@@ -52,6 +52,12 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
+bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
+{
+    std::lock_guard lock{mutex};
+    return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
+}
+
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
 {
     String query_str = serializeAST(create_query);
@@ -74,8 +80,6 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
     }
 
     auto new_uuids = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true);
-
-    String new_query_str = serializeAST(create_query);
 
     {
         std::lock_guard lock{mutex};

@@ -3,7 +3,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
@@ -24,12 +23,30 @@ struct AzureObjectStorageSettings
         uint64_t min_bytes_for_seek_,
         int max_single_read_retries_,
         int max_single_download_retries_,
-        int list_object_keys_size_)
+        int list_object_keys_size_,
+        size_t min_upload_part_size_,
+        size_t max_upload_part_size_,
+        size_t max_single_part_copy_size_,
+        bool use_native_copy_,
+        size_t max_unexpected_write_error_retries_,
+        size_t max_inflight_parts_for_one_file_,
+        size_t strict_upload_part_size_,
+        size_t upload_part_size_multiply_factor_,
+        size_t upload_part_size_multiply_parts_count_threshold_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
         , list_object_keys_size(list_object_keys_size_)
+        , min_upload_part_size(min_upload_part_size_)
+        , max_upload_part_size(max_upload_part_size_)
+        , max_single_part_copy_size(max_single_part_copy_size_)
+        , use_native_copy(use_native_copy_)
+        , max_unexpected_write_error_retries(max_unexpected_write_error_retries_)
+        , max_inflight_parts_for_one_file(max_inflight_parts_for_one_file_)
+        , strict_upload_part_size(strict_upload_part_size_)
+        , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
+        , upload_part_size_multiply_parts_count_threshold(upload_part_size_multiply_parts_count_threshold_)
     {
     }
 
@@ -40,6 +57,15 @@ struct AzureObjectStorageSettings
     size_t max_single_read_retries = 3;
     size_t max_single_download_retries = 3;
     int list_object_keys_size = 1000;
+    size_t min_upload_part_size = 16 * 1024 * 1024;
+    size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
+    size_t max_single_part_copy_size = 256 * 1024 * 1024;
+    bool use_native_copy = false;
+    size_t max_unexpected_write_error_retries = 4;
+    size_t max_inflight_parts_for_one_file = 20;
+    size_t strict_upload_part_size = 0;
+    size_t upload_part_size_multiply_factor = 2;
+    size_t upload_part_size_multiply_parts_count_threshold = 500;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
@@ -54,15 +80,20 @@ public:
     AzureObjectStorage(
         const String & name_,
         AzureClientPtr && client_,
-        SettingsPtr && settings_);
+        SettingsPtr && settings_,
+        const String & object_namespace_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-
     std::string getName() const override { return "AzureObjectStorage"; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
+
+    std::string getCommonKeyPrefix() const override { return ""; }
+
+    std::string getDescription() const override { return client.get()->GetUrl(); }
 
     bool exists(const StoredObject & object) const override;
 
@@ -113,7 +144,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    String getObjectsNamespace() const override { return ""; }
+    String getObjectsNamespace() const override { return object_namespace ; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
@@ -121,19 +152,28 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return true; }
 
+    std::shared_ptr<const AzureObjectStorageSettings> getSettings() { return settings.get(); }
+
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
+    {
+        return client.get();
+    }
+
 private:
+    using SharedAzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
+    void removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists);
+
     const String name;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
+    const String object_namespace; /// container + prefix
 
-    Poco::Logger * log;
-
-    DataSourceDescription data_source_description;
+    LoggerPtr log;
 };
 
 }

@@ -42,12 +42,13 @@ public:
     ~S3QueueFilesMetadata();
 
     void setFileProcessed(ProcessingNodeHolderPtr holder);
+    void setFileProcessed(const std::string & path, size_t shard_id);
 
     void setFileFailed(ProcessingNodeHolderPtr holder, const std::string & exception_message);
 
     struct FileStatus
     {
-        enum class State
+        enum class State : uint8_t
         {
             Processing,
             Processed,
@@ -70,7 +71,7 @@ public:
     using FileStatuses = std::unordered_map<std::string, FileStatusPtr>;
 
     /// Set file as processing, if it is not alreaty processed, failed or processing.
-    std::pair<ProcessingNodeHolderPtr, FileStatusPtr> trySetFileAsProcessing(const std::string & path);
+    ProcessingNodeHolderPtr trySetFileAsProcessing(const std::string & path);
 
     FileStatusPtr getFileStatus(const std::string & path);
 
@@ -80,6 +81,38 @@ public:
 
     void deactivateCleanupTask();
 
+    /// Should the table use sharded processing?
+    /// We use sharded processing for Ordered mode of S3Queue table.
+    /// It allows to parallelize processing within a single server
+    /// and to allow distributed processing.
+    bool isShardedProcessing() const;
+
+    /// Register a new shard for processing.
+    /// Return a shard id of registered shard.
+    size_t registerNewShard();
+    /// Register a new shard for processing by given id.
+    /// Throws exception if shard by this id is already registered.
+    void registerNewShard(size_t shard_id);
+    /// Unregister shard from keeper.
+    void unregisterShard(size_t shard_id);
+    bool isShardRegistered(size_t shard_id);
+
+    /// Total number of processing ids.
+    /// A processing id identifies a single processing thread.
+    /// There might be several processing ids per shard.
+    size_t getProcessingIdsNum() const;
+    /// Get processing ids identified with requested shard.
+    std::vector<size_t> getProcessingIdsForShard(size_t shard_id) const;
+    /// Check if given processing id belongs to a given shard.
+    bool isProcessingIdBelongsToShard(size_t id, size_t shard_id) const;
+    /// Get a processing id for processing thread by given thread id.
+    /// thread id is a value in range [0, threads_per_shard].
+    size_t getIdForProcessingThread(size_t thread_id, size_t shard_id) const;
+
+    /// Calculate which processing id corresponds to a given file path.
+    /// The file will be processed by a thread related to this processing id.
+    size_t getProcessingIdForPath(const std::string & path) const;
+
 private:
     const S3QueueMode mode;
     const UInt64 max_set_size;
@@ -87,13 +120,16 @@ private:
     const UInt64 max_loading_retries;
     const size_t min_cleanup_interval_ms;
     const size_t max_cleanup_interval_ms;
+    const size_t shards_num;
+    const size_t threads_per_shard;
 
     const fs::path zookeeper_processing_path;
     const fs::path zookeeper_processed_path;
     const fs::path zookeeper_failed_path;
+    const fs::path zookeeper_shards_path;
     const fs::path zookeeper_cleanup_lock_path;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic_bool shutdown = false;
     BackgroundSchedulePool::TaskHolder task;
@@ -104,21 +140,24 @@ private:
 
     void setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder);
     void setFileProcessedForUnorderedMode(ProcessingNodeHolderPtr holder);
+    std::string getZooKeeperPathForShard(size_t shard_id) const;
 
-    enum class SetFileProcessingResult
+    void setFileProcessedForOrderedModeImpl(
+        const std::string & path, ProcessingNodeHolderPtr holder, const std::string & processed_node_path);
+
+    enum class SetFileProcessingResult : uint8_t
     {
         Success,
         ProcessingByOtherNode,
         AlreadyProcessed,
         AlreadyFailed,
     };
-    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path);
-    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path);
+    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path, const FileStatusPtr & file_status);
+    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path, const FileStatusPtr & file_status);
 
     struct NodeMetadata
     {
-        std::string file_path;
-        UInt64 last_processed_timestamp = 0;
+        std::string file_path; UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
         std::string processing_id; /// For ephemeral processing node.
@@ -153,19 +192,24 @@ public:
         const std::string & processing_id_,
         const std::string & path_,
         const std::string & zk_node_path_,
-        zkutil::ZooKeeperPtr zk_client_);
+        FileStatusPtr file_status_,
+        zkutil::ZooKeeperPtr zk_client_,
+        LoggerPtr logger_);
 
     ~ProcessingNodeHolder();
+
+    FileStatusPtr getFileStatus() { return file_status; }
 
 private:
     bool remove(Coordination::Requests * requests = nullptr, Coordination::Responses * responses = nullptr);
 
     zkutil::ZooKeeperPtr zk_client;
+    FileStatusPtr file_status;
     std::string path;
     std::string zk_node_path;
     std::string processing_id;
     bool removed = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

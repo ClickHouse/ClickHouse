@@ -96,14 +96,20 @@ public:
 
         void write(WriteBuffer & wb) const
         {
-            writeBinary(key, wb);
+            if constexpr (std::is_same_v<TKey, StringRef>)
+                writeBinary(key, wb);
+            else
+                writeBinaryLittleEndian(key, wb);
             writeVarUInt(count, wb);
             writeVarUInt(error, wb);
         }
 
         void read(ReadBuffer & rb)
         {
-            readBinary(key, rb);
+            if constexpr (std::is_same_v<TKey, StringRef>)
+                readBinary(key, rb);
+            else
+                readBinaryLittleEndian(key, rb);
             readVarUInt(count, rb);
             readVarUInt(error, rb);
         }
@@ -200,6 +206,9 @@ public:
      */
     void merge(const Self & rhs)
     {
+        if (!rhs.size())
+            return;
+
         UInt64 m1 = 0;
         UInt64 m2 = 0;
 

@@ -22,7 +22,7 @@
 
 namespace DB
 {
-HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
     : max_uri_size(context->getMaxUriSize())
     , max_fields_number(context->getMaxFields())
     , max_field_name_size(context->getMaxFieldNameSize())
@@ -41,7 +41,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
 
-    auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket());
+    auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
     readRequest(*in);  /// Try parse according to RFC7230
@@ -65,7 +65,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     {
         stream = std::move(in);
         if (!startsWith(getContentType(), "multipart/form-data"))
-            LOG_WARNING(LogFrequencyLimiter(&Poco::Logger::get("HTTPServerRequest"), 10), "Got an HTTP request with no content length "
+            LOG_WARNING(LogFrequencyLimiter(getLogger("HTTPServerRequest"), 10), "Got an HTTP request with no content length "
                 "and no chunked/multipart encoding, it may be impossible to distinguish graceful EOF from abnormal connection loss");
     }
     else

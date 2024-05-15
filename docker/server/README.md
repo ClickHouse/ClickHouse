@@ -4,33 +4,34 @@
 
 ClickHouse is an open-source column-oriented DBMS (columnar database management system) for online analytical processing (OLAP) that allows users to generate analytical reports using SQL queries in real-time.
 
-ClickHouse works 100-1000x faster than traditional database management systems, and processes hundreds of millions to over a billion rows and tens of gigabytes of data per server per second.  With a widespread user base around the globe, the technology has received praise for its reliability, ease of use, and fault tolerance.
+ClickHouse works 100-1000x faster than traditional database management systems, and processes hundreds of millions to over a billion rows and tens of gigabytes of data per server per second. With a widespread user base around the globe, the technology has received praise for its reliability, ease of use, and fault tolerance.
 
 For more information and documentation see https://clickhouse.com/.
 
 ## Versions
 
-- The `latest` tag points to the latest release of the latest stable branch.
-- Branch tags like `22.2` point to the latest release of the corresponding branch.
-- Full version tags like `22.2.3.5` point to the corresponding release.
-- The tag `head` is built from the latest commit to the default branch.
-- Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
+-	The `latest` tag points to the latest release of the latest stable branch.
+-	Branch tags like `22.2` point to the latest release of the corresponding branch.
+-	Full version tags like `22.2.3.5` point to the corresponding release.
+-	The tag `head` is built from the latest commit to the default branch.
+-	Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
 
 ### Compatibility
 
-- The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.
-- The arm64 image requires support for the [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A). Most ARM CPUs after 2017 support ARMv8.2-A. A notable exception is Raspberry Pi 4 from 2019 whose CPU only supports ARMv8.0-A.
+-	The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.
+-	The arm64 image requires support for the [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A) and additionally the Load-Acquire RCpc register. The register is optional in version ARMv8.2-A and mandatory in [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A). Supported in Graviton >=2, Azure and GCP instances. Examples for unsupported devices are Raspberry Pi 4 (ARMv8.0-A) and Jetson AGX Xavier/Orin (ARMv8.2-A).
 
 ## How to use this image
 
 ### start server instance
+
 ```bash
 docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
 ```
 
 By default, ClickHouse will be accessible only via the Docker network. See the [networking section below](#networking).
 
-By default, starting above server instance will be run as the `default` user without  password.
+By default, starting above server instance will be run as the `default` user without password.
 
 ### connect to it from a native client
 
@@ -66,9 +67,7 @@ docker run -d -p 18123:8123 -p19000:9000 --name some-clickhouse-server --ulimit 
 echo 'SELECT version()' | curl 'http://localhost:18123/' --data-binary @-
 ```
 
-```
-22.6.3.35
-```
+`22.6.3.35`
 
 or by allowing the container to use [host ports directly](https://docs.docker.com/network/host/) using `--network=host` (also allows achieving better network performance):
 
@@ -77,16 +76,14 @@ docker run -d --network=host --name some-clickhouse-server --ulimit nofile=26214
 echo 'SELECT version()' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-```
-22.6.3.35
-```
+`22.6.3.35`
 
 ### Volumes
 
 Typically you may want to mount the following folders inside your container to achieve persistency:
 
-* `/var/lib/clickhouse/` - main folder where ClickHouse stores the data
-* `/var/log/clickhouse-server/` - logs
+-	`/var/lib/clickhouse/` - main folder where ClickHouse stores the data
+-	`/var/log/clickhouse-server/` - logs
 
 ```bash
 docker run -d \
@@ -97,9 +94,9 @@ docker run -d \
 
 You may also want to mount:
 
-* `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustments
-* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustments
-* `/docker-entrypoint-initdb.d/` - folder with database initialization scripts (see below).
+-	`/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustments
+-	`/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustments
+-	`/docker-entrypoint-initdb.d/` - folder with database initialization scripts (see below).
 
 ### Linux capabilities
 
@@ -150,7 +147,7 @@ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLIC
 
 ## How to extend this image
 
-To perform additional initialization in an image derived from this one, add one or more `*.sql`, `*.sql.gz`, or `*.sh` scripts under `/docker-entrypoint-initdb.d`. After the entrypoint calls `initdb`, it will run any `*.sql` files, run any executable `*.sh` scripts, and source any non-executable `*.sh` scripts found in that directory to do further initialization before starting the service.
+To perform additional initialization in an image derived from this one, add one or more `*.sql`, `*.sql.gz`, or `*.sh` scripts under `/docker-entrypoint-initdb.d`. After the entrypoint calls `initdb`, it will run any `*.sql` files, run any executable `*.sh` scripts, and source any non-executable `*.sh` scripts found in that directory to do further initialization before starting the service.  
 Also, you can provide environment variables `CLICKHOUSE_USER` & `CLICKHOUSE_PASSWORD` that will be used for clickhouse-client during initialization.
 
 For example, to add an additional user and database, add the following to `/docker-entrypoint-initdb.d/init-db.sh`:

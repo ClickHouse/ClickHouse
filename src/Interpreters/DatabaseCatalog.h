@@ -1,15 +1,12 @@
 #pragma once
 
 #include <Core/UUID.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include "Common/NamePrompter.h"
 #include <Common/SharedMutex.h>
-#include "Storages/IStorage.h"
-#include "Databases/IDatabase.h"
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -23,35 +20,9 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
-
-class TableNameHints : public IHints<>
-{
-public:
-    TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
-        : context(context_),
-        database(database_)
-    {
-    }
-    Names getAllRegisteredNames() const override
-    {
-        Names result;
-        if (database)
-        {
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-                result.emplace_back(table_it->name());
-        }
-        return result;
-    }
-private:
-    ContextPtr context;
-    ConstDatabasePtr database;
-};
 
 class IDatabase;
 class Exception;
@@ -105,8 +76,8 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
-class FutureSet;
-using FutureSetPtr = std::shared_ptr<FutureSet>;
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -139,11 +110,13 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
-    FutureSetPtr future_set;
+    FutureSetFromSubqueryPtr future_set;
 };
 
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+
 ///TODO maybe remove shared_ptr from here?
-using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
@@ -166,7 +139,7 @@ public:
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
-    void startupBackgroundCleanup();
+    void startupBackgroundTasks();
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
@@ -286,6 +259,9 @@ public:
         std::lock_guard lock(tables_marked_dropped_mutex);
         return tables_marked_dropped;
     }
+
+    void triggerReloadDisksTask(const Strings & new_added_disks);
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -320,6 +296,8 @@ private:
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
+    void reloadDisksTask();
+
     static constexpr size_t reschedule_time_ms = 100;
 
     mutable std::mutex databases_mutex;
@@ -337,7 +315,7 @@ private:
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic_bool is_shutting_down = false;
 
@@ -381,7 +359,13 @@ private:
 
     static constexpr time_t default_drop_error_cooldown_sec = 5;
     time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
+
+    std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
+    std::mutex reload_disks_mutex;
+    std::set<String> disks_to_reload;
+    static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
 };
+
 
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
@@ -395,7 +379,7 @@ class TemporaryLockForUUIDDirectory : private boost::noncopyable
     UUID uuid = UUIDHelpers::Nil;
 public:
     TemporaryLockForUUIDDirectory() = default;
-    TemporaryLockForUUIDDirectory(UUID uuid_);
+    explicit TemporaryLockForUUIDDirectory(UUID uuid_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;

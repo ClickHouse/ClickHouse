@@ -15,6 +15,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -193,6 +195,10 @@ public:
         ReconfigCallback callback) final;
 
     void multi(
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) override;
+
+    void multi(
         const Requests & requests,
         MultiCallback callback) override;
 
@@ -239,8 +245,13 @@ private:
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
     Poco::Net::SocketAddress socket_address;
+
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
+    std::optional<CompressedReadBuffer> compressed_in;
+    std::optional<CompressedWriteBuffer> compressed_out;
+
+    bool use_compression = false;
 
     int64_t session_id = 0;
 
@@ -280,7 +291,7 @@ private:
     class ThreadReference
     {
     public:
-        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        ThreadReference & operator = (ThreadFromGlobalPool && thread_)
         {
             std::lock_guard<std::mutex> l(lock);
             thread = std::move(thread_);
@@ -301,7 +312,7 @@ private:
     ThreadReference send_thread;
     ThreadReference receive_thread;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void connect(
         const Nodes & node,
@@ -328,7 +339,11 @@ private:
     template <typename T>
     void read(T &);
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
+    WriteBuffer & getWriteBuffer();
+    void flushWriteBuffer();
+    ReadBuffer & getReadBuffer();
+
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     void initFeatureFlags();
 

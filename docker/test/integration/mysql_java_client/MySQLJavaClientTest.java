@@ -39,8 +39,7 @@ public class MySQLJavaClientTest {
 
         // useServerPrepStmts=true -> COM_STMT_PREPARE + COM_STMT_EXECUTE -> binary
         // useServerPrepStmts=false -> COM_QUERY -> text
-        String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&useServerPrepStmts=%s",
-                host, port, database, binary);
+        String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&useServerPrepStmts=%s", host, port, database, binary);
 
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
@@ -67,21 +66,21 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %d\n", getMysqlType(rs, "i8"), rs.getInt("i8"));
-            System.out.printf("%s, value: %d\n", getMysqlType(rs, "i16"), rs.getInt("i16"));
-            System.out.printf("%s, value: %d\n", getMysqlType(rs, "i32"), rs.getInt("i32"));
-            System.out.printf("%s, value: %d\n", getMysqlType(rs, "i64"), rs.getLong("i64"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "i128"), rs.getString("i128"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "i256"), rs.getString("i256"));
-            System.out.printf("%s, value: %d\n", getMysqlType(rs, "ui8"), rs.getInt("ui8"));
-            System.out.printf("%s, value: %d\n", getMysqlType(rs, "ui16"), rs.getInt("ui16"));
-            System.out.printf("%s, value: %d\n", getMysqlType(rs, "ui32"), rs.getLong("ui32"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "ui64"), rs.getString("ui64"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "ui128"), rs.getString("ui128"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "ui256"), rs.getString("ui256"));
-            System.out.printf("%s, value: %f\n", getMysqlType(rs, "f32"), rs.getFloat("f32"));
-            System.out.printf("%s, value: %f\n", getMysqlType(rs, "f64"), rs.getFloat("f64"));
-            System.out.printf("%s, value: %b\n", getMysqlType(rs, "b"), rs.getBoolean("b"));
+            System.out.printf("%s, value: %d, wasNull: %b\n", getMysqlType(rs, "i8"), rs.getInt("i8"), rs.wasNull());
+            System.out.printf("%s, value: %d, wasNull: %b\n", getMysqlType(rs, "i16"), rs.getInt("i16"), rs.wasNull());
+            System.out.printf("%s, value: %d, wasNull: %b\n", getMysqlType(rs, "i32"), rs.getInt("i32"), rs.wasNull());
+            System.out.printf("%s, value: %d, wasNull: %b\n", getMysqlType(rs, "i64"), rs.getLong("i64"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "i128"), rs.getString("i128"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "i256"), rs.getString("i256"), rs.wasNull());
+            System.out.printf("%s, value: %d, wasNull: %b\n", getMysqlType(rs, "ui8"), rs.getInt("ui8"), rs.wasNull());
+            System.out.printf("%s, value: %d, wasNull: %b\n", getMysqlType(rs, "ui16"), rs.getInt("ui16"), rs.wasNull());
+            System.out.printf("%s, value: %d, wasNull: %b\n", getMysqlType(rs, "ui32"), rs.getLong("ui32"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "ui64"), rs.getString("ui64"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "ui128"), rs.getString("ui128"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "ui256"), rs.getString("ui256"), rs.wasNull());
+            System.out.printf("%s, value: %f, wasNull: %b\n", getMysqlType(rs, "f32"), rs.getFloat("f32"), rs.wasNull());
+            System.out.printf("%s, value: %f, wasNull: %b\n", getMysqlType(rs, "f64"), rs.getFloat("f64"), rs.wasNull());
+            System.out.printf("%s, value: %b, wasNull: %b\n", getMysqlType(rs, "b"), rs.getBoolean("b"), rs.wasNull());
         }
         System.out.println();
     }
@@ -92,10 +91,10 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "s"), rs.getString("s"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "sn"), rs.getString("sn"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "lc"), rs.getString("lc"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "nlc"), rs.getString("nlc"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "s"), rs.getString("s"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "sn"), rs.getString("sn"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "lc"), rs.getString("lc"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "nlc"), rs.getString("nlc"), rs.wasNull());
         }
         System.out.println();
     }
@@ -106,10 +105,10 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "ilc"), rs.getInt("ilc"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dlc"), rs.getDate("dlc"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "ilc"), rs.getInt("ilc"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dlc"), rs.getDate("dlc"), rs.wasNull());
             // NULL int is represented as zero
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "ni"), rs.getInt("ni"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "ni"), rs.getInt("ni"), rs.wasNull());
         }
         System.out.println();
     }
@@ -120,12 +119,11 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d32"), rs.getBigDecimal("d32").toPlainString());
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d64"), rs.getBigDecimal("d64").toPlainString());
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d128_native"),
-                    rs.getBigDecimal("d128_native").toPlainString());
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d128_text"), rs.getString("d128_text"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d256"), rs.getString("d256"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d32"), rs.getBigDecimal("d32").toPlainString(), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d64"), rs.getBigDecimal("d64").toPlainString(), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d128_native"), rs.getBigDecimal("d128_native").toPlainString(), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d128_text"), rs.getString("d128_text"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d256"), rs.getString("d256"), rs.wasNull());
         }
         System.out.println();
     }
@@ -136,12 +134,12 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d"), rs.getDate("d"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d32"), rs.getDate("d32"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_3"), rs.getTimestamp("dt64_3"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_6"), rs.getTimestamp("dt64_6"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_9"), rs.getTimestamp("dt64_9"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d"), rs.getDate("d"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d32"), rs.getDate("d32"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_3"), rs.getTimestamp("dt64_3"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_6"), rs.getTimestamp("dt64_6"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_9"), rs.getTimestamp("dt64_9"), rs.wasNull());
         }
         System.out.println();
     }
@@ -152,13 +150,13 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_0"), rs.getTimestamp("dt64_0"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_1"), rs.getTimestamp("dt64_1"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_2"), rs.getTimestamp("dt64_2"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_4"), rs.getTimestamp("dt64_4"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_5"), rs.getTimestamp("dt64_5"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_7"), rs.getTimestamp("dt64_7"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_8"), rs.getTimestamp("dt64_8"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_0"), rs.getTimestamp("dt64_0"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_1"), rs.getTimestamp("dt64_1"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_2"), rs.getTimestamp("dt64_2"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_4"), rs.getTimestamp("dt64_4"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_5"), rs.getTimestamp("dt64_5"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_7"), rs.getTimestamp("dt64_7"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_8"), rs.getTimestamp("dt64_8"), rs.wasNull());
         }
         System.out.println();
     }
@@ -169,8 +167,8 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt64_3"), rs.getTimestamp("dt64_3"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt64_3"), rs.getTimestamp("dt64_3"), rs.wasNull());
         }
         System.out.println();
     }
@@ -181,10 +179,10 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "a"), rs.getString("a"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "u"), rs.getString("u"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "t"), rs.getString("t"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "m"), rs.getString("m"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "a"), rs.getString("a"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "u"), rs.getString("u"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "t"), rs.getString("t"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "m"), rs.getString("m"), rs.wasNull());
         }
         System.out.println();
     }
@@ -196,17 +194,15 @@ public class MySQLJavaClientTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "f"), rs.getFloat("f"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d"), rs.getDate("d"));
-            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"));
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "f"), rs.getFloat("f"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "d"), rs.getDate("d"), rs.wasNull());
+            System.out.printf("%s, value: %s, wasNull: %b\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"), rs.wasNull());
         }
         System.out.println();
     }
 
     private static String getMysqlType(ResultSet rs, String columnLabel) throws SQLException {
         ResultSetMetaData meta = rs.getMetaData();
-        return String.format("%s type is %s", columnLabel,
-                MysqlType.getByJdbcType(meta.getColumnType(rs.findColumn(columnLabel))));
+        return String.format("%s type is %s", columnLabel, MysqlType.getByJdbcType(meta.getColumnType(rs.findColumn(columnLabel))));
     }
-
 }

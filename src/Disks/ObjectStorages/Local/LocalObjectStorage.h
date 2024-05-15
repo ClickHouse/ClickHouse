@@ -16,11 +16,15 @@ namespace DB
 class LocalObjectStorage : public IObjectStorage
 {
 public:
-    LocalObjectStorage();
-
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+    explicit LocalObjectStorage(String key_prefix_);
 
     std::string getName() const override { return "LocalObjectStorage"; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Local; }
+
+    std::string getCommonKeyPrefix() const override { return key_prefix; }
+
+    std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -54,6 +58,10 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+
+    bool existsOrHasAnyChild(const std::string & path) const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
@@ -78,15 +86,16 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return false; }
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
 private:
-    Poco::Logger * log;
-    DataSourceDescription data_source_description;
+    String key_prefix;
+    LoggerPtr log;
+    std::string description;
 };
 
 }

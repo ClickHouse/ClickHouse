@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 

@@ -94,8 +94,8 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     {
         if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
         {
-            column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
-            column.type = removeLowCardinality(column.type);
+            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
+            column.type = recursiveRemoveLowCardinality(column.type);
         }
     }
 
@@ -313,7 +313,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
 {
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
     /// DataTypeFunction does not support obtaining default (isDefaultAt())
-    /// ColumnFunction does not support getting specific values
+    /// ColumnFunction does not support getting specific values.
     if (result_type->getTypeId() != TypeIndex::Function && use_default_implementation_for_sparse_columns)
     {
         size_t num_sparse_columns = 0;
@@ -368,7 +368,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             if (!result_type->canBeInsideSparseColumns() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
-                return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
+                return res->createWithOffsets(offsets_data, *createColumnConst(res, 0), input_rows_count, /*shift=*/ 1);
             }
 
             return ColumnSparse::create(res, sparse_offsets, input_rows_count);
@@ -454,7 +454,7 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const
 {
     checkNumberOfArguments(arguments.size());
-    return getLambdaArgumentTypesImpl(arguments);
+    getLambdaArgumentTypesImpl(arguments);
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const

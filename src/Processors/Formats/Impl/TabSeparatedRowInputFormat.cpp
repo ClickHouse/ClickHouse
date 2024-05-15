@@ -67,13 +67,14 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
 
 void TabSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
-void TabSeparatedRowInputFormat::resetParser()
+void TabSeparatedRowInputFormat::resetReadBuffer()
 {
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
+    buf.reset();
+    RowInputFormatWithNamesAndTypes::resetReadBuffer();
 }
 
 TabSeparatedFormatReader::TabSeparatedFormatReader(PeekableReadBuffer & in_, const FormatSettings & format_settings_, bool is_raw_)
@@ -167,7 +168,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     if (is_raw)
     {
         if (as_nullable)
-            return SerializationNullable::deserializeTextRawImpl(column, *buf, format_settings, serialization);
+            return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization);
 
         serialization->deserializeTextRaw(column, *buf, format_settings);
         return true;
@@ -175,7 +176,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
 
     if (as_nullable)
-        return SerializationNullable::deserializeTextEscapedImpl(column, *buf, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, *buf, format_settings, serialization);
 
     serialization->deserializeTextEscaped(column, *buf, format_settings);
     return true;
@@ -401,6 +402,8 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("Raw", register_func);
     }
 }
 
@@ -432,6 +435,8 @@ void registerTSVSchemaReader(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("Raw", register_func);
     }
 }
 
@@ -505,8 +510,12 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("Raw", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
         markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
+        if (is_raw)
+            markFormatWithNamesAndTypesSupportsSamplingColumns("Raw", factory);
     }
 
     // We can use the same segmentation engine for TSKV.

@@ -2136,7 +2136,7 @@ SELECT * FROM test_table
 -   [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
 Основной интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Фактический интервал растёт экспоненциально при возникновении ошибок.
 
@@ -2146,9 +2146,9 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 100 миллисекунд.
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
 
-Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms).
+Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms).
 
 Возможные значения:
 
@@ -2156,7 +2156,7 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 30000 миллисекунд (30 секунд).
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_background_insert_batch {#distributed_background_insert_batch}
 
 Включает/выключает пакетную отправку вставленных данных.
 
@@ -2249,7 +2249,7 @@ SELECT * FROM test_table
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2260,7 +2260,7 @@ SELECT * FROM test_table
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2323,11 +2323,11 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 0.
 
-## insert_distributed_sync {#insert_distributed_sync}
+## distributed_foreground_insert {#distributed_foreground_insert}
 
 Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
 
-По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `distributed_foreground_insert=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
 
 Возможные значения:
 
@@ -2776,7 +2776,7 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 -   0 — номера строк не выводятся.
 -   1 — номера строк выводятся.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 **Пример**
 
@@ -2796,6 +2796,17 @@ SELECT TOP 3 name, value FROM system.settings;
 3. │ max_block_size          │ 65505   │
    └─────────────────────────┴─────────┘
 ```
+### output_format_pretty_color {#output_format_pretty_color}
+
+Включает/выключает управляющие последовательности ANSI в форматах Pretty.
+
+Возможные значения:
+
+-   `0` — выключена. Не исползует ANSI последовательности в форматах Pretty.
+-   `1` — включена. Исползует ANSI последовательности с исключением форматов `NoEscapes`.
+-   `auto` - включена если `stdout` является терминалом с исключением форматов `NoEscapes`.
+
+Значение по умолчанию: `auto`
 
 ## system_events_show_zero_values {#system_events_show_zero_values}
 
@@ -3247,7 +3258,7 @@ SELECT * FROM test2;
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Включает экспериментальную возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
+Включает устаревшую возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
 
 Возможные значения:
 - 0 — живые представления не поддерживаются.
@@ -3257,21 +3268,15 @@ SELECT * FROM test2;
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Задает интервал в секундах для периодической проверки существования [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view).
-
-Значение по умолчанию: `15`.
+Устарело.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
-
-Значение по умолчанию: `64`.
+Устарело.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Задает время в секундах, по истечении которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
-
-Значение по умолчанию: `60`.
+Устарело.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -3441,17 +3446,6 @@ SELECT
     (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
-
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Позволяет создавать базы данных с движком [Replicated](../../engines/database-engines/replicated.md).
-
-Возможные значения:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Значение по умолчанию: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
@@ -3838,6 +3832,18 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
+## date_time_overflow_behavior {#date_time_overflow_behavior}
+
+Задаёт поведение при преобразовании [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), а также численных типов данных к Date, Date32, DateTime, DateTime64 в случае, если результат выходит за пределы диапазона значений необходимого типа.
+
+Возможные значения:
+
+- `ignore` — Молча игнорирует переполнение. В таком случае, результатом будет случайное значение.
+- `throw` — Выкинуть исключение при переполнении.
+- `saturate` — Молча округлить до ближайшего (то есть наибольшего или наименьшего) значения из диапазона значений результата.
+
+Значение по умолчанию: `ignore`.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md).
@@ -4106,7 +4112,7 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 ## session_timezone {#session_timezone}
 
 Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо [часового пояса сервера](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone). То есть, все значения DateTime/DateTime64, для которых явно не задан часовой пояс, будут интерпретированы как относящиеся к указанной зоне.
-При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера. 
+При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера.
 
 Функции `timeZone()` and `serverTimezone()` возвращают часовой пояс текущей сессии и сервера соответственно.
 

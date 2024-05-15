@@ -1,3 +1,5 @@
+SET output_format_pretty_color=1;
+
 SELECT CAST('True', 'Bool');
 SELECT CAST('TrUe', 'Bool');
 SELECT CAST('true', 'Bool');

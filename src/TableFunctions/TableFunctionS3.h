@@ -22,11 +22,15 @@ public:
     static constexpr auto signature = " - url\n"
                                       " - url, format\n"
                                       " - url, format, structure\n"
-                                      " - url, access_key_id, secret_access_key\n"
                                       " - url, format, structure, compression_method\n"
+                                      " - url, access_key_id, secret_access_key\n"
+                                      " - url, access_key_id, secret_access_key, session_token\n"
                                       " - url, access_key_id, secret_access_key, format\n"
+                                      " - url, access_key_id, secret_access_key, session_token, format\n"
                                       " - url, access_key_id, secret_access_key, format, structure\n"
+                                      " - url, access_key_id, secret_access_key, session_token, format, structure\n"
                                       " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
+                                      " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
                                       "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     static size_t getMaxNumberOfArguments() { return 6; }
@@ -49,14 +53,11 @@ public:
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
-    {
-        return {"_path", "_file"};
-    }
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
 
-    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context);
 
 protected:
 

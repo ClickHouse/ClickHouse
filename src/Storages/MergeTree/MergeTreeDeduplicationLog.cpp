@@ -341,22 +341,22 @@ void MergeTreeDeduplicationLog::shutdown()
     stopped = true;
     if (current_writer)
     {
-        current_writer->finalize();
-        current_writer->sync();
+        try
+        {
+            current_writer->finalize();
+            current_writer->sync();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         current_writer.reset();
     }
 }
 
 MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
 {
-    try
-    {
-        shutdown();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    shutdown();
 }
 
 }

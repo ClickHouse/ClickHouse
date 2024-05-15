@@ -15,6 +15,7 @@
 #include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,6 +31,11 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+}
+
+String DataTypeAggregateFunction::getFunctionName() const
+{
+    return function->getName();
 }
 
 
@@ -52,6 +58,25 @@ size_t DataTypeAggregateFunction::getVersion() const
     return function->getDefaultVersion();
 }
 
+DataTypePtr DataTypeAggregateFunction::getReturnType() const
+{
+    return function->getResultType();
+}
+
+DataTypePtr DataTypeAggregateFunction::getReturnTypeToPredict() const
+{
+    return function->getReturnTypeToPredict();
+}
+
+bool DataTypeAggregateFunction::isVersioned() const
+{
+    return function->isVersioned();
+}
+
+void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
+{
+    setVersion(function->getVersionFromRevision(revision), if_empty);
+}
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
@@ -166,7 +191,6 @@ SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     String function_name;
-    AggregateFunctionPtr function;
     DataTypes argument_types;
     Array params_row;
     std::optional<size_t> version;
@@ -193,12 +217,14 @@ static DataTypePtr create(const ASTPtr & arguments)
         argument_types_start_idx = 2;
     }
 
+    auto action = NullsAction::EMPTY;
     if (const auto * parametric = data_type_ast->as<ASTFunction>())
     {
         if (parametric->parameters)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
+        action = parametric->nulls_action;
 
         if (parametric->arguments)
         {
@@ -238,10 +264,10 @@ static DataTypePtr create(const ASTPtr & arguments)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
+    AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 

@@ -1,12 +1,17 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/VersionNumber.h>
 #include <boost/algorithm/string/trim.hpp>
+
+
+namespace Poco::Net
+{
+    class HTTPRequest;
+}
 
 namespace DB
 {
@@ -94,10 +99,10 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
+    std::unordered_map<String, String> http_headers;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
-    Poco::Net::NameValueCollection headers;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
@@ -136,6 +141,9 @@ public:
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
+
+    /// Initialize parameters related to HTTP request.
+    void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);
 
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 

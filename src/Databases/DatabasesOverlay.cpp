@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 DatabasesOverlay::DatabasesOverlay(const String & name_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get("DatabaseOverlay(" + name_ + ")"))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger("DatabaseOverlay(" + name_ + ")"))
 {
 }
 
@@ -157,7 +157,9 @@ ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr
  */
 ASTPtr DatabasesOverlay::getCreateDatabaseQuery() const
 {
-    return std::make_shared<ASTCreateQuery>();
+    auto query = std::make_shared<ASTCreateQuery>();
+    query->setDatabase(getDatabaseName());
+    return query;
 }
 
 String DatabasesOverlay::getTableDataPath(const String & table_name) const
@@ -241,6 +243,7 @@ void DatabasesOverlay::createTableRestoredFromBackup(
     /// Creates a tables by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
+    interpreter.setIsRestoreFromBackup(true);
     interpreter.execute();
 }
 
@@ -260,7 +263,7 @@ void DatabasesOverlay::shutdown()
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
 {
     Tables tables;
     for (const auto & db : databases)

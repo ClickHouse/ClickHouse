@@ -33,7 +33,8 @@ namespace CurrentMetrics
 
 namespace DB
 {
-    class ZooKeeperLog;
+class ZooKeeperLog;
+class ZooKeeperWithFaultInjection;
 
 namespace ErrorCodes
 {
@@ -135,13 +136,23 @@ struct MultiReadResponses
             responses);
     }
 
+    /// If Keeper/ZooKeeper doesn't support MultiRead feature we will dispatch
+    /// asynchronously all the read requests separately
+    /// Sometimes it's important to process all requests instantly
+    /// e.g. we want to trigger exceptions while we are in the ZK client retry loop
+    void waitForResponses()
+    {
+        if (auto * responses_with_futures = std::get_if<ResponsesWithFutures>(&responses))
+            responses_with_futures->waitForResponses();
+    }
+
 private:
     using RegularResponses = std::vector<Coordination::ResponsePtr>;
     using FutureResponses = std::vector<std::future<ResponseType>>;
 
     struct ResponsesWithFutures
     {
-        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_))
+        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_)) /// NOLINT(google-explicit-constructor)
         {
             cached_responses.resize(future_responses.size());
         }
@@ -156,6 +167,15 @@ private:
 
             cached_responses[index] = future_responses[index].get();
             return *cached_responses[index];
+        }
+
+        void waitForResponses()
+        {
+            for (size_t i = 0; i < size(); ++i)
+            {
+                if (!cached_responses[i].has_value())
+                    cached_responses[i] = future_responses[i].get();
+            }
         }
 
         size_t size() const { return future_responses.size(); }
@@ -175,10 +195,8 @@ private:
 /// Methods with names not starting at try- raise KeeperException on any error.
 class ZooKeeper
 {
-public:
-
-    using Ptr = std::shared_ptr<ZooKeeper>;
-    using ErrorsList = std::initializer_list<Coordination::Error>;
+    /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
+    friend class DB::ZooKeeperWithFaultInjection;
 
     explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
@@ -204,9 +222,26 @@ public:
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+
+    /// See addCheckSessionOp
+    void initSession();
+
+public:
+        using Ptr = std::shared_ptr<ZooKeeper>;
+        using ErrorsList = std::initializer_list<Coordination::Error>;
 
     std::vector<ShuffleHost> shuffleHosts() const;
+
+    static Ptr create(const Poco::Util::AbstractConfiguration & config,
+                      const std::string & config_name,
+                      std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
+    template <typename... Args>
+    static Ptr createWithoutKillingPreviousSessions(Args &&... args)
+    {
+        return std::shared_ptr<ZooKeeper>(new ZooKeeper(std::forward<Args>(args)...));
+    }
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -267,8 +302,11 @@ public:
         return exists(paths.begin(), paths.end());
     }
 
+    bool anyExists(const std::vector<std::string> & paths);
+
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
 
     using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
     using MultiTryGetResponse = MultiReadResponses<Coordination::GetResponse, true>;
@@ -299,6 +337,13 @@ public:
         std::string & res,
         Coordination::Stat * stat,
         Coordination::WatchCallback watch_callback,
+        Coordination::Error * code = nullptr);
+
+    bool tryGetWatch(
+        const std::string & path,
+        std::string & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallbackPtr watch_callback,
         Coordination::Error * code = nullptr);
 
     template <typename TIter>
@@ -402,12 +447,14 @@ public:
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
-    Coordination::Responses multi(const Coordination::Requests & requests);
-    /// Throws only if some operation has returned an "unexpected" error
-    /// - an error that would cause the corresponding try- method to throw.
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
+    /// For check_session_valid see addCheckSessionOp
+    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false);
+    /// Throws only if some operation has returned an "unexpected" error - an error that would cause
+    /// the corresponding try- method to throw.
+    /// On exception, `responses` may or may not be populated.
+    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
     /// Throws nothing (even session expired errors)
-    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
     std::string sync(const std::string & path);
 
@@ -448,7 +495,7 @@ public:
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
     /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
     /// disappear automatically after 3x session_timeout.
-    void handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value);
+    void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
 
     Coordination::ReconfigResponse reconfig(
         const std::string & joining,
@@ -481,6 +528,8 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
+    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback = {});
+
     using FutureExists = std::future<Coordination::ExistsResponse>;
     FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
@@ -511,6 +560,7 @@ public:
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+    FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
 
     using FutureSync = std::future<Coordination::SyncResponse>;
     FutureSync asyncSync(const std::string & path);
@@ -548,7 +598,10 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
+
     bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
+
+    uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
     void setServerCompletelyStarted();
 
@@ -558,6 +611,22 @@ public:
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
+    /// Checks that our session was not killed, and allows to avoid applying a request from an old lost session.
+    /// Imagine a "connection-loss-on-commit" situation like this:
+    /// - We have written some write requests to the socket and immediately disconnected (e.g. due to "Operation timeout")
+    /// - The requests were sent, but the destination [Zoo]Keeper host will receive it later (it doesn't know about our requests yet)
+    /// - We don't know the status of our requests
+    /// - We connect to another [Zoo]Keeper replica with a new session, and do some reads
+    ///   to find out the status of our requests. We see that they were not committed.
+    /// - The packets from our old session finally arrive to the destination [Zoo]Keeper host. The requests get processed.
+    /// - Changes are committed (although, we have already seen that they are not)
+    ///
+    /// We need a way to reject requests from old sessions somehow.
+    ///
+    /// So we update the version of /clickhouse/sessions/server_uuid node when starting a new session.
+    /// And there's an option to check this version when committing something.
+    void addCheckSessionOp(Coordination::Requests & requests) const;
+
 private:
     void init(ZooKeeperArgs args_);
 
@@ -566,6 +635,8 @@ private:
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    Coordination::Error getImpl(
+        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
         const std::string & path,
@@ -573,7 +644,7 @@ private:
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
-    Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
@@ -621,12 +692,12 @@ private:
 
     ZooKeeperArgs args;
 
-    std::mutex mutex;
-
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
 
     AtomicStopwatch session_uptime;
+
+    int32_t session_node_version;
 };
 
 
@@ -702,7 +773,7 @@ public:
             else
             {
                 ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-                LOG_DEBUG(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
+                LOG_DEBUG(getLogger("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
             }
         }
         catch (...)
@@ -722,11 +793,11 @@ private:
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
 
-String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String extractZooKeeperName(const String & path);
 
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
 

@@ -9,6 +9,12 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     FunctionHelpers.cpp
     extractTimeZoneFromFunctionArguments.cpp
     FunctionsLogical.cpp
+    if.cpp
+    multiIf.cpp
+    multiMatchAny.cpp
+    checkHyperscanRegexp.cpp
+    array/has.cpp
+    CastOverloadResolver.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     IFunction.h
@@ -16,6 +22,7 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
     FunctionHelpers.h
     extractTimeZoneFromFunctionArguments.h
     FunctionsLogical.h
+    CastOverloadResolver.h
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
@@ -30,6 +37,7 @@ list (APPEND PUBLIC_LIBS
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::consistent_hashing
+        common
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
@@ -38,6 +46,7 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
+        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
@@ -77,6 +86,14 @@ if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)
 endif()
 
+if (TARGET ch_contrib::sqids)
+    list (APPEND PRIVATE_LIBS ch_contrib::sqids)
+endif()
+
+if (TARGET ch_contrib::idna)
+    list (APPEND PRIVATE_LIBS ch_contrib::idna)
+endif()
+
 if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
@@ -91,6 +108,10 @@ endif()
 
 if (TARGET ch_contrib::rapidjson)
     list (APPEND PRIVATE_LIBS ch_contrib::rapidjson)
+endif()
+
+if (TARGET ch_contrib::pocketfft)
+    list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
 endif()
 
 if (TARGET ch_contrib::crc32-vpmsum)
@@ -122,10 +143,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepa
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()
 
 if (USE_GPERF)
     # Only for regenerating

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-random-detach
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-random-detach
 # Tag no-replicated-database: Old syntax is not allowed
-# Tag no-random-detach: parallel queries
+# no-shared-merge-tree -- old syntax
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -2,11 +2,13 @@
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
+#include <optional>
 #include <random>
 #include <string_view>
 #include <pcg_random.hpp>
+#include <Poco/UUID.h>
+#include <Poco/UUIDGenerator.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -28,11 +30,13 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
-#include <Common/Config/configReadClient.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getClientConfigPath.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include <filesystem>
+#include <Common/ErrorCodes.h>
+#include <Core/BaseSettingsProgramOptions.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -43,6 +47,7 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -77,6 +82,7 @@ public:
             double max_time_,
             size_t confidence_,
             const String & query_id_,
+            const String & query_id_prefix_,
             const String & query_to_execute_,
             size_t max_consecutive_errors_,
             bool continue_on_errors_,
@@ -95,6 +101,7 @@ public:
         max_time(max_time_),
         confidence(confidence_),
         query_id(query_id_),
+        query_id_prefix(query_id_prefix_),
         query_to_execute(query_to_execute_),
         continue_on_errors(continue_on_errors_),
         max_consecutive_errors(max_consecutive_errors_),
@@ -104,7 +111,7 @@ public:
         settings(settings_),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -156,7 +163,17 @@ public:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
-        configReadClient(config(), home_path);
+        std::optional<std::string> config_path;
+        if (config().has("config-file"))
+            config_path.emplace(config().getString("config-file"));
+        else
+            config_path = getClientConfigPath(home_path);
+        if (config_path.has_value())
+        {
+            ConfigProcessor config_processor(*config_path);
+            auto loaded_config = config_processor.loadConfig();
+            config().add(loaded_config.configuration);
+        }
     }
 
     int main(const std::vector<std::string> &) override
@@ -192,6 +209,7 @@ private:
     double max_time;
     size_t confidence;
     String query_id;
+    String query_id_prefix;
     String query_to_execute;
     bool continue_on_errors;
     size_t max_consecutive_errors;
@@ -391,7 +409,7 @@ private:
             || sigaddset(&sig_set, SIGINT)
             || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         {
-            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+            throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
         }
 
         while (true)
@@ -450,8 +468,11 @@ private:
 
         RemoteQueryExecutor executor(
             *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+
         if (!query_id.empty())
             executor.setQueryId(query_id);
+        else if (!query_id_prefix.empty())
+            executor.setQueryId(query_id_prefix + "_" + Poco::UUIDGenerator().createRandom().toString());
 
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -555,10 +576,6 @@ public:
 }
 
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
-
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
@@ -608,6 +625,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("stacktrace", "print stack traces of exceptions")
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id", value<std::string>()->default_value(""), "")
+            ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
@@ -615,7 +633,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        settings.addProgramOptions(desc);
+        addProgramOptions(settings, desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -627,7 +645,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            return 1;
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
+            return 0;
         }
 
         print_stacktrace = options.count("stacktrace");
@@ -661,6 +680,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["timelimit"].as<double>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
+            options["query_id_prefix"].as<std::string>(),
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
             options.count("ignore-error"),

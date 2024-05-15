@@ -20,21 +20,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-bool canUseCustomKey(const Settings & settings, const Cluster & cluster, const Context & context)
-{
-    return settings.max_parallel_replicas > 1 && context.getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
-}
-
 ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replicas_count,
     size_t replica_num,
     ASTPtr custom_key_ast,
     ParallelReplicasCustomKeyFilterType filter_type,
-    const IStorage & storage,
+    const ColumnsDescription & columns,
     const ContextPtr & context)
 {
-    assert(replicas_count > 1);
+    chassert(replicas_count > 1);
     if (filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
     {
         // first we do modulo with replica count
@@ -49,7 +43,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     assert(filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
 
     KeyDescription custom_key_description
-        = KeyDescription::getKeyFromAST(custom_key_ast, storage.getInMemoryMetadataPtr()->columns, context);
+        = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
@@ -128,7 +122,7 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     const auto & settings = context.getSettingsRef();
     return parseQuery(
         parser, custom_key.data(), custom_key.data() + custom_key.size(),
-        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
+        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 }
 
 }

@@ -319,9 +319,9 @@ This is a relatively fast non-cryptographic hash function of average quality for
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1, SHA224, SHA256, SHA512
+## SHA1, SHA224, SHA256, SHA512, SHA512_256
 
-Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+Calculates SHA-1, SHA-224, SHA-256, SHA-512, SHA-512-256 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Syntax**
 
@@ -593,6 +593,45 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
+
+## kostikConsistentHash
+
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
+
+**Syntax**
+
+```sql
+kostikConsistentHash(input, n)
+```
+
+Alias: `yandexConsistentHash` (left for backwards compatibility sake).
+
+**Parameters**
+
+- `input`: A UInt64-type key [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- `n`: Number of buckets. [UInt16](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+- A [UInt16](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+
+**Implementation details**
+
+It is efficient only if n <= 32768. 
+
+**Example**
+
+Query:
+
+```sql
+SELECT kostikConsistentHash(16045690984833335023, 2);
+```
+
+```response
+┌─kostikConsistentHash(16045690984833335023, 2)─┐
+│                                             1 │
+└───────────────────────────────────────────────┘
+```
 
 ## murmurHash2_32, murmurHash2_64
 
@@ -1151,6 +1190,42 @@ Result:
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
+```
+
+## wyHash64
+
+Produces a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.
+
+**Syntax**
+
+```sql
+wyHash64(string)
+```
+
+**Arguments**
+
+- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Hash value.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT wyHash64('ClickHouse') AS Hash;
+```
+
+Result:
+
+```response
+┌─────────────────Hash─┐
+│ 12336419557878201794 │
+└──────────────────────┘
 ```
 
 ## ngramMinHash
@@ -1775,4 +1850,69 @@ Result:
 ┌─Tuple──────────────────────────────────────────────────────────────────┐
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘
+```
+
+## sqidEncode
+
+Encodes numbers as a [Sqid](https://sqids.org/) which is a YouTube-like ID string.
+The output alphabet is `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
+Do not use this function for hashing - the generated IDs can be decoded back into the original numbers.
+
+**Syntax**
+
+```sql
+sqidEncode(number1, ...)
+```
+
+Alias: `sqid`
+
+**Arguments**
+
+- A variable number of UInt8, UInt16, UInt32 or UInt64 numbers.
+
+**Returned Value**
+
+A sqid [String](/docs/en/sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT sqidEncode(1, 2, 3, 4, 5);
+```
+
+```response
+┌─sqidEncode(1, 2, 3, 4, 5)─┐
+│ gXHfJ1C6dN                │
+└───────────────────────────┘
+```
+
+## sqidDecode
+
+Decodes a [Sqid](https://sqids.org/) back into its original numbers.
+Returns an empty array in case the input string is not a valid sqid.
+
+**Syntax**
+
+```sql
+sqidDecode(sqid)
+```
+
+**Arguments**
+
+- A sqid - [String](/docs/en/sql-reference/data-types/string.md)
+
+**Returned Value**
+
+The sqid transformed to numbers [Array(UInt64)](/docs/en/sql-reference/data-types/array.md).
+
+**Example**
+
+```sql
+SELECT sqidDecode('gXHfJ1C6dN');
+```
+
+```response
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```

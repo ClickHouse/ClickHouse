@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_TYPE;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -820,7 +821,13 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+        {
+            const auto & type = header.getByPosition(i).type;
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at index {}", type->getName(), i);
+            else
+                type->insertDefaultInto(*columns[i]);
+        }
 
     if (format_settings.defaults_for_omitted_fields)
         ext.read_columns = read_columns;
@@ -1031,17 +1038,17 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
         readBinaryLittleEndian(document_size, in);
 
         if (document_size < sizeof(document_size))
-            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         if (min_bytes != 0 && document_size > 10 * min_bytes)
-            throw ParsingException(
+            throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
 
         if (document_size < sizeof(document_size))
-            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);

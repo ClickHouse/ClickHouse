@@ -21,7 +21,8 @@ S3QueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, const S3
     auto it = metadata_by_path.find(zookeeper_path);
     if (it == metadata_by_path.end())
     {
-        it = metadata_by_path.emplace(zookeeper_path, std::make_shared<S3QueueFilesMetadata>(fs::path(zookeeper_path), settings)).first;
+        auto files_metadata = std::make_shared<S3QueueFilesMetadata>(zookeeper_path, settings);
+        it = metadata_by_path.emplace(zookeeper_path, std::move(files_metadata)).first;
     }
     else if (it->second.metadata->checkSettings(settings))
     {
@@ -43,6 +44,7 @@ void S3QueueMetadataFactory::remove(const std::string & zookeeper_path)
     if (it == metadata_by_path.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
 
+    chassert(it->second.ref_count > 0);
     if (--it->second.ref_count == 0)
     {
         try
