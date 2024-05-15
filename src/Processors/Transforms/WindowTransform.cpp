@@ -2267,15 +2267,25 @@ public:
 
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
-        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
-        {
-            LOG_ERROR(getLogger("WindowFunctionPercentRank"),
-                "Window frame for function 'percent_rank' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
-            return false;
+            if (transform->window_description.frame.type != WindowFrame::FrameType::RANGE
+                || transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+            {
+                LOG_ERROR(
+                    getLogger("WindowFunctionPercentRank"),
+                    "Window frame for function 'percent_rank' should be 'RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT'");
+                return false;
         }
         return true;
     }
 
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::RANGE;
+        frame.begin_type = WindowFrame::BoundaryType::Unbounded;
+        frame.end_type = WindowFrame::BoundaryType::Current;
+        return frame;
+    }
 
     void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const override
     {
