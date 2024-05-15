@@ -40,12 +40,16 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
 {
     void add(const Float64 xval, const Float64 yval, Arena * arena)
     {
+        /// We need to ensure either both or neither coordinates are saved (StatisticalSample ignores NaNs)
+        if (isNaN(xval) || isNaN(yval))
+            return;
         this->addX(xval, arena);
         this->addY(yval, arena);
     }
 
     void sort(Arena * arena)
     {
+        chassert(this->x.size() == this->y.size());
         // sort the this->x and this->y in ascending order of this->x using index
         std::vector<size_t> index(this->x.size());
 
@@ -116,8 +120,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             // the end index of next bucket
             size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
             // current bucket is the last bucket
-            if (end_index > this->x.size())
-                end_index = this->x.size();
+            end_index = std::min(end_index, this->x.size());
 
             // Compute the average point in the next bucket
             Float64 avg_x = 0;
@@ -242,7 +245,7 @@ public:
     {
         Float64 x = getFloat64DataFromColumn(columns[0], row_num, this->x_type);
         Float64 y = getFloat64DataFromColumn(columns[1], row_num, this->y_type);
-        this->data(place).add(x, y, arena);
+        data(place).add(x, y, arena);
     }
 
     Float64 getFloat64DataFromColumn(const IColumn * column, size_t row_num, TypeIndex type_index) const
@@ -264,25 +267,25 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        auto & a = this->data(place);
-        const auto & b = this->data(rhs);
+        auto & a = data(place);
+        const auto & b = data(rhs);
 
         a.merge(b, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        auto res = this->data(place).getResult(total_buckets, arena);
+        auto res = data(place).getResult(total_buckets, arena);
 
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());

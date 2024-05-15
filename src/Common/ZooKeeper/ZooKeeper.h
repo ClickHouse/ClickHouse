@@ -289,6 +289,7 @@ public:
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
 
     using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
     using MultiTryGetResponse = MultiReadResponses<Coordination::GetResponse, true>;
@@ -319,6 +320,13 @@ public:
         std::string & res,
         Coordination::Stat * stat,
         Coordination::WatchCallback watch_callback,
+        Coordination::Error * code = nullptr);
+
+    bool tryGetWatch(
+        const std::string & path,
+        std::string & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallbackPtr watch_callback,
         Coordination::Error * code = nullptr);
 
     template <typename TIter>
@@ -503,6 +511,8 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
+    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback = {});
+
     using FutureExists = std::future<Coordination::ExistsResponse>;
     FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
@@ -608,6 +618,8 @@ private:
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    Coordination::Error getImpl(
+        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
         const std::string & path,

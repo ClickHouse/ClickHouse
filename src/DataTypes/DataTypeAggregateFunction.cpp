@@ -15,6 +15,7 @@
 #include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,6 +31,11 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+}
+
+String DataTypeAggregateFunction::getFunctionName() const
+{
+    return function->getName();
 }
 
 
@@ -52,6 +58,25 @@ size_t DataTypeAggregateFunction::getVersion() const
     return function->getDefaultVersion();
 }
 
+DataTypePtr DataTypeAggregateFunction::getReturnType() const
+{
+    return function->getResultType();
+}
+
+DataTypePtr DataTypeAggregateFunction::getReturnTypeToPredict() const
+{
+    return function->getReturnTypeToPredict();
+}
+
+bool DataTypeAggregateFunction::isVersioned() const
+{
+    return function->isVersioned();
+}
+
+void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
+{
+    setVersion(function->getVersionFromRevision(revision), if_empty);
+}
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {

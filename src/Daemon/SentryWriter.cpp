@@ -8,6 +8,8 @@
 #include <Common/logger_useful.h>
 
 #include <Common/formatReadable.h>
+#include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -28,11 +30,7 @@ namespace fs = std::filesystem;
 namespace
 {
 
-bool initialized = false;
-bool anonymize = false;
-std::string server_data_path;
-
-void setExtras()
+void setExtras(bool anonymize, const std::string & server_data_path)
 {
     if (!anonymize)
         sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
@@ -64,8 +62,22 @@ void setExtras()
 
 }
 
+std::unique_ptr<SentryWriter> SentryWriter::instance;
 
-void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
+void SentryWriter::initializeInstance(Poco::Util::LayeredConfiguration & config)
+{
+    SentryWriter::instance.reset(new SentryWriter(config));
+}
+SentryWriter * SentryWriter::getInstance()
+{
+    return SentryWriter::instance.get();
+}
+void SentryWriter::resetInstance()
+{
+    SentryWriter::instance.reset();
+}
+
+SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
 {
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
@@ -133,35 +145,58 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     }
 }
 
-void SentryWriter::shutdown()
+SentryWriter::~SentryWriter()
 {
     if (initialized)
         sentry_shutdown();
 }
 
-void SentryWriter::onFault(int sig, const std::string & error_message, const StackTrace & stack_trace)
+void SentryWriter::onSignal(int sig, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+{
+    sendError(Type::SIGNAL, sig, error_message, frame_pointers, offset, size);
+}
+
+void SentryWriter::onException(int code, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+{
+    sendError(Type::EXCEPTION, code, error_message, frame_pointers, offset, size);
+}
+
+void SentryWriter::sendError(Type type, int sig_or_error, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
 {
     auto logger = getLogger("SentryWriter");
     if (initialized)
     {
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
-        sentry_set_tag("signal", strsignal(sig)); // NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
-        sentry_set_extra("signal_number", sentry_value_new_int32(sig));
+        switch (type)
+        {
+            case SIGNAL:
+            {
+                int sig = sig_or_error;
+                sentry_set_tag("signal", strsignal(sig)); // NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
+                sentry_set_extra("signal_number", sentry_value_new_int32(sig));
+                break;
+            }
+            case EXCEPTION:
+            {
+                int code = sig_or_error;
+                /// Can be only LOGICAL_ERROR, but just in case.
+                sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());
+                sentry_set_extra("exception_code", sentry_value_new_int32(code));
+                break;
+            }
+        }
 
         #if defined(__ELF__) && !defined(OS_FREEBSD)
             const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
             sentry_set_tag("build_id", build_id_hex.c_str());
         #endif
 
-        setExtras();
+        setExtras(anonymize, server_data_path);
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/stacktrace/
         sentry_value_t sentry_frames = sentry_value_new_list();
-        size_t stack_size = stack_trace.getSize();
-        if (stack_size > 0)
+        if (size > 0)
         {
-            ssize_t offset = stack_trace.getOffset();
-
             char instruction_addr[19]
             {
                 '0', 'x',
@@ -191,7 +226,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
                 sentry_value_append(sentry_frames, sentry_frame);
             };
 
-            StackTrace::forEachFrame(stack_trace.getFramePointers(), offset, stack_size, sentry_add_stack_trace, /* fatal= */ true);
+            StackTrace::forEachFrame(frame_pointers, offset, size, sentry_add_stack_trace, /* fatal= */ true);
         }
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/threads/
@@ -212,7 +247,6 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
 
         LOG_INFO(logger, "Sending crash report");
         sentry_capture_event(event);
-        shutdown();
     }
     else
     {
@@ -222,8 +256,14 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
 
 #else
 
-void SentryWriter::initialize(Poco::Util::LayeredConfiguration &) {}
-void SentryWriter::shutdown() {}
-void SentryWriter::onFault(int, const std::string &, const StackTrace &) {}
+void SentryWriter::initializeInstance(Poco::Util::LayeredConfiguration &) {}
+SentryWriter * SentryWriter::getInstance() { return nullptr; }
+void SentryWriter::resetInstance() {}
+
+SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration &) {}
+SentryWriter::~SentryWriter() = default;
+void SentryWriter::sendError(Type, int, const std::string &, const FramePointers &, size_t, size_t) {}
+void SentryWriter::onSignal(int, const std::string &, const FramePointers &, size_t, size_t) {}
+void SentryWriter::onException(int, const std::string &, const FramePointers &, size_t, size_t) {}
 
 #endif

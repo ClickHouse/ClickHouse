@@ -1,12 +1,10 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
-#include <Columns/IColumn.h>
-#include <Common/PODArray.h>
-#include <Common/HashTable/HashMap.h>
-#include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/Serializations/SubcolumnsTree.h>
+#include <Common/PODArray.h>
 
 #include <DataTypes/IDataType.h>
 

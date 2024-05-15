@@ -118,7 +118,7 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
-bool KeyMetadata::createBaseDirectory()
+bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
     if (!created_base_directory.exchange(true))
     {
@@ -131,7 +131,7 @@ bool KeyMetadata::createBaseDirectory()
         {
             created_base_directory = false;
 
-            if (e.code() == std::errc::no_space_on_device)
+            if (!throw_if_failed && e.code() == std::errc::no_space_on_device)
             {
                 LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
                           "because no space left on device", key);
@@ -615,7 +615,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                         continue;
 
                     auto file_segment_metadata = locked_key->tryGetByOffset(offset);
-                    if (!file_segment_metadata || file_segment_metadata->isEvicting(*locked_key))
+                    if (!file_segment_metadata || file_segment_metadata->isEvictingOrRemoved(*locked_key))
                         continue;
 
                     auto file_segment = file_segment_weak.lock();
@@ -881,7 +881,7 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
             removed_all = false;
             continue;
         }
-        else if (it->second->isEvicting(*this))
+        else if (it->second->isEvictingOrRemoved(*this))
         {
             /// File segment is currently a removal candidate,
             /// we do not know if it will be removed or not yet,
@@ -1104,7 +1104,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
     std::vector<FileSegment::Info> broken;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
-        if (it->second->isEvicting(*this) || !it->second->releasable())
+        if (it->second->isEvictingOrRemoved(*this) || !it->second->releasable())
         {
             ++it;
             continue;

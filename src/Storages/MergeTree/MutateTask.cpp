@@ -22,7 +22,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeIndexInverted.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -652,8 +652,8 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
-        // Skip all inverted index files, for they will be rebuilt
-        if (dynamic_cast<const MergeTreeIndexInverted *>(index.get()))
+        // Skip all full-text index files, for they will be rebuilt
+        if (dynamic_cast<const MergeTreeIndexFullText *>(index.get()))
         {
             auto index_filename = index->getFileName();
             files_to_skip.insert(index_filename + ".gin_dict");
@@ -731,7 +731,7 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* is inverted index
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index (aka. full-text-index)
 
             for (const auto & suffix : suffixes)
             {
@@ -980,13 +980,13 @@ struct MutationContext
 
     QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor{nullptr};
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
     ProgressCallback progress_callback;
     Block updated_header;
 
     std::unique_ptr<MutationsInterpreter> interpreter;
-    UInt64 watch_prev_elapsed{0};
-    std::unique_ptr<MergeStageProgress> stage_progress{nullptr};
+    UInt64 watch_prev_elapsed = 0;
+    std::unique_ptr<MergeStageProgress> stage_progress;
 
     MutationCommands commands_for_part;
     MutationCommands for_interpreter;
@@ -998,12 +998,12 @@ struct MutationContext
     NameSet materialized_statistics;
 
     MergeTreeData::MutableDataPartPtr new_data_part;
-    IMergedBlockOutputStreamPtr out{nullptr};
+    IMergedBlockOutputStreamPtr out;
 
     String mrk_extension;
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<StatisticPtr> stats_to_recalc;
@@ -1233,7 +1233,7 @@ private:
     void constructTaskForProjectionPartsMerge();
     void finalize();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_MUTATE_ORIGINAL_PART,
@@ -1283,7 +1283,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
         ctx->out->write(cur_block);
 
@@ -1689,7 +1689,7 @@ private:
         ctx->out.reset();
     }
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,
@@ -1938,8 +1938,7 @@ private:
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
     }
 
-
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,
@@ -2146,7 +2145,7 @@ bool MutateTask::prepare()
         scope_guard lock;
 
         {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
+            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
                 ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);

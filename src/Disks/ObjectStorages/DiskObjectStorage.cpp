@@ -23,10 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 
@@ -91,67 +87,6 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
     return metadata_storage->getStorageObjects(local_path);
 }
 
-void DiskObjectStorage::getRemotePathsRecursive(
-    const String & local_path,
-    std::vector<LocalPathWithObjectStoragePaths> & paths_map,
-    const std::function<bool(const String &)> & skip_predicate)
-{
-    if (!metadata_storage->exists(local_path))
-        return;
-
-    if (skip_predicate && skip_predicate(local_path))
-        return;
-
-    /// Protect against concurrent delition of files (for example because of a merge).
-    if (metadata_storage->isFile(local_path))
-    {
-        try
-        {
-            paths_map.emplace_back(local_path, getStorageObjects(local_path));
-        }
-        catch (const Exception & e)
-        {
-            /// Unfortunately in rare cases it can happen when files disappear
-            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
-                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
-                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                return;
-
-            throw;
-        }
-    }
-    else
-    {
-        DirectoryIteratorPtr it;
-        try
-        {
-            it = iterateDirectory(local_path);
-        }
-        catch (const Exception & e)
-        {
-            /// Unfortunately in rare cases it can happen when files disappear
-            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
-                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
-                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                return;
-
-            throw;
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            if (e.code() == std::errc::no_such_file_or_directory)
-                return;
-            throw;
-        }
-
-        for (; it->isValid(); it->next())
-            DiskObjectStorage::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map, skip_predicate);
-    }
-}
 
 bool DiskObjectStorage::exists(const String & path) const
 {
@@ -177,20 +112,21 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
     return metadata_storage->getFileSize(path);
 }
 
+void DiskObjectStorage::moveDirectory(const String & from_path, const String & to_path)
+{
+    if (send_metadata)
+        sendMoveMetadata(from_path, to_path);
+
+    auto transaction = createObjectStorageTransaction();
+    transaction->moveDirectory(from_path, to_path);
+    transaction->commit();
+}
+
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
 
     if (should_send_metadata)
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter += 1;
-
-        const ObjectAttributes object_metadata {
-            {"from_path", from_path},
-            {"to_path", to_path}
-        };
-        metadata_helper->createFileOperationObject("rename", revision, object_metadata);
-    }
+        sendMoveMetadata(from_path, to_path);
 
     auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
@@ -474,6 +410,15 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
 
     return false;
 }
+void DiskObjectStorage::sendMoveMetadata(const String & from_path, const String & to_path)
+{
+    chassert(send_metadata);
+    auto revision = metadata_helper->revision_counter + 1;
+    metadata_helper->revision_counter += 1;
+
+    const ObjectAttributes object_metadata{{"from_path", from_path}, {"to_path", to_path}};
+    metadata_helper->createFileOperationObject("rename", revision, object_metadata);
+}
 
 bool DiskObjectStorage::supportsCache() const
 {
@@ -488,6 +433,11 @@ bool DiskObjectStorage::isReadOnly() const
 bool DiskObjectStorage::isWriteOnce() const
 {
     return object_storage->isWriteOnce();
+}
+
+bool DiskObjectStorage::supportsHardLinks() const
+{
+    return !isWriteOnce() && !object_storage->isPlain();
 }
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()

@@ -346,7 +346,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                 }
 
                 auto downloader_id = file_segment.getOrSetDownloader();
-                if (downloader_id == file_segment.getCallerId())
+                if (downloader_id == FileSegment::getCallerId())
                 {
                     if (canStartFromCache(file_offset_of_buffer_end, file_segment))
                     {

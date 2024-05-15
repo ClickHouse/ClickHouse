@@ -432,13 +432,12 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
-    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter();
+    const auto metadata = reading.getStorageMetadata();
+    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     AggregateProjectionCandidates candidates;
 
     const auto & parts = reading.getParts();
-
-    const auto metadata = reading.getStorageMetadata();
     ContextPtr context = reading.getContext();
 
     const auto & projections = metadata->projections;
@@ -580,8 +579,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
 
     auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
 
-    const auto & parts = reading->getParts();
-    const auto & alter_conversions = reading->getAlterConvertionsForParts();
     const auto & query_info = reading->getQueryInfo();
     const auto metadata = reading->getStorageMetadata();
     ContextPtr context = reading->getContext();
@@ -593,7 +590,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     }
     else if (!candidates.real.empty())
     {
-        auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
+        auto ordinary_reading_select_result = reading->selectRangesToRead();
         size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
         /// Nothing to read. Ignore projections.

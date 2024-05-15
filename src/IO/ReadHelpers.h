@@ -41,7 +41,6 @@
 #include <IO/VarInt.h>
 
 #include <pcg_random.hpp>
-#include <double-conversion/double-conversion.h>
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
@@ -233,7 +232,7 @@ inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
 inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
 {
-    return assertStringCaseInsensitive(s.c_str(), buf);
+    assertStringCaseInsensitive(s.c_str(), buf);
 }
 
 /** Check that next character in buf matches first character of s.
@@ -330,7 +329,7 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
     return ReturnType(true);
 }
 
-enum class ReadIntTextCheckOverflow
+enum class ReadIntTextCheckOverflow : uint8_t
 {
     DO_NOT_CHECK_OVERFLOW,
     CHECK_OVERFLOW,
@@ -610,6 +609,9 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
 
+void readStringUntilAmpersand(String & s, ReadBuffer & buf);
+void readStringUntilEquals(String & s, ReadBuffer & buf);
+
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -822,7 +824,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
         return false;
 
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
-    date = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(date_lut.getDayNumOffsetEpoch()));
+    date = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
 
@@ -908,7 +910,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
 inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 {
-    return readUUIDTextImpl<void>(uuid, buf);
+    readUUIDTextImpl<void>(uuid, buf);
 }
 
 inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
@@ -930,7 +932,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 
 inline void readIPv4Text(IPv4 & ip, ReadBuffer & buf)
 {
-    return readIPv4TextImpl<void>(ip, buf);
+    readIPv4TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv4Text(IPv4 & ip, ReadBuffer & buf)
@@ -952,7 +954,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 
 inline void readIPv6Text(IPv6 & ip, ReadBuffer & buf)
 {
-    return readIPv6TextImpl<void>(ip, buf);
+    readIPv6TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv6Text(IPv6 & ip, ReadBuffer & buf)
@@ -1880,10 +1882,10 @@ struct PcgDeserializer
         assertChar(' ', buf);
         readText(state, buf);
 
-        if (multiplier != rng.multiplier())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
-        if (increment != rng.increment())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
+        if (multiplier != pcg32_fast::multiplier())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", pcg32_fast::multiplier(), multiplier);
+        if (increment != pcg32_fast::increment())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", pcg32_fast::increment(), increment);
 
         rng.state_ = state;
     }
