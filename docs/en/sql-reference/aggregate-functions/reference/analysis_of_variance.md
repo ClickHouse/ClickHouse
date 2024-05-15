@@ -21,24 +21,25 @@ Aliases: `anova`
 
 :::note
 Groups are enumerated starting from 0 and there should be at least two groups to perform a test.
-Moreover there should be at least one group with the number of observations greater than one.
+There should be at least one group with the number of observations greater than one.
 :::
 
 **Returned value**
 
-- `(f_statistic, p_value)`. [Tuple](../../data-types/tuple.md)([Float64](../../data-types/float.md), [Float64](../../data-types/float.md))
-
-**Implementation details**
-
+- `(f_statistic, p_value)`. [Tuple](../../data-types/tuple.md)([Float64](../../data-types/float.md), [Float64](../../data-types/float.md)).
 
 **Example**
 
 Query:
 
 ```sql
+SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
 ```
 
 Result:
 
 ```response
+┌─analysisOfVariance(number, modulo(number, 2))─┐
+│ (0,1)                                         │
+└───────────────────────────────────────────────┘
 ```
