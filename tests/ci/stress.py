@@ -75,6 +75,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
     if not upgrade_check:
         client_options.append("ignore_drop_queries_probability=0.5")
 
+    if random.random() < 0.2:
+        client_options.append("allow_experimental_parallel_reading_from_replicas=1")
+
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
