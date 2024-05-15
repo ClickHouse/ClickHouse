@@ -753,13 +753,21 @@ size_t getMaxArraySize()
     return 0xFFFFFF;
 }
 
+bool hasLimitArraySize()
+{
+    if (auto context = Context::getGlobalContextInstance())
+        return context->getServerSettings().aggregate_function_group_array_has_limit_size;
+
+    return false;
+}
+
 template <bool Tlast>
 AggregateFunctionPtr createAggregateFunctionGroupArray(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 
-    bool limit_size = false;
+    bool limit_size = hasLimitArraySize();
     UInt64 max_elems = getMaxArraySize();
 
     if (parameters.empty())

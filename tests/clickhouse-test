@@ -751,6 +751,7 @@ class SettingsRandomizer:
         "max_read_buffer_size": lambda: random.randint(500000, 1048576),
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
+        "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
         "optimize_append_index": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
