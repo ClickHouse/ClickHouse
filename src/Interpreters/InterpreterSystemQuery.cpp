@@ -747,6 +747,14 @@ BlockIO InterpreterSystemQuery::execute()
             ThreadFuzzer::start();
             CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
             break;
+        case Type::START_FUNCTION_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_FUNCTION_FUZZER);
+            setFunctionFaultProbability(query.fault_function_type, query.function_fault_probability);
+            break;
+        case Type::STOP_FUNCTION_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_FUNCTION_FUZZER);
+            setFunctionFaultProbability(query.fault_function_type, 0.0);
+            break;
         case Type::UNFREEZE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
@@ -1521,6 +1529,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        case Type::START_FUNCTION_FUZZER:
+        case Type::STOP_FUNCTION_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
