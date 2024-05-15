@@ -54,7 +54,7 @@ jobs:
         id: runconfig
         run: |
             echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --docker-digest-or-latest --configure --outfile ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
             echo "::group::CI run configure results"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
