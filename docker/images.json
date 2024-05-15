@@ -5,9 +5,7 @@
     },
     "docker/packager/cctools": {
         "name": "altinityinfra/cctools",
-        "dependent": [
-            "docker/packager/binary-builder"
-        ]
+        "dependent": []
     },
     "docker/test/compatibility/centos": {
         "name": "altinityinfra/test-old-centos",
@@ -73,7 +71,7 @@
     "docker/test/fasttest": {
         "name": "altinityinfra/fasttest",
         "dependent": [
-            "docker/packager/cctools"
+            "docker/packager/binary-builder"
         ]
     },
     "docker/test/style": {

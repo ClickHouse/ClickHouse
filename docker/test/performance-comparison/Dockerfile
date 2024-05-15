@@ -43,4 +43,4 @@ COPY run.sh /
 
 CMD ["bash", "/run.sh"]
 
-# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/performance-comparison
+# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> altinityinfra/performance-comparison

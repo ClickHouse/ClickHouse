@@ -5,8 +5,8 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-# TODO: (mtkachenko) change tag here. Decide what tag to use.
-COPY --from=altinityinfra/cctools /cctools /cctools
+# NOTE: a9e509c9bbc0 created from commit 1bc0e6ee583d49a472fd01f0e9960a11bf240c6c
+COPY --from=altinityinfra/cctools:a9e509c9bbc0 /cctools /cctools
 
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup
