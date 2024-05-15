@@ -14,6 +14,17 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<GroupByToDistinctVisitor>;
     using Base::Base;
 
+    bool hasAggregatesInProjection(const QueryNodePtr & query_node)
+    {
+        auto & projection_nodes = query_node->getProjection().getNodes();
+        for (const auto & node : projection_nodes)
+        {
+            if (isAggregateFunctionNode(node))
+                return true;
+        }
+        return false;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * query_node = node->as<QueryNode>();
@@ -22,7 +33,7 @@ public:
         if (!query_node)
         return;
 
-        if (!query_node->hasGroupBy() || query_node->hasAggregates())
+        if (!query_node->hasGroupBy() || hasAggregatesInProjection(query_node))
             return;
 
         if (!query_node->hasLimit())
@@ -33,7 +44,7 @@ public:
 
         // Создаем новый узел запроса с оператором DISTINCT
         auto distinct_query_node = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));
-        distinct_query_node->setDistinct(true);
+        distinct_query_node->setIsDistinct(true);
 
         distinct_query_node->getJoinTree() = query_node->getJoinTree();
 
@@ -47,7 +58,7 @@ public:
         distinct_query_node->getLimit() = query_node->getLimit();
 
         // Заменяем текущий узел запроса узлом с оператором DISTINCT
-        query_node = distinct_query_node;
+        query_node = distinct_query_node.get();
     }
 };
 
