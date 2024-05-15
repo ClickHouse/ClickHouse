@@ -5,6 +5,7 @@
 #include <span>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -324,31 +325,36 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
     StoragePtr table = detachTable(local_context, table_name);
 
-    /// This is possible for Lazy database.
-    if (!table)
-        return;
-
     bool renamed = false;
     try
     {
         fs::rename(table_metadata_path, table_metadata_path_drop);
         renamed = true;
-        table->drop();
-        table->is_dropped = true;
-
-        fs::path table_data_dir(local_context->getPath() + table_data_path_relative);
-        if (fs::exists(table_data_dir))
-            (void)fs::remove_all(table_data_dir);
+        // The table might be not loaded for Lazy database engine.
+        if (table)
+        {
+            table->drop();
+            table->is_dropped = true;
+        }
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
-        attachTable(local_context, table_name, table, table_data_path_relative);
+        if (table)
+            attachTable(local_context, table_name, table, table_data_path_relative);
         if (renamed)
             fs::rename(table_metadata_path_drop, table_metadata_path);
         throw;
     }
 
+    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+    {
+        if (disk->isReadOnly() || !disk->exists(table_data_path_relative))
+            continue;
+
+        LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
+        disk->removeRecursive(table_data_path_relative);
+    }
     (void)fs::remove(table_metadata_path_drop);
 }
 
