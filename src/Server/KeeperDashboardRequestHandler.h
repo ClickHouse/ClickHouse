@@ -19,7 +19,7 @@ private:
     const IServer & server;
 
 public:
-    explicit KeeperDashboardWebUIRequestHandler(const IServer & server_) : server(server_) {}
+    explicit KeeperDashboardWebUIRequestHandler(const IServer & server_) : server(server_) { }
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
@@ -30,7 +30,10 @@ private:
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 
 public:
-    explicit KeeperDashboardContentRequestHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_) : keeper_dispatcher(keeper_dispatcher_) {}
+    explicit KeeperDashboardContentRequestHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
+        : keeper_dispatcher(keeper_dispatcher_)
+    {
+    }
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 

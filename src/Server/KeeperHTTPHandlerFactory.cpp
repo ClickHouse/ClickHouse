@@ -28,20 +28,26 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_CONFIG_PARAMETER;
+extern const int INVALID_CONFIG_PARAMETER;
 }
 
-KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_)
-    : log(getLogger(name_)), name(name_)
+KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_) : log(getLogger(name_)), name(name_)
 {
 }
 
 std::unique_ptr<HTTPRequestHandler> KeeperHTTPRequestHandlerFactory::createRequestHandler(const HTTPServerRequest & request)
 {
-    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
-        name, request.getMethod(), request.clientAddress().toString(), request.get("User-Agent", "(none)"),
+    LOG_TRACE(
+        log,
+        "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
+        name,
+        request.getMethod(),
+        request.clientAddress().toString(),
+        request.get("User-Agent", "(none)"),
         (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
-        request.getContentType(), request.getTransferEncoding(), request.get("X-Forwarded-For", "(none)"));
+        request.getContentType(),
+        request.getTransferEncoding(),
+        request.get("X-Forwarded-For", "(none)"));
 
     for (auto & handler_factory : child_factories)
     {
@@ -50,8 +56,7 @@ std::unique_ptr<HTTPRequestHandler> KeeperHTTPRequestHandlerFactory::createReque
             return handler;
     }
 
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
         || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
         return std::unique_ptr<HTTPRequestHandler>(new KeeperNotFoundHandler(hints.getHints(request.getURI())));
@@ -66,8 +71,7 @@ void addDashboardHandlersToFactory(
     auto dashboard_ui_creator = [&server]() -> std::unique_ptr<KeeperDashboardWebUIRequestHandler>
     { return std::make_unique<KeeperDashboardWebUIRequestHandler>(server); };
 
-    auto dashboard_handler
-        = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardWebUIRequestHandler>>(dashboard_ui_creator);
+    auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardWebUIRequestHandler>>(dashboard_ui_creator);
     dashboard_handler->attachStrictPath("/dashboard");
     dashboard_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/dashboard");
@@ -118,9 +122,7 @@ void addDefaultHandlersToFactory(
     const Poco::Util::AbstractConfiguration & config)
 {
     auto readiness_creator = [keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPReadinessHandler>
-    {
-        return std::make_unique<KeeperHTTPReadinessHandler>(keeper_dispatcher);
-    };
+    { return std::make_unique<KeeperHTTPReadinessHandler>(keeper_dispatcher); };
     auto readiness_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPReadinessHandler>>(std::move(readiness_creator));
     readiness_handler->attachStrictPath(config.getString("keeper_server.http_control.readiness.endpoint", "/ready"));
     readiness_handler->allowGetAndHeadRequest();
@@ -155,28 +157,34 @@ static inline auto createHandlersFactoryFromConfig(
             const auto & handler_type = config.getString(prefix + "." + key + ".handler.type", "");
 
             if (handler_type.empty())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Handler type in config is not specified here: "
-                    "{}.{}.handler.type", prefix, key);
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Handler type in config is not specified here: "
+                    "{}.{}.handler.type",
+                    prefix,
+                    key);
 
             if (handler_type == "dashboard")
-            {
                 addDashboardHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
-            }
             if (handler_type == "commands")
-            {
                 addCommandsHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
-            }
             if (handler_type == "storage")
-            {
                 addStorageHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
-            }
             else
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
-                    handler_type, prefix, key);
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Unknown handler type '{}' in config here: {}.{}.handler.type",
+                    handler_type,
+                    prefix,
+                    key);
         }
         else
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
-                "{}.{}, must be 'rule' or 'defaults'", prefix, key);
+            throw Exception(
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                "Unknown element in config: "
+                "{}.{}, must be 'rule' or 'defaults'",
+                prefix,
+                key);
     }
 
     return main_handler_factory;
@@ -185,10 +193,10 @@ static inline auto createHandlersFactoryFromConfig(
 KeeperHTTPReadinessHandler::KeeperHTTPReadinessHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
     : log(getLogger("KeeperHTTPReadinessHandler")), keeper_dispatcher(keeper_dispatcher_)
 {
-
 }
 
-void KeeperHTTPReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void KeeperHTTPReadinessHandler::handleRequest(
+    HTTPServerRequest & /*request*/, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     try
     {
@@ -207,7 +215,7 @@ void KeeperHTTPReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, 
         json.set("details", details);
         json.set("status", status ? "ok" : "fail");
 
-        std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
         Poco::JSON::Stringifier::stringify(json, oss);
 
@@ -245,7 +253,8 @@ KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(const IServer & server_, st
 {
 }
 
-void KeeperHTTPCommandsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void KeeperHTTPCommandsHandler::handleRequest(
+    HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 try
 {
     std::vector<std::string> uri_segments;
@@ -261,7 +270,7 @@ try
         return;
     }
 
-    // non-strict path "/api/v1/commands" filter is already attached
+    /// non-strict path "/api/v1/commands" filter is already attached
     if (uri_segments.size() != 4)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid command path");
@@ -339,9 +348,7 @@ HTTPRequestHandlerFactoryPtr createKeeperHTTPHandlerFactory(
     const std::string & name)
 {
     if (config.has("keeper_server.http_control.handlers"))
-    {
         return createHandlersFactoryFromConfig(server, keeper_dispatcher, config, name, "keeper_server.http_control.handlers");
-    }
 
     auto factory = std::make_shared<KeeperHTTPRequestHandlerFactory>(name);
     addDefaultHandlersToFactory(*factory, server, keeper_dispatcher, config);

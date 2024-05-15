@@ -26,75 +26,44 @@
     <style>
         :root {
             --background-color: #DDF8FF;
-            /* Or #FFFBEF; actually many pastel colors look great for light theme. */
             --element-background-color: #FFF;
-            --input-background-color: #cccccc;
-            --accent-color: #faff68;
-            --border-color: #EEE;
+            --input-background-color: #BDD;
             --shadow-color: rgba(0, 0, 0, 0.1);
-            --button-color: #FFAA00;
-            /* Orange on light-cyan is especially good. */
             --text-color: #080808;
             --header-text-color: #000;
-            --button-active-color: #F00;
-            --button-active-text-color: #FFF;
             --misc-text-color: #888;
             --error-color: #FEE;
-            /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
-            --null-color: #A88;
-            --link-color: #06D;
             --logo-color: #CEE;
             --logo-color-active: #BDD;
             --tab-switch-background-color: #FFF;
             --tab-switch-hover-color: #F1F1F1;
             --tab-switch-selected-border-color: #000;
+            --storage-path-hover-color: #FFF;
+            --storage-path-selected-border-color: #000;
+            --storage-ui-button-hover-color: #F1F1F1;
+            --storage-ui-button-border-color: #000;
         }
 
         [data-theme="dark"] {
             --background-color: #414141;
             --element-background-color: #252521;
             --input-background-color: #111;
-            --accent-color: #faff68;
-            --border-color: #111;
             --shadow-color: rgba(255, 255, 255, 0.1);
             --text-color: #B4B4B4;
             --header-text-color: #F9F9F9;
-            --button-color: #FFAA00;
             --button-text-color: #000;
-            --button-active-color: #F00;
-            --button-active-text-color: #FFF;
             --misc-text-color: #888;
             --error-color: #400;
-            --null-color: #A88;
-            --link-color: #4BDAF7;
             --logo-color: #222;
             --logo-color-active: #333;
             --tab-switch-background-color: #252521;
             --tab-switch-hover-color: #151515;
             --tab-switch-selected-border-color: #faff68;
+            --storage-path-hover-color: #151515;
+            --storage-path-selected-border-color: #faff68;
+            --storage-ui-button-hover-color: #151515;
+            --storage-ui-button-border-color: #faff68;
         }
-
-        /* [data-theme="dark"] {
-            --background-color: #000;
-            --element-background-color: #102030;
-            --accent-color: #faff68;
-            --border-color: #111;
-            --shadow-color: rgba(255, 255, 255, 0.1);
-            --text-color: #CCC;
-            --button-color: #FFAA00;
-            --button-text-color: #000;
-            --button-active-color: #F00;
-            --button-active-text-color: #FFF;
-            --misc-text-color: #888;
-            --error-color: #400;
-            --null-color: #A88;
-            --link-color: #4BDAF7;
-            --logo-color: #222;
-            --logo-color-active: #333;
-            --tab-switch-background-color: #102030;
-            --tab-switch-hover-color: #182838;
-            --tab-switch-selected-border-color: #CCC;
-        } */
 
         * {
             box-sizing: border-box;
@@ -125,18 +94,47 @@
         }
 
         #controls {
-            /* When a page will be scrolled horizontally due to large table size, keep controls in place. */
-            position: sticky;
-            left: 0;
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 100;
         }
 
         /* Otherwise Webkit based browsers will display ugly border on focus. */
         textarea,
-        input,
-        button {
+        input {
             outline: none;
             border: none;
             color: var(--text-color);
+        }
+
+        .storage-ui-button {
+            display: inline-block;
+            background-color: transparent;
+            padding: 0.5rem 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 1.0rem;
+            color: var(--header-text-color);
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid var(--storage-ui-button-border-color);
+        }
+
+        .storage-ui-button:hover {
+            background-color: var(--storage-ui-button-hover-color);
+        }
+
+        .storage-ui-button:disabled {
+            display: inline-block;
+            background-color: transparent;
+            padding: 0.5rem 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 1.0rem;
+            border: none;
+            color: var(--text-color);
+            text-align: center;
+            text-decoration: none;
         }
 
         .monospace {
@@ -154,6 +152,7 @@
             box-shadow: 0 0 1rem var(--shadow-color);
         }
 
+        #displayStorageData,
         #command-scrolling-container,
         #command,
         #command-output {
@@ -180,9 +179,7 @@
             display: none;
         }
 
-        a,
-        a:visited {
-            color: var(--link-color);
+        a {
             text-decoration: none;
         }
 
@@ -314,6 +311,11 @@
             margin-bottom: 1rem;
         }
 
+        h4 {
+            color: var(--header-text-color);
+            font-size: 1.0rem;
+        }
+
         p {
             line-height: 1.6;
             margin-bottom: 1rem;
@@ -349,37 +351,6 @@
             text-shadow: 0 0 0;
         }
 
-        .tab:checked:nth-of-type(3)~.tab__content:nth-of-type(3) {
-            opacity: 1;
-            /* transition: 0.5s opacity ease-in, 0.8s transform ease; */
-            /* flex-grow: 2; */
-            position: relative;
-            top: 0;
-            z-index: 100;
-            transform: translateY(0px);
-            text-shadow: 0 0 0;
-        }
-
-        .tab:checked:nth-of-type(4)~.tab__content:nth-of-type(4) {
-            opacity: 1;
-            /* transition: 0.5s opacity ease-in, 0.8s transform ease; */
-            position: relative;
-            top: 0;
-            z-index: 100;
-            transform: translateY(0px);
-            text-shadow: 0 0 0;
-        }
-
-        .tab:checked:nth-of-type(5)~.tab__content:nth-of-type(5) {
-            opacity: 1;
-            /* transition: 0.5s opacity ease-in, 0.8s transform ease; */
-            position: relative;
-            top: 0;
-            z-index: 100;
-            transform: translateY(0px);
-            text-shadow: 0 0 0;
-        }
-
         #sidebar-version-display {
             position: absolute;
             bottom: -1rem;
@@ -403,6 +374,56 @@
             margin-left: 16rem;
         }
 
+        .storage_viewer_container * {
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        .storage_viewer_container ul {
+            padding-left: 1em;
+            list-style-type: none;
+        }
+
+        .storage_viewer_container>ul:first-of-type {
+            padding: 0;
+        }
+
+        .storage_viewer_container li span.storage_node_description {
+            cursor: pointer;
+            padding-left: 5px;
+            padding-bottom: 4px;
+            display: block;
+            text-align: left;
+        }
+
+        .storage_viewer_container li span.storage_node_description:hover {
+            background-color: var(--storage-path-hover-color);
+        }
+
+        .storage_viewer_container li span.storage_node_description.storage_leaf {
+            margin-left: 1.5em;
+            margin-top: 0.2em;
+        }
+
+        .storage_viewer_container span.storage_node_description.selected {
+            color: var(--header-color);
+            border-left: 4px solid var(--storage-path-selected-border-color);
+        }
+
+        .storage_viewer_container li span.storage_ui_icon,
+        .storage_viewer_container li span.storage_ui_icon * {
+            display: inline-block;
+            width: 1em;
+            font-size: 1.5rem;
+        }
+
+        .storage_viewer_container input.storage_node_name_input {
+            height: 2rem;
+            width: 100%;
+            padding-left: 5px;
+            padding-bottom: 4px;
+            background-color: var(--input-background-color);
+        }
     </style>
 </head>
 
@@ -440,18 +461,88 @@
     </div>
 
     <div id="main">
+        <div id="controls">
+            <div id="theme_div">
+                <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+            </div>
+        </div>
+
         <div class="tab-wrap">
             <!-- active tab on page load gets checked attribute -->
-            <input type="radio" id="tab_storage" name="tabGroup1" class="tab">
+            <input type="radio" id="tab_storage" name="tabGroup1" class="tab" checked>
             <label for="tab_storage">Storage</label>
 
-            <input type="radio" id="tab_4lw" name="tabGroup1" class="tab" checked>
+            <input type="radio" id="tab_4lw" name="tabGroup1" class="tab">
             <label for="tab_4lw">4lw</label>
 
             <div class="tab__content">
-                <h3>Storage</h3>
+                <div style="display: flex; width: 100%;">
 
-                <div id="storage-container"></div>
+                    <!-- Tree view side -->
+                    <div style="flex-basis: 40%; box-sizing: border-box; margin-right: 0.5rem;">
+                        <div id="storage-viewer-container"></div>
+                    </div>
+
+                    <div style="flex: 1; box-sizing: border-box; margin-left: 0.5rem">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="flex: 1; overflow-wrap: break-word;">
+                                <p id="displayStoragePath" class="monospace">--</p>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="storage-ui-button monospace" id="addChildButton"
+                                    onclick="storage_viewer.addNodeToSelectedNode()">
+                                    Add Child
+                                </button>
+                                <button class="storage-ui-button monospace" id="deleteButton"
+                                    onclick="storage_viewer.deleteSelectedNode()">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="display: flex;">
+                            <div style="flex-basis: 50%; box-sizing: border-box; margin-right: 0.1rem;">
+                                <h4>numChildren:</h4>
+                                <p id="displayStorageNumChildren" class="monospace">--</p>
+                                <h4>dataLength:</h4>
+                                <p id="displayStorageDataLength" class="monospace">--</p>
+                                <h4>version:</h4>
+                                <p id="displayStorageVersion" class="monospace">--</p>
+                                <h4>aversion:</h4>
+                                <p id="displayStorageAVersion" class="monospace">--</p>
+                                <h4>cversion:</h4>
+                                <p id="displayStorageCVersion" class="monospace">--</p>
+                                <h4>ctime:</h4>
+                                <p id="displayStorageCtime" class="monospace">--</p>
+                            </div>
+
+                            <div style="flex: 1; box-sizing: border-box; margin-left: 0.1rem">
+                                <h4>ephemeralOwner:</h4>
+                                <p id="displayStorageEphemeralOwner" class="monospace">--</p>
+                                <h4>cZxid:</h4>
+                                <p id="displayStorageCZxid" class="monospace">--</p>
+                                <h4>pZxid:</h4>
+                                <p id="displayStoragePZxid" class="monospace">--</p>
+                                <h4>mZxid:</h4>
+                                <p id="displayStorageMZxid" class="monospace">--</p>
+                                <h4>mtime:</h4>
+                                <p id="displayStorageMtime" class="monospace">--</p>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="display: flex; flex-direction: column; justify-content: flex-end;">
+                                <h1>Node Data:</h1>
+                            </div>
+                            <div style="display: flex; align-items: flex-start;">
+                                <button class="storage-ui-button monospace"
+                                    onclick="storage_viewer.saveSelectedNodeData()">Save</button>
+                            </div>
+                        </div>
+                        <textarea id="displayStorageData" spellcheck="false" data-gramm="false" class="monospace"
+                            style="height: 20em"></textarea>
+                    </div>
+                </div>
             </div>
 
             <div class="tab__content">
@@ -490,13 +581,6 @@
 
             </div>
         </div>
-
-        <div id="controls">
-            <div id="theme_div">
-                <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
-            </div>
-        </div>
-
 
         <p id="logo-container">
             <a href="https://clickhouse.com/">
@@ -543,6 +627,467 @@
 </body>
 
 <script type="text/javascript">
+    class StorageViewer {
+        constructor(container) {
+            this.container = container;
+            this.root = undefined;
+            this.selected_node = undefined;
+        }
+
+        async init() {
+            this.root = await this.loadRoot();
+            if (this.root.hasData()) {
+                await this.root.loadData();
+            }
+            this.root.select(); // select root
+            this.reload();
+        }
+
+        async loadRoot() {
+            const server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/list/`;
+
+            const res = await fetch(server_url.toString());
+            const data = res.ok ? await res.json() : undefined;
+
+            return data ? new StorageNode('/', undefined, data.stat, data.child_node_names) : undefined;
+        }
+
+        reload() {
+            if (this.container == null) {
+                console.warn("No container specified");
+                return;
+            }
+
+            if (this.root == null) {
+                console.warn("Root is not loaded");
+                return;
+            }
+
+            this.container.classList.add("storage_viewer_container");
+
+            var cnt = document.createElement("ul");
+
+            cnt.appendChild(this.root.render());
+
+            this.container.innerHTML = "";
+            this.container.appendChild(cnt);
+
+            this.renderSelectedNodeData();
+        }
+
+        updateSelectedNode(node) {
+            if (this.selected_node !== undefined) {
+                this.selected_node.selected = false;
+            }
+            this.selected_node = node;
+            this.selected_node.selected = true;
+        }
+
+        renderSelectedNodeData() {
+            // path
+            document.getElementById('displayStoragePath').innerText = this.selected_node?.path ?? '--';
+            // stat
+            document.getElementById('displayStorageAVersion').innerText = this.selected_node?.stat?.aversion ?? '--';
+            document.getElementById('displayStorageCZxid').innerText = this.selected_node?.stat?.cZxid ?? '--';
+            document.getElementById('displayStorageCVersion').innerText = this.selected_node?.stat?.cversion ?? '--';
+            document.getElementById('displayStorageDataLength').innerText = this.selected_node?.stat?.dataLength ?? '--';
+            document.getElementById('displayStorageEphemeralOwner').innerText = this.selected_node?.stat?.ephemeralOwner ?? '--';
+            document.getElementById('displayStorageMZxid').innerText = this.selected_node?.stat?.mZxid ?? '--';
+            document.getElementById('displayStorageNumChildren').innerText = this.selected_node?.stat?.numChildren ?? '--';
+            document.getElementById('displayStoragePZxid').innerText = this.selected_node?.stat?.pZxid ?? '--';
+            document.getElementById('displayStorageVersion').innerText = this.selected_node?.stat?.version ?? '--';
+            if (this.selected_node?.stat?.mtime != undefined) {
+                document.getElementById('displayStorageMtime').innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString('en-US', { hour12: false });
+            } else {
+                document.getElementById('displayStorageMtime').innerText = '--';
+            }
+            if (this.selected_node?.stat?.mtime != undefined) {
+                document.getElementById('displayStorageCtime').innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString('en-US', { hour12: false });
+            } else {
+                document.getElementById('displayStorageCtime').innerText = '--';
+            }
+            // data
+            if (this.selected_node && this.selected_node.data) {
+                document.getElementById('displayStorageData').value = new TextDecoder('utf-8').decode(this.selected_node.data);
+            } else {
+                document.getElementById('displayStorageData').value = '';
+            }
+            // buttons
+            var delete_button = document.getElementById('deleteButton');
+            if (!this.selected_node || !this.selected_node.isLeaf() || this.selected_node.isRoot()) {
+                delete_button.disabled = true;
+                delete_button.setAttribute('title', 'Only nodes with no children can be deleted.');
+            } else {
+                delete_button.disabled = false;
+                delete_button.removeAttribute('title');
+            }
+        }
+
+        async saveSelectedNodeData() {
+            if (!this.selected_node) {
+                return;
+            }
+
+            let data_to_save = document.getElementById('displayStorageData').value;
+            let encoder = new TextEncoder();
+
+            var server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/set${this.selected_node.path}`;
+
+            var request_url = server_url.toString();
+            request_url += '?' + new URLSearchParams({ version: this.selected_node.version })
+
+            const res = await fetch(request_url,
+                {
+                    method: 'POST',
+                    body: encoder.encode(data_to_save)
+                });
+            if (res.ok) {
+                await this.selected_node.reloadContent();
+            } else {
+                // TODO render conflict error.
+            }
+
+            this.reload();
+        }
+
+        async deleteSelectedNode() {
+            if (!this.selected_node) {
+                return;
+            }
+
+            if (!this.selected_node.isLeaf()) {
+                return; // the button should be disabled
+            }
+
+            if (this.selected_node.isRoot()) {
+                return; // the button should be disabled
+            }
+            this.selected_node.parent.removeChild(this.selected_node.name());
+
+            var server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/remove${this.selected_node.path}`;
+
+            var request_url = server_url.toString();
+            request_url += '?' + new URLSearchParams({ version: this.selected_node.version })
+
+            const res = await fetch(request_url,
+                {
+                    method: 'POST',
+                });
+            if (res.ok) {
+                await this.selected_node.parent.reloadContent();
+                await this.selected_node.parent.select();
+            } else {
+                // TODO render removal error.
+            }
+
+            this.reload();
+        }
+
+        async addNodeToSelectedNode() {
+            if (!this.selected_node) {
+                return;
+            }
+            this.selected_node.makeChildStub();
+            // expand the node if not expanded
+            if (!this.selected_node.expanded) {
+                await this.selected_node.toggleExpanded();
+            }
+            this.reload();
+
+            // focus on the input after everything is rendered
+            var stub_name_input = document.getElementsByClassName('storage_node_name_input')[0];
+            stub_name_input.focus();
+        }
+    }
+
+    class StorageNodeStub {
+        constructor(parent) {
+            this.parent = parent
+        }
+
+        render() {
+            var result = document.createElement("li");
+            var input_field = document.createElement("input");
+            input_field.className = "storage_node_name_input"; // setting a class to your input field
+            input_field.storage_node = this;
+
+            input_field.onblur = function () {
+                // need to destroy the stub as user discarded the input
+                this.storage_node.destroy();
+                storage_viewer.reload();
+            }
+
+            // trigger event if user press Enter
+            input_field.addEventListener("keydown", async function (event) {
+                if (event.keyCode === 13) {
+                    event.preventDefault();
+                    if (input_field.value == '') {
+                        // need to destroy the stub as user discarded the input
+                        this.storage_node.destroy();
+                        storage_viewer.reload();
+                        return;
+                    }
+                    await this.storage_node.parent.createChild(input_field.value);
+                    this.storage_node.destroy(); // we replaced the stub with a real node
+                    storage_viewer.reload();
+                }
+            });
+
+            result.appendChild(input_field);
+
+            return result;
+        }
+
+        destroy() {
+            this.parent.stub_child = undefined;
+        }
+
+    }
+
+    class StorageNode {
+        constructor(path, parent, stat, children_names = []) {
+            this.path = path;
+            this.stat = stat;
+            this.data = undefined;
+            this.version = stat?.version ?? undefined;
+            this.children_names = children_names;
+            this.children = []; // nodes themselves are lazy loaded
+            this.expanded = false;
+            this.selected = false;
+            this.parent = parent
+            this.stub_child = undefined; // StorageNodeStub reference if a child node is in creation
+        }
+
+        isLeaf() {
+            return (this.children_names.length == 0 && this.stub_child == undefined);
+        }
+
+        isRoot() {
+            return this.path == '/';
+        }
+
+        async reloadContent() {
+            var server_url = new URL(window.location);
+
+            var promises = [];
+            server_url.pathname = `/api/v1/storage/list${this.path}`;
+            promises.push(fetch(server_url.toString())
+                .then(res => res.ok ? res.json() : undefined)
+                .then(data => {
+                    if (data) {
+                        this.stat = data.stat;
+                        this.version = data.stat?.version ?? undefined;
+                        this.children_names = data.child_node_names;
+                    }
+                }));
+            promises.push(this.loadData());
+
+            await Promise.all(promises);
+        }
+
+        async expand() {
+            if (this.isLeaf()) {
+                console.warn('This node has no children.');
+                return;
+            }
+
+            var server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/list`;
+            var list_url = server_url.toString();
+
+            const childNodeRequests = this.children_names.map(child_name =>
+                fetch(list_url + this.getPathOfChild(child_name))
+                    .then(res => res.ok ? res.json() : undefined)
+                    .then(data => data ? new StorageNode(this.getPathOfChild(child_name), this, data.stat, data.child_node_names) : undefined)
+            );
+
+            this.children = await Promise.all(childNodeRequests);
+            this.expanded = true;
+        }
+
+        async collapse() {
+            if (storage_viewer.selected_node.isChildOf(this)) {
+                this.select();
+            }
+            this.children.forEach(function (child) {
+                child.collapse();
+            });
+            this.expanded = false;
+        }
+
+        render() {
+            var result = document.createElement("li");
+            var span_desc = document.createElement("span");
+            span_desc.className = "storage_node_description";
+            span_desc.storage_node = this;
+
+            span_desc.addEventListener("click", async function (e) {
+                var cur_el = e.target;
+
+                while (typeof cur_el.storage_node === "undefined" || cur_el.classList.contains("storage_viewer_container")) {
+                    cur_el = cur_el.parentElement;
+                }
+
+                var node_cur = cur_el.storage_node;
+
+                if (typeof node_cur === "undefined") {
+                    return;
+                }
+
+                if (node_cur.hasData()) {
+                    await node_cur.loadData();
+                }
+
+                node_cur.select();
+                storage_viewer.reload();
+            });
+
+            if (this.selected) {
+                span_desc.classList.add("selected");
+            }
+
+            if (this.isLeaf()) {
+                var ret = '';
+                span_desc.innerHTML = ret + this.name() + "</span>";
+                span_desc.classList.add("storage_leaf");
+
+                result.appendChild(span_desc);
+            } else {
+                var ret = '';
+                var span_icon = document.createElement("span");
+                span_icon.className = "storage_ui_icon";
+                span_icon.style.fontFamily = "monospace";
+                span_icon.innerHTML = this.expanded ? "<span>&#x25BE;</span>" : "<span>&#x25B8;</span>";
+
+                span_icon.addEventListener("click", async function (e) {
+                    e.stopPropagation();
+                    var cur_el = e.target;
+
+                    while (typeof cur_el.storage_node === "undefined" || cur_el.classList.contains("storage_viewer_container")) {
+                        cur_el = cur_el.parentElement;
+                    }
+
+                    var node_cur = cur_el.storage_node;
+
+                    if (typeof node_cur === "undefined") {
+                        return;
+                    }
+
+                    if (!node_cur.isLeaf()) {
+                        await node_cur.toggleExpanded();
+                    }
+                    storage_viewer.reload();
+                });
+
+                span_desc.appendChild(span_icon);
+                span_desc.appendChild(document.createTextNode(this.name()));
+                result.appendChild(span_desc);
+
+                if (this.expanded) {
+                    var ul_container = document.createElement("ul");
+
+                    if (this.stub_child) {
+                        ul_container.appendChild(this.stub_child.render());
+                    }
+
+                    this.children.forEach(function (child) {
+                        ul_container.appendChild(child.render());
+                    });
+
+                    result.appendChild(ul_container)
+                }
+            }
+
+            return result;
+        }
+
+        async toggleExpanded() {
+            if (this.isLeaf()) {
+                return;
+            }
+            if (this.expanded) {
+                this.collapse();
+            } else {
+                await this.expand();
+            }
+        };
+
+        select() {
+            storage_viewer.updateSelectedNode(this);
+        };
+
+        name() {
+            if (this.path === '/') {
+                return '/';
+            }
+            const split_path = this.path.split('/');
+            if (!split_path[split_path.length - 1]) {
+                split_path.pop();
+            }
+            return split_path.length > 0 ? split_path[split_path.length - 1] : 'unknown';
+        }
+
+        getPathOfChild(child_name) {
+            return (this.path == '/' ? '' : this.path) + `/${child_name}`;
+        }
+
+        hasData() {
+            return (this.stat?.dataLength ?? 0) !== 0;
+        }
+
+        async loadData() {
+            var server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/get`;
+
+            const res = await fetch(server_url.toString() + this.path);
+            if (res.ok) {
+                const buffer = await res.arrayBuffer();
+                this.data = new Uint8Array(buffer);
+            } else {
+                this.data = undefined;
+            }
+        }
+
+        removeChild(child_name) {
+            this.children_names = this.children_names.filter(name => name !== child_name);
+            this.children = this.children.filter(child => child.name() !== child_name);
+        }
+
+        makeChildStub() {
+            this.stub_child = new StorageNodeStub(this);
+        }
+
+        async createChild(child_name) {
+            var server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/create`;
+            var create_url = server_url.toString();
+
+            const res = await fetch(create_url + this.getPathOfChild(child_name),
+                {
+                    method: 'POST'
+                });
+
+            if (res.ok) {
+                this.children_names.push(child_name);
+                var new_child_node = new StorageNode(this.getPathOfChild(child_name), this, undefined, []);
+                // load necessary data for a new node
+                await new_child_node.reloadContent();
+                await this.reloadContent()
+                this.children.push(new_child_node);
+                new_child_node.select();
+            } else {
+                // TODO render creation error.
+            }
+        }
+
+        isChildOf(node) {
+            return this.path.startsWith(node.path);
+        }
+    }
+
     const current_url = new URL(window.location);
     const opened_locally = location.protocol == 'file:';
 
@@ -606,7 +1151,6 @@
             window.localStorage.setItem('theme', theme);
         }
         document.documentElement.setAttribute('data-theme', theme);
-        redrawChart();
     }
 
     if (theme) {
@@ -699,6 +1243,9 @@
             /// TODO: display error properly
         }
     }
+
+    var storage_viewer = new StorageViewer(document.getElementById("storage-viewer-container"));
+    storage_viewer.init();
 
     start();
 

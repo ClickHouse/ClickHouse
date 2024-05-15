@@ -26,7 +26,8 @@ INCBIN(resource_keeper_dashboard_html, SOURCE_DIR "/programs/keeper/dashboard.ht
 namespace DB
 {
 
-void KeeperDashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void KeeperDashboardWebUIRequestHandler::handleRequest(
+    HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     /// Raw config reference is used here to avoid dependency on Context and ServerSettings.
     /// This is painful, because this class is also used in a build with CLICKHOUSE_KEEPER_STANDALONE_BUILD=1
@@ -65,7 +66,8 @@ try
 
     response_json.set("ch_version", VERSION_DESCRIBE);
 
-    if (keeper_dispatcher->isServerActive()) {
+    if (keeper_dispatcher->isServerActive())
+    {
         Poco::JSON::Object keeper_details;
         auto & stats = keeper_dispatcher->getKeeperConnectionStats();
         Keeper4LWInfo keeper_info = keeper_dispatcher->getKeeper4LWInfo();
@@ -78,11 +80,11 @@ try
         response_json.set("keeper_details", keeper_details);
     }
 
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(response_json, oss);
 
-    response.setContentType("application/json"); 
+    response.setContentType("application/json");
     *response.send() << oss.str();
 }
 catch (...)

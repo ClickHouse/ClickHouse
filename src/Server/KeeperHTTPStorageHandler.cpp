@@ -24,7 +24,7 @@ extern const int LOGICAL_ERROR;
 extern const int TIMEOUT_EXCEEDED;
 }
 
-Poco::JSON::Object toJson(const Coordination::Stat & stat)
+Poco::JSON::Object toJSON(const Coordination::Stat & stat)
 {
     Poco::JSON::Object result;
     result.set("cZxid", stat.czxid);
@@ -173,7 +173,7 @@ void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string &
         return;
 
     Poco::JSON::Object response_json;
-    response_json.set("stat", toJson(exists_result_ptr->stat));
+    response_json.set("stat", toJSON(exists_result_ptr->stat));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -200,7 +200,7 @@ void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & s
 
     Poco::JSON::Object response_json;
     response_json.set("child_node_names", list_result_ptr->names);
-    response_json.set("stat", toJson(list_result_ptr->stat));
+    response_json.set("stat", toJSON(list_result_ptr->stat));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
