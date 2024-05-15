@@ -72,7 +72,7 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
 
     auto dynamic_element_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>();
     dynamic_element_state->structure_state = std::move(structure_state);
-    const auto & variant_type = checkAndGetState<SerializationDynamic::DeserializeBinaryBulkStateDynamicStructure>(structure_state)->variant_type;
+    const auto & variant_type = checkAndGetState<SerializationDynamic::DeserializeBinaryBulkStateDynamicStructure>(dynamic_element_state->structure_state)->variant_type;
     /// Check if we actually have required element in the Variant.
     if (auto global_discr = assert_cast<const DataTypeVariant &>(*variant_type).tryGetVariantDiscriminator(dynamic_element_name))
     {
