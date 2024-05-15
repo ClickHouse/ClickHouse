@@ -2854,7 +2854,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
     {
         const auto top_expression = scope.expressions_in_resolve_process_stack.getTop();
 
-        if (!isNodePartOfTree(top_expression.get(), root_expression_with_alias.get()))
+        if (identifier_lookup.isExpressionLookup() && !isNodePartOfTree(top_expression.get(), root_expression_with_alias.get()))
             throw Exception(ErrorCodes::CYCLIC_ALIASES,
                 "Cyclic aliases for identifier '{}'. In scope {}",
                 identifier_lookup.identifier.getFullName(),
