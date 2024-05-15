@@ -5,32 +5,46 @@
 
 namespace DB
 {
-    void IfLowCardinalityPass::optimizeIfFunction(ASTPtr & node)
+
+namespace
+{
+
+class IfLowCardinalityPassVisitor : public InDepthQueryTreeVisitorWithContext<IfLowCardinalityPassVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<IfLowCardinalityPassVisitor>;
+    using Base::Base;
+
+    explicit IfLowCardinalityPassVisitor(ContextPtr context)
+        : Base(std::move(context))
+    {}
+
+    void enterImpl(QueryTreeNodePtr & node)
     {
-        if (auto * if_function = typeid_cast<ASTFunction *>(node.get()))
-        {
-            if (if_function->name == "if" && if_function->arguments.size() == 4)
-            {
-                const auto & then_branch = if_function->arguments.at(2);
-                const auto & else_branch = if_function->arguments.at(3);
-
-                DataTypePtr then_type = ExpressionActions(false).getReturnType(then_branch);
-                DataTypePtr else_type = ExpressionActions(false).getReturnType(else_branch);
-
-                if (then_type->getName() == "String" && else_type->getName() == "String")
-                {
-                    DataTypePtr result_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-                    if_function->children.at(0) = result_type->createASTLiteral();
-                }
-            }
-        }
-    }
-
-    void IfLowCardinalityPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
-    {
-        if (!query_tree_node)
+        auto * function_node = node->as<ASTFunction>();
+        if (!function_node || function_node->name != "if" || function_node->arguments.size() != 4)
             return;
 
-        optimizeIfFunction(query_tree_node);
+        const auto & then_branch = function_node->arguments.at(2);
+        const auto & else_branch = function_node->arguments.at(3);
+
+        DataTypePtr then_type = ExpressionActions(false).getReturnType(then_branch);
+        DataTypePtr else_type = ExpressionActions(false).getReturnType(else_branch);
+
+        if (then_type->getName() == "String" && else_type->getName() == "String")
+        {
+            DataTypePtr result_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            function_node->arguments.at(0) = result_type->createASTLiteral();
+        }
     }
+};
+
+}
+
+void IfLowCardinalityPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+{
+    IfLowCardinalityPassVisitor visitor(std::move(context));
+    visitor.visit(query_tree_node);
+}
+
 }
