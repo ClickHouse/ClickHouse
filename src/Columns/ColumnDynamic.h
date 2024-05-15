@@ -137,7 +137,7 @@ public:
 
     void insertData(const char * pos, size_t length) override
     {
-        return variant_column->insertData(pos, length);
+        variant_column->insertData(pos, length);
     }
 
     void insert(const Field & x) override;
