@@ -1,3 +1,4 @@
 <clickhouse>
      <prefer_system_tzdata>true</prefer_system_tzdata>
+     <timezone>UTC</timezone>
 </clickhouse>
