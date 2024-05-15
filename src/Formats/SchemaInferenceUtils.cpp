@@ -308,7 +308,7 @@ namespace
         type_indexes.erase(TypeIndex::UInt64);
     }
 
-    /// if setting input_format_json_infer_variant_from_multitype_array is true
+    /// if setting input_format_json_infer_variant_from_multi_type_array is true
     /// and nested types are not equal then we convert to type variant.
     void transformVariant(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
@@ -666,7 +666,7 @@ namespace
 
             /// Check settings specific for JSON formats.
 
-            if (settings.json.infer_variant_from_multitype_array)
+            if (settings.json.infer_variant_from_multi_type_array)
             {
                 transformVariant(data_types, type_indexes);
             }
@@ -699,7 +699,7 @@ namespace
             if constexpr (!is_json)
                 return;
 
-            if (settings.json.infer_variant_from_multitype_array)
+            if (settings.json.infer_variant_from_multi_type_array)
             {
                 transformVariant(data_types, type_indexes);
             }

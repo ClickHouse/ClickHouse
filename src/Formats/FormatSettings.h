@@ -223,7 +223,7 @@ struct FormatSettings
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
-        bool infer_variant_from_multitype_array = false;
+        bool infer_variant_from_multi_type_array = false;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
     } json{};
