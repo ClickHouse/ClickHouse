@@ -79,6 +79,8 @@
 
 #include <Common/config_version.h>
 #include "config.h"
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -2132,11 +2134,32 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // unlike VALUES.
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
     const char * query_to_execute_end = this_query_end;
-
     if (insert_ast && insert_ast->data)
     {
-        this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
-        insert_ast->end = this_query_end;
+        if (insert_ast->format == "Values")
+        {
+            // try to find the end of INSERT INTO ... VALUES query
+            ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
+            skipBOMIfExists(data_in);
+            for (;;)
+            {
+                skipWhitespaceIfAny(data_in);
+                if (data_in.eof() || *data_in.position() == ';')
+                    break;
+                ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0);
+            }
+            insert_ast->end = insert_ast->data + data_in.count();
+        }
+        else
+        {
+            auto pos = String(insert_ast->data, all_queries_end).find("\n\n");
+            if (pos != std::string::npos)
+            {
+                this_query_end = insert_ast->data + pos;
+            }
+            // this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
+            insert_ast->end = this_query_end;
+        }
         query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
     }
 
@@ -2181,7 +2204,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     String query_to_execute;
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
-
     while (true)
     {
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
