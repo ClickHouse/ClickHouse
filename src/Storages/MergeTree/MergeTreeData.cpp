@@ -1921,13 +1921,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         bool uncovered = true;
         for (const auto & part : unexpected_parts_to_load)
         {
-            if (name != part.name && !info.contains(part.info) && !info.isDisjoint(part.info))
+            if (!info.contains(part.info))
             {
                 uncovered = false;
                 break;
             }
         }
-        unexpected_unloaded_data_parts.push_back({std::make_shared<PartLoadingTree::Node>(info, name, disk), uncovered, false, nullptr});
+        unexpected_unloaded_data_parts.push_back({std::make_shared<PartLoadingTree::Node>(info, name, disk), uncovered, /*is_broken*/ false, /*part*/ nullptr});
     }
 
     if (!unexpected_unloaded_data_parts.empty())
@@ -2004,10 +2004,6 @@ void MergeTreeData::loadUnexpectedDataParts()
             if (load_state.is_broken)
             {
                 load_state.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
-            }
-            else
-            {
-                load_state.part->renameToDetached("ignored"); /// detached parts must not have '_' in prefixes
             }
         }, Priority{});
     }

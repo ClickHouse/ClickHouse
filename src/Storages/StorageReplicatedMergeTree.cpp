@@ -1578,7 +1578,6 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     /// Intersection of local parts and expected parts
     ActiveDataPartSet local_expected_parts_set(format_version);
 
-    /// Collect unexpected parts
     for (const auto & part : parts)
     {
         local_expected_parts_set.add(part->name);
@@ -1672,8 +1671,6 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         }
     }
 
-    unexpected_data_parts.clear();
-
     const UInt64 parts_to_fetch_blocks = std::accumulate(parts_to_fetch.cbegin(), parts_to_fetch.cend(), 0,
         [&](UInt64 acc, const String & part_name)
         {
@@ -1737,6 +1734,12 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
     queue.setBrokenPartsToEnqueueFetchesOnLoading(std::move(parts_to_fetch));
 
+    /// detached all unexpected data parts after sanity check.
+    for (auto & part_state : unexpected_data_parts)
+    {
+        part_state.part->renameToDetached("ignored");
+    }
+    unexpected_data_parts.clear();
 
     return true;
 }
