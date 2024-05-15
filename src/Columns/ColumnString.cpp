@@ -482,7 +482,8 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
-size_t ColumnString::estimateNumberOfDifferent(const Permutation & perm, const EqualRange & range, size_t /*samples*/) const {
+size_t ColumnString::estimateNumberOfDifferent(const Permutation & perm, const EqualRange & range, size_t /*samples*/) const
+{
     // TODO: sample random elements
     size_t range_size = getRangeSize(range);
     if (range_size <= 1ULL)
@@ -499,7 +500,7 @@ size_t ColumnString::estimateNumberOfDifferent(const Permutation & perm, const E
         elements.emplace(ref, inserted);
         if (inserted)
             ++unique_elements;
-    } 
+    }
     return unique_elements;
 }
 
