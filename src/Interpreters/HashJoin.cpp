@@ -1286,15 +1286,15 @@ template<> void AddedColumns<true>::buildOutput(void (AddedColumns<true>::* func
                 default_count = 0;
             }
         };
-        for (size_t j = 0; j < lazy_output.row_refs.size(); ++j)
+        for (auto row_ref_i : lazy_output.row_refs)
         {
-            if (!lazy_output.row_refs[j])
+            if (!row_ref_i)
             {
                 default_count++;
                 continue;
             }
             apply_default();
-            const auto * row_ref = reinterpret_cast<const RowRef *>(lazy_output.row_refs[j]);
+            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
             (this->*func)(col, row_ref, right_indexes[i]);
         }
         apply_default();
@@ -1547,7 +1547,7 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 template<typename AddedColumns>
 ColumnPtr buildAdditionalFilter(
     size_t left_start_row,
-    const std::vector<RowRef> & selected_rows,
+    const std::vector<const RowRef *> & selected_rows,
     const std::vector<size_t> & row_replicate_offset,
     AddedColumns & added_columns)
 {
@@ -1559,7 +1559,7 @@ ColumnPtr buildAdditionalFilter(
             result_column = ColumnUInt8::create();
             break;
         }
-        const Block & sample_right_block = *selected_rows.begin()->block;
+        const Block & sample_right_block = *(*selected_rows.begin())->block;
         if (!sample_right_block || !added_columns.additional_filter_expression)
         {
             auto filter = ColumnUInt8::create();
@@ -1589,8 +1589,8 @@ ColumnPtr buildAdditionalFilter(
                 auto new_col = col.column->cloneEmpty();
                 for (const auto & selected_row : selected_rows)
                 {
-                    const auto & src_col = selected_row.block->getByPosition(right_col_pos);
-                    new_col->insertFrom(*src_col.column, selected_row.row_num);
+                    const auto & src_col = selected_row->block->getByPosition(right_col_pos);
+                    new_col->insertFrom(*src_col.column, selected_row->row_num);
                 }
                 executed_block.insert({std::move(new_col), col.type, col.name});
             }
@@ -1667,10 +1667,10 @@ ColumnPtr buildAdditionalFilter(
 /// Adapter class to pass into addFoundRowAll
 /// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
 /// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<RowRef>
+class PreSelectedRows : public std::vector<const RowRef *>
 {
 public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(*row_ref); }
+    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
     bool isLazy() const { return false; }
 };
 
@@ -1775,10 +1775,10 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     if (filter_flags[replicated_row])
                     {
                         any_matched = true;
-                        added_columns.appendFromBlock(&(*selected_right_row_it), add_missing);
+                        added_columns.appendFromBlock(*selected_right_row_it, add_missing);
                         total_added_rows += 1;
                         if (need_flags)
-                            used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                            used_flags.template setUsed<true, true>((*selected_right_row_it)->block, (*selected_right_row_it)->row_num, 0);
                     }
                     ++selected_right_row_it;
                 }
@@ -1790,7 +1790,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     if (filter_flags[replicated_row])
                     {
                         any_matched = true;
-                        added_columns.appendFromBlock(&(*selected_right_row_it), add_missing);
+                        added_columns.appendFromBlock(*selected_right_row_it, add_missing);
                         total_added_rows += 1;
                     }
                     ++selected_right_row_it;
