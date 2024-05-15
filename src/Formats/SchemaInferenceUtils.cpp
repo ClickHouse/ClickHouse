@@ -319,7 +319,7 @@ namespace
         data_types.push_back(variant_type);
         type_indexes.insert(TypeIndex::Variant);
 
-        // make the second type variant as well
+        /// make the second type variant as well
         data_types.push_back(variant_type);
         type_indexes.insert(TypeIndex::Variant);
     }
