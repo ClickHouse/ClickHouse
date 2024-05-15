@@ -62,11 +62,6 @@ def start_cluster():
 
 
 def test_preconfigured_default_codec(start_cluster):
-    if is_arm():
-        pytest.skip(
-            "Skipping test because it's special test for Intel code (doesn't work on ARM)"
-        )
-
     for node in [node1, node2]:
         node.query(
             """
@@ -260,6 +255,11 @@ def test_uncompressed_cache_plus_zstd_codec(start_cluster):
 
 
 def test_preconfigured_deflateqpl_codec(start_cluster):
+    if is_arm():
+        pytest.skip(
+            "Skipping test because it's special test for Intel code (doesn't work on ARM)"
+        )
+
     node6.query(
         """
     CREATE TABLE compression_codec_multiple_with_key (
