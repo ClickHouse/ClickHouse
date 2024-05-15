@@ -44,11 +44,12 @@ StorageS3QueueSource::FileIterator::FileIterator(
     std::shared_ptr<S3QueueFilesMetadata> metadata_,
     std::unique_ptr<GlobIterator> glob_iterator_,
     size_t current_shard_,
-    std::atomic<bool> & shutdown_called_)
+    std::atomic<bool> & shutdown_called_,
+    LoggerPtr logger_)
     : metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
     , shutdown_called(shutdown_called_)
-    , log(&Poco::Logger::get("StorageS3QueueSource"))
+    , log(logger_)
     , sharded_processing(metadata->isShardedProcessing())
     , current_shard(current_shard_)
 {
@@ -237,7 +238,8 @@ Chunk StorageS3QueueSource::generate()
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                             key_with_info->key, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
@@ -263,7 +265,8 @@ Chunk StorageS3QueueSource::generate()
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                             key_with_info->key, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);

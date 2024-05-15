@@ -147,7 +147,7 @@ constexpr uint16_t maybe_negate(uint16_t x)
         return ~x;
 }
 
-enum class ReturnMode
+enum class ReturnMode : uint8_t
 {
     End,
     Nullptr,

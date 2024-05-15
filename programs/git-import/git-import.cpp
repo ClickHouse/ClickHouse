@@ -233,7 +233,7 @@ struct Commit
 };
 
 
-enum class FileChangeType
+enum class FileChangeType : uint8_t
 {
     Add,
     Delete,
@@ -291,7 +291,7 @@ struct FileChange
 };
 
 
-enum class LineType
+enum class LineType : uint8_t
 {
     Empty,
     Comment,
