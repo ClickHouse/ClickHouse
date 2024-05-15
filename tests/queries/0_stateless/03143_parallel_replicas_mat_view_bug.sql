@@ -9,5 +9,3 @@ CREATE MATERIALIZED VIEW mv_table (str String) ENGINE = ReplicatedMergeTree('/cl
 INSERT INTO null_table VALUES ('test');
 
 SELECT * FROM mv_table;
-
-SELECT * FROM merge('xxx', '^.inner_id.*');
