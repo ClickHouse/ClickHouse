@@ -11,6 +11,9 @@ namespace DB
 
 void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
 {
+    if (writeVerticalRowIfPossible(chunk, port_kind))
+        return;
+
     UInt64 max_rows = format_settings.pretty.max_rows;
 
     if (total_rows >= max_rows)

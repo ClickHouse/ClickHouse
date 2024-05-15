@@ -4,6 +4,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
+#include "Processors/Chunk.h"
 
 namespace DB
 {
@@ -53,6 +54,8 @@ protected:
     void writeTransferredRow(const Widths & max_widths, const Block & header, std::vector<String> & transferred_row, size_t cut_to_width, bool space_block);
 
     void splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width, size_t cut_to_width, size_t prefix);
+
+    bool writeVerticalRowIfPossible(const Chunk & chunk, PortKind port_kind);
 
     void resetFormatterImpl() override
     {

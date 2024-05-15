@@ -7,6 +7,8 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
+#include <Interpreters/Context.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 
 
 namespace DB
@@ -175,6 +177,9 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 
 void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
 {
+    if (writeVerticalRowIfPossible(chunk, port_kind))
+        return;
+
     auto num_rows = chunk.getNumRows();
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
@@ -603,6 +608,28 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
         if (color)
             writeCString("\033[0m", out);
     }
+}
+
+bool PrettyBlockOutputFormat::writeVerticalRowIfPossible(const Chunk & chunk, PortKind port_kind)
+{
+    if (!format_settings.pretty.min_columns_for_vertical_row ||
+        chunk.getNumColumns() < format_settings.pretty.min_columns_for_vertical_row ||
+        total_rows != 0 || (chunk.getNumRows() != 1 && format_settings.pretty.max_rows != 1))
+    {
+        return false;
+    }
+    const auto & columns = chunk.getColumns();
+    const auto & header = getPort(port_kind).getHeader();
+    auto format = Context::getGlobalContextInstance()->getOutputFormat("Vertical", out, header);
+    auto vertical_format = std::dynamic_pointer_cast<IRowOutputFormat>(format);
+    if (vertical_format)
+    {
+        vertical_format->writeRow(columns, 0);
+        writeChar('\n', out);
+        total_rows += 1;
+        return true;
+    }
+    return false;
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)

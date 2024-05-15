@@ -279,6 +279,7 @@ struct FormatSettings
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
+        UInt64 min_columns_for_vertical_row = 10;
         bool highlight_digit_groups = true;
         SettingFieldUInt64Auto color{"auto"};
 

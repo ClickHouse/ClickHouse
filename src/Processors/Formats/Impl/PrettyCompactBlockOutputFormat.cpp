@@ -204,6 +204,9 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
 {
+    if (writeVerticalRowIfPossible(chunk, port_kind))
+        return;
+
     UInt64 max_rows = format_settings.pretty.max_rows;
 
     size_t num_rows = chunk.getNumRows();
