@@ -1042,7 +1042,7 @@ bool Connection::poll(size_t timeout_microseconds)
 
 bool Connection::hasReadPendingData() const
 {
-    return last_input_packet_type.has_value() || in->hasPendingData();
+    return last_input_packet_type.has_value() || in->hasBufferedData();
 }
 
 

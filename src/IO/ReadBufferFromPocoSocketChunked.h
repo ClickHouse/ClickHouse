@@ -16,6 +16,8 @@ public:
     bool poll(size_t timeout_microseconds);
     void setAsyncCallback(AsyncCallback async_callback_);
 
+    bool hasBufferedData() const { return hasPendingData() || buffer_socket.hasPendingData(); }
+
 protected:
     bool startChunk();
     bool nextChunk();
@@ -26,7 +28,6 @@ private:
     ReadBufferFromPocoSocket buffer_socket;
     bool chunked = false;
     UInt32 chunk_left = 0; // chunk left to read from socket
-    UInt8 skip_next = 0; // skip already processed bytes in buffer_socket
     bool started = false;
 };
 

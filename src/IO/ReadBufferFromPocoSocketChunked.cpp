@@ -27,11 +27,14 @@ ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Sock
 void ReadBufferFromPocoSocketChunked::enableChunked()
 {
     chunked = true;
+    buffer_socket.position() = pos;
 }
 
 bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds)
 {
-    buffer_socket.position() = pos + skip_next;
+    if (!chunked)
+        buffer_socket.position() = pos;
+
     return buffer_socket.poll(timeout_microseconds);
 }
 
@@ -42,12 +45,12 @@ void ReadBufferFromPocoSocketChunked::setAsyncCallback(AsyncCallback async_callb
 
 bool ReadBufferFromPocoSocketChunked::startChunk()
 {
-    if (buffer_socket.read(reinterpret_cast<char *>(&chunk_left), sizeof(chunk_left)) == 0)
+    if (buffer_socket.read(reinterpret_cast<char *>(&chunk_left), sizeof(chunk_left)) < sizeof(chunk_left))
         return false;
     if (chunk_left == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Native protocol: empty chunk received");
 
-    chunk_left = netToHost(chunk_left);
+    chunk_left = fromLittleEndian(chunk_left);
 
     return nextChunk();
 }
@@ -76,19 +79,23 @@ bool ReadBufferFromPocoSocketChunked::nextChunk()
     {
         working_buffer.resize(buffer_socket.offset() + buffer_socket.available());
         chunk_left -= buffer_socket.available();
+        buffer_socket.position() += buffer_socket.available();
         return true;
     }
 
     working_buffer.resize(buffer_socket.offset() + chunk_left);
-    skip_next = std::min(static_cast<size_t>(4), buffer_socket.available() - chunk_left);
+    UInt8 buffered = std::min(static_cast<size_t>(4), buffer_socket.available() - chunk_left);
 
-    if (skip_next > 0)
-        std::memcpy(&chunk_left, buffer_socket.position() + chunk_left, skip_next);
-    if (4 > skip_next)
-        if (!buffer_socket.readSocketExact(reinterpret_cast<Position>(&chunk_left) + skip_next, 4 - skip_next))
+    buffer_socket.position() += chunk_left;
+    if (buffered > 0)
+        std::memcpy(&chunk_left, buffer_socket.position(), buffered);
+    buffer_socket.position() += buffered;
+
+    if (4 > buffered)
+        if (!buffer_socket.readSocketExact(reinterpret_cast<Position>(&chunk_left) + buffered, 4 - buffered))
             return false;
 
-    chunk_left = netToHost(chunk_left);
+    chunk_left = fromLittleEndian(chunk_left);
 
     if (chunk_left == 0)
         LOG_TEST(log, "Packet receive ended.");
@@ -99,14 +106,23 @@ bool ReadBufferFromPocoSocketChunked::nextChunk()
 
 bool ReadBufferFromPocoSocketChunked::nextImpl()
 {
-    buffer_socket.position() = pos + skip_next;
-    skip_next = 0;
-
     if (chunked)
-        return nextChunk();
+    {
+        if (!nextChunk())
+        {
+            pos = buffer_socket.position();
+            return false;
+        }
+        return true;
+    }
+
+    buffer_socket.position() = pos;
 
     if (!buffer_socket.next())
+    {
+        pos = buffer_socket.position();
         return false;
+    }
 
     pos = buffer_socket.position();
     working_buffer.resize(offset() + buffer_socket.available());

@@ -48,7 +48,7 @@ protected:
                 LOG_TEST(log, "Packet send continued. Size {}", s);
 
             finished = false;
-            s = hostToNet(s);
+            s = toLittleEndian(s);
             socketSendBytes(reinterpret_cast<const char *>(&s), sizeof(s));
         }
 
