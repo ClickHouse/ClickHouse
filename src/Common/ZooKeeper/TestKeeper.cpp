@@ -888,7 +888,7 @@ void TestKeeper::multi(
         const Requests & requests,
         MultiCallback callback)
 {
-    return multi(std::span(requests), std::move(callback));
+    multi(std::span(requests), std::move(callback));
 }
 
 void TestKeeper::multi(

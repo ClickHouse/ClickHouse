@@ -189,8 +189,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Object &) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateData & x) const
 {
-    const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
-    return DataTypeFactory::instance().get(name);
+    return DataTypeFactory::instance().get(x.name);
 }
 
 template <LeastSupertypeOnError on_error>

@@ -123,7 +123,21 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
 
-  '-zircon-*'
+  '-zircon-*',
+
+  # These are new in clang-18, and we have to sort them out:
+  '-readability-avoid-nested-conditional-operator',
+  '-modernize-use-designated-initializers',
+  '-performance-enum-size',
+  '-readability-redundant-inline-specifier',
+  '-readability-redundant-member-init',
+  '-bugprone-crtp-constructor-accessibility',
+  '-bugprone-suspicious-stringview-data-usage',
+  '-bugprone-multi-level-implicit-pointer-conversion',
+  '-cert-err33-c',
+
+  # This is a good check, but clang-tidy crashes, see https://github.com/llvm/llvm-project/issues/91872
+  '-modernize-use-constraints',
 ]
 
 WarningsAsErrors: '*'

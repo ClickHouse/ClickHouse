@@ -201,6 +201,7 @@ cbrt
 ceil
 char
 cityHash64
+clamp
 coalesce
 concat
 concatAssumeInjective

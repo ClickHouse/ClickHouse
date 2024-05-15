@@ -18,7 +18,12 @@ from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription, StatusNames
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
+from env_helper import (
+    GITHUB_REPOSITORY,
+    GITHUB_RUN_URL,
+    GITHUB_UPSTREAM_REPOSITORY,
+    TEMP_PATH,
+)
 from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import (
@@ -29,6 +34,7 @@ from report import (
     StatusType,
     TestResult,
     TestResults,
+    get_status,
     get_worst_status,
 )
 from s3_helper import S3Helper
@@ -500,3 +506,60 @@ def trigger_mergeable_check(
         return set_mergeable_check(commit, description, state, hide_url)
 
     return mergeable_status
+
+
+def update_upstream_sync_status(
+    upstream_pr_number: int,
+    sync_pr_number: int,
+    gh: Github,
+    mergeable_status: CommitStatus,
+) -> None:
+    upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
+    upstream_pr = upstream_repo.get_pull(upstream_pr_number)
+    sync_repo = gh.get_repo(GITHUB_REPOSITORY)
+    sync_pr = sync_repo.get_pull(sync_pr_number)
+    # Find the commit that is in both repos, upstream and cloud
+    sync_commits = sync_pr.get_commits().reversed
+    upstream_commits = upstream_pr.get_commits()
+    # Github objects are compared by _url attribute. We can't compare them directly and
+    # should compare commits by SHA1
+    upstream_shas = [uc.sha for uc in upstream_commits]
+    logging.info("Commits in upstream PR:\n %s", ", ".join(upstream_shas))
+    sync_shas = [uc.sha for uc in upstream_commits]
+    logging.info("Commits in sync PR:\n %s", ", ".join(reversed(sync_shas)))
+    found = False
+    for commit in sync_commits:
+        try:
+            idx = upstream_shas.index(commit.sha)
+            found = True
+            upstream_commit = upstream_commits[idx]
+            break
+        except ValueError:
+            continue
+
+    if not found:
+        logging.info(
+            "There's no same commits in upstream and sync PRs, probably force-push"
+        )
+        return
+
+    sync_status = get_status(mergeable_status.state)
+    logging.info(
+        "Using commit %s to post the %s status `%s`: [%s]",
+        upstream_commit.sha,
+        sync_status,
+        StatusNames.SYNC,
+        mergeable_status.description,
+    )
+    post_commit_status(
+        upstream_commit,
+        sync_status,
+        "",  # let's won't expose any urls from cloud
+        mergeable_status.description,
+        StatusNames.SYNC,
+    )
+    trigger_mergeable_check(
+        upstream_commit,
+        get_commit_filtered_statuses(upstream_commit),
+        True,
+    )
