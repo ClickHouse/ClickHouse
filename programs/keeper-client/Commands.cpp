@@ -314,31 +314,34 @@ bool FindBigFamily::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     return true;
 }
 
+/// DFS the subtree and return the number of nodes in the subtree
+static Int64 traverse(const fs::path & path, KeeperClient * client, std::vector<std::tuple<Int64, String>> & result)
+{
+    Int64 nodes_in_subtree = 1;
+
+    Strings children;
+    auto status = client->zookeeper->tryGetChildren(path, children);
+    if (status == Coordination::Error::ZNONODE)
+        return 0;
+    else if (status != Coordination::Error::ZOK)
+        throw DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, "Error {} while getting children of {}", status, path.string());
+
+    for (auto & child : children)
+        nodes_in_subtree += traverse(path / child, client, result);
+
+    result.emplace_back(nodes_in_subtree, path.string());
+
+    return nodes_in_subtree;
+}
+
 void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto n = query->args[1].safeGet<UInt64>();
 
-    std::vector<std::tuple<Int32, String>> result;
+    std::vector<std::tuple<Int64, String>> result;
 
-    std::queue<fs::path> queue;
-    queue.push(path);
-    while (!queue.empty())
-    {
-        auto next_path = queue.front();
-        queue.pop();
-
-        auto children = client->zookeeper->getChildren(next_path);
-        for (auto & child : children)
-            child = next_path / child;
-        auto response = client->zookeeper->get(children);
-
-        for (size_t i = 0; i < response.size(); ++i)
-        {
-            result.emplace_back(response[i].stat.numChildren, children[i]);
-            queue.push(children[i]);
-        }
-    }
+    traverse(path, client, result);
 
     std::sort(result.begin(), result.end(), std::greater());
     for (UInt64 i = 0; i < std::min(result.size(), static_cast<size_t>(n)); ++i)
