@@ -23,6 +23,19 @@ class AsynchronousMetrics;
 ///     <events>true</events>
 ///     <errors>true</errors>
 /// </prometheus>
+///
+/// Instead of tags <endpoint>, <metrics>, <asynchronous_metrics>, <events>, <error> in this case and for other createPrometheusHandlerFactory*() functions
+/// here can be section <expose>:
+/// <prometheus>
+///     <port>1234</port>
+///     <expose>
+///         <endpoint>/metric</endpoint>
+///         <metrics>true</metrics>
+///         <asynchronous_metrics>true</asynchronous_metrics>
+///         <events>true</events>
+///         <errors>true</errors>
+///     </expose>
+/// </prometheus>
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryMain(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
