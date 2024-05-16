@@ -355,7 +355,7 @@ SELECT * FROM test WHERE d2 == [1,2,3]::Array(UInt32)::Dynamic;
 - Compare `Dynamic` subcolumn with required type:
 
 ```sql
-SELECT * FROM test WHERE d2.`Array(Int65)` == [1,2,3] -- or using variantElement(d2, 'Array(UInt32)')
+SELECT * FROM test WHERE d2.`Array(Int64)` == [1,2,3] -- or using variantElement(d2, 'Array(UInt32)')
 ```
 
 ```text
