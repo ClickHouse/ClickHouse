@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -1385,6 +1386,17 @@ REQUIRED_CHECKS = [
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
 ]
+
+BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
+
+
+def is_required(check_name: str) -> bool:
+    """Checks if a check_name is in REQUIRED_CHECKS, including batched jobs"""
+    if check_name in REQUIRED_CHECKS:
+        return True
+    if batch := BATCH_REGEXP.search(check_name):
+        return check_name[: batch.start()] in REQUIRED_CHECKS
+    return False
 
 
 @dataclass
