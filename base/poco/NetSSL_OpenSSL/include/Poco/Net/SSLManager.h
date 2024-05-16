@@ -258,6 +258,40 @@ namespace Net
         static const std::string CFG_SERVER_PREFIX;
         static const std::string CFG_CLIENT_PREFIX;
 
+        static const std::string CFG_PRIV_KEY_FILE;
+        static const std::string CFG_CERTIFICATE_FILE;
+        static const std::string CFG_CA_LOCATION;
+        static const std::string CFG_VER_MODE;
+        static const Context::VerificationMode VAL_VER_MODE;
+        static const std::string CFG_VER_DEPTH;
+        static const int VAL_VER_DEPTH;
+        static const std::string CFG_ENABLE_DEFAULT_CA;
+        static const bool VAL_ENABLE_DEFAULT_CA;
+        static const std::string CFG_CIPHER_LIST;
+        static const std::string CFG_CYPHER_LIST; // for backwards compatibility
+        static const std::string VAL_CIPHER_LIST;
+        static const std::string CFG_PREFER_SERVER_CIPHERS;
+        static const std::string CFG_DELEGATE_HANDLER;
+        static const std::string VAL_DELEGATE_HANDLER;
+        static const std::string CFG_CERTIFICATE_HANDLER;
+        static const std::string VAL_CERTIFICATE_HANDLER;
+        static const std::string CFG_CACHE_SESSIONS;
+        static const std::string CFG_SESSION_ID_CONTEXT;
+        static const std::string CFG_SESSION_CACHE_SIZE;
+        static const std::string CFG_SESSION_TIMEOUT;
+        static const std::string CFG_EXTENDED_VERIFICATION;
+        static const std::string CFG_REQUIRE_TLSV1;
+        static const std::string CFG_REQUIRE_TLSV1_1;
+        static const std::string CFG_REQUIRE_TLSV1_2;
+        static const std::string CFG_DISABLE_PROTOCOLS;
+        static const std::string CFG_DH_PARAMS_FILE;
+        static const std::string CFG_ECDH_CURVE;
+
+#ifdef OPENSSL_FIPS
+        static const std::string CFG_FIPS_MODE;
+        static const bool VAL_FIPS_MODE;
+#endif
+
     protected:
         static int verifyClientCallback(int ok, X509_STORE_CTX * pStore);
         /// The return value of this method defines how errors in
@@ -313,40 +347,6 @@ namespace Net
         PrivateKeyPassphraseHandlerPtr _ptrClientPassphraseHandler;
         InvalidCertificateHandlerPtr _ptrClientCertificateHandler;
         Poco::FastMutex _mutex;
-
-        static const std::string CFG_PRIV_KEY_FILE;
-        static const std::string CFG_CERTIFICATE_FILE;
-        static const std::string CFG_CA_LOCATION;
-        static const std::string CFG_VER_MODE;
-        static const Context::VerificationMode VAL_VER_MODE;
-        static const std::string CFG_VER_DEPTH;
-        static const int VAL_VER_DEPTH;
-        static const std::string CFG_ENABLE_DEFAULT_CA;
-        static const bool VAL_ENABLE_DEFAULT_CA;
-        static const std::string CFG_CIPHER_LIST;
-        static const std::string CFG_CYPHER_LIST; // for backwards compatibility
-        static const std::string VAL_CIPHER_LIST;
-        static const std::string CFG_PREFER_SERVER_CIPHERS;
-        static const std::string CFG_DELEGATE_HANDLER;
-        static const std::string VAL_DELEGATE_HANDLER;
-        static const std::string CFG_CERTIFICATE_HANDLER;
-        static const std::string VAL_CERTIFICATE_HANDLER;
-        static const std::string CFG_CACHE_SESSIONS;
-        static const std::string CFG_SESSION_ID_CONTEXT;
-        static const std::string CFG_SESSION_CACHE_SIZE;
-        static const std::string CFG_SESSION_TIMEOUT;
-        static const std::string CFG_EXTENDED_VERIFICATION;
-        static const std::string CFG_REQUIRE_TLSV1;
-        static const std::string CFG_REQUIRE_TLSV1_1;
-        static const std::string CFG_REQUIRE_TLSV1_2;
-        static const std::string CFG_DISABLE_PROTOCOLS;
-        static const std::string CFG_DH_PARAMS_FILE;
-        static const std::string CFG_ECDH_CURVE;
-
-#ifdef OPENSSL_FIPS
-        static const std::string CFG_FIPS_MODE;
-        static const bool VAL_FIPS_MODE;
-#endif
 
         friend class Poco::SingletonHolder<SSLManager>;
         friend class Context;
