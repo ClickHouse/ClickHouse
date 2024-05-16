@@ -83,7 +83,7 @@ public:
 
         SortDescription sorts;
 
-        size_t column_idx = 0;
+        size_t column_idx = arguments.size() - sort_asts->children.size();
         for (const auto & child : sort_asts->children) {
             auto sort_ast = std::dynamic_pointer_cast<ASTOrderByElement>(child);
             if (!sort_ast)

@@ -183,7 +183,7 @@ IProcessor::Status CopyAccumulatingTransform::prepareGenerate()
     int chunk_number = -1;
     for (auto & output : outputs) {
         chunk_number++;
-        if (outputs_chunk_index[chunk_number] - init_idx >= chunks.size()) {
+        if (outputs_chunk_index[chunk_number] >= chunks.size()) {
             output.finish();
             continue;
         }
@@ -196,7 +196,7 @@ IProcessor::Status CopyAccumulatingTransform::prepareGenerate()
             continue;
 
         one_output_processed = true;
-        output.push(chunks[outputs_chunk_index[chunk_number] - init_idx].clone());
+        output.push(chunks[outputs_chunk_index[chunk_number]].clone());
         ++outputs_chunk_index[chunk_number];
     }
 
