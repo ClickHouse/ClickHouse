@@ -14,12 +14,13 @@ namespace DB
 
 std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) const
 {
-    /// It should be just empty GET request.
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
+    auto rw_settings = ReadSettings {};
+    rw_settings.http_max_tries = 1;
 
     auto rw_http_buffer = BuilderRWBufferFromHTTP(endpoint)
                             .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                             .withTimeouts(timeouts)
+                            .withSettings(rw_settings)
                             .create({});
 
     String proxy_host;
