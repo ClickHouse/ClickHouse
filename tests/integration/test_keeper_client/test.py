@@ -57,7 +57,6 @@ def test_big_family(client: KeeperClient):
             ["/test_big_family/1/4", "1"],
             ["/test_big_family/1/3", "1"],
             ["/test_big_family/1/2", "1"],
-            ["/test_big_family/1/1", "1"],
         ]
     )
 
