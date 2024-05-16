@@ -62,7 +62,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
-    const ReadFromFormatInfo & read_from_format_info;
+    const ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
     ColumnsDescription columns_desc;
