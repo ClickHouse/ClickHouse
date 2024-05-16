@@ -783,8 +783,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
-    if (isCrossOrComma(table_join->kind()) && table_join->allowExperimentalCrossJoinSwapOrder())
-        return std::make_shared<CrossJoin>(table_join, right_table_expression_header);
+
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
@@ -899,10 +898,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
       */
     if (table_join->kind() == JoinKind::Cross)
     {
-        if (table_join->allowExperimentalCrossJoinSwapOrder())
-            return std::make_shared<CrossJoin>(table_join, right_table_expression_header);
-        else
-            return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))

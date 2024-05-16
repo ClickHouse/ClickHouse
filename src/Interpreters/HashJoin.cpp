@@ -2483,6 +2483,20 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 }
 
+
+JoinPipelineType HashJoin::pipelineType() const
+{
+    /// No need to process anything in the right stream if hash table was already filled
+    if (from_storage_join)
+        return JoinPipelineType::FilledRight;
+
+    if (table_join->allowExperimentalCrossJoinSwapOrder() && isCrossOrComma(table_join->kind()))
+        return JoinPipelineType::YShaped;
+
+    /// Default pipeline processes right stream at first and then left.
+    return JoinPipelineType::FillRightFirst;
+}
+
 HashJoin::~HashJoin()
 {
     if (!data)
