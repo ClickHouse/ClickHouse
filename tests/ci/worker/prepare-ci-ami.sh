@@ -183,7 +183,7 @@ setup_tailscale() {
     # Clean possible garbage from the runner type
     RUNNER_TYPE=${RUNNER_TYPE//[^0-9a-z]/-}
     TS_AUTHKEY=$(TS_API_CLIENT_ID="$TS_API_CLIENT_ID" TS_API_CLIENT_SECRET="$TS_API_CLIENT_SECRET" \
-                 get-authkey -tags tag:svc-core-ci-github -reusable -ephemeral)
+                 get-authkey -tags tag:svc-core-ci-github -ephemeral)
     tailscale up --ssh --auth-key="$TS_AUTHKEY" --hostname="ci-runner-$RUNNER_TYPE-$INSTANCE_ID"
 }
 
