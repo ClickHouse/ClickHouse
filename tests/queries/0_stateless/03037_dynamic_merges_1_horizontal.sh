@@ -7,8 +7,8 @@ CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1"
 
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 "
 
 function test()
 {
@@ -40,23 +40,13 @@ function test()
 
 $CH_CLIENT -q "drop table if exists test;"
 
-echo "MergeTree compact + horizontal merge"
+echo "MergeTree compact"
 $CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_columns_to_activate=10;"
 test
 $CH_CLIENT -q "drop table test;"
 
-echo "MergeTree wide + horizontal merge"
+echo "MergeTree wide"
 $CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10;"
 test
 $CH_CLIENT -q "drop table test;"
 
-
-echo "MergeTree compact + vertical merge"
-$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;"
-test
-$CH_CLIENT -q "drop table test;"
-
-echo "MergeTree wide + vertical merge"
-$CH_CLIENT -q "create table test (id UInt64, d Dynamic(max_types=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;"
-test
-$CH_CLIENT -q "drop table test;"

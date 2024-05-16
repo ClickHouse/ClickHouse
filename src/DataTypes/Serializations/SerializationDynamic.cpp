@@ -33,7 +33,7 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
     /// Variants statistics. Map (Variant name) -> (Variant size).
     ColumnDynamic::Statistics statistics = { .source = ColumnDynamic::Statistics::Source::READ, .data = {} };
 
-    SerializeBinaryBulkStateDynamic(UInt64 structure_version_) : structure_version(structure_version_) {}
+    explicit SerializeBinaryBulkStateDynamic(UInt64 structure_version_) : structure_version(structure_version_) {}
 };
 
 struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBinaryBulkState

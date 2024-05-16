@@ -7,7 +7,7 @@ CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_merge_tree_settings --allow_experimental_dynamic_type=1 --optimize_aggregation_in_order 0"
 
 
 function test()
@@ -53,10 +53,10 @@ function test()
 $CH_CLIENT -q "drop table if exists test;"
 
 echo "MergeTree compact + horizontal merge"
-test "min_rows_for_wide_part=100000000000, min_bytes_for_wide_part=1000000000000"
+test "min_rows_for_wide_part=100000000000, min_bytes_for_wide_part=1000000000000, vertical_merge_algorithm_min_rows_to_activate=10000000000, vertical_merge_algorithm_min_columns_to_activate=100000000000"
 
 echo "MergeTree wide + horizontal merge"
-test "min_rows_for_wide_part=1, min_bytes_for_wide_part=1"
+test "min_rows_for_wide_part=1, min_bytes_for_wide_part=1,vertical_merge_algorithm_min_rows_to_activate=1000000000, vertical_merge_algorithm_min_columns_to_activate=1000000000000"
 
 echo "MergeTree compact + vertical merge"
 test "min_rows_for_wide_part=100000000000, min_bytes_for_wide_part=1000000000000, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1"
