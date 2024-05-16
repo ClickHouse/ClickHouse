@@ -1726,15 +1726,34 @@ Example:
 
 ``` sql
 SELECT
-    arrayIntersect([1, 2], [1, 3], [2, 3]) AS no_intersect,
-    arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
+    arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
+    arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
 ```
 
 ``` text
-┌─no_intersect─┬─intersect─┐
-│ []           │ [1]       │
-└──────────────┴───────────┘
+┌─non_empty_intersection─┬─empty_intersection─┐
+│ []                     │ [1]                │
+└────────────────────────┴────────────────────┘
 ```
+
+## arraySymmetricDifference(arr)
+
+Takes multiple arrays, returns an array with elements which are not present in all source arrays.
+
+Example:
+
+``` sql
+SELECT
+    arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference
+    arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference,
+```
+
+``` text
+┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
+│ []                         │ [3]                            │
+└────────────────────────────┴────────────────────────────────┘
+```
+
 
 ## arrayJaccardIndex
 
