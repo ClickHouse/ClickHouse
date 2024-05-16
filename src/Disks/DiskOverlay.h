@@ -5,7 +5,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 
-namespace DB {
+namespace DB
+{
 
 class DiskOverlay : public IDisk
 {
@@ -61,8 +62,8 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    Strings getBlobPath(const String &  /*path*/) const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay is not an object storage"); }
-    void writeFileUsingBlobWritingFunction(const String &  /*path*/, WriteMode  /*mode*/, WriteBlobFunction &&  /*write_blob_function*/) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO"); }
+    Strings getBlobPath(const String &  /*path*/) const override;
+    void writeFileUsingBlobWritingFunction(const String &  /*path*/, WriteMode  /*mode*/, WriteBlobFunction &&  /*write_blob_function*/) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -77,9 +78,9 @@ public:
 
     void setReadOnly(const String & path) override;
 
-    void createHardLink(const String &  /*src_path*/, const String &  /*dst_path*/) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO"); }
+    void createHardLink(const String &  src_path, const String &  dst_path) override;
 
-    DataSourceDescription getDataSourceDescription() const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There are two disks in overlay, which one do you want?"); }
+    DataSourceDescription getDataSourceDescription() const override;
 
     bool supportParallelWrite() const override;
 
@@ -91,7 +92,7 @@ public:
     bool supportZeroCopyReplication() const override { return false; }
 
 private:
-    DiskPtr disk_base, disk_overlay;
+    DiskPtr disk_base, disk_diff;
     MetadataStoragePtr metadata, tracked_metadata;
 
     // A tracked file is a file that exists on the overlay disk (possibly under another name)
