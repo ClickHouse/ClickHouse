@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <IO/ReadBufferFromFileBase.h>
 
 
@@ -244,22 +245,35 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             }
         }
 
-        std::unique_ptr<ReadBuffer> read_buffer = object_storage->readObject(
-            StoredObject(current_object_info->relative_path),
-            getContext()->getReadSettings(),
-            {},
-            current_object_info->metadata->size_bytes);
+        std::unique_ptr<ReadBuffer> read_buf;
+        CompressionMethod compression_method;
+        using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
+        if (auto object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
+        {
+            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+            auto & archive_reader = object_info_in_archive->archive_reader;
+            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+        }
+        else
+        {
+            compression_method = chooseCompressionMethod(current_object_info->relative_path, configuration->compression_method);
+            read_buf = object_storage->readObject(
+                StoredObject(current_object_info->relative_path),
+                getContext()->getReadSettings(),
+                {},
+                current_object_info->metadata->size_bytes);
+        }
 
-        if (!query_settings.skip_empty_files || !read_buffer->eof())
+        if (!query_settings.skip_empty_files || !read_buf->eof())
         {
             first = false;
 
-            read_buffer = wrapReadBufferWithCompressionMethod(
-                std::move(read_buffer),
-                chooseCompressionMethod(current_object_info->relative_path, configuration->compression_method),
+            read_buf = wrapReadBufferWithCompressionMethod(
+                std::move(read_buf),
+                compression_method,
                 static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max));
 
-            return {std::move(read_buffer), std::nullopt, format};
+            return {std::move(read_buf), std::nullopt, format};
         }
     }
 }

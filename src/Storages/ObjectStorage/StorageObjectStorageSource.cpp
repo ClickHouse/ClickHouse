@@ -7,6 +7,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/Archives/createArchiveReader.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -100,10 +101,11 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
 
     auto settings = configuration->getQuerySettings(local_context);
 
+    std::unique_ptr<IIterator> iterator;
     if (configuration->isPathWithGlobs())
     {
         /// Iterate through disclosed globs and make a source for each file
-        return std::make_shared<GlobIterator>(
+        iterator = std::make_unique<GlobIterator>(
             object_storage, configuration, predicate, virtual_columns,
             local_context, read_keys, settings.list_object_keys_size,
             settings.throw_on_zero_files_match, file_progress_callback);
@@ -123,10 +125,17 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             copy_configuration->setPaths(keys);
         }
 
-        return std::make_shared<KeysIterator>(
+        iterator = std::make_unique<KeysIterator>(
             object_storage, copy_configuration, virtual_columns, read_keys,
             settings.ignore_non_existent_file, file_progress_callback);
     }
+
+    if (configuration->isArchive())
+    {
+        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys);
+    }
+
+    return iterator;
 }
 
 void StorageObjectStorageSource::lazyInitialize(size_t processor)
@@ -262,9 +271,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        const auto compression_method = chooseCompressionMethod(object_info->relative_path, configuration->compression_method);
+        CompressionMethod compression_method;
         const auto max_parsing_threads = need_only_count ? std::optional<size_t>(1) : std::nullopt;
-        read_buf = createReadBuffer(object_info->relative_path, object_info->metadata->size_bytes);
+
+        if (auto object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+        {
+            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+            auto & archive_reader = object_info_in_archive->archive_reader;
+            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+        }
+        else
+        {
+            compression_method = chooseCompressionMethod(object_info->relative_path, configuration->compression_method);
+            read_buf = createReadBuffer(*object_info);
+        }
 
         auto input_format = FormatFactory::instance().getInput(
             configuration->format, *read_buf, read_from_format_info.format_header,
@@ -312,8 +332,10 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
     return create_reader_scheduler([=, this] { return createReader(processor); }, Priority{});
 }
 
-std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const String & key, size_t object_size)
+std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const ObjectInfo & object_info)
 {
+    const auto & object_size = object_info.metadata->size_bytes;
+
     auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
     read_settings.enable_filesystem_cache = false;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
@@ -333,7 +355,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const S
         LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
         auto async_reader = object_storage->readObjects(
-            StoredObjects{StoredObject{key, /* local_path */ "", object_size}}, read_settings);
+            StoredObjects{StoredObject{object_info.relative_path, /* local_path */ "", object_size}}, read_settings);
 
         async_reader->setReadUntilEnd();
         if (read_settings.remote_fs_prefetch)
@@ -344,7 +366,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const S
     else
     {
         /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
-        return object_storage->readObject(StoredObject(key), read_settings);
+        return object_storage->readObject(StoredObject(object_info.relative_path, "", object_size), read_settings);
     }
 }
 
@@ -607,6 +629,116 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
         return std::make_shared<ObjectInfo>(callback());
 
     return buffer[current_index];
+}
+
+static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
+{
+    auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(archive_pattern));
+    if (!matcher->ok())
+    {
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                        "Cannot compile regex from glob ({}): {}",
+                        archive_pattern, matcher->error());
+    }
+    return [matcher](const std::string & p) mutable { return re2::RE2::FullMatch(p, *matcher); };
+}
+
+StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInArchive(
+    ObjectInfoPtr archive_object_,
+    const std::string & path_in_archive_,
+    std::shared_ptr<IArchiveReader> archive_reader_)
+    : archive_object(archive_object_)
+    , path_in_archive(path_in_archive_)
+    , archive_reader(archive_reader_)
+{
+}
+
+StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
+    ObjectStoragePtr object_storage_,
+    ConfigurationPtr configuration_,
+    std::unique_ptr<IIterator> archives_iterator_,
+    ContextPtr context_,
+    ObjectInfos * read_keys_)
+    : IIterator("ArchiveIterator")
+    , WithContext(context_)
+    , object_storage(object_storage_)
+    , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
+    , archives_iterator(std::move(archives_iterator_))
+    , filter(is_path_in_archive_with_globs ? createArchivePathFilter(configuration_->getPathInArchive()) : IArchiveReader::NameFilter{})
+    , path_in_archive(is_path_in_archive_with_globs ? "" : configuration_->getPathInArchive())
+    , read_keys(read_keys_)
+{
+}
+
+std::shared_ptr<IArchiveReader>
+StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr object_info) const
+{
+    const auto size = object_info->metadata->size_bytes;
+    return DB::createArchiveReader(
+        /* path_to_archive */object_info->relative_path,
+        /* archive_read_function */[=, this]()
+        {
+            StoredObject stored_object(object_info->relative_path, "", size);
+            return object_storage->readObject(stored_object, getContext()->getReadSettings());
+        },
+        /* archive_size */size);
+}
+
+StorageObjectStorageSource::ObjectInfoPtr
+StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
+{
+    std::unique_lock lock{next_mutex};
+    while (true)
+    {
+        if (filter)
+        {
+            if (!file_enumerator)
+            {
+                archive_object = archives_iterator->next(processor);
+                if (!archive_object)
+                    return {};
+
+                archive_reader = createArchiveReader(archive_object);
+                file_enumerator = archive_reader->firstFile();
+                if (!file_enumerator)
+                    continue;
+            }
+            else if (!file_enumerator->nextFile())
+            {
+                file_enumerator.reset();
+                continue;
+            }
+
+            path_in_archive = file_enumerator->getFileName();
+            if (!filter(path_in_archive))
+                continue;
+        }
+        else
+        {
+            archive_object = archives_iterator->next(processor);
+            if (!archive_object)
+                return {};
+
+            if (!archive_object->metadata)
+                archive_object->metadata = object_storage->getObjectMetadata(archive_object->relative_path);
+
+            archive_reader = createArchiveReader(archive_object);
+            if (!archive_reader->fileExists(path_in_archive))
+                continue;
+        }
+
+        auto object_in_archive = std::make_shared<ObjectInfoInArchive>(archive_object, path_in_archive, archive_reader);
+
+        if (read_keys != nullptr)
+            read_keys->push_back(object_in_archive);
+
+        return object_in_archive;
+    }
+}
+
+size_t StorageObjectStorageSource::ArchiveIterator::estimatedKeysCount()
+{
+    return archives_iterator->estimatedKeysCount();
 }
 
 }

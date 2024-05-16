@@ -55,6 +55,14 @@ String StorageS3Configuration::getDataSourceDescription()
     return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
 }
 
+std::string StorageS3Configuration::getPathInArchive() const
+{
+    if (url.archive_pattern.has_value())
+        return url.archive_pattern.value();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getPath());
+}
+
 void StorageS3Configuration::check(ContextPtr context) const
 {
     validateNamespace(url.bucket);

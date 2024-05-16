@@ -34,6 +34,9 @@ public:
     String getDataSourceDescription() override;
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
+    bool isArchive() const override { return url.archive_pattern.has_value(); }
+    std::string getPathInArchive() const override;
+
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;
     ConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }

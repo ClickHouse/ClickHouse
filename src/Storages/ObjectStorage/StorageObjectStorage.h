@@ -175,6 +175,10 @@ public:
     bool isNamespaceWithGlobs() const;
     virtual std::string getPathWithoutGlobs() const;
 
+    virtual bool isArchive() const { return false; }
+    bool isPathInArchiveWithGlobs() const;
+    virtual std::string getPathInArchive() const;
+
     virtual void check(ContextPtr context) const;
     virtual void validateNamespace(const String & /* name */) const {}
 

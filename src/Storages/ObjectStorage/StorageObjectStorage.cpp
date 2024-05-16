@@ -452,6 +452,16 @@ std::string StorageObjectStorage::Configuration::getPathWithoutGlobs() const
     return getPath().substr(0, getPath().find_first_of("*?{"));
 }
 
+bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
+{
+    return getPathInArchive().find_first_of("*?{") != std::string::npos;
+}
+
+std::string StorageObjectStorage::Configuration::getPathInArchive() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath());
+}
+
 void StorageObjectStorage::Configuration::assertInitialized() const
 {
     if (!initialized)

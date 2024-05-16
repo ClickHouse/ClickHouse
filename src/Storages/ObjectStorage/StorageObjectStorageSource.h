@@ -1,10 +1,11 @@
 #pragma once
+#include <Common/re2.h>
+#include <Interpreters/Context_fwd.h>
+#include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Common/re2.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 
 namespace DB
@@ -25,6 +26,7 @@ public:
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
+    class ArchiveIterator;
 
     StorageObjectStorageSource(
         String name_,
@@ -109,7 +111,7 @@ protected:
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader(size_t processor = 0);
     std::future<ReaderHolder> createReaderAsync(size_t processor = 0);
-    std::unique_ptr<ReadBuffer> createReadBuffer(const String & key, size_t object_size);
+    std::unique_ptr<ReadBuffer> createReadBuffer(const ObjectInfo & object_info);
 
     void addNumRowsToCache(const String & path, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const ObjectInfoPtr & object_info);
@@ -218,4 +220,64 @@ private:
     std::atomic<size_t> index = 0;
     bool ignore_non_existent_files;
 };
+
+/*
+ * An archives iterator.
+ * Allows to iterate files inside one or many archives.
+ * `archives_iterator` is an iterator which iterates over different archives.
+ * There are two ways to read files in archives:
+ * 1. When we want to read one concete file in each archive.
+ *    In this case we go through all archives, check if this certain file
+ *    exists within this archive and read it if it exists.
+ * 2. When we have a certain pattern of files we want to read in each archive.
+ *    For this purpose we create a filter defined as IArchiveReader::NameFilter.
+ */
+class StorageObjectStorageSource::ArchiveIterator : public IIterator, private WithContext
+{
+public:
+    explicit ArchiveIterator(
+        ObjectStoragePtr object_storage_,
+        ConfigurationPtr configuration_,
+        std::unique_ptr<IIterator> archives_iterator_,
+        ContextPtr context_,
+        ObjectInfos * read_keys_);
+
+    size_t estimatedKeysCount() override;
+
+    struct ObjectInfoInArchive : public ObjectInfo
+    {
+        ObjectInfoInArchive(
+            ObjectInfoPtr archive_object_,
+            const std::string & path_in_archive_,
+            std::shared_ptr<IArchiveReader> archive_reader_);
+
+        const ObjectInfoPtr archive_object;
+        const std::string path_in_archive;
+        const std::shared_ptr<IArchiveReader> archive_reader;
+    };
+
+private:
+    ObjectInfoPtr nextImpl(size_t processor) override;
+    std::shared_ptr<IArchiveReader> createArchiveReader(ObjectInfoPtr object_info) const;
+
+    const ObjectStoragePtr object_storage;
+    const bool is_path_in_archive_with_globs;
+    /// Iterator which iterates through different archives.
+    const std::unique_ptr<IIterator> archives_iterator;
+    /// Used when files inside archive are defined with a glob
+    const IArchiveReader::NameFilter filter = {};
+    /// Current file inside the archive.
+    std::string path_in_archive = {};
+    /// Read keys of files inside archives.
+    ObjectInfos * read_keys;
+    /// Object pointing to archive (NOT path within archive).
+    ObjectInfoPtr archive_object;
+    /// Reader of the archive.
+    std::shared_ptr<IArchiveReader> archive_reader;
+    /// File enumerator inside the archive.
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+
+    std::mutex next_mutex;
+};
+
 }
