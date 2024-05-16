@@ -448,9 +448,9 @@ bugfix_validate_check = DigestConfig(
     ],
     exclude_files=[".md"],
     docker=IMAGES.copy()
-    + [
-        "clickhouse/stateless-test",
-    ],
+           + [
+               "clickhouse/stateless-test",
+           ],
 )
 # common test params
 docker_server_job_config = JobConfig(
@@ -570,7 +570,7 @@ class CIConfig:
         if self.is_build_job(job_name):
             stage_type = CIStages.BUILDS_1
             if job_name in CI_CONFIG.get_builds_for_report(
-                JobNames.BUILD_CHECK_SPECIAL
+                    JobNames.BUILD_CHECK_SPECIAL
             ):
                 # special builds go to Build_2 stage to not delay Builds_1/Test_1
                 stage_type = CIStages.BUILDS_2
@@ -584,7 +584,7 @@ class CIConfig:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
                 assert required_build
                 if required_build in CI_CONFIG.get_builds_for_report(
-                    JobNames.BUILD_CHECK
+                        JobNames.BUILD_CHECK
                 ):
                     stage_type = CIStages.TESTS_1
                 else:
@@ -597,10 +597,10 @@ class CIConfig:
     def get_job_config(self, check_name: str) -> JobConfig:
         res = None
         for config in (
-            self.build_config,
-            self.builds_report_config,
-            self.test_configs,
-            self.other_jobs_configs,
+                self.build_config,
+                self.builds_report_config,
+                self.test_configs,
+                self.other_jobs_configs,
         ):
             if check_name in config:  # type: ignore
                 res = config[check_name].job_config  # type: ignore
@@ -612,47 +612,47 @@ class CIConfig:
         if self.is_build_job(check_name) or check_name == JobNames.FAST_TEST:
             result = Runners.BUILDER
         elif any(
-            words in check_name.lower()
-            for words in [
-                "install packages",
-                "compatibility check",
-                "docker",
-                "build check",
-                "jepsen",
-                "style check",
-            ]
+                words in check_name.lower()
+                for words in [
+                    "install packages",
+                    "compatibility check",
+                    "docker",
+                    "build check",
+                    "jepsen",
+                    "style check",
+                ]
         ):
             result = Runners.STYLE_CHECKER
         elif check_name == JobNames.DOCS_CHECK:
             # docs job is demanding
             result = Runners.FUNC_TESTER_ARM
         elif any(
-            words in check_name.lower()
-            for words in [
-                "stateless",
-                "stateful",
-                "clickbench",
-                "sqllogic test",
-                "libfuzzer",
-                "bugfix validation",
-            ]
+                words in check_name.lower()
+                for words in [
+                    "stateless",
+                    "stateful",
+                    "clickbench",
+                    "sqllogic test",
+                    "libfuzzer",
+                    "bugfix validation",
+                ]
         ):
             result = Runners.FUNC_TESTER
         elif any(
-            words in check_name.lower()
-            for words in ["stress", "upgrade", "integration", "performance comparison"]
+                words in check_name.lower()
+                for words in ["stress", "upgrade", "integration", "performance comparison"]
         ):
             result = Runners.STRESS_TESTER
         elif any(
-            words in check_name.lower()
-            for words in ["ast fuzzer", "unit tests", "sqlancer", "sqltest"]
+                words in check_name.lower()
+                for words in ["ast fuzzer", "unit tests", "sqlancer", "sqltest"]
         ):
             result = Runners.FUZZER_UNIT_TESTER
 
         assert result, f"BUG, no runner for [{check_name}]"
 
         if (
-            "aarch" in check_name.lower() or "arm64" in check_name.lower()
+                "aarch" in check_name.lower() or "arm64" in check_name.lower()
         ) and "aarch" not in result:
             if result == Runners.STRESS_TESTER:
                 # FIXME: no arm stress tester group atm
@@ -683,10 +683,10 @@ class CIConfig:
         check_name = self.normalize_string(check_name)
 
         for config in (
-            self.build_config,
-            self.builds_report_config,
-            self.test_configs,
-            self.other_jobs_configs,
+                self.build_config,
+                self.builds_report_config,
+                self.test_configs,
+                self.other_jobs_configs,
         ):
             for job_name in config:  # type: ignore
                 if check_name == self.normalize_string(job_name):
@@ -714,10 +714,10 @@ class CIConfig:
     def get_digest_config(self, check_name: str) -> DigestConfig:
         res = None
         for config in (
-            self.other_jobs_configs,
-            self.build_config,
-            self.builds_report_config,
-            self.test_configs,
+                self.other_jobs_configs,
+                self.build_config,
+                self.builds_report_config,
+                self.test_configs,
         ):
             if check_name in config:  # type: ignore
                 res = config[check_name].job_config.digest  # type: ignore
@@ -732,15 +732,15 @@ class CIConfig:
         """
         assert branch
         for config in (
-            self.other_jobs_configs,
-            self.build_config,
-            self.builds_report_config,
-            self.test_configs,
+                self.other_jobs_configs,
+                self.build_config,
+                self.builds_report_config,
+                self.test_configs,
         ):
             yield from config  # type: ignore
 
     def get_builds_for_report(
-        self, report_name: str, release: bool = False, backport: bool = False
+            self, report_name: str, release: bool = False, backport: bool = False
     ) -> List[str]:
         # hack to modify build list for release and bp wf
         assert not (release and backport), "Invalid input"
@@ -1155,16 +1155,20 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN,
+            job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN,
+            job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN,
+            job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN,
+            job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         # End stateful tests for parallel replicas
         JobNames.STATELESS_TEST_ASAN: TestConfig(
@@ -1207,7 +1211,8 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True, run_by_ci_option=True),  # type: ignore
+            job_config=JobConfig(num_batches=4, **statless_test_common_params, release_only=True,
+                                 run_by_ci_option=True),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_TSAN: TestConfig(
             Build.PACKAGE_TSAN,
@@ -1220,28 +1225,39 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)
+            # type: ignore
         ),
         JobNames.STRESS_TEST_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN,
+            job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)
+            # type: ignore
         ),
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN,
+            job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)
+            # type: ignore
         ),
         JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+            Build.PACKAGE_TSAN,
+            job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
         ),
         JobNames.STRESS_TEST_AZURE_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
+            Build.PACKAGE_MSAN,
+            job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN,
+            job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)
+            # type: ignore
         ),
         JobNames.UPGRADE_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN,
+            job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)
+            # type: ignore
         ),
         JobNames.UPGRADE_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
@@ -1260,8 +1276,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.INTEGRATION_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
-            # add [run_by_label="test arm"] to not run in regular pr workflow by default
-            job_config=JobConfig(num_batches=6, **integration_test_common_params, run_by_label="test arm"),  # type: ignore
+            job_config=JobConfig(num_batches=5, **integration_test_common_params),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
@@ -1335,7 +1350,8 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.PERFORMANCE_TEST_ARM64: TestConfig(
             Build.PACKAGE_AARCH64,
-            job_config=JobConfig(num_batches=4, run_by_label="pr-performance", **perf_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, run_by_label="pr-performance", **perf_test_common_params),
+            # type: ignore
         ),
         JobNames.SQLANCER: TestConfig(
             Build.PACKAGE_RELEASE, job_config=sqllancer_test_common_params
@@ -1364,7 +1380,6 @@ CI_CONFIG = CIConfig(
     },
 )
 CI_CONFIG.validate()
-
 
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
