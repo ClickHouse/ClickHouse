@@ -1039,10 +1039,6 @@ private:
         auto [_, inserted] = scope.alias_name_to_expression_node.insert(std::make_pair(alias, node));
         if (!inserted)
             scope.nodes_with_duplicated_aliases.insert(node);
-
-        /// If node is identifier put it also in scope alias name to lambda node map
-        if (node->getNodeType() == QueryTreeNodeType::IDENTIFIER)
-            scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
     }
 
     IdentifierResolveScope & scope;
