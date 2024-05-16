@@ -384,7 +384,7 @@ void TCPHandler::runImpl()
                 query_context->getClientInfo().client_trace_context,
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
-            thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
 
             query_scope.emplace(query_context, /* fatal_error_callback */ [this]
             {
@@ -1872,7 +1872,7 @@ void TCPHandler::receiveQuery()
     if (state.part_uuids_to_ignore)
         query_context->getIgnoredPartUUIDs()->add(*state.part_uuids_to_ignore);
 
-    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
     query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
 
     ///

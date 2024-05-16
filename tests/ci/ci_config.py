@@ -78,7 +78,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_COMPAT = "binary_amd64_compat"
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
-    # BINARY_S390X = "binary_s390x" # disabled because s390x refused to build in the migration to OpenSSL
+    BINARY_S390X = "binary_s390x"
     FUZZERS = "fuzzers"
 
 
@@ -131,6 +131,7 @@ class JobNames(metaclass=WithIter):
     STRESS_TEST_MSAN = "Stress test (msan)"
     STRESS_TEST_DEBUG = "Stress test (debug)"
     STRESS_TEST_AZURE_TSAN = "Stress test (azure, tsan)"
+    STRESS_TEST_AZURE_MSAN = "Stress test (azure, msan)"
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
@@ -914,63 +915,63 @@ CI_CONFIG = CIConfig(
     build_config={
         Build.PACKAGE_RELEASE: BuildConfig(
             name=Build.PACKAGE_RELEASE,
-            compiler="clang-17",
+            compiler="clang-18",
             package_type="deb",
             static_binary_name="amd64",
             additional_pkgs=True,
         ),
         Build.PACKAGE_AARCH64: BuildConfig(
             name=Build.PACKAGE_AARCH64,
-            compiler="clang-17-aarch64",
+            compiler="clang-18-aarch64",
             package_type="deb",
             static_binary_name="aarch64",
             additional_pkgs=True,
         ),
         Build.PACKAGE_ASAN: BuildConfig(
             name=Build.PACKAGE_ASAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="address",
             package_type="deb",
         ),
         Build.PACKAGE_UBSAN: BuildConfig(
             name=Build.PACKAGE_UBSAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="undefined",
             package_type="deb",
         ),
         Build.PACKAGE_TSAN: BuildConfig(
             name=Build.PACKAGE_TSAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="thread",
             package_type="deb",
         ),
         Build.PACKAGE_MSAN: BuildConfig(
             name=Build.PACKAGE_MSAN,
-            compiler="clang-17",
+            compiler="clang-18",
             sanitizer="memory",
             package_type="deb",
         ),
         Build.PACKAGE_DEBUG: BuildConfig(
             name=Build.PACKAGE_DEBUG,
-            compiler="clang-17",
+            compiler="clang-18",
             debug_build=True,
             package_type="deb",
             sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         Build.PACKAGE_RELEASE_COVERAGE: BuildConfig(
             name=Build.PACKAGE_RELEASE_COVERAGE,
-            compiler="clang-17",
+            compiler="clang-18",
             coverage=True,
             package_type="deb",
         ),
         Build.BINARY_RELEASE: BuildConfig(
             name=Build.BINARY_RELEASE,
-            compiler="clang-17",
+            compiler="clang-18",
             package_type="binary",
         ),
         Build.BINARY_TIDY: BuildConfig(
             name=Build.BINARY_TIDY,
-            compiler="clang-17",
+            compiler="clang-18",
             debug_build=True,
             package_type="binary",
             static_binary_name="debug-amd64",
@@ -979,70 +980,69 @@ CI_CONFIG = CIConfig(
         ),
         Build.BINARY_DARWIN: BuildConfig(
             name=Build.BINARY_DARWIN,
-            compiler="clang-17-darwin",
+            compiler="clang-18-darwin",
             package_type="binary",
             static_binary_name="macos",
         ),
         Build.BINARY_AARCH64: BuildConfig(
             name=Build.BINARY_AARCH64,
-            compiler="clang-17-aarch64",
+            compiler="clang-18-aarch64",
             package_type="binary",
         ),
         Build.BINARY_AARCH64_V80COMPAT: BuildConfig(
             name=Build.BINARY_AARCH64_V80COMPAT,
-            compiler="clang-17-aarch64-v80compat",
+            compiler="clang-18-aarch64-v80compat",
             package_type="binary",
             static_binary_name="aarch64v80compat",
             comment="For ARMv8.1 and older",
         ),
         Build.BINARY_FREEBSD: BuildConfig(
             name=Build.BINARY_FREEBSD,
-            compiler="clang-17-freebsd",
+            compiler="clang-18-freebsd",
             package_type="binary",
             static_binary_name="freebsd",
         ),
         Build.BINARY_DARWIN_AARCH64: BuildConfig(
             name=Build.BINARY_DARWIN_AARCH64,
-            compiler="clang-17-darwin-aarch64",
+            compiler="clang-18-darwin-aarch64",
             package_type="binary",
             static_binary_name="macos-aarch64",
         ),
         Build.BINARY_PPC64LE: BuildConfig(
             name=Build.BINARY_PPC64LE,
-            compiler="clang-17-ppc64le",
+            compiler="clang-18-ppc64le",
             package_type="binary",
             static_binary_name="powerpc64le",
         ),
         Build.BINARY_AMD64_COMPAT: BuildConfig(
             name=Build.BINARY_AMD64_COMPAT,
-            compiler="clang-17-amd64-compat",
+            compiler="clang-18-amd64-compat",
             package_type="binary",
             static_binary_name="amd64compat",
             comment="SSE2-only build",
         ),
         Build.BINARY_AMD64_MUSL: BuildConfig(
             name=Build.BINARY_AMD64_MUSL,
-            compiler="clang-17-amd64-musl",
+            compiler="clang-18-amd64-musl",
             package_type="binary",
             static_binary_name="amd64musl",
             comment="Build with Musl",
         ),
         Build.BINARY_RISCV64: BuildConfig(
             name=Build.BINARY_RISCV64,
-            compiler="clang-17-riscv64",
+            compiler="clang-18-riscv64",
             package_type="binary",
             static_binary_name="riscv64",
         ),
-        # disabled because s390x refused to build in the migration to OpenSSL
-        # Build.BINARY_S390X: BuildConfig(
-        #     name=Build.BINARY_S390X,
-        #     compiler="clang-17-s390x",
-        #     package_type="binary",
-        #     static_binary_name="s390x",
-        # ),
+        Build.BINARY_S390X: BuildConfig(
+            name=Build.BINARY_S390X,
+            compiler="clang-18-s390x",
+            package_type="binary",
+            static_binary_name="s390x",
+        ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
-            compiler="clang-17",
+            compiler="clang-18",
             package_type="fuzzers",
             job_config=fuzzer_build_job_config,
         ),
@@ -1069,7 +1069,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_DARWIN_AARCH64,
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
-                # Build.BINARY_S390X, # disabled because s390x refused to build in the migration to OpenSSL
+                Build.BINARY_S390X,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
@@ -1233,6 +1233,9 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.STRESS_TEST_AZURE_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        ),
+        JobNames.STRESS_TEST_AZURE_MSAN: TestConfig(
+            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params, release_only=True, run_by_ci_option=True)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore

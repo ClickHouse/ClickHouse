@@ -273,7 +273,7 @@ public:
     static void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
 
     /// Set value not greater then 0 to mark the query as stopped.
-    static void stop() { return exit_after_signals.store(0); }
+    static void stop() { exit_after_signals.store(0); }
 
     /// Return true if the query was stopped.
     /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
@@ -439,8 +439,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
     for (auto & table : external_tables)
         data.emplace_back(table.getData(global_context));
 
-    if (send_external_tables)
-        connection->sendExternalTablesData(data);
+    connection->sendExternalTablesData(data);
 }
 
 
@@ -2617,7 +2616,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"));
+            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"), global_context->getClientInfo());
         }
 
         try
@@ -2811,9 +2810,9 @@ public:
      * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
      * Implements boost::program_options::ext_parser logic
      */
-    std::pair<std::string, std::string> operator()(const std::string& token) const
+    std::pair<std::string, std::string> operator()(const std::string & token) const
     {
-        if (token.find("--") != 0)
+        if (!token.starts_with("--"))
             return {};
         std::string arg = token.substr(2);
 
@@ -2910,8 +2909,29 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     }
 
     /// Check positional options.
-    if (std::ranges::count_if(parsed.options, [](const auto & op){ return !op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--"); }) > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+    for (const auto & op : parsed.options)
+    {
+        if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
+            && !op.original_tokens[0].empty() && !op.value.empty())
+        {
+            /// Two special cases for better usability:
+            /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
+            /// These are relevant for interactive usage - user-friendly, but questionable in general.
+            /// In case of ambiguity or for scripts, prefer using proper options.
+
+            const auto & token = op.original_tokens[0];
+            po::variable_value value(boost::any(op.value), false);
+
+            const char * option;
+            if (token.contains(' '))
+                option = "query";
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
+
+            if (!options.emplace(option, value).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
+        }
+    }
 
     po::store(parsed, options);
 }
