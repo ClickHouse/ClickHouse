@@ -1123,7 +1123,9 @@ CI_CONFIG = CIConfig(
             "",
             # we run this check by label - no digest required
             job_config=JobConfig(
-                run_by_label="pr-bugfix", run_command="bugfix_validate_check.py"
+                run_by_label="pr-bugfix",
+                run_command="bugfix_validate_check.py",
+                timeout=900,
             ),
         ),
     },
