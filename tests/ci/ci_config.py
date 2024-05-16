@@ -1271,7 +1271,7 @@ CI_CONFIG = CIConfig(
         ),
         JobNames.INTEGRATION_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
-            job_config=JobConfig(num_batches=5, **integration_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=6, **integration_test_common_params),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
