@@ -170,8 +170,6 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
     std::vector<String> transferred_row(num_columns);
     bool has_transferred_row = false;
-    size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 2 : 2;
-
     for (size_t j = 0; j < num_columns; ++j)
     {
         if (j != 0)
@@ -185,13 +183,11 @@ void PrettyCompactBlockOutputFormat::writeRow(
             serializations[j]->serializeText(*columns[j], row_num, out_serialize, format_settings);
         }
         if (cut_to_width && format_settings.pretty.preserve_border_for_multiline_string)
-            splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width, cut_to_width, prefix);
-        has_transferred_row |= !transferred_row[j].empty();
+            splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width);
+        has_transferred_row |= !transferred_row[j].empty() && cur_width <= cut_to_width;
 
         writeValueWithPadding(serialized_value, cur_width, max_widths[j], cut_to_width,
             type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[j].empty(), false);
-
-        prefix += max_widths[j] + 3;
     }
 
     writeCString(grid_symbols.bar, out);
@@ -212,7 +208,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths, 2);
+    calculateWidths(header, chunk, widths, max_widths, name_widths);
 
     writeHeader(header, max_widths, name_widths);
 
