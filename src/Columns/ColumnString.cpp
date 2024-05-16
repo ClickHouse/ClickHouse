@@ -494,8 +494,9 @@ size_t ColumnString::estimateNumberOfDifferent(const Permutation & perm, const E
     for (size_t i = range.first; i < range.second; ++i)
     {
         size_t id = perm[i];
-        const Char* from = chars.data() + id;
-        StringRef ref(from, offsets[id + 1] - offsets[id]);
+        const Char* from = chars.data() + offsets[id];
+        const size_t string_size = offsets[id + 1] - offsets[id];
+        StringRef ref(from, string_size);
         bool inserted = false;
         elements.emplace(ref, inserted);
         if (inserted)
