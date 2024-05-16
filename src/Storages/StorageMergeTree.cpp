@@ -153,7 +153,7 @@ void StorageMergeTree::startup()
     {
         background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
-        startOutdatedDataPartsLoadingTask();
+        startOutdatedAndUnexpectedDataPartsLoadingTask();
     }
     catch (...)
     {
@@ -179,7 +179,7 @@ void StorageMergeTree::shutdown(bool)
     if (shutdown_called.exchange(true))
         return;
 
-    stopOutdatedDataPartsLoadingTask();
+    stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     /// Unlock all waiting mutations
     {
@@ -235,16 +235,11 @@ void StorageMergeTree::read(
                 = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
 
-        ClusterProxy::SelectStreamFactory select_stream_factory =
-            ClusterProxy::SelectStreamFactory(
-                header,
-                {},
-                storage_snapshot,
-                processed_stage);
-
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan,
-            select_stream_factory,
+            getStorageID(),
+            header,
+            processed_stage,
             modified_query_ast,
             local_context,
             query_info.storage_limits);

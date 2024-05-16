@@ -9,6 +9,12 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'backport/**'
+
+# Cancel the previous wf run in PRs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker-aarch64]

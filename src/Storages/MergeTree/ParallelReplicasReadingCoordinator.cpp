@@ -291,7 +291,7 @@ private:
 
     void setProgressCallback();
 
-    enum class ScanMode
+    enum class ScanMode : uint8_t
     {
         /// Main working set for the replica
         TakeWhatsMineByHash,
@@ -981,12 +981,9 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
-        mode = announcement.mode;
-        initialize();
-    }
+        initialize(announcement.mode);
 
-    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
+    pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
@@ -996,10 +993,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
-        mode = request.mode;
-        initialize();
-    }
+        initialize(request.mode);
 
     const auto replica_num = request.replica_num;
     auto response = pimpl->handleRequest(std::move(request));
@@ -1024,7 +1018,7 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
         pimpl->markReplicaAsUnavailable(replica_number);
 }
 
-void ParallelReplicasReadingCoordinator::initialize()
+void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
 {
     switch (mode)
     {

@@ -100,7 +100,7 @@ EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
     try
     {
         if (fs::exists(insert_directory_queue))
-            fs::remove_all(insert_directory_queue);
+            (void)fs::remove_all(insert_directory_queue);
     }
     catch (...)
     {
@@ -204,13 +204,13 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     /// Ingest the SST file
-    static rocksdb::IngestExternalFileOptions ingest_options;
+    rocksdb::IngestExternalFileOptions ingest_options;
     ingest_options.move_files = true; /// The temporary file is on the same disk, so move (or hardlink) file will be faster than copy
     if (auto status = storage.rocksdb_ptr->IngestExternalFile({sst_file_path}, ingest_options); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
     if (fs::exists(sst_file_path))
-        fs::remove(sst_file_path);
+        (void)fs::remove(sst_file_path);
 }
 
 void EmbeddedRocksDBBulkSink::onFinish()

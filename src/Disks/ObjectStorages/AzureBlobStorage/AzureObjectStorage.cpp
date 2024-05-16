@@ -166,16 +166,14 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    Azure::Storage::Blobs::ListBlobsPagedResponse blob_list_response;
-
-    while (true)
+    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
     {
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client_ptr->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
         blob_list_response = client_ptr->ListBlobs(options);
-        auto blobs_list = blob_list_response.Blobs;
+        const auto & blobs_list = blob_list_response.Blobs;
 
         for (const auto & blob : blobs_list)
         {
@@ -196,11 +194,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                 break;
             options.PageSizeHint = keys_left;
         }
-
-        if (blob_list_response.HasPage())
-            options.ContinuationToken = blob_list_response.NextPageToken;
-        else
-            break;
     }
 }
 

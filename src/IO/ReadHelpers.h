@@ -232,7 +232,7 @@ inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
 inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
 {
-    return assertStringCaseInsensitive(s.c_str(), buf);
+    assertStringCaseInsensitive(s.c_str(), buf);
 }
 
 /** Check that next character in buf matches first character of s.
@@ -329,7 +329,7 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
     return ReturnType(true);
 }
 
-enum class ReadIntTextCheckOverflow
+enum class ReadIntTextCheckOverflow : uint8_t
 {
     DO_NOT_CHECK_OVERFLOW,
     CHECK_OVERFLOW,
@@ -608,6 +608,9 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
+
+void readStringUntilAmpersand(String & s, ReadBuffer & buf);
+void readStringUntilEquals(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
@@ -907,7 +910,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
 inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 {
-    return readUUIDTextImpl<void>(uuid, buf);
+    readUUIDTextImpl<void>(uuid, buf);
 }
 
 inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
@@ -929,7 +932,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 
 inline void readIPv4Text(IPv4 & ip, ReadBuffer & buf)
 {
-    return readIPv4TextImpl<void>(ip, buf);
+    readIPv4TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv4Text(IPv4 & ip, ReadBuffer & buf)
@@ -951,7 +954,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 
 inline void readIPv6Text(IPv6 & ip, ReadBuffer & buf)
 {
-    return readIPv6TextImpl<void>(ip, buf);
+    readIPv6TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv6Text(IPv6 & ip, ReadBuffer & buf)
