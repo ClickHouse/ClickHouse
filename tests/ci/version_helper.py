@@ -62,6 +62,7 @@ class ClickHouseVersion:
             self._tweak = self._git.tweak
         self._describe = ""
         self._description = ""
+        self._flavour = flavour
 
     def update(self, part: PART_TYPE) -> "ClickHouseVersion":
         """If part is valid, returns a new version"""
