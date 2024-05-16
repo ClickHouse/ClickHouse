@@ -10,16 +10,17 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include "Common/FunctionDocumentation.h"
-#include "Columns/ColumnFixedString.h"
-#include "Columns/ColumnArray.h"
-#include "Columns/ColumnConst.h"
-#include "Columns/ColumnsNumber.h"
-#include "Columns/IColumn.h"
-#include "Core/TypeId.h"
-#include "DataTypes/DataTypeFixedString.h"
-#include "DataTypes/IDataType.h"
-#include "config.h"
+#include <Common/FunctionDocumentation.h>
+#include <Common/logger_useful.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <Core/TypeId.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/IDataType.h>
+#include <config.h>
 
 #if defined(__AMX_BF16__)
 #include <immintrin.h>
@@ -307,7 +308,8 @@ private:
         size_t normal_count)
     {
         auto res = ColumnFixedString::create((normal_count / 8) + (normal_count % 8 != 0));
-        res->getChars().reserve(vector_count * normal_count / 8);
+        auto& res_chars = res->getChars();
+        res_chars.reserve(vector_count * normal_count / 8);
         char temp = 0;
         for (size_t i = 0; i < vector_count; ++i)
         {
@@ -320,13 +322,13 @@ private:
                     temp |= 1;
                 if ((j + 1) % 8 == 0)
                 {
-                    res->insertData(&temp, 1);
+                    res_chars.push_back(temp);
                     temp = 0;
                 }
             }
             if (normal_count % 8 != 0)
             {
-                res->insertData(&temp, 1);
+                res_chars.push_back(temp);
                 temp = 0;
             }
         }
@@ -371,7 +373,6 @@ public:
         const ColumnArray * normals = typeid_cast<const ColumnArray *>(arguments[1].column.get());
         if (!normals)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be Array", getName());
-        // const ColumnArray * normals = typeid_cast<const ColumnArray *>(normals_const->getDataColumnPtr().get());
         const auto & nested_normals_data = typeid_cast<const ColumnFloat32 &>(normals->getData());
 
         const size_t dimension = vectors->getOffsets().front();

@@ -1,1 +1,2 @@
-SELECT partitionByHyperplanes([Float32(2.0), Float32(3.0)], [[Float32(1.0), Float32(-1.0)], [Float32(-1.0), Float32(2.0)]], [Float32(0.0), Float32(0.0)])
+select toInt32((SELECT partitionByHyperplanes([toFloat32(2.0), toFloat32(3.0)], [toFloat32(1.0), toFloat32(1.0)])));
+select toInt32((SELECT partitionByHyperplanes([toFloat32(2.0), toFloat32(3.0)], [toFloat32(1.0), toFloat32(-1.0)])));
