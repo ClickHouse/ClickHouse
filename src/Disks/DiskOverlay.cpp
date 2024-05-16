@@ -57,6 +57,13 @@ DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfigu
     tracked_metadata = MetadataStorageFactory::instance().create(tracked_metadata_name, config_, config_prefix_, nullptr, "");
 }
 
+const String& DiskOverlay::getPath() const {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay doesn't have its own path");
+}
+
+UInt64 DiskOverlay::getKeepingFreeSpace() const {
+    return disk_overlay->getKeepingFreeSpace();
+}
 
 ReservationPtr DiskOverlay::reserve(UInt64 bytes) {
     return disk_overlay->reserve(bytes);
@@ -449,6 +456,64 @@ void DiskOverlay::removeRecursive(const String & dirpath) {
     removeDirectory(dirpath);
 }
 
+void DiskOverlay::setLastModified(const String & path, const Poco::Timestamp & timestamp) {
+    if (!disk_overlay->exists(path)) {
+        if (disk_base->exists(path) && !isTracked(path)) {
+            if (disk_base->isFile(path)) {
+                disk_overlay->createFile(path);
+            } else {
+                disk_overlay->createDirectory(path);
+            }
+        } else {
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set modification time: path doesn't exist");
+        }
+    }
+    disk_overlay->setLastModified(path, timestamp);
+}
+
+Poco::Timestamp DiskOverlay::getLastModified(const String &  path) const {
+    if (disk_overlay->exists(path)) {
+        return disk_overlay->getLastModified(path);
+    }
+    if (disk_base->exists(path) && !isTracked(path)) {
+        return disk_base->getLastModified(path);
+    }
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot get modification time: path doesn't exist");
+}
+
+time_t DiskOverlay::getLastChanged(const String &  path) const {
+    if (disk_overlay->exists(path)) {
+        return disk_overlay->getLastChanged(path);
+    }
+    if (disk_base->exists(path) && !isTracked(path)) {
+        return disk_base->getLastChanged(path);
+    }
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot get modification time: path doesn't exist");
+}
+
+void DiskOverlay::setReadOnly(const String & path) {
+    if (!disk_overlay->exists(path)) {
+        if (disk_base->exists(path) && !isTracked(path)) {
+            if (disk_base->isFile(path)) {
+                disk_overlay->createFile(path);
+            } else {
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set modification time: path is not a file");
+            }
+        } else {
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set modification time: path doesn't exist");
+        }
+    }
+    disk_overlay->setReadOnly(path);
+}
+
+bool DiskOverlay::supportParallelWrite() const {
+    return disk_overlay->supportParallelWrite();
+}
+
+bool DiskOverlay::isRemote() const {
+    return disk_overlay->isRemote() || disk_base->isRemote();
+}
+
 ReadBufferFromOverlayDisk::ReadBufferFromOverlayDisk(
         size_t buffer_size_,
         std::unique_ptr<ReadBufferFromFileBase> base_,
@@ -456,7 +521,6 @@ ReadBufferFromOverlayDisk::ReadBufferFromOverlayDisk(
                     base(std::move(base_)), diff(std::move(diff_)), base_size(base->getFileSize()), diff_size(diff->getFileSize()) {
     working_buffer = base->buffer();
     pos = base->position();
-    // TODO check what happens if base file is empty?
 }
 
 off_t ReadBufferFromOverlayDisk::getPosition() {
