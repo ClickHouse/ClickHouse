@@ -1063,10 +1063,7 @@ ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t re
 {
 }
 
-ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
-{
-    chassert(pimpl);
-}
+ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;
 
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
 {
