@@ -19,33 +19,33 @@ function check_refcnt_for_table()
     local query_id
     query_id="$table-$(random_str 10)"
 
+    local log_file
+    log_file=$(mktemp "$CUR_DIR/clickhouse-tests.XXXXXX.log")
     local args=(
         --format Null
         --max_threads 1
         --max_block_size 1
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0.0
         --query_id "$query_id"
+        --send_logs_level "test"
+        --server_logs_file "$log_file"
     )
 
     # Notes:
-    # - query may sleep 1*(200/4)=50 seconds maximum, it is enough to check system.parts
+    # - query may sleep 0.1*(200/4)=5 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
-    $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(1) from $table where part = 1" &
+    $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(0.1) from $table where part = 1" &
     PID=$!
-
-    # wait for query to be started
-    while [ "$($CLICKHOUSE_CLIENT -q "select count() from system.processes where query_id = '$query_id'")" -ne 1 ]; do
-        sleep 0.1
-    done
 
     # When the query only starts it execution it holds reference for each part,
     # however when it starts reading, partition pruning takes place,
     # and it should hold only parts that are required for SELECT
     #
-    # But to reach partition prune the function sleepEachRow() will be executed twice,
-    # so 2 seconds for sleepEachRow() and 3 seconds just to ensure that it enters the reading stage.
-    sleep $((2+3))
+    # So let's wait while the reading will be started.
+    while ! grep -F -q -e "Exception" -e "MergeTreeRangeReader" "$log_file"; do
+        sleep 0.1
+    done
 
     # NOTE: parts that are used in query will have refcount increased for each range
     $CLICKHOUSE_CLIENT -q "select table, name, refcount from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount > 1"
@@ -53,6 +53,8 @@ function check_refcnt_for_table()
     # Kill the query gracefully.
     kill -INT $PID
     wait $PID
+    grep -F Exception "$log_file" | grep -v -F QUERY_WAS_CANCELLED
+    rm -f "${log_file:?}"
 }
 
 # NOTE: index_granularity=1 to cancel ASAP
