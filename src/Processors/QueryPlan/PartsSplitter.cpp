@@ -128,15 +128,21 @@ class IndexAccess
 public:
     explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_)
     {
-        /// Some suffix of index columns might not be loaded (see `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`)
-        /// and we need to use the same set of index columns across all parts.
+        /// Indices might be reloaded during the process and the reload might produce a different value
+        /// (change in `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). Also, some suffix of index
+        /// columns might not be loaded (same setting) so we keep a reference to the current indices and
+        /// track the minimal subset of loaded columns across all parts.
+        indices.reserve(parts.size());
         for (const auto & part : parts)
-            loaded_columns = std::min(loaded_columns, part.data_part->getIndex()->size());
+            indices.push_back(part.data_part->getIndex());
+
+        for (const auto & index : indices)
+            loaded_columns = std::min(loaded_columns, index->size());
     }
 
     Values getValue(size_t part_idx, size_t mark) const
     {
-        const auto & index = parts[part_idx].data_part->getIndex();
+        const auto & index = indices[part_idx];
         chassert(index->size() >= loaded_columns);
         Values values(loaded_columns);
         for (size_t i = 0; i < loaded_columns; ++i)
@@ -206,6 +212,7 @@ public:
     }
 private:
     const RangesInDataParts & parts;
+    std::vector<IMergeTreeDataPart::Index> indices;
     size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 

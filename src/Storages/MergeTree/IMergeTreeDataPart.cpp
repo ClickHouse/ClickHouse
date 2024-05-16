@@ -346,16 +346,25 @@ IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
     if (!index_loaded)
         loadIndex();
     index_loaded = true;
-    return TSA_SUPPRESS_WARNING_FOR_READ(index); /// The variable is guaranteed to be unchanged after return.
+    return index;
 }
 
 
-void IMergeTreeDataPart::setIndex(Index index_)
+void IMergeTreeDataPart::setIndex(const Columns & cols_)
 {
     std::scoped_lock lock(index_mutex);
     if (!index->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = index_;
+    index = std::make_shared<const Columns>(cols_);
+    index_loaded = true;
+}
+
+void IMergeTreeDataPart::setIndex(Columns && cols_)
+{
+    std::scoped_lock lock(index_mutex);
+    if (!index->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
+    index = std::make_shared<const Columns>(std::move(cols_));
     index_loaded = true;
 }
 
@@ -913,7 +922,7 @@ void IMergeTreeDataPart::loadIndex() const
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
-        index->assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+        index = std::make_shared<Columns>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 }
 
