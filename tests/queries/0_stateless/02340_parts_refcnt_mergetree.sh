@@ -13,6 +13,8 @@ function check_refcnt_for_table()
         system stop merges $table;
         -- cleanup thread may hold the parts lock
         system stop cleanup $table;
+        -- queue may hold the parts lock for awhile as well
+        system stop pulling replication log $table;
     "
     $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into $table select number, number%4 from numbers(200)"
 
@@ -64,11 +66,13 @@ $CLICKHOUSE_CLIENT -nmq "
     create table data_02340 (key Int, part Int) engine=MergeTree() partition by part order by key settings index_granularity=1;
 " || exit 1
 check_refcnt_for_table data_02340
+$CLICKHOUSE_CLIENT -q "drop table data_02340 sync"
 
 $CLICKHOUSE_CLIENT -nmq "
     drop table if exists data_02340_rep sync;
     create table data_02340_rep (key Int, part Int) engine=ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') partition by part order by key settings index_granularity=1;
 " || exit 1
 check_refcnt_for_table data_02340_rep
+$CLICKHOUSE_CLIENT -q "drop table data_02340_rep sync"
 
 exit 0
