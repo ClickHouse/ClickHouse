@@ -918,7 +918,7 @@ proportionsZTest(successes_x, successes_y, trials_x, trials_y, conf_level, pool_
 - `successes_x`: Number of successes in population `x`. [UInt64](../data-types/int-uint.md).
 - `successes_y`: Number of successes in population `y`. [UInt64](../data-types/int-uint.md).
 - `trials_x`: Number of trials in population `x`. [UInt64](../data-types/int-uint.md).
-- `trials_y`: NUmber of trials in population `y`. [UInt64](../data-types/int-uint.md).
+- `trials_y`: Number of trials in population `y`. [UInt64](../data-types/int-uint.md).
 - `conf_level`: Confidence level for the test. [Float64](../data-types/float.md).
 - `pool_type`: Selection of pooling (way in which the standard error is estimated). can be either `unpooled` or `pooled`. [String](../data-types/string.md). 
 
