@@ -483,6 +483,7 @@ stateful_test_common_params = {
 stress_test_common_params = {
     "digest": stress_check_digest,
     "run_command": "stress_check.py",
+    "timeout": 9000,
 }
 upgrade_test_common_params = {
     "digest": upgrade_check_digest,
