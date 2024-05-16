@@ -13,7 +13,7 @@ class TestFunctions(unittest.TestCase):
             ("1.1.1.2", vh.get_version_from_string("1.1.1.2")),
             ("v11.1.1.2-lts", vh.get_version_from_string("11.1.1.2")),
             ("v01.1.1.2-prestable", vh.get_version_from_string("1.1.1.2")),
-            ("v21.1.1.2-stable", vh.get_version_from_string("21.1.1.2")),
+            ("v21.1.1.2-altinitystable", vh.get_version_from_string("21.1.1.2")),
             ("v31.1.1.2-testing", vh.get_version_from_string("31.1.1.2")),
             ("refs/tags/v31.1.1.2-testing", vh.get_version_from_string("31.1.1.2")),
         )
