@@ -243,6 +243,14 @@ public:
             }
             case QueryTreeNodeType::LAMBDA:
             {
+                /// Initially, the action name was `"__lambda_" + toString(node->getTreeHash());`.
+                /// This is not a good idea because:
+                ///   * hash is different on initiator and shard if the default database is changed in cluster
+                ///   * hash is reliable only within one node; any change will break queries in between versions
+                ///
+                /// Now, we calculate execution name as (names + types) for lambda arguments + action name (expression)
+                /// and this should be more reliable (as long as we trust the calculation of action name for functions)
+
                 WriteBufferFromOwnString buffer;
 
                 const auto & lambda_node = node->as<LambdaNode &>();
