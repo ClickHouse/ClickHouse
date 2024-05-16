@@ -9,44 +9,46 @@ ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/down
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
-            awscli \
-            brotli \
-            lz4 \
-            expect \
-            golang \
-            lsof \
-            mysql-client=8.0* \
-            ncdu \
-            netcat-openbsd \
-            nodejs \
-            npm \
-            odbcinst \
-            openjdk-11-jre-headless \
-            openssl \
-            postgresql-client \
-            protobuf-compiler \
-            python3 \
-            python3-lxml \
-            python3-pip \
-            python3-requests \
-            python3-termcolor \
-            qemu-user-static \
-            sqlite3 \
-            sudo \
-            tree \
-            unixodbc \
-            rustc \
-            cargo \
-            zstd \
-            file \
-            jq \
-            pv \
-            zip \
-            p7zip-full \
+            awscli='1.22.*' \
+            brotli='1.0.*' \
+            lz4='1.9.*' \
+            expect='5.45.*' \
+            golang='2:1.18~*' \
+            lsof='4.93.*' \
+            mysql-client='8.0*' \
+            ncdu='1.15.*' \
+            netcat-openbsd='1.218-*' \
+            nodejs='12.22.*' \
+            npm='8.5.*' \
+            odbcinst='2.3.*' \
+            openjdk-11-jre-headless='11.0.*' \
+            openssl='3.0.*' \
+            postgresql-client='14+*' \
+            protobuf-compiler='3.12.*' \
+            python3='3.10.*' \
+            python3-lxml='4.8.*' \
+            python3-pip='22.0.*' \
+            python3-requests='2.25.*' \
+            python3-termcolor='1.1.*' \
+            qemu-user-static='1:6.2*' \
+            sqlite3='3.37.*' \
+            sudo='1.9.*' \
+            tree='2.0.*' \
+            unixodbc='2.3.*' \
+            wget='1.21.*' \
+            rustc='1.*' \
+            cargo='1.*' \
+            zstd='1.4.*' \
+            file='1:5.41-*' \
+            pv='1.6.*' \
+            zip='3.0-*' \
+            p7zip-full='16.02*' \
+            rpm2cpio='4.17.*' \
+            cpio='2.13*' \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3 pyarrow==15.0.0
+RUN pip3 install numpy~=1.26.3 scipy~=1.12.0 pandas~=1.5.3 Jinja2~=3.1.3 pyarrow~=15.0.0
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -84,8 +86,8 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-RUN npm install -g azurite \
-    && npm install -g tslib
+RUN npm install -g azurite@3.28.0 \
+    && npm install -g tslib@2.6.2
 
 COPY run.sh /
 COPY setup_minio.sh /
