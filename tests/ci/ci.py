@@ -964,10 +964,7 @@ class CiOptions:
 
         for job in jobs_to_do[:]:
             job_param = jobs_params[job]
-            if (
-                job_param["run_by_ci_option"]
-                and job not in jobs_to_do_requested
-            ):
+            if job_param["run_by_ci_option"] and job not in jobs_to_do_requested:
                 print(
                     f"Erasing job '{job}' from list because it's not in included set, but will run only by include"
                 )
@@ -1448,8 +1445,7 @@ def _configure_jobs(
             jobs_params[job] = {
                 "batches": batches_to_do,
                 "num_batches": num_batches,
-                "run_by_ci_option": job_config.run_by_ci_option
-                and pr_info.is_pr,
+                "run_by_ci_option": job_config.run_by_ci_option and pr_info.is_pr,
             }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
