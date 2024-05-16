@@ -221,6 +221,8 @@ bool FindSuperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> &
 
     node->args.push_back(threshold->as<ASTLiteral &>().value);
 
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
     String path;
     if (!parseKeeperPath(pos, expected, path))
         path = ".";
