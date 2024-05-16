@@ -4623,12 +4623,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         "Unknown identifier '{}' inside COLUMNS matcher. In scope {}",
                         identifier.getFullName(), scope.dump());
 
-            // TODO: Introduce IdentifierLookupContext::COLUMN and get read of this check
+            // TODO: Introduce IdentifierLookupContext::COLUMN and get rid of this check
             auto * resolved_column = resolve_result.resolved_identifier->as<ColumnNode>();
             if (!resolved_column)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                         "Identifier '{}' inside COLUMNS matcher must resolve into a column, but got {}. In scope {}",
-                        identifier.getFullName(), resolve_result.resolved_identifier->getNodeTypeName(), scope.dump());
+                        identifier.getFullName(),
+                        resolve_result.resolved_identifier->getNodeTypeName(),
+                        scope.scope_node->formatASTForErrorMessage());
             result.emplace_back(resolve_result.resolved_identifier, resolved_column->getColumnName());
         }
         return result;
