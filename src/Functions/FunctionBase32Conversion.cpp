@@ -32,7 +32,7 @@ struct Base32Encode
         size_t dst_column_data_size = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
-            dst_column_data_size += (src_column.getDataAt(i).size + 3) / 5 * 8;
+            dst_column_data_size += (src_column.getDataAt(i).size + 4) / 5 * 8;
 
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -84,7 +84,7 @@ struct Base32Decode
         {
             std::optional<size_t> decoded_size = decodeBase32(&src_data[src_offset], src_offsets[i] - src_offset - 1, &dst_data[dst_offset]);
             if (!decoded_size)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base32 value, cannot be decoded");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base32 value, cannot be decoded");  
 
             size_t cur_dst_size = *decoded_size;
             src_offset = src_offsets[i];
