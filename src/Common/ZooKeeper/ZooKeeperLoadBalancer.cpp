@@ -193,6 +193,7 @@ protected:
         const auto & endpoint = findEndpointById(id);
         return EndpointInfo{
             .address = endpoint.address,
+            .host = endpoint.address.substr(0, endpoint.address.find_last_of(':')),
             .secure = endpoint.secure,
             .id = id,
             .settings = ClientSettings{
@@ -206,6 +207,7 @@ protected:
         const auto & endpoint = findEndpointById(id);
         return EndpointInfo {
             .address = endpoint.address,
+            .host = endpoint.address.substr(0, endpoint.address.find_last_of(':')),
             .secure = endpoint.secure,
             .id = id,
             .settings = ClientSettings{
