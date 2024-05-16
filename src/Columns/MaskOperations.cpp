@@ -279,25 +279,32 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     if (!column_function)
         return;
 
+    size_t original_size = column.column->size();
+
     ColumnWithTypeAndName result;
-    /// If mask contains only zeros, we can just create
-    /// an empty column with the execution result type.
     if (!mask_info.has_ones)
     {
+        /// If mask contains only zeros, we can just create a column with default values as it will be ignored
         auto result_type = column_function->getResultType();
-        auto empty_column = result_type->createColumn();
-        result = {std::move(empty_column), result_type, ""};
+        auto default_column = result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+        column = {std::move(default_column), result_type, ""};
     }
-    /// Filter column only if mask contains zeros.
     else if (mask_info.has_zeros)
     {
+        /// If it contains both zeros and ones, we need to execute the function only on the mask values
+        /// First we filter the column, which creates a new column, then we apply the column, and finally we expand it
+        /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
+        /// since the values won't be used by `if`
         auto filtered = column_function->filter(mask, -1);
-        result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+        auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+        auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
+        mut_column->expand(mask, false);
+        column.column = std::move(mut_column);
     }
     else
-        result = column_function->reduce();
+        column = column_function->reduce();
 
-    column = std::move(result);
+    chassert(column.column->size() == original_size);
 }
 
 void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)

@@ -1,6 +1,4 @@
--- Tags: no-parallel, disabled
-
--- Disabled while I investigate so CI keeps running (but it's broken)
+-- Tags: no-parallel
 
 DROP TABLE IF EXISTS dictionary_source_table;
 CREATE TABLE dictionary_source_table
