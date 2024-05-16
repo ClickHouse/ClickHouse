@@ -1205,7 +1205,7 @@ void DDLWorker::runMainThread()
 
             LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count, message);
 
-            /// Sleep before retying
+            /// Sleep before retrying
             sleepForSeconds(5);
             /// Reset state after sleeping, so DatabaseReplicated::canExecuteReplicatedMetadataAlter()
             /// will have a chance even when the database got stuck in infinite retries
