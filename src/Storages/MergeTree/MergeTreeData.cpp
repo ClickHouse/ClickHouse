@@ -3013,8 +3013,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
 
     for (const auto & disk : getDisks())
-        if (!disk->supportsHardLinks())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE is not supported for immutable disk '{}'", disk->getName());
+        if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER TABLE commands are not supported on immutable disk '{}', except for setting and comment alteration",
+                disk->getName());
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
