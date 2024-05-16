@@ -5616,7 +5616,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (StoragePtr storage = scope.context->getViewSource())
             {
                 QueryTreeNodePtr table_expression;
-                /// Don't even ask... there's turtles all the way down...
+                /// Process possibly nested sub-selects
                 for (auto * query_node = in_second_argument->as<QueryNode>(); query_node; query_node = table_expression->as<QueryNode>())
                     table_expression = extractLeftTableExpression(query_node->getJoinTree());
 
