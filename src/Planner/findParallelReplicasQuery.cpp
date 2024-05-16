@@ -1,24 +1,25 @@
-#include <Planner/findQueryForParallelReplicas.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Storages/buildQueryTreeForShard.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Planner/PlannerJoinTree.h>
-#include <Planner/Utils.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
+#include <Planner/PlannerJoinTree.h>
+#include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 namespace DB
 {
@@ -316,7 +317,8 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                const auto & storage = table_node.getStorage();
+                const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
+                const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
                     return &table_node;
 
