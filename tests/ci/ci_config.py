@@ -1372,7 +1372,7 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(
                 run_by_label=CILabels.libFuzzer,
                 timeout=10800,
-                run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
+                run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             ),
         ),  # type: ignore
     },
