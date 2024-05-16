@@ -333,11 +333,9 @@ def main():
         test_results.extend(test_install_tgz(docker_images[RPM_IMAGE]))
 
     state = SUCCESS
-    test_status = OK
     description = "Packages installed successfully"
     if FAIL in (result.status for result in test_results):
         state = FAILURE
-        test_status = FAIL
         description = "Failed to install packages: " + ", ".join(
             result.name for result in test_results
         )
@@ -365,7 +363,7 @@ def main():
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
         test_results,
-        test_status,
+        state,
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         report_url,
