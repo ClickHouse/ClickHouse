@@ -167,6 +167,8 @@ public:
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions) const;
 
+    AnalysisResultPtr selectRangesToRead() const;
+
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
     /// Returns `false` if requested reading cannot be performed.

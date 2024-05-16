@@ -95,6 +95,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"output_format_pretty_preserve_border_for_multiline_string", 1, 1, "Applies better rendering for multiline strings."},
               {"cross_join_max_bytes_to_swap_order", 125_MiB, 125_MiB, "Maximum bytes to read from two table to decide if one table is small."},
               {"allow_experimental_cross_join_swap_order", false, false, "Allows to use new CROSS JOIN pipeline with swap order optimization"},
+              {"output_format_pretty_preserve_border_for_multiline_string", 0, 1, "Applies better rendering for multiline strings."},
               }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"max_parsing_threads", 0, 0, "Add a separate setting to control number of threads in parallel parsing from files"},

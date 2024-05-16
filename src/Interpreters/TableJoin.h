@@ -9,6 +9,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -190,6 +191,8 @@ private:
 
     VolumePtr tmp_volume;
 
+    TemporaryDataOnDiskScopePtr tmp_data;
+
     std::shared_ptr<StorageJoin> right_storage_join;
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
@@ -235,7 +238,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, VolumePtr tmp_volume_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -260,6 +263,8 @@ public:
     size_t getMaxMemoryUsage() const;
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
+
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
 
     ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
 
