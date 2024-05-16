@@ -42,25 +42,25 @@ At a minimum, the following information should be added (but add more as needed)
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
 
 <details>
-    <summary>Modify your CI run</summary>
+    <summary>CI Settings</summary>
 
 **NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
 **NOTE:** Checked options will be applied if set before CI RunConfig/PrepareRunConfig step
 
-#### Include tests (required builds will be added automatically):
-- [ ] <!---ci_include_fast--> Fast test
+#### Run these jobs only (required builds will be added automatically):
 - [ ] <!---ci_include_integration--> Integration Tests
 - [ ] <!---ci_include_stateless--> Stateless tests
 - [ ] <!---ci_include_stateful--> Stateful tests
 - [ ] <!---ci_include_unit--> Unit tests
 - [ ] <!---ci_include_performance--> Performance tests
+- [ ] <!---ci_include_aarch64--> All with aarch64
 - [ ] <!---ci_include_asan--> All with ASAN
 - [ ] <!---ci_include_tsan--> All with TSAN
 - [ ] <!---ci_include_analyzer--> All with Analyzer
 - [ ] <!---ci_include_azure --> All with Azure
 - [ ] <!---ci_include_KEYWORD--> Add your option here
 
-#### Exclude tests:
+#### Deny these jobs:
 - [ ] <!---ci_exclude_fast--> Fast test
 - [ ] <!---ci_exclude_integration--> Integration Tests
 - [ ] <!---ci_exclude_stateless--> Stateless tests
@@ -72,7 +72,6 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_ubsan--> All with UBSAN
 - [ ] <!---ci_exclude_coverage--> All with Coverage
 - [ ] <!---ci_exclude_aarch64--> All with Aarch64
-- [ ] <!---ci_exclude_KEYWORD--> Add your option here
 
 #### Extra options:
 - [ ] <!---do_not_test--> do not test (only style check)
