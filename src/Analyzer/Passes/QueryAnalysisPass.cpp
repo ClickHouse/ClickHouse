@@ -1032,6 +1032,14 @@ public:
         return true;
     }
 private:
+    void addDuplicatingAlias(const QueryTreeNodePtr & node)
+    {
+        scope.nodes_with_duplicated_aliases.emplace(node);
+        auto cloned_node = node->clone();
+        scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
+        scope.nodes_with_duplicated_aliases.emplace(cloned_node);
+    }
+
     void updateAliasesIfNeeded(const QueryTreeNodePtr & node, bool is_lambda_node)
     {
         if (!node->hasAlias())
@@ -1046,41 +1054,22 @@ private:
         if (is_lambda_node)
         {
             if (scope.alias_name_to_expression_node->contains(alias))
-            {
-                scope.nodes_with_duplicated_aliases.emplace(node);
-                auto cloned_node = node->clone();
-                scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
-                scope.nodes_with_duplicated_aliases.emplace(cloned_node);
-            }
+                addDuplicatingAlias(node);
 
             auto [_, inserted] = scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
             if (!inserted)
-            {
-                scope.nodes_with_duplicated_aliases.emplace(node);
-                auto cloned_node = node->clone();
-                scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
-                scope.nodes_with_duplicated_aliases.emplace(cloned_node);
-            }
+             addDuplicatingAlias(node);
 
             return;
         }
 
         if (scope.alias_name_to_lambda_node.contains(alias))
-        {
-            scope.nodes_with_duplicated_aliases.emplace(node);
-            auto cloned_node = node->clone();
-            scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
-            scope.nodes_with_duplicated_aliases.emplace(cloned_node);
-        }
+         addDuplicatingAlias(node);
 
         auto [_, inserted] = scope.alias_name_to_expression_node->insert(std::make_pair(alias, node));
         if (!inserted)
-        {
-            scope.nodes_with_duplicated_aliases.emplace(node);
-            auto cloned_node = node->clone();
-            scope.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
-            scope.nodes_with_duplicated_aliases.emplace(cloned_node);
-        }
+         addDuplicatingAlias(node);
+         
         /// If node is identifier put it also in scope alias name to lambda node map
         if (node->getNodeType() == QueryTreeNodeType::IDENTIFIER)
             scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
