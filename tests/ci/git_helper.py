@@ -21,9 +21,9 @@ SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 CWD = p.dirname(p.realpath(__file__))
 TWEAK = 1
 
-GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
-    "git -c user.email=robot-clickhouse@users.noreply.github.com "
-    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+GIT_PREFIX = (  # All commits to remote are done as altinity-robot
+    "git -c user.email=altinity-robot@users.noreply.github.com "
+    "-c user.name=altinity-robot -c commit.gpgsign=false "
     "-c core.sshCommand="
     "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
 )
