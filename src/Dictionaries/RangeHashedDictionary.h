@@ -97,7 +97,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         auto result = std::make_shared<RangeHashedDictionary>(
             getDictionaryID(),

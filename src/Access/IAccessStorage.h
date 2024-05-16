@@ -13,6 +13,8 @@
 #include <optional>
 #include <vector>
 
+#include <boost/noncopyable.hpp>
+
 
 namespace Poco { class Logger; }
 namespace Poco::Net { class IPAddress; }
@@ -22,7 +24,7 @@ namespace DB
 struct User;
 class Credentials;
 class ExternalAuthenticators;
-enum class AuthenticationType;
+enum class AuthenticationType : uint8_t;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 

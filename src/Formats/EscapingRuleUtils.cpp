@@ -85,7 +85,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, StringRef(field_name, field_name_len));
+            skipJSONField(buf, StringRef(field_name, field_name_len), format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
@@ -219,9 +219,9 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
-                readJSONString(result, buf);
+                readJSONString(result, buf, format_settings.json);
             else
-                readJSONField(result, buf);
+                readJSONField(result, buf, format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -303,8 +303,8 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
-                /// If we couldn't infer any type or it's tuple in quotes or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
-                if (!type || isTuple(type) || (isNumber(type) && !format_settings.csv.try_infer_numbers_from_strings))
+                /// If we couldn't infer any type or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
+                if (!type || (isNumber(type) && !format_settings.csv.try_infer_numbers_from_strings))
                     return std::make_shared<DataTypeString>();
 
                 return type;

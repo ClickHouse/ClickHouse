@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Storages/NATS/NATSHandler.h>
 #include <adapters/libuv.h>
 #include <Common/Exception.h>

@@ -1,66 +1,69 @@
 #include <type_traits>
 
-#include <IO/WriteBufferFromVector.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/Operators.h>
-#include <IO/parseDateTimeBestEffort.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnStringHelpers.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsCommon.h>
+#include <Core/AccurateComparison.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <Formats/FormatSettings.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnObject.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnVariant.h>
-#include <Columns/ColumnStringHelpers.h>
-#include <Common/assert_cast.h>
-#include <Common/Concepts.h>
-#include <Common/quoteString.h>
-#include <Common/Exception.h>
-#include <Core/AccurateComparison.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/DateTimeTransforms.h>
-#include <Functions/toFixedString.h>
-#include <Functions/TransformDateTime64.h>
-#include <Functions/FunctionsCodingIP.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/DateTimeTransforms.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsCodingIP.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/TransformDateTime64.h>
 #include <Functions/castTypeToEither.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnLowCardinality.h>
+#include <Functions/toFixedString.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteBufferFromVector.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
+#include <Common/Concepts.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/IPv6ToBinary.h>
-#include <Core/Types.h>
+#include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -89,7 +92,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int CANNOT_PARSE_BOOL;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
@@ -132,8 +134,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (d > MAX_DATETIME_DAY_NUM)
-                d = MAX_DATETIME_DAY_NUM;
+            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
@@ -278,7 +279,7 @@ struct ToDate32Transform32Or64Signed
 
     static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
+        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -793,18 +794,18 @@ inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer &
     if (isNativeNumber(result_type) && !(result_type.getName() == "IPv4" || result_type.getName() == "IPv6"))
         message_buf << ". Note: there are to" << result_type.getName() << "OrZero and to" << result_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
 
-    throw Exception(PreformattedMessage{message_buf.str(), "Cannot parse string {} as {}: syntax error {}"}, ErrorCodes::CANNOT_PARSE_TEXT);
+    throw Exception(PreformattedMessage{message_buf.str(), "Cannot parse string {} as {}: syntax error {}", {String(read_buffer.buffer().begin(), read_buffer.buffer().size()), result_type.getName()}}, ErrorCodes::CANNOT_PARSE_TEXT);
 }
 
 
-enum class ConvertFromStringExceptionMode
+enum class ConvertFromStringExceptionMode : uint8_t
 {
     Throw,  /// Throw exception if value cannot be parsed.
     Zero,   /// Fill with zero or default if value cannot be parsed.
     Null    /// Return ColumnNullable with NULLs when value cannot be parsed.
 };
 
-enum class ConvertFromStringParsingMode
+enum class ConvertFromStringParsingMode : uint8_t
 {
     Normal,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
@@ -1091,7 +1092,7 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
                     {
-                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
+                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()); /// NOLINT(readability-static-accessed-through-instance)
                     }
                     else
                     {
@@ -1127,23 +1128,24 @@ struct AccurateOrNullConvertStrategyAdditions
     UInt32 scale { 0 };
 };
 
-
-struct ConvertDefaultBehaviorTag {};
-struct ConvertReturnNullOnErrorTag {};
-struct ConvertReturnZeroOnErrorTag {};
+enum class BehaviourOnErrorFromString : uint8_t
+{
+    ConvertDefaultBehaviorTag,
+    ConvertReturnNullOnErrorTag,
+    ConvertReturnZeroOnErrorTag
+};
 
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
 template <typename FromDataType, typename ToDataType, typename Name,
-    typename SpecialTag = ConvertDefaultBehaviorTag,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ConvertImpl
 {
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
-        Additions additions = Additions())
+        BehaviourOnErrorFromString from_string_tag [[maybe_unused]], Additions additions = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
@@ -1176,8 +1178,7 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeImpl<date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDate32>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDate32>)
         {
             return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
@@ -1194,8 +1195,7 @@ struct ConvertImpl
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeUInt32>
                 || std::is_same_v<FromDataType, DataTypeUInt64>)
-            && std::is_same_v<ToDataType, DataTypeDate>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1203,8 +1203,7 @@ struct ConvertImpl
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>)
-            && std::is_same_v<ToDataType, DataTypeDate>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1214,8 +1213,7 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeInt64>
                 || std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDate>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1223,8 +1221,7 @@ struct ConvertImpl
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeUInt32>
                 || std::is_same_v<FromDataType, DataTypeUInt64>)
-            && std::is_same_v<ToDataType, DataTypeDate32>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1232,8 +1229,7 @@ struct ConvertImpl
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>)
-            && std::is_same_v<ToDataType, DataTypeDate32>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1243,8 +1239,7 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeInt64>
                 || std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDate32>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1254,15 +1249,13 @@ struct ConvertImpl
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>)
-            && std::is_same_v<ToDataType, DataTypeDateTime>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
-            && std::is_same_v<ToDataType, DataTypeDateTime>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1271,8 +1264,7 @@ struct ConvertImpl
                 std::is_same_v<FromDataType, DataTypeInt64>
                 || std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDateTime>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
@@ -1282,15 +1274,13 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>
                 || std::is_same_v<FromDataType, DataTypeInt64>)
-            && std::is_same_v<ToDataType, DataTypeDateTime64>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
-            && std::is_same_v<ToDataType, DataTypeDateTime64>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
@@ -1298,23 +1288,20 @@ struct ConvertImpl
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDateTime64>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
-            && std::is_same_v<ToDataType, DataTypeDate>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
-            && std::is_same_v<ToDataType, DataTypeDateTime>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
@@ -1324,8 +1311,7 @@ struct ConvertImpl
                 std::is_same_v<FromDataType, DataTypeDate>
                 || std::is_same_v<FromDataType, DataTypeDate32>
                 || std::is_same_v<FromDataType, DataTypeDateTime>)
-            && std::is_same_v<ToDataType, DataTypeDateTime64>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
@@ -1443,8 +1429,7 @@ struct ConvertImpl
         /// Conversion from FixedString to String.
         /// Cutting sequences of zero bytes from end of strings.
         else if constexpr (std::is_same_v<ToDataType, DataTypeString>
-            && std::is_same_v<FromDataType, DataTypeFixedString>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<FromDataType, DataTypeFixedString>)
         {
             ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
             const auto & nested =  columnGetNested(arguments[0]);
@@ -1488,8 +1473,7 @@ struct ConvertImpl
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                         arguments[0].column->getName(), Name::name);
         }
-        else if constexpr (std::is_same_v<ToDataType, DataTypeString>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        else if constexpr (std::is_same_v<ToDataType, DataTypeString>)
         {
             /// Anything else to String.
 
@@ -1550,27 +1534,35 @@ struct ConvertImpl
             && std::is_same_v<FromDataType, DataTypeString>
             && std::is_same_v<ToDataType, DataTypeUInt32>)
         {
-            return ConvertImpl<FromDataType, DataTypeDateTime, Name, SpecialTag, date_time_overflow_behavior>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+            return ConvertImpl<FromDataType, DataTypeDateTime, Name, date_time_overflow_behavior>::template execute<Additions>(
+                arguments, result_type, input_rows_count, from_string_tag);
         }
-        else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>))
         {
-            return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal>::execute(
-                arguments, result_type, input_rows_count, additions);
-        }
-        else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
-            && std::is_same_v<SpecialTag, ConvertReturnNullOnErrorTag>)
-        {
-            return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal>::execute(
-                arguments, result_type, input_rows_count, additions);
-        }
-        else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
-            && is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>
-            && std::is_same_v<SpecialTag, ConvertReturnZeroOnErrorTag>)
-        {
-            return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal>::execute(
-                arguments, result_type, input_rows_count, additions);
+            switch (from_string_tag)
+            {
+            case BehaviourOnErrorFromString::ConvertDefaultBehaviorTag:
+                return ConvertThroughParsing<FromDataType,
+                                             ToDataType,
+                                             Name,
+                                             ConvertFromStringExceptionMode::Throw,
+                                             ConvertFromStringParsingMode::Normal>::execute(
+                        arguments, result_type, input_rows_count, additions);
+            case BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag:
+                return ConvertThroughParsing<FromDataType,
+                                             ToDataType,
+                                             Name,
+                                             ConvertFromStringExceptionMode::Null,
+                                             ConvertFromStringParsingMode::Normal>::execute(
+                        arguments, result_type, input_rows_count, additions);
+            case BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag:
+                return ConvertThroughParsing<FromDataType,
+                                             ToDataType,
+                                             Name,
+                                             ConvertFromStringExceptionMode::Zero,
+                                             ConvertFromStringParsingMode::Normal>::execute(
+                        arguments, result_type, input_rows_count, additions);
+            }
         }
         else
         {
@@ -1824,6 +1816,7 @@ struct ConvertImpl
 
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
+template <bool throw_on_error>
 struct ConvertImplGenericFromString
 {
     static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
@@ -1863,29 +1856,34 @@ struct ConvertImplGenericFromString
             {
                 serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
             }
-            catch (const Exception & e)
+            catch (const Exception &)
             {
-                auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to);
-                if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && nullable_column)
-                {
-                    auto & col_nullmap = nullable_column->getNullMapData();
-                    if (col_nullmap.size() != nullable_column->size())
-                        col_nullmap.resize_fill(nullable_column->size());
-                    if (nullable_column->size() == (i + 1))
-                        nullable_column->popBack(1);
-                    nullable_column->insertDefault();
-                    continue;
-                }
-                throw;
+                if constexpr (throw_on_error)
+                    throw;
+                /// Check if exception happened after we inserted the value
+                /// (deserializeWholeText should not do it, but let's check anyway).
+                if (column_to.size() > i)
+                    column_to.popBack(column_to.size() - i);
+                column_to.insertDefault();
             }
 
+            /// Usually deserializeWholeText checks for eof after parsing, but let's check one more time just in case.
             if (!read_buffer.eof())
             {
-                if (result_type)
-                    throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                if constexpr (throw_on_error)
+                {
+                    if (result_type)
+                        throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                    else
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to column {}. Expected eof", column_to.getName());
+                }
                 else
-                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                        "Cannot parse string to column {}. Expected eof", column_to.getName());
+                {
+                    if (column_to.size() > i)
+                        column_to.popBack(column_to.size() - i);
+                    column_to.insertDefault();
+                }
             }
         }
     }
@@ -1929,6 +1927,19 @@ DEFINE_NAME_TO_INTERVAL(Year)
 struct NameParseDateTimeBestEffort;
 struct NameParseDateTimeBestEffortOrZero;
 struct NameParseDateTimeBestEffortOrNull;
+
+template <typename Name, typename ToDataType>
+constexpr bool mightBeDateTime()
+{
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+        return true;
+    else if constexpr (
+        std::is_same_v<Name, NameToDateTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
+        || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
+        return true;
+
+    return false;
+}
 
 template<typename Name, typename ToDataType>
 inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
@@ -2165,12 +2176,11 @@ private:
         if (context)
             date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
 
-        auto call = [&](const auto & types, const auto & tag) -> bool
+        auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
-            using SpecialTag = std::decay_t<decltype(tag)>;
 
             if constexpr (IsDataTypeDecimal<RightDataType>)
             {
@@ -2191,16 +2201,15 @@ private:
                 switch (date_time_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
                         break;
                 }
-
             }
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
@@ -2208,22 +2217,33 @@ private:
                 switch (date_time_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
                         break;
                 }
             }
+            else if constexpr ((IsDataTypeNumber<LeftDataType>
+                                || IsDataTypeDateOrDateTime<LeftDataType>)&&IsDataTypeDateOrDateTime<RightDataType>)
+            {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
-            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
-                arguments, result_type, input_rows_count); \
-                break;
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
+            arguments, result_type, input_rows_count, from_string_tag); \
+        break;
+                switch (date_time_overflow_behavior)
+                {
+                    GENERATE_OVERFLOW_MODE_CASE(Throw)
+                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
+                }
 
+#undef GENERATE_OVERFLOW_MODE_CASE
+            }
             else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
             {
                 using LeftT = typename LeftDataType::FieldType;
@@ -2242,44 +2262,36 @@ private:
                 }
                 else
                 {
-                    switch (date_time_overflow_behavior)
-                    {
-                        GENERATE_OVERFLOW_MODE_CASE(Throw)
-                        GENERATE_OVERFLOW_MODE_CASE(Ignore)
-                        GENERATE_OVERFLOW_MODE_CASE(Saturate)
-                    }
+                    result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(
+                        arguments, result_type, input_rows_count, from_string_tag);
                 }
             }
-            else if constexpr ((IsDataTypeNumber<LeftDataType> || IsDataTypeDateOrDateTime<LeftDataType>)
-                               && IsDataTypeDateOrDateTime<RightDataType>)
-            {
-                switch (date_time_overflow_behavior)
-                {
-                    GENERATE_OVERFLOW_MODE_CASE(Throw)
-                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
-                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
-                }
-            }
-#undef GENERATE_OVERFLOW_MODE_CASE
             else
-                  result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
+                  result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
             return true;
         };
 
-        if (isDateTime64<Name, ToDataType>(arguments))
+        if constexpr (mightBeDateTime<Name, ToDataType>())
         {
-            /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
-            const ColumnWithTypeAndName & scale_column = arguments[1];
-            UInt32 scale = extractToDecimalScale(scale_column);
-
-            if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
+            if (isDateTime64<Name, ToDataType>(arguments))
             {
-                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{}))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                                    arguments[0].type->getName(), getName());
+                /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
+                const ColumnWithTypeAndName & scale_column = arguments[1];
+                UInt32 scale = extractToDecimalScale(scale_column);
 
-                return result_column;
+                if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
+                {
+                    if (!callOnIndexAndDataType<DataTypeDateTime64>(
+                            from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag))
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}",
+                            arguments[0].type->getName(),
+                            getName());
+
+                    return result_column;
+                }
             }
         }
 
@@ -2292,23 +2304,25 @@ private:
         bool done = false;
         if constexpr (is_any_of<ToDataType, DataTypeString, DataTypeFixedString>)
         {
-            done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+            done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
         }
         else
         {
             bool cast_ipv4_ipv6_default_on_conversion_error = false;
             if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
+            {
                 if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
-                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnZeroOnErrorTag{});
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag);
+            }
 
             if (!cast_ipv4_ipv6_default_on_conversion_error)
             {
                 /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
                 /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
                 if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
-                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag);
                 else
-                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
             }
         }
 
@@ -2476,19 +2490,27 @@ public:
             result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count,
                 assert_cast<const ToDataType &>(*removeNullable(result_type)).getScale());
         }
-        else if (isDateTime64<Name, ToDataType>(arguments))
+        else if constexpr (mightBeDateTime<Name, ToDataType>())
         {
-            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
-            if (arguments.size() > 1)
-                scale = extractToDecimalScale(arguments[1]);
-
-            if (scale == 0)
+            if (isDateTime64<Name, ToDataType>(arguments))
             {
-                result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
+                UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+                if (arguments.size() > 1)
+                    scale = extractToDecimalScale(arguments[1]);
+
+                if (scale == 0)
+                {
+                    result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
+                }
+                else
+                {
+                    result_column
+                        = executeInternal<DataTypeDateTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
+                }
             }
             else
             {
-                result_column = executeInternal<DataTypeDateTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
+                result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
             }
         }
         else
@@ -3181,43 +3203,14 @@ private:
 
                 if constexpr (IsDataTypeNumber<LeftDataType>)
                 {
-                    if constexpr (IsDataTypeNumber<RightDataType>)
+                    if constexpr (IsDataTypeDateOrDateTime<RightDataType>)
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
-            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
-                arguments, result_type, input_rows_count, ADDITIONS()); \
-                break;
-                        if (wrapper_cast_type == CastType::accurate)
-                        {
-                            switch (date_time_overflow_behavior)
-                            {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateConvertStrategyAdditions)
-                            }
-                        }
-                        else
-                        {
-                            switch (date_time_overflow_behavior)
-                            {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateOrNullConvertStrategyAdditions)
-                            }
-                        }
-#undef GENERATE_OVERFLOW_MODE_CASE
-
-                        return true;
-                    }
-
-                    if constexpr (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>)
-                    {
-#define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
-            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::template execute<ADDITIONS>( \
-arguments, result_type, input_rows_count); \
-                break;
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column \
+            = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
+                execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ADDITIONS()); \
+        break;
                         if (wrapper_cast_type == CastType::accurate)
                         {
                             switch (date_time_overflow_behavior)
@@ -3237,6 +3230,30 @@ arguments, result_type, input_rows_count); \
                             }
                         }
 #undef GENERATE_OVERFLOW_MODE_CASE
+
+                        return true;
+                    }
+                    else if constexpr (IsDataTypeNumber<RightDataType>)
+                    {
+                        if (wrapper_cast_type == CastType::accurate)
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                                arguments,
+                                result_type,
+                                input_rows_count,
+                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                AccurateConvertStrategyAdditions());
+                        }
+                        else
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                                arguments,
+                                result_type,
+                                input_rows_count,
+                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                AccurateOrNullConvertStrategyAdditions());
+                        }
+
                         return true;
                     }
                 }
@@ -3269,7 +3286,9 @@ arguments, result_type, input_rows_count); \
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            if (cast_type == CastType::accurateOrNull)
+                return &ConvertImplGenericFromString<false>::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
@@ -3283,7 +3302,7 @@ arguments, result_type, input_rows_count); \
             /// both columns have type UInt8, but we shouldn't use identity wrapper,
             /// because Bool column can contain only 0 and 1.
             auto res_column = to_type->createColumn();
-            const auto & data_from = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get())->getData();
+            const auto & data_from = checkAndGetColumn<ColumnUInt8>(*arguments[0].column).getData();
             auto & data_to = assert_cast<ColumnUInt8 *>(res_column.get())->getData();
             data_to.resize(data_from.size());
             for (size_t i = 0; i != data_from.size(); ++i)
@@ -3376,7 +3395,7 @@ arguments, result_type, input_rows_count); \
                         AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, additions);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
 
                         return true;
                     }
@@ -3385,7 +3404,7 @@ arguments, result_type, input_rows_count); \
                         AccurateOrNullConvertStrategyAdditions additions;
                         additions.scale = scale;
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, additions);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
 
                         return true;
                     }
@@ -3397,14 +3416,14 @@ arguments, result_type, input_rows_count); \
                         /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
                         /// In case when converting to Nullable type, we apply different parsing rule,
                         /// that will not throw an exception but return NULL in case of malformed input.
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, ConvertReturnNullOnErrorTag>::execute(
-                            arguments, result_type, input_rows_count, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
 
                         return true;
                     }
                 }
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, scale);
 
                 return true;
             });
@@ -3432,7 +3451,7 @@ arguments, result_type, input_rows_count); \
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
         else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
         {
@@ -3475,7 +3494,7 @@ arguments, result_type, input_rows_count); \
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         DataTypePtr from_type_holder;
@@ -3566,7 +3585,7 @@ arguments, result_type, input_rows_count); \
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString::execute;
+            return &ConvertImplGenericFromString<true>::execute;
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
@@ -3752,6 +3771,12 @@ arguments, result_type, input_rows_count); \
         }
         else if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type_untyped.get()))
         {
+            if (typeid_cast<const DataTypeNothing *>(from_array->getNestedType().get()))
+                return [nested = to_type->getNestedType()](ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t size)
+                {
+                    return ColumnMap::create(nested->createColumnConstWithDefaultValue(size)->convertToFullColumnIfConst());
+                };
+
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
                 throw Exception(
@@ -3911,7 +3936,7 @@ arguments, result_type, input_rows_count); \
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
+                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
                 res->finalize();
                 return res;
             };
@@ -4066,6 +4091,29 @@ arguments, result_type, input_rows_count); \
         return ColumnVariant::create(discriminators, variants);
     }
 
+    WrapperType createStringToVariantWrapper() const
+    {
+        return [&](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+        {
+            auto column = arguments[0].column->convertToFullColumnIfLowCardinality();
+            auto args = arguments;
+            args[0].column = column;
+
+            const ColumnNullable * column_nullable = nullptr;
+            if (isColumnNullable(*args[0].column))
+            {
+                column_nullable = assert_cast<const ColumnNullable *>(args[0].column.get());
+                args[0].column = column_nullable->getNestedColumnPtr();
+            }
+
+            args[0].type = removeNullable(removeLowCardinality(args[0].type));
+
+            if (cast_type == CastType::accurateOrNull)
+                return ConvertImplGenericFromString<false>::execute(args, result_type, column_nullable, input_rows_count);
+            return ConvertImplGenericFromString<true>::execute(args, result_type, column_nullable, input_rows_count);
+        };
+    }
+
     WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const
     {
         /// We allow converting NULL to Variant(...) as Variant can store NULLs.
@@ -4080,6 +4128,10 @@ arguments, result_type, input_rows_count); \
         }
 
         auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(*removeNullableOrLowCardinalityNullable(from_type));
+        /// Cast String to Variant through parsing if it's not Variant(String).
+        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
+            return createStringToVariantWrapper();
+
         if (!variant_discr_opt)
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
 
@@ -4681,7 +4733,7 @@ arguments, result_type, input_rows_count); \
 
                 if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
-                    ret = [requested_result_is_nullable](
+                    ret = [this, requested_result_is_nullable](
                               ColumnsWithTypeAndName & arguments,
                               const DataTypePtr & result_type,
                               const ColumnNullable * column_nullable,
@@ -4690,7 +4742,10 @@ arguments, result_type, input_rows_count); \
                         auto wrapped_result_type = result_type;
                         if (requested_result_is_nullable)
                             wrapped_result_type = makeNullable(result_type);
-                        return ConvertImplGenericFromString::execute(
+                        if (this->cast_type == CastType::accurateOrNull)
+                            return ConvertImplGenericFromString<false>::execute(
+                                arguments, wrapped_result_type, column_nullable, input_rows_count);
+                        return ConvertImplGenericFromString<true>::execute(
                             arguments, wrapped_result_type, column_nullable, input_rows_count);
                     };
                     return true;
@@ -4804,7 +4859,7 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
         DataTypeFloat32, DataTypeFloat64,
-        DataTypeDate, DataTypeDate32, DataTypeDateTime,
+        DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64,
         DataTypeString>(return_type.get(), [&](auto & type)
         {
             monotonicity = FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;

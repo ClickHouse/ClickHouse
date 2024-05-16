@@ -33,15 +33,15 @@ public:
 
         bool update(const ContextPtr & context);
 
-        void connect(const ContextPtr & context);
-
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
-        bool withWildcard() const
+        bool withPartitionWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
+
+        bool withGlobsIgnorePartitionWildcard() const;
 
         Poco::URI getConnectionURL() const;
 
@@ -69,7 +69,7 @@ public:
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container = true);
 
     static AzureObjectStorage::SettingsPtr createSettings(const ContextPtr & local_context);
 
@@ -100,7 +100,7 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -330,7 +330,7 @@ private:
     LoggerPtr log = getLogger("StorageAzureBlobSource");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.

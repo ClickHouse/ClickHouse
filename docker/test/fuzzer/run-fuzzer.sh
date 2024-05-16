@@ -17,7 +17,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-17_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-18_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function git_clone_with_retry
@@ -181,7 +181,15 @@ function fuzz
         --  --path db \
             --logger.console=0 \
             --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
-    server_pid=$(pidof clickhouse-server)
+    for _ in {1..30}
+    do
+        if clickhouse-client --query "select 1"
+        then
+            break
+        fi
+        sleep 1
+    done
+    server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
 
     kill -0 $server_pid
 

@@ -149,7 +149,7 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
     write_part_log({});
-    storage.incrementMergedPartsProfileEvent(new_part->getType());
+    StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
 
     if (auto txn_ = txn_holder.getTransaction())

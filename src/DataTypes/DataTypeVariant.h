@@ -42,6 +42,7 @@ public:
     bool equals(const IDataType & rhs) const override;
 
     bool isParametric() const override { return true; }
+    bool isComparable() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;

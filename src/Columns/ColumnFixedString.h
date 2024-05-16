@@ -100,6 +100,8 @@ public:
 
     void insertFrom(const IColumn & src_, size_t index) override;
 
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+
     void insertData(const char * pos, size_t length) override;
 
     void insertDefault() override

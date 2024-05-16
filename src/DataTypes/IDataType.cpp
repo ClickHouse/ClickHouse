@@ -202,7 +202,7 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
         custom_serialization = std::move(custom_desc_->serialization);
 }
 
-MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfo::Settings & settings) const
+MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
     return std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings);
 }

@@ -13,8 +13,8 @@ def process_result(result_folder):
     description = ""
     test_results = []
     checks = (
-        # "duplicate includes",
-        # "shellcheck",
+        # "duplicate includes",  # disabled in favor of clang-tidy
+        "shellcheck",
         "style",
         "pylint",
         "black",

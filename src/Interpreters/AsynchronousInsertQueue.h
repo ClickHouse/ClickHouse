@@ -48,7 +48,7 @@ public:
         Block insert_block{};
     };
 
-    enum class DataKind
+    enum class DataKind : uint8_t
     {
         Parsed = 0,
         Preprocessed = 1,
@@ -62,6 +62,10 @@ public:
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
+
+    /// This method should be called manually because it's not flushed automatically in dtor
+    /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
+    void flushAndShutdown();
 
 private:
 

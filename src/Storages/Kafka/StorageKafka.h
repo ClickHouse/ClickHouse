@@ -19,8 +19,9 @@
 namespace DB
 {
 
-class StorageSystemKafkaConsumers;
 class ReadFromStorageKafka;
+class StorageSystemKafkaConsumers;
+class ThreadStatus;
 
 struct StorageKafkaInterceptors;
 
@@ -41,6 +42,8 @@ public:
         const ColumnsDescription & columns_,
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
+
+    ~StorageKafka() override;
 
     std::string getName() const override { return "Kafka"; }
 
@@ -132,16 +135,29 @@ private:
     SettingsChanges createSettingsAdjustments();
     /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
-    /// Returns consumer configuration with all changes that had been overwritten in config
+    /// Returns full consumer related configuration, also the configuration
+    /// contains global kafka properties.
     cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    /// Returns full producer related configuration, also the configuration
+    /// contains global kafka properties.
+    cppkafka::Configuration getProducerConfiguration();
 
     /// If named_collection is specified.
     String collection_name;
 
     std::atomic<bool> shutdown_called = false;
 
-    // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka global configuration
+    // https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md#global-configuration-properties
+    void updateGlobalConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from consumer configuration
+    // NOTE: librdkafka allow to set a consumer property to a producer and vice versa,
+    //       but a warning will be generated e.g:
+    //       "Configuration property session.timeout.ms is a consumer property and
+    //        will be ignored by this producer instance"
+    void updateConsumerConfiguration(cppkafka::Configuration & kafka_config);
+    // Load Kafka properties from producer configuration
+    void updateProducerConfiguration(cppkafka::Configuration & kafka_config);
 
     void threadFunc(size_t idx);
 

@@ -4,6 +4,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -66,7 +67,7 @@ namespace ErrorCodes
     return true;
 }
 
-enum class SystemQueryTargetType
+enum class SystemQueryTargetType : uint8_t
 {
     Model,
     Function,
@@ -262,6 +263,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
             if (ParserIdentifier{}.parse(pos, ast, expected))
@@ -321,6 +323,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         /// START/STOP DISTRIBUTED SENDS does not require table
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
+        case Type::UNLOAD_PRIMARY_KEY:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
@@ -328,6 +331,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         case Type::FLUSH_DISTRIBUTED:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+
+            ParserKeyword s_settings(Keyword::SETTINGS);
+            if (s_settings.ignore(pos, expected))
+            {
+                ParserSetQuery parser_settings(/* parse_only_internals_= */ true);
+                if (!parser_settings.parse(pos, res->query_settings, expected))
+                    return false;
+            }
+
+            break;
+        }
+
         case Type::RESTORE_REPLICA:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
@@ -616,6 +634,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         res->children.push_back(res->database);
     if (res->table)
         res->children.push_back(res->table);
+    if (res->query_settings)
+        res->children.push_back(res->query_settings);
 
     node = std::move(res);
     return true;

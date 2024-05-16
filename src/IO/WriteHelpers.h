@@ -19,7 +19,6 @@
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
-#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -1391,9 +1390,9 @@ struct PcgSerializer
 {
     static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
     {
-        writeText(rng.multiplier(), buf);
+        writeText(pcg32_fast::multiplier(), buf);
         writeChar(' ', buf);
-        writeText(rng.increment(), buf);
+        writeText(pcg32_fast::increment(), buf);
         writeChar(' ', buf);
         writeText(rng.state_, buf);
     }

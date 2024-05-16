@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-enum class LeastGreatest
+enum class LeastGreatest : uint8_t
 {
     Least,
     Greatest
@@ -134,5 +134,3 @@ private:
 };
 
 }
-
-

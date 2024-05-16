@@ -1,6 +1,7 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/CurrentThread.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 #include <base/sleep.h>
@@ -142,6 +143,15 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 #if defined(SANITIZER)
+template <typename T>
+struct ValueHolder
+{
+    ValueHolder(T value_) : value(value_)
+    {}
+
+    T value;
+};
+
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
 /// Sanitizers may not expect some function calls from death callback.
@@ -160,10 +170,13 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     const StackTrace stack_trace;
 
-    int sig = SignalListener::SanitizerTrap;
-    writeBinary(sig, out);
+    writeBinary(SignalListener::SanitizerTrap, out);
     writePODBinary(stack_trace, out);
-    writeBinary(UInt32(getThreadId()), out);
+    /// We create a dummy struct with a constructor so DISABLE_SANITIZER_INSTRUMENTATION is not applied to it
+    /// otherwise, Memory sanitizer can't know that values initiialized inside this function are actually initialized
+    /// because instrumentations are disabled leading to false positives later on
+    ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
+    writeBinary(thread_id.value, out);
     writePODBinary(current_thread, out);
 
     out.next();
@@ -334,6 +347,7 @@ void SignalListener::onFault(
     const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
     UInt32 thread_num,
     DB::ThreadStatus * thread_ptr) const
+try
 {
     ThreadStatus thread_status;
 
@@ -499,7 +513,10 @@ void SignalListener::onFault(
     if (sig != SanitizerTrap)
     {
         if (daemon)
-            SentryWriter::onFault(sig, error_message, stack_trace);
+        {
+            if (auto * sentry = SentryWriter::getInstance())
+                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+        }
 
         /// Advice the user to send it manually.
         if (std::string_view(VERSION_OFFICIAL).contains("official build"))
@@ -522,7 +539,7 @@ void SignalListener::onFault(
         }
     }
 
-    /// ClickHouse Keeper does not link to some part of Settings.
+    /// ClickHouse Keeper does not link to some parts of Settings.
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// List changed settings.
     if (!query_id.empty())
@@ -540,13 +557,18 @@ void SignalListener::onFault(
     }
 #endif
 
-    /// When everything is done, we will try to send these error messages to client.
+    /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)
         thread_ptr->onFatalError();
 
     HandledSignals::instance().fatal_error_printed.test_and_set();
 }
-
+catch (...)
+{
+    /// onFault is called from the std::thread, and it should catch all exceptions; otherwise, you can get unrelated fatal errors.
+    PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+    LOG_FATAL(log, message);
+}
 
 HandledSignals::HandledSignals()
 {

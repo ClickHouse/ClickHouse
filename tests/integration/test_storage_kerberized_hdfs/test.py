@@ -3,8 +3,11 @@ import pytest
 
 import os
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 import subprocess
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

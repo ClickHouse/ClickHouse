@@ -53,9 +53,9 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
+void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
 {
-    for (const auto & node : actions->getNodes())
+    for (const auto & node : dag->getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
@@ -78,8 +78,8 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
 
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 {
+    buildSetsForDAG(dag, context);
     auto actions = std::make_shared<ExpressionActions>(dag);
-    makeSets(actions, context);
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
@@ -219,7 +219,7 @@ void addRequestedPathFileAndSizeVirtualsToChunk(
     }
 }
 
-static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allowed_inputs)
+static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
@@ -228,7 +228,10 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
         const auto * cur = nodes.top();
         nodes.pop();
 
-        if (cur->type == ActionsDAG::ActionType::INPUT && !allowed_inputs.has(cur->result_name))
+        if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
+        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs && !allowed_inputs->has(cur->result_name))
             return false;
 
         for (const auto * child : cur->children)
@@ -336,7 +339,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         }
     }
 
-    if (allowed_inputs && !canEvaluateSubtree(node, *allowed_inputs))
+    if (!canEvaluateSubtree(node, allowed_inputs))
         return nullptr;
 
     return node;

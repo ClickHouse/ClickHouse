@@ -13,8 +13,8 @@ ENV CARGO_HOME=/rust/cargo
 ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2023-07-04 && \
-    rustup default nightly-2023-07-04 && \
+    rustup toolchain install nightly-2024-04-01 && \
+    rustup default nightly-2024-04-01 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \
@@ -61,7 +61,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && rm /tmp/nfpm.deb
 
 ARG GO_VERSION=1.19.10
-# We need go for clickhouse-diagnostics
+# We needed go for clickhouse-diagnostics (it is not used anymore)
 RUN arch=${TARGETARCH:-amd64} \
     && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
     && tar -xzf /tmp/go.tgz -C /usr/local/ \

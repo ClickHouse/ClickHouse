@@ -1,9 +1,11 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
+#include <base/defines.h>
+#include <base/errnoToString.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <base/errnoToString.h>
-#include <base/defines.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -75,6 +77,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int SYSTEM_ERROR;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -126,7 +129,7 @@ void BaseDaemon::reloadConfiguration()
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(fs::path(config_path).parent_path());
+    ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -144,6 +147,7 @@ BaseDaemon::~BaseDaemon()
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     HandledSignals::instance().reset();
+    SentryWriter::resetInstance();
 }
 
 
@@ -406,7 +410,25 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    SentryWriter::initialize(config());
+    SentryWriter::initializeInstance(config());
+    if (config().getBool("send_crash_reports.send_logical_errors", false))
+    {
+        /// In release builds send it to sentry (if it is configured)
+        if (auto * sentry = SentryWriter::getInstance())
+        {
+            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+            {
+                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+                {
+                    SentryWriter::FramePointers frame_pointers;
+                    for (size_t i = 0; i < trace.size(); ++i)
+                        frame_pointers[i] = trace[i];
+                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                }
+            };
+        }
+    }
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
     blockSignals({SIGPIPE});

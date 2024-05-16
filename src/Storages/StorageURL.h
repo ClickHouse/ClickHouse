@@ -127,7 +127,7 @@ protected:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 private:
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
@@ -180,6 +180,8 @@ public:
         const URIParams & params = {},
         bool glob_url = false,
         bool need_only_count_ = false);
+
+    ~StorageURLSource() override;
 
     String getName() const override { return name; }
 

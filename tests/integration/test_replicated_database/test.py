@@ -79,6 +79,29 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_flatten_nested(started_cluster):
+    main_node.query(
+        "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica' || '1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica2');"
+    )
+
+    main_node.query(
+        "CREATE TABLE create_replicated_table.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);"
+    )
+
+    main_node.query(
+        "CREATE MATERIALIZED VIEW create_replicated_table.mv ENGINE=ReplicatedMergeTree ORDER BY tuple() AS select d, cast([(k, toString(i32))] as Nested(a UInt64, b String)) from create_replicated_table.replicated_table"
+    )
+
+    assert main_node.query(
+        "show create create_replicated_table.mv"
+    ) == dummy_node.query("show create create_replicated_table.mv")
+    main_node.query("DROP DATABASE create_replicated_table SYNC")
+    dummy_node.query("DROP DATABASE create_replicated_table SYNC")
+
+
 def test_create_replicated_table(started_cluster):
     main_node.query(
         "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica' || '1');"
@@ -1137,6 +1160,10 @@ def test_sync_replica(started_cluster):
     dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")
 
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database")
+
+    assert "2\n" == main_node.query(
+        "SELECT sum(is_active) FROM system.clusters WHERE cluster='test_sync_database'"
+    )
 
     assert dummy_node.query(
         "SELECT count() FROM system.tables where database='test_sync_database'"

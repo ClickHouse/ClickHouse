@@ -8,6 +8,8 @@
 #include <Coordination/KeeperFeatureFlags.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 
+#include <Poco/NumberParser.h>
+
 namespace DB
 {
 

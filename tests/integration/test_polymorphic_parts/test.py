@@ -369,7 +369,6 @@ node7 = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 node8 = cluster.add_instance(
     "node8",

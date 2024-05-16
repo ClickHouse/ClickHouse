@@ -10,13 +10,12 @@ node1 = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/wide_parts_only.xml", "configs/no_compress_marks.xml"],
     with_zookeeper=True,
-    allow_analyzer=False,
+    use_old_analyzer=True,
 )
 
 

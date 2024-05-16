@@ -278,17 +278,17 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
-    static const NameSet columns_to_read_at_first_step = {"_part_offset"};
-
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
         Names step_column_names;
 
+        /// Virtual columns that are filled by RangeReader
+        /// must be read in the first step before any filtering.
         if (columns_from_previous_steps.empty())
         {
             for (const auto & required_column : required_columns)
-                if (columns_to_read_at_first_step.contains(required_column))
+                if (MergeTreeRangeReader::virtuals_to_fill.contains(required_column))
                     step_column_names.push_back(required_column);
         }
 

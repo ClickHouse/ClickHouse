@@ -1,3 +1,8 @@
+#include <memory>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -42,7 +47,7 @@ size_t getNumberOfDimensions(const IDataType & type)
 
 size_t getNumberOfDimensions(const IColumn & column)
 {
-    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column))
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return column_array->getNumberOfDimensions();
     return 0;
 }
@@ -907,10 +912,10 @@ static void addConstantToWithClause(const ASTPtr & query, const String & column_
 
 /// @expected_columns and @available_columns contain descriptions
 /// of extended Object columns.
-void replaceMissedSubcolumnsByConstants(
+NamesAndTypes calculateMissedSubcolumns(
     const ColumnsDescription & expected_columns,
-    const ColumnsDescription & available_columns,
-    ASTPtr query)
+    const ColumnsDescription & available_columns
+)
 {
     NamesAndTypes missed_names_types;
 
@@ -947,6 +952,18 @@ void replaceMissedSubcolumnsByConstants(
             [](const auto & lhs, const auto & rhs) { return lhs.name < rhs.name; });
     }
 
+    return missed_names_types;
+}
+
+/// @expected_columns and @available_columns contain descriptions
+/// of extended Object columns.
+void replaceMissedSubcolumnsByConstants(
+    const ColumnsDescription & expected_columns,
+    const ColumnsDescription & available_columns,
+    ASTPtr query)
+{
+    NamesAndTypes missed_names_types = calculateMissedSubcolumns(expected_columns, available_columns);
+
     if (missed_names_types.empty())
         return;
 
@@ -957,6 +974,42 @@ void replaceMissedSubcolumnsByConstants(
     for (const auto & [name, type] : missed_names_types)
         if (identifiers.contains(name))
             addConstantToWithClause(query, name, type);
+}
+
+/// @expected_columns and @available_columns contain descriptions
+/// of extended Object columns.
+bool replaceMissedSubcolumnsByConstants(
+    const ColumnsDescription & expected_columns,
+    const ColumnsDescription & available_columns,
+    QueryTreeNodePtr & query,
+    const ContextPtr & context [[maybe_unused]])
+{
+    bool has_missing_objects = false;
+
+    NamesAndTypes missed_names_types = calculateMissedSubcolumns(expected_columns, available_columns);
+
+    if (missed_names_types.empty())
+        return has_missing_objects;
+
+    auto * query_node = query->as<QueryNode>();
+    if (!query_node)
+        return has_missing_objects;
+
+    auto table_expression = extractLeftTableExpression(query_node->getJoinTree());
+
+    std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+    for (const auto & [name, type] : missed_names_types)
+    {
+        auto constant = std::make_shared<ConstantNode>(type->getDefault(), type);
+        constant->setAlias(table_expression->getAlias() + "." + name);
+
+        column_name_to_node[name] = buildCastFunction(constant, type, context);
+        has_missing_objects = true;
+    }
+
+    replaceColumns(query, table_expression, column_name_to_node);
+
+    return has_missing_objects;
 }
 
 Field FieldVisitorReplaceScalars::operator()(const Array & x) const
@@ -999,6 +1052,14 @@ Field FieldVisitorFoldDimension::operator()(const Array & x) const
         res[i] = applyVisitor(FieldVisitorFoldDimension(num_dimensions_to_fold - 1), x[i]);
 
     return res;
+}
+
+Field FieldVisitorFoldDimension::operator()(const Null & x) const
+{
+    if (num_dimensions_to_fold == 0)
+        return x;
+
+    return Array();
 }
 
 void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)

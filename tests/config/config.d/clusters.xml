@@ -67,6 +67,21 @@
                  </replica>
              </shard>
         </test_cluster_two_replicas_different_databases>
+        <test_cluster_two_replicas_different_databases_internal_replication>
+             <shard>
+                 <internal_replication>true</internal_replication>
+                 <replica>
+                     <default_database>shard_0</default_database>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+                 <replica>
+                     <default_database>shard_1</default_database>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+        </test_cluster_two_replicas_different_databases_internal_replication>
         <test_cluster_interserver_secret>
             <secret>123457</secret>
             <shard>

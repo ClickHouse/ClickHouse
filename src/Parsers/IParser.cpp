@@ -9,14 +9,12 @@ namespace ErrorCodes
     extern const int TOO_SLOW_PARSING;
 }
 
+
 IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
 {
     depth = rhs.depth;
     max_depth = rhs.max_depth;
-
-    if (rhs.backtracks > backtracks)
-        backtracks = rhs.backtracks;
-
+    backtracks = std::max(backtracks, rhs.backtracks);
     max_backtracks = rhs.max_backtracks;
 
     if (rhs < *this)
@@ -30,6 +28,31 @@ IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
     TokenIterator::operator=(rhs);
 
     return *this;
+}
+
+
+template <typename T>
+static bool intersects(T a_begin, T a_end, T b_begin, T b_end)
+{
+    return (a_begin <= b_begin && b_begin < a_end)
+        || (b_begin <= a_begin && a_begin < b_end);
+}
+
+
+void Expected::highlight(HighlightedRange range)
+{
+    if (!enable_highlighting)
+        return;
+
+    auto it = highlights.lower_bound(range);
+    while (it != highlights.end() && range.begin < it->end)
+    {
+        if (intersects(range.begin, range.end, it->begin, it->end))
+            it = highlights.erase(it);
+        else
+            ++it;
+    }
+    highlights.insert(range);
 }
 
 }

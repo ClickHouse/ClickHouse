@@ -14,6 +14,11 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
 
+# Cancel the previous wf run in PRs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -21,7 +26,7 @@ jobs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: DebugInfo
-        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
+        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -58,14 +63,6 @@ jobs:
       - name: Re-create GH statuses for skipped jobs if any
         run: |
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --update-gh-statuses
-      - name: Style check early
-        # hack to run style check before the docker build job if possible (style-check image not changed)
-        if: contains(fromJson(steps.runconfig.outputs.CI_DATA).jobs_data.jobs_to_do, 'Style check early')
-        run: |
-          DOCKER_TAG=$(echo '${{ toJson(fromJson(steps.runconfig.outputs.CI_DATA).docker_data.images) }}' | tr -d '\n')
-          export DOCKER_TAG=$DOCKER_TAG
-          python3 ./tests/ci/style_check.py --no-push
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --post --job-name 'Style check'
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() && toJson(fromJson(needs.RunConfig.outputs.data).docker_data.missing_multi) != '[]' }}
@@ -88,7 +85,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, StyleCheck]
+    needs: [RunConfig, BuildDockers, StyleCheck]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -102,7 +99,7 @@ jobs:
   # for main CI chain
   #
   Builds_1:
-    needs: [RunConfig, FastTest]
+    needs: [RunConfig, StyleCheck, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
     # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
@@ -163,7 +160,7 @@ jobs:
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [Tests_1, Tests_2]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
@@ -172,7 +169,12 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
-          python3 merge_pr.py --check-approved
+      # FIXME: merge on approval does not work with MQ. Could be fixed by using defaul GH's automerge after some corrections in Mergeable Check status
+      # - name: Auto merge if approved
+      #   if: ${{ github.event_name != 'merge_group' }}
+      #   run: |
+      #     cd "$GITHUB_WORKSPACE/tests/ci"
+      #     python3 merge_pr.py --check-approved
 
 
 #############################################################################################
