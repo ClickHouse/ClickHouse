@@ -1188,7 +1188,7 @@ public:
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    constexpr bool isLazy() const { return lazy; }
+    static constexpr bool isLazy() { return lazy; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -1511,7 +1511,7 @@ void addFoundRowAll(
             known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
         }
     }
-    else if (added.isLazy())
+    else if constexpr (AddedColumns::isLazy())
     {
         added.appendFromBlock(&mapped, false);
         current_offset += mapped.rows;
@@ -1671,7 +1671,7 @@ class PreSelectedRows : public std::vector<const RowRef *>
 {
 public:
     void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
-    bool isLazy() const { return false; }
+    static constexpr bool isLazy() { return false; }
 };
 
 /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
