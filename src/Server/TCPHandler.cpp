@@ -11,6 +11,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/escapeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -42,6 +43,7 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
+#include <Access/User.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -181,6 +183,7 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 
 namespace DB
 {
+using Which = Field::Types::Which;
 
 TCPHandler::TCPHandler(
     IServer & server_,
@@ -1602,6 +1605,70 @@ void TCPHandler::sendHello()
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
     }
+
+    /// If client is Clickhouse-client we will send server profile settings of this user
+    if (client_name == (std::string(VERSION_NAME) + " client"))
+    {
+        const auto & user = session->sessionContext()->getUser();
+        String query = fmt::format(
+                R"(SELECT setting_name, value FROM system.settings_profile_elements WHERE user_name = '{0}')",
+                escapeString(user->getName()));
+        const auto & res_const = executeQuery(query,server.context(), QueryFlags{ .internal = true }).second;
+        auto & res = const_cast<BlockIO &>(res_const);
+        PullingPipelineExecutor pulling_executor(res.pipeline);
+        Block block;
+        pulling_executor.pull(block);
+        /// filter data
+        std::map<String, Field> server_settings;
+        for (size_t row = 0; row < block.rows(); ++row)
+        {
+            size_t col_index = 0;
+            String name;
+            Field value_field;
+            for (const auto & name_value: block)
+            {
+                Field field;
+                name_value.column->get(row, field);
+                if (!field.isNull())
+                {
+                    if (col_index == 0)
+                        name = field.safeGet<String>();
+                    else
+                        value_field = field;
+                }
+                else
+                    continue;
+
+                ++col_index;
+            }
+            if (!name.empty())
+                server_settings[name] = value_field;
+
+        }
+
+        writeVarUInt(server_settings.size(), *out);
+        if (!server_settings.empty())
+        {
+            for (const auto & setting : server_settings)
+            {
+                writeStringBinary(setting.first, *out);
+                writeVarUInt(setting.second.getType(), *out);
+                switch (setting.second.getType())
+                {
+                    case Which::UInt64:
+                        writeVarUInt(setting.second.safeGet<UInt64>(), *out);break;
+                    case Which::String:
+                        writeStringBinary(setting.second.safeGet<String>(), *out);break;
+                    case Which::Bool:
+                        writeVarUInt(setting.second.get<UInt64>(), *out);break;
+                    default:
+                        break;
+                }
+
+            }
+        }
+    }
+
     out->next();
 }
 

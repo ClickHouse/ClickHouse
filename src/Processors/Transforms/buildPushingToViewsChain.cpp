@@ -372,16 +372,26 @@ std::optional<Chain> generateViewChain(
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
 
-            out.addSource(std::make_shared<ApplySquashingTransform>(
-                out.getInputHeader(),
-                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+            if (settings.allow_insert_threads_reduction_optimizaion)
+            {
+                out.addSource(std::make_shared<ApplySquashingTransform>(
+                    out.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
 
-            out.addSource(std::make_shared<PlanSquashingTransform>(
-                out.getInputHeader(),
-                table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                1)); // Chain requires a single input
+                out.addSource(std::make_shared<PlanSquashingTransform>(
+                    out.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
+                    1)); // Chain requires a single input
+            }
+            else
+            {
+                out.addSource(std::make_shared<SimpleSquashingTransform>(
+                    out.getInputHeader(),
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+            }
         }
 
         auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), current_thread, insert_context->getQuota());
