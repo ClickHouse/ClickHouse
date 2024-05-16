@@ -1,3 +1,4 @@
+#include <optional>
 #include "config.h"
 
 #if USE_AWS_S3
