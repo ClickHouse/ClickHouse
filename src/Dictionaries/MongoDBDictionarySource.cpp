@@ -24,7 +24,6 @@ namespace ErrorCodes
     #if USE_MONGODB
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int MONGODB_CANNOT_AUTHENTICATE;
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
@@ -152,10 +151,10 @@ QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
 
     auto ids_array = array();
-    for(const auto & id : ids)
+    for (const auto & id : ids)
         ids_array.append(static_cast<Int64>(id));
 
-    auto query = make_document(kvp(dict_struct.id->name,  make_document(kvp("$in", ids_array))));
+    auto query = make_document(kvp(dict_struct.id->name, make_document(kvp("$in", ids_array))));
 
     return QueryPipeline(std::make_shared<MongoDBSource>(uri, collection, query.view(), mongocxx::options::find{}, sample_block, max_block_size));
 }

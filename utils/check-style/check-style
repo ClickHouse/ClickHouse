@@ -440,7 +440,7 @@ find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or 
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
-    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
+    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ExtendedJsonMode' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |

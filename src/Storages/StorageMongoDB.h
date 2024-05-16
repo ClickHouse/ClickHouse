@@ -29,7 +29,6 @@ public:
         std::shared_ptr<mongocxx::uri> uri;
         String collection;
     };
-
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
     StorageMongoDB(
@@ -40,6 +39,7 @@ public:
         const String & comment);
 
     std::string getName() const override { return "MongoDB"; }
+    bool isRemote() const override { return true; }
 
     Pipe read(
         const Names & column_names,
@@ -57,15 +57,13 @@ public:
         bool async_insert) override;
 
 private:
-    Configuration configuration;
-
-    LoggerPtr log;
-
     static bsoncxx::types::bson_value::value toBSONValue(const Field * field);
     static String getMongoFuncName(const String & func);
     static bsoncxx::document::value visitWhereFunction(const ASTFunction * func);
-    static void visitProjectionNode(const QueryTreeNodePtr & node, bsoncxx::builder::basic::document * projection);
-    bsoncxx::document::value buildMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query);
+    bsoncxx::document::value buildMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query, const Block & sample_block);
+
+    Configuration configuration;
+    LoggerPtr log;
 };
 
 }

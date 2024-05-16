@@ -12,22 +12,25 @@ Only MongoDB v3.6+ servers are supported.
 
 ## Types mappings
 
-| MongoDB   | ClickHouse                 |
-|-----------|----------------------------|
-| bool      | UInt8                      |
-| int32     | Int32                      |
-| int64     | Int64                      |
-| double    | Float64                    |
-| date      | Date, DateTime, DateTime64 |
-| timestamp | Date, DateTime, DateTime64 |
-| string    | String, UUID               |
-| document  | String(as JSON)            |
-| array     | String(as JSON)            |
-| oid       | String                     |
+| MongoDB     | ClickHouse                         |
+|-------------|------------------------------------|
+| bool        | UInt8, String                      |
+| int32       | Int32, String                      |
+| int64       | Int64, String                      |
+| double      | Float64, String                    |
+| date        | Date, DateTime, DateTime64, String |
+| timestamp   | Date, DateTime, DateTime64, String |
+| string      | String, UUID                       |
+| document    | String(as JSON)                    |
+| array       | Array, String(as JSON)             |
+| oid         | String                             |
+| *any other* | String                             |
 
 If key not found in MongoDB document, default value or null(if the column is nullable) will be inserted.
 
-## Supported conditions
+## Supported clauses
+*Hint: you can use MongoDB table in CTE to perform any clauses, but be aware, that in some cases, performance will be significantly degraded.*
+
 ### WHERE
 Only constant literals are allowed.
 
