@@ -10,9 +10,11 @@ logger = logging.getLogger(__name__)
 
 # ^ and $ match subline in `multiple\nlines`
 # \A and \Z match only start and end of the whole string
+# NOTE (vnemkov): support both upstream tag style: v22.x.y.z-lts and Altinity tag style: v22.x.y.z.altinitystable
+# Because at early release stages there could be no Altinity tag set on commit, only upstream one.
 RELEASE_BRANCH_REGEXP = r"\A\d+[.]\d+\Z"
 TAG_REGEXP = (
-    r"\Av\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|altinitystable|lts)\Z"
+    r"\Av\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts|altinitystable)\Z"
 )
 SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 
