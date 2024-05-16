@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexInverted.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1297,7 +1297,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     PostingsCacheForStore cache_in_store;
 
-    if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
+    if (dynamic_cast<const MergeTreeIndexFullText *>(&*index_helper) != nullptr)
         cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
 
     for (size_t i = 0; i < ranges.size(); ++i)
@@ -1334,7 +1334,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             }
 
             bool result = false;
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
             if (!gin_filter_condition)
                 result = condition->mayBeTrueOnGranule(granule);
             else

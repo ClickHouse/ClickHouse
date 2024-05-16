@@ -2,7 +2,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
-#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -10,7 +9,6 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -28,13 +26,9 @@ namespace ErrorCodes
 class FunctionToStartOfInterval : public IFunction
 {
 public:
-    static constexpr auto name = "toStartOfInterval";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToStartOfInterval>(context); }
-    explicit FunctionToStartOfInterval(ContextPtr context)
-        : first_day_of_week(context->getSettingsRef().first_day_of_week)
-    {
-    }
+    static constexpr auto name = "toStartOfInterval";
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -58,12 +52,14 @@ public:
         };
 
         const DataTypeInterval * interval_type = nullptr;
-        enum class ResultType
+
+        enum class ResultType : uint8_t
         {
             Date,
             DateTime,
             DateTime64
         };
+
         ResultType result_type;
         auto check_second_argument = [&]
         {
@@ -170,7 +166,7 @@ private:
 
         if (isDateTime64(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(&time_column_col);
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
@@ -178,13 +174,13 @@ private:
         }
         else if (isDateTime(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(&time_column_col);
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
         else if (isDate(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(&time_column_col);
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
@@ -253,16 +249,13 @@ private:
         auto & result_data = col_to->getData();
         result_data.resize(size);
 
-        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        const UInt8 week_mode = (first_day_of_week == FirstDayOfWeek::Monday) ? 1 : 0;
+        Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
         for (size_t i = 0; i != size; ++i)
-            result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, scale_multiplier, week_mode, time_zone));
+            result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
 
         return result_col;
     }
-
-    const FirstDayOfWeek first_day_of_week;
 };
 
 REGISTER_FUNCTION(ToStartOfInterval)

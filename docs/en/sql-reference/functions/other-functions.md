@@ -556,7 +556,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Parameters**
 
 - `database` : name of the database. [String literal](../syntax#syntax-string-literal)
-- `table` : name of the table. [String literal](../syntax#syntax-string-literal) 
+- `table` : name of the table. [String literal](../syntax#syntax-string-literal)
 - `column` : name of the column. [String literal](../syntax#syntax-string-literal)
 - `hostname` : remote server name to perform the check on. [String literal](../syntax#syntax-string-literal)
 - `username` : username for remote server. [String literal](../syntax#syntax-string-literal)
@@ -565,7 +565,7 @@ hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘
 **Returned value**
 
 - `1` if the given column exists.
-- `0`, otherwise. 
+- `0`, otherwise.
 
 **Implementation details**
 
@@ -1024,6 +1024,7 @@ The result of the function depends on the affected data blocks and the order of 
 
 :::note
 Only returns neighbor inside the currently processed data block.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The order of rows during calculation of `neighbor()` can differ from the order of rows returned to the user.
@@ -1134,6 +1135,7 @@ Returns 0 for the first row, and for subsequent rows the difference to the previ
 
 :::note
 Only returns differences inside the currently processed data block.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The result of the function depends on the affected data blocks and the order of data in the block.
@@ -1206,6 +1208,10 @@ WHERE diff != 1
 ```
 
 ## runningDifferenceStartingWithFirstValue
+
+:::note
+This function is DEPRECATED (see the note for `runningDifference`).
+:::
 
 Same as [runningDifference](./other-functions.md#other_functions-runningdifference), but returns the value of the first row as the value on the first row.
 
@@ -1930,6 +1936,7 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 :::note
 The state is reset for each new block of data.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 **Syntax**
@@ -2444,7 +2451,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultRoles
 
-Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
+Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
 
 **Syntax**
 
@@ -3294,3 +3301,31 @@ The setting is not enabled by default for security reasons, because some headers
 HTTP headers are case sensitive for this function.
 
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
+
+## showCertificate
+
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](https://clickhouse.com/docs/en/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+
+**Syntax**
+
+```sql
+showCertificate()
+```
+
+**Returned value**
+
+- Map of key-value pairs relating to the configured SSL certificate. [Map](../../sql-reference/data-types/map.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+Query:
+
+```sql
+SELECT showCertificate() FORMAT LineAsString;
+```
+
+Result:
+
+```response
+{'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
+```

@@ -33,15 +33,15 @@ public:
 
         bool update(const ContextPtr & context);
 
-        void connect(const ContextPtr & context);
-
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
-        bool withWildcard() const
+        bool withPartitionWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
+
+        bool withGlobsIgnorePartitionWildcard() const;
 
         Poco::URI getConnectionURL() const;
 

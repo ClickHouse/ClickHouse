@@ -1,9 +1,13 @@
-#include <Common/UTF8Helpers.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/TargetSpecific.h>
+#include <Common/UTF8Helpers.h>
 
 #include <widechar_width.h>
 #include <bit>
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 namespace DB
 {
@@ -97,13 +101,14 @@ namespace
 enum ComputeWidthMode
 {
     Width,              /// Calculate and return visible width
-    BytesBeforLimit     /// Calculate and return the maximum number of bytes when substring fits in visible width.
+    BytesBeforeLimit    /// Calculate and return the maximum number of bytes when substring fits in visible width.
 };
 
 template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
+    int isEscapeSequence = false;
     size_t width = 0;
     size_t rollback = 0;
     for (size_t i = 0; i < size; ++i)
@@ -132,21 +137,32 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
             }
             else
             {
-                i += 16;
-                width += 16;
+                if (isEscapeSequence)
+                {
+                    break;
+                }
+                else
+                {
+                    i += 16;
+                    width += 16;
+                }
             }
         }
 #endif
 
         while (i < size && isPrintableASCII(data[i]))
         {
-            ++width;
+            if (!isEscapeSequence)
+                ++width;
+            else if (isCSIFinalByte(data[i]) && data[i - 1] != '\x1b')
+                isEscapeSequence = false; /// end of CSI escape sequence reached
             ++i;
         }
 
         /// Now i points to position in bytes after regular ASCII sequence
         /// and if width > limit, then (width - limit) is the number of extra ASCII characters after width limit.
-        if (mode == BytesBeforLimit && width > limit)
+
+        if (mode == BytesBeforeLimit && width > limit)
             return i - (width - limit);
 
         switch (decoder.decode(data[i]))
@@ -162,20 +178,18 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
             }
             case UTF8Decoder::ACCEPT:
             {
-                // there are special control characters that manipulate the terminal output.
-                // (`0x08`, `0x09`, `0x0a`, `0x0b`, `0x0c`, `0x0d`, `0x1b`)
-                // Since we don't touch the original column data, there is no easy way to escape them.
-                // TODO: escape control characters
                 // TODO: multiline support for '\n'
 
-                // special treatment for '\t'
+                // special treatment for '\t' and for ESC
                 size_t next_width = width;
-                if (decoder.codepoint == '\t')
+                if (decoder.codepoint == '\x1b')
+                    isEscapeSequence = true;
+                else if (decoder.codepoint == '\t')
                     next_width += 8 - (prefix + width) % 8;
                 else
                     next_width += wcwidth(decoder.codepoint);
 
-                if (mode == BytesBeforLimit && next_width > limit)
+                if (mode == BytesBeforeLimit && next_width > limit)
                     return i - rollback;
                 width = next_width;
 
@@ -189,7 +203,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
     }
 
     // no need to handle trailing sequence as they have zero width
-    return (mode == BytesBeforLimit) ? size : width;
+    return (mode == BytesBeforeLimit) ? size : width;
 }
 
 }
@@ -202,8 +216,74 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 
 size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
-    return computeWidthImpl<BytesBeforLimit>(data, size, prefix, limit);
+    return computeWidthImpl<BytesBeforeLimit>(data, size, prefix, limit);
 }
+
+
+DECLARE_DEFAULT_CODE(
+bool isAllASCII(const UInt8 * data, size_t size)
+{
+    UInt8 mask = 0;
+    for (size_t i = 0; i < size; ++i)
+        mask |= data[i];
+
+    return !(mask & 0x80);
+})
+
+DECLARE_SSE42_SPECIFIC_CODE(
+/// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
+bool isAllASCII(const UInt8 * data, size_t size)
+{
+    __m128i masks = _mm_setzero_si128();
+
+    size_t i = 0;
+    for (; i + 16 <= size; i += 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i));
+        masks = _mm_or_si128(masks, bytes);
+    }
+    int mask = _mm_movemask_epi8(masks);
+
+    UInt8 tail_mask = 0;
+    for (; i < size; i++)
+        tail_mask |= data[i];
+
+    mask |= (tail_mask & 0x80);
+    return !mask;
+})
+
+DECLARE_AVX2_SPECIFIC_CODE(
+bool isAllASCII(const UInt8 * data, size_t size)
+{
+    __m256i masks = _mm256_setzero_si256();
+
+    size_t i = 0;
+    for (; i + 32 <= size; i += 32)
+    {
+        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
+        masks = _mm256_or_si256(masks, bytes);
+    }
+    int mask = _mm256_movemask_epi8(masks);
+
+    UInt8 tail_mask = 0;
+    for (; i < size; i++)
+        tail_mask |= data[i];
+
+    mask |= (tail_mask & 0x80);
+    return !mask;
+})
+
+bool isAllASCII(const UInt8* data, size_t size)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX2))
+        return TargetSpecific::AVX2::isAllASCII(data, size);
+    if (isArchSupported(TargetArch::SSE42))
+        return TargetSpecific::SSE42::isAllASCII(data, size);
+#endif
+    return TargetSpecific::Default::isAllASCII(data, size);
+}
+
 
 }
 }

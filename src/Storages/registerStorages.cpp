@@ -32,8 +32,6 @@ void registerStorageFuzzJSON(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
-void registerStorageCOS(StorageFactory & factory);
-void registerStorageOSS(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
 
@@ -134,8 +132,6 @@ void registerStorages()
 
 #if USE_AWS_S3
     registerStorageS3(factory);
-    registerStorageCOS(factory);
-    registerStorageOSS(factory);
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
 
