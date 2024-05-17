@@ -166,7 +166,7 @@ public:
 
     BlockIO populate();
 
-    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
+    static void writeIntoWindowView(StorageWindowView & window_view, const Block & header, Chunk & chunk, ContextPtr context);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 

@@ -166,7 +166,7 @@ namespace DeduplicationToken
         void transform(Chunk & chunk) override;
 
     private:
-        size_t block_number;
+        size_t block_number = 0;
     };
 
 

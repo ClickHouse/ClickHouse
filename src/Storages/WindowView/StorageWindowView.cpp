@@ -37,6 +37,7 @@
 #include <Processors/Transforms/WatermarkTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/NumberBlocksTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -1415,22 +1416,25 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
 }
 
 void StorageWindowView::writeIntoWindowView(
-    StorageWindowView & window_view, const Block & block, ContextPtr local_context)
+    StorageWindowView & window_view, const Block & header, Chunk & chunk, ContextPtr local_context)
 {
     window_view.throwIfWindowViewIsDisabled(local_context);
     while (window_view.modifying_query)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    if (!window_view.is_proctime && window_view.max_watermark == 0 && block.rows() > 0)
+    if (!window_view.is_proctime && window_view.max_watermark == 0 && chunk.getNumRows() > 0)
     {
         std::lock_guard lock(window_view.fire_signal_mutex);
-        const auto & window_column = block.getByName(window_view.timestamp_column_name);
+        const auto & window_column = header.getByName(window_view.timestamp_column_name);
         const ColumnUInt32::Container & window_end_data = static_cast<const ColumnUInt32 &>(*window_column.column).getData();
         UInt32 first_record_timestamp = window_end_data[0];
         window_view.max_watermark = window_view.getWindowUpperBound(first_record_timestamp);
     }
 
-    Pipe pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
+    auto chunk_infos = chunk.getChunkInfos();
+    chunk.setChunkInfos({});
+
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(header.cloneEmpty(), std::move(chunk)));
 
     UInt32 lateness_bound = 0;
     UInt32 t_max_watermark = 0;
@@ -1475,10 +1479,10 @@ void StorageWindowView::writeIntoWindowView(
         auto syntax_result = TreeRewriter(local_context).analyze(query, columns);
         auto filter_expression = ExpressionAnalyzer(filter_function, syntax_result, local_context).getActionsDAG(false);
 
-        pipe.addSimpleTransform([&](const Block & header)
+        pipe.addSimpleTransform([&](const Block & header_)
         {
             return std::make_shared<FilterTransform>(
-                header, std::make_shared<ExpressionActions>(filter_expression),
+                header_, std::make_shared<ExpressionActions>(filter_expression),
                 filter_function->getColumnName(), true);
         });
     }
@@ -1533,6 +1537,17 @@ void StorageWindowView::writeIntoWindowView(
         QueryProcessingStage::WithMergeableState);
 
     builder = select_block.buildQueryPipeline();
+
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), stream_header);
+    });
+
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squasing", true, stream_header);
+    });
+
     builder.addSimpleTransform([&](const Block & current_header)
     {
         return std::make_shared<SquashingChunksTransform>(
@@ -1546,7 +1561,7 @@ void StorageWindowView::writeIntoWindowView(
         UInt32 block_max_timestamp = 0;
         if (window_view.is_watermark_bounded || window_view.allowed_lateness)
         {
-            const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
+            const auto & timestamp_column = *header.getByName(window_view.timestamp_column_name).column;
             const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
             for (const auto & timestamp : timestamp_data)
                 block_max_timestamp = std::max(timestamp, block_max_timestamp);
@@ -1572,6 +1587,11 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", true, stream_header);
+    });
+
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(
         local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
@@ -1588,8 +1608,13 @@ void StorageWindowView::writeIntoWindowView(
         auto convert_actions = std::make_shared<ExpressionActions>(
             convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
-        builder.addSimpleTransform([&](const Block & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
+        builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
+
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", true, stream_header);
+    });
 
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const Block & cur_header, Pipe::StreamType)

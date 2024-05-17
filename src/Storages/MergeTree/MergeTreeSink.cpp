@@ -95,12 +95,12 @@ void MergeTreeSink::consume(Chunk & chunk)
     {
         if (!token_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DedupTokenBuilder is expected for consumed chunk in MergeTreeSink for table: {}",
+                "TokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
                 storage.getStorageID().getNameForLogs());
 
         if (!token_info->tokenInitialized() && !context->getSettingsRef().insert_deduplication_token.value.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DedupTokenBuilder has to be initialized with user token for table: {}",
+                "TokenInfo has to be initialized with user token for table: {}",
                 storage.getStorageID().getNameForLogs());
 
         if (token_info->tokenInitialized())

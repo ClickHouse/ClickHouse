@@ -12,6 +12,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DeduplicationToken
 {
 
@@ -101,9 +107,17 @@ void CheckTokenTransform::transform(Chunk & chunk)
 
 void SetInitialTokenTransform::transform(Chunk & chunk)
 {
-    auto token_builder = chunk.getChunkInfos().get<TokenInfo>();
-    chassert(token_builder);
-    if (token_builder->tokenInitialized())
+    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
+
+    LOG_DEBUG(getLogger("SetInitialTokenTransform"), "has token_info {}", bool(token_info));
+
+    if (!token_info)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in SetInitialTokenTransform");
+
+    chassert(token_info);
+    if (!token_info || token_info->tokenInitialized())
         return;
 
     SipHash hash;
@@ -111,7 +125,7 @@ void SetInitialTokenTransform::transform(Chunk & chunk)
         colunm->updateHashFast(hash);
 
     const auto hash_value = hash.get128();
-    token_builder->setInitialToken(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
+    token_info->setInitialToken(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
 }
 
 void SetUserTokenTransform::transform(Chunk & chunk)

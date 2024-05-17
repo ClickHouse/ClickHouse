@@ -330,7 +330,7 @@ Pipe StorageLiveView::watch(
     return reader;
 }
 
-void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
+void StorageLiveView::writeBlock(const Block & header, Chunk & chunk, ContextPtr local_context)
 {
     auto output = std::make_shared<LiveViewSink>(*this);
 
@@ -363,7 +363,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
     if (!is_block_processed)
     {
         Pipes pipes;
-        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block));
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(header, chunk.clone()));
 
         auto creator = [&](const StorageID & blocks_id_global)
         {

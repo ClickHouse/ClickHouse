@@ -299,12 +299,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
     {
         if (!token_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DedupTokenBuilder is expected for consumed chunk in ReplicatedMergeTreeSink for table: {}",
+                "TokenInfo is expected for consumed chunk in ReplicatedMergeTreeSink for table: {}",
                 storage.getStorageID().getNameForLogs());
 
         if (!token_info->tokenInitialized() && !context->getSettingsRef().insert_deduplication_token.value.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DedupTokenBuilder has to be initialized with user token for table: {}",
+                "TokenInfo has to be initialized with user token for table: {}",
                 storage.getStorageID().getNameForLogs());
 
 
@@ -1174,8 +1174,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
-    auto zookeeper = storage.getZooKeeper();
-    finishDelayedChunk(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper));
+    const auto & settings = context->getSettingsRef();
+
+    ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
+        settings.insert_keeper_fault_injection_probability,
+        settings.insert_keeper_fault_injection_seed,
+        storage.getZooKeeper(),
+        "ReplicatedMergeTreeSink::onFinish",
+        log);
+
+    finishDelayedChunk(zookeeper);
 }
 
 template<bool async_insert>

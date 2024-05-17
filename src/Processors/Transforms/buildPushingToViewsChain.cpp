@@ -24,8 +24,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include "Processors/Chunk.h"
-#include "Processors/Transforms/NumberBlocksTransform.h"
+#include <Processors/Chunk.h>
+#include <Processors/Transforms/NumberBlocksTransform.h>
 
 #include <atomic>
 #include <chrono>
@@ -766,7 +766,7 @@ PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveVi
 void PushingToLiveViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    live_view.writeBlock(getHeader().cloneWithColumns(chunk.getColumns()), context);
+    live_view.writeBlock(getHeader(), chunk, context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
@@ -790,7 +790,7 @@ void PushingToWindowViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
-        window_view, getHeader().cloneWithColumns(chunk.getColumns()), context);
+        window_view, getHeader(), chunk, context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
