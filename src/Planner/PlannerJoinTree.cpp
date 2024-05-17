@@ -899,7 +899,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                     if (settings.parallel_replicas_min_number_of_rows_per_replica > 0)
                     {
-                        auto result_ptr = reading->selectRangesToRead(reading->getParts(), reading->getAlterConvertionsForParts());
+                        auto result_ptr = reading->selectRangesToRead();
 
                         UInt64 rows_to_read = result_ptr->selected_rows;
                         if (table_expression_query_info.limit > 0 && table_expression_query_info.limit < rows_to_read)
@@ -909,12 +909,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             rows_to_read = max_block_size_limited;
 
                         const size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
-                        if (number_of_replicas_to_use > 1)
-                            LOG_TRACE(
-                                getLogger("Planner"),
-                                "Estimated {} rows to read. It is enough work for {} parallel replicas",
-                                rows_to_read,
-                                number_of_replicas_to_use);
+                        LOG_TRACE(
+                            getLogger("Planner"),
+                            "Estimated {} rows to read. It is enough work for {} parallel replicas",
+                            rows_to_read,
+                            number_of_replicas_to_use);
 
                         if (number_of_replicas_to_use <= 1)
                         {
@@ -1083,15 +1082,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         planner.buildQueryPlanIfNeeded();
 
         auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "expected_header:\n{}", expected_header.dumpStructure());
 
         if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, expected_header))
         {
             materializeBlockInplace(expected_header);
-
-            const Block & query_plan_header = query_plan.getCurrentDataStream().header;
-
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "query_plan_header:\n{}", query_plan_header.dumpStructure());
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "expected_header:\n{}", expected_header.dumpStructure());
 
             auto rename_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
