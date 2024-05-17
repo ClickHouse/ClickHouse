@@ -29,6 +29,9 @@ void RleValuesReader::nextGroup()
     {
         cur_group_size *= 8;
         cur_packed_bit_values.resize(cur_group_size);
+
+        // try to suppress clang tidy warnings by assertion
+        assert(bit_width < 64);
         bit_reader->GetBatch(bit_width, cur_packed_bit_values.data(), cur_group_size);
     }
     else

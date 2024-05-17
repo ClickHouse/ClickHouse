@@ -192,6 +192,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromByteArray()
     switch (col_descriptor.logical_type()->type())
     {
         case parquet::LogicalType::Type::STRING:
+        case parquet::LogicalType::Type::NONE:
             return makeLeafReader<DataTypeString>();
         default:
             return throwUnsupported();
@@ -204,10 +205,13 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromFLBA()
     {
         case parquet::LogicalType::Type::DECIMAL:
         {
-            if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal128)))
-                return makeDecimalLeafReader<Decimal128>();
-            else if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal256)))
-                return makeDecimalLeafReader<Decimal256>();
+            if (col_descriptor.type_length() > 0)
+            {
+                if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal128)))
+                    return makeDecimalLeafReader<Decimal128>();
+                else if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal256)))
+                    return makeDecimalLeafReader<Decimal256>();
+            }
 
             return throwUnsupported(PreformattedMessage::create(
                 ", invalid type length: {}", col_descriptor.type_length()));
