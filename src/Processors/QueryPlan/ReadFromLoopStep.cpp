@@ -12,6 +12,10 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
+    }
     class PullingPipelineExecutor;
 
     class LoopSource : public ISource
@@ -71,10 +75,17 @@ namespace DB
                 if (executor->pull(chunk))
                 {
                     if (chunk)
+                    {
+                        retries_count = 0;
                         return chunk;
+                    }
+
                 }
                 else
                 {
+                    ++retries_count;
+                    if (retries_count > max_retries_count)
+                        throw Exception(ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS, "Too many retries to pull from storage");
                     loop = false;
                     executor.reset();
                     query_pipeline.reset();
@@ -92,6 +103,9 @@ namespace DB
         StoragePtr inner_storage;
         size_t max_block_size;
         size_t num_streams;
+        // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
+        size_t retries_count = 0;
+        size_t max_retries_count = 3;
         bool loop = false;
         QueryPipeline query_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
