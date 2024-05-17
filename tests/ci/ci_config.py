@@ -532,6 +532,7 @@ clickbench_test_params = {
         docker=["clickhouse/clickbench"],
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
+    "timeout": 900,
 }
 install_test_params = JobConfig(
     digest=install_check_digest,
