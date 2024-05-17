@@ -1,4 +1,5 @@
 """Test Interserver responses on configured IP."""
+
 import pytest
 import time
 from helpers.cluster import ClickHouseCluster
@@ -23,7 +24,7 @@ def start_cluster():
 
 
 # The same value as in ClickHouse, this can't be confugured via config now
-DEFAULT_RESOLVE_TIME_HISTORY_SECONDS = 2*60
+DEFAULT_RESOLVE_TIME_HISTORY_SECONDS = 2 * 60
 
 
 def test_host_resolver(start_cluster):
@@ -36,7 +37,7 @@ def test_host_resolver(start_cluster):
             (node.ip_address, "minio1"),  # no answer on 9001 port on this IP
         ]
     )
-    
+
     node.query("SYSTEM DROP DNS CACHE")
     node.query("SYSTEM DROP CONNECTIONS CACHE")
 
@@ -94,7 +95,9 @@ def test_host_resolver(start_cluster):
                     INSERT INTO test VALUES (101,{k})
                     """
         )
-        intermediate_fails = node.query("SELECT value FROM system.events WHERE event LIKE 'AddressesMarkedAsFailed'")
+        intermediate_fails = node.query(
+            "SELECT value FROM system.events WHERE event LIKE 'AddressesMarkedAsFailed'"
+        )
         k += 1
         if k >= limit:
             # Dead IP was not choosen for 100 iteration.
