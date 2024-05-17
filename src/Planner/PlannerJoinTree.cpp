@@ -933,6 +933,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     // (3) if parallel replicas still enabled - replace reading step
                     if (planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                     {
+                        from_stage = QueryProcessingStage::WithMergeableState;
                         QueryPlan query_plan_parallel_replicas;
                         ClusterProxy::executeQueryWithParallelReplicas(
                             query_plan_parallel_replicas,
@@ -943,7 +944,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_context,
                             table_expression_query_info.storage_limits);
                         query_plan = std::move(query_plan_parallel_replicas);
-                        from_stage = QueryProcessingStage::WithMergeableState;
 
                         const Block & query_plan_header = query_plan.getCurrentDataStream().header;
                         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Parallel replicas query_plan_header:\n{}", query_plan_header.dumpStructure());
