@@ -124,21 +124,16 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- A simple optimize + final does not delete rows with is_deleted
-OPTIMIZE TABLE myThirdReplacingMT FINAL;
-
-select * from myThirdReplacingMT;
-
-┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
-│   1 │ first   │ 2020-01-01 01:01:01 │          1 │
-└─────┴─────────┴─────────────────────┴────────────┘
-
--- A cleanup optimize deletes rows with is_deleted
+-- delete rows with is_deleted
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
-select * from myThirdReplacingMT;
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
 
-0 rows in set. Elapsed: 0.002 sec.
+select * from myThirdReplacingMT final;
+
+┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
+│   1 │ first   │ 2020-01-01 00:00:00 │          0 │
+└─────┴─────────┴─────────────────────┴────────────┘
 ```
 
 ## Query clauses
