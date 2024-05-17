@@ -1039,12 +1039,12 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column Statistics (Experimental) {#column-statistics}
 
-The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
+The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
 ``` sql
 CREATE TABLE tab
 (
-    a Int64 STATISTIC(tdigest, uniq),
+    a Int64 STATISTICS(TDigest, Uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -1054,22 +1054,22 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE tab ADD STATISTIC b TYPE tdigest, uniq;
-ALTER TABLE tab DROP STATISTIC a;
+ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
+ALTER TABLE tab DROP STATISTICS a;
 ```
 
-These lightweight statistics aggregate information about distribution of values in columns.
-They can be used for query optimization when we enable `set allow_statistic_optimize = 1`.
+These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
+They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
 #### Available Types of Column Statistics {#available-types-of-column-statistics}
 
--   `tdigest`
+- `TDigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
 
-- `uniq`
+- `Uniq`
     
-    Estimate the number of distinct values of a column.
+    Estimate the number of distinct values of a column by HyperLogLog.
 
 ## Column-level Settings {#column-level-settings}
 

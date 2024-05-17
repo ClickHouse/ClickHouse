@@ -16,7 +16,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 - [INDEX](/docs/en/sql-reference/statements/alter/skipping-index.md)
 - [CONSTRAINT](/docs/en/sql-reference/statements/alter/constraint.md)
 - [TTL](/docs/en/sql-reference/statements/alter/ttl.md)
-- [STATISTIC](/docs/en/sql-reference/statements/alter/statistic.md)
+- [STATISTICS](/docs/en/sql-reference/statements/alter/statistics.md)
 - [APPLY DELETED MASK](/docs/en/sql-reference/statements/alter/apply-deleted-mask.md)
 
 :::note
