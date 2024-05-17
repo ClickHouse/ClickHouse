@@ -92,6 +92,17 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     String container_name;
     String prefix;
 
+    auto get_container_name = [&]
+    {
+        if (config.has(config_prefix + ".container_name"))
+            return config.getString(config_prefix + ".container_name");
+
+        if (config.has(config_prefix + ".container"))
+            return config.getString(config_prefix + ".container");
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `container` or `container_name` parameter in config");
+    };
+
     if (config.has(config_prefix + ".endpoint"))
     {
         String endpoint = config.getString(config_prefix + ".endpoint");
@@ -154,13 +165,13 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     else if (config.has(config_prefix + ".connection_string"))
     {
         storage_url = config.getString(config_prefix + ".connection_string");
-        container_name = config.getString(config_prefix + ".container_name");
+        container_name = get_container_name();
     }
     else if (config.has(config_prefix + ".storage_account_url"))
     {
         storage_url = config.getString(config_prefix + ".storage_account_url");
         validateStorageAccountUrl(storage_url);
-        container_name = config.getString(config_prefix + ".container_name");
+        container_name = get_container_name();
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
