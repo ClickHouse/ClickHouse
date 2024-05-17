@@ -137,7 +137,7 @@ private:
         virtual ~IStage() = default;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
@@ -199,7 +199,7 @@ private:
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
@@ -272,7 +272,7 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
@@ -344,7 +344,7 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct MergeProjectionsRuntimeContext : public IStageRuntimeContext

@@ -277,6 +277,8 @@ struct ContextSharedPart : boost::noncopyable
     String default_profile_name;                                /// Default profile name used for default values.
     String system_profile_name;                                 /// Profile used by system processes
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
+    String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
+    String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -1543,9 +1545,34 @@ ResourceManagerPtr Context::getResourceManager() const
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     std::lock_guard lock(mutex);
+    // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
         classifier = getResourceManager()->acquire(getSettingsRef().workload);
     return classifier;
+}
+
+String Context::getMergeWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->merge_workload;
+}
+
+void Context::setMergeWorkload(const String & value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->merge_workload = value;
+}
+
+String Context::getMutationWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->mutation_workload;
+}
+
+void Context::setMutationWorkload(const String & value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->mutation_workload = value;
 }
 
 
@@ -2469,6 +2496,20 @@ void Context::makeQueryContext()
     local_read_query_throttler.reset();
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
+}
+
+void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
+{
+    makeQueryContext();
+    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    settings.workload = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
+}
+
+void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
+{
+    makeQueryContext();
+    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    settings.workload = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
 }
 
 void Context::makeSessionContext()

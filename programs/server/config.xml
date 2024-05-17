@@ -1396,6 +1396,14 @@
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
+    <!-- Used to regulate how resources are utilized and shared between merges, mutations and other workloads.
+         Specified value is used as `workload` setting value for background merge or mutation.
+    -->
+    <!--
+    <merge_workload>merges_and_mutations</merge_workload>
+    <mutation_workload>merges_and_mutations</mutation_workload>
+    -->
+
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>

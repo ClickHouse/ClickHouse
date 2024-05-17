@@ -1557,6 +1557,10 @@ try
                 0, // We don't need any threads one all the parts will be deleted
                 new_server_settings.max_parts_cleaning_thread_pool_size);
 
+
+            global_context->setMergeWorkload(new_server_settings.merge_workload);
+            global_context->setMutationWorkload(new_server_settings.mutation_workload);
+
             if (config->has("resources"))
             {
                 global_context->getResourceManager()->updateConfiguration(*config);
