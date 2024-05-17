@@ -781,8 +781,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (key_node_function_name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
         {
             /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in map
-              * we return default value for arrayElement.
+              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
+              * we return default the value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
