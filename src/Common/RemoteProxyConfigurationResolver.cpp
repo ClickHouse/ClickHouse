@@ -16,12 +16,13 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
 {
     auto rw_settings = ReadSettings {};
     rw_settings.http_max_tries = 1;
+    auto credentials = Poco::Net::HTTPBasicCredentials {};
 
     auto rw_http_buffer = BuilderRWBufferFromHTTP(endpoint)
                             .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                             .withTimeouts(timeouts)
                             .withSettings(rw_settings)
-                            .create({});
+                            .create(credentials);
 
     String proxy_host;
 
