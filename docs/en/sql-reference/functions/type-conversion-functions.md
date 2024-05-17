@@ -1098,6 +1098,38 @@ This function accepts a number or date or date with time and returns a string co
 
 This function accepts a number or date or date with time and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
+**Syntax**
+
+```sql
+reinterpretAsFixedString(x)
+```
+
+**Parameters**
+
+- `x`: value to reinterpret to string. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md).
+
+**Returned value**
+
+- Fixed string containing bytes representing `x`. [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT 
+    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')), 
+    reinterpretAsFixedString(toDate('1970-03-07'));
+```
+
+Result:
+
+```response
+┌─reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsFixedString(toDate('1970-03-07'))─┐
+│ A                                                           │ A                                              │
+└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+```
+
 ## reinterpretAsUUID
 
 :::note
