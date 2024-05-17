@@ -16,11 +16,11 @@ String dataPath(String path)
         path.pop_back();
     }
     path += ".data";
-    for (size_t i = 0; i < path.size(); ++i)
+    for (char & i : path)
     {
-        if (path[i] == '/')
+        if (i == '/')
         {
-            path[i] = '_';
+            i = '_';
         }
     }
     return path;
