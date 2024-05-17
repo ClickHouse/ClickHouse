@@ -51,7 +51,7 @@ class ActionsDAG
 {
 public:
 
-    enum class ActionType
+    enum class ActionType : uint8_t
     {
         /// Column which must be in input.
         INPUT,
@@ -272,7 +272,7 @@ public:
     ///
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
-    Block updateHeader(Block header) const;
+    Block updateHeader(const Block & header) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -288,7 +288,7 @@ public:
     /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node);
 
-    enum class MatchColumnsMode
+    enum class MatchColumnsMode : uint8_t
     {
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
@@ -354,6 +354,13 @@ public:
     /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
     /// The second contains the rest.
     SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
+
+    /** Returns true if filter DAG is always false for inputs with default values.
+      *
+      * @param filter_name - name of filter node in current DAG.
+      * @param input_stream_header - input stream header.
+      */
+    bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header);
 
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.

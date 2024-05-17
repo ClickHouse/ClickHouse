@@ -127,7 +127,7 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    enum class ApplicationType
+    enum class ApplicationType : uint8_t
     {
         KEEPER
     };
