@@ -58,7 +58,7 @@ static inline String generateInnerTableName(const StorageID & view_id)
     return ".inner." + view_id.getTableName();
 }
 
-/// Remove columns from target_header that does not exists in src_header
+/// Remove columns from target_header that does not exist in src_header
 static void removeNonCommonColumns(const Block & src_header, Block & target_header)
 {
     std::set<size_t> target_only_positions;
@@ -233,10 +233,10 @@ void StorageMaterializedView::read(
         auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
         auto target_header = query_plan.getCurrentDataStream().header;
 
-        /// No need to convert columns that does not exists in MV
+        /// No need to convert columns that does not exist in MV
         removeNonCommonColumns(mv_header, target_header);
 
-        /// No need to convert columns that does not exists in the result header.
+        /// No need to convert columns that does not exist in the result header.
         ///
         /// Distributed storage may process query up to the specific stage, and
         /// so the result header may not include all the columns from the
