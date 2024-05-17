@@ -297,7 +297,6 @@ namespace
             CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
         }
-        UNREACHABLE();
     }
 
     class AddingAggregatedChunkInfoTransform : public ISimpleTransform

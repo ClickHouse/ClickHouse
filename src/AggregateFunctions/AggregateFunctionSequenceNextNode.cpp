@@ -414,7 +414,6 @@ public:
                         break;
                 return (i == events_size) ? base - i : unmatched_idx;
         }
-        UNREACHABLE();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

@@ -62,7 +62,6 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
         case FormatSettings::EscapingRule::Raw:
             return "Raw";
     }
-    UNREACHABLE();
 }
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)

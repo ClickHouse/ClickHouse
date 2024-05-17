@@ -457,13 +457,12 @@ public:
 
     String getName() const override
     {
-        if constexpr (Type == AggregateFunctionTypeSum)
-            return "sum";
-        else if constexpr (Type == AggregateFunctionTypeSumWithOverflow)
-            return "sumWithOverflow";
-        else if constexpr (Type == AggregateFunctionTypeSumKahan)
-            return "sumKahan";
-        UNREACHABLE();
+        switch (Type)
+        {
+            case AggregateFunctionTypeSum: return "sum";
+            case AggregateFunctionTypeSumWithOverflow: return "sumWithOverflow";
+            case AggregateFunctionTypeSumKahan: return "sumKahan";
+        }
     }
 
     explicit AggregateFunctionSum(const DataTypes & argument_types_)

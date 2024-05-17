@@ -1175,8 +1175,6 @@ String MergeTreeData::MergingParams::getModeName() const
         case Graphite:      return "Graphite";
         case VersionedCollapsing: return "VersionedCollapsing";
     }
-
-    UNREACHABLE();
 }
 
 Int64 MergeTreeData::getMaxBlockNumber() const

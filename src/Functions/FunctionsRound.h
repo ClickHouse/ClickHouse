@@ -149,8 +149,6 @@ struct IntegerRoundingComputation
                 return x;
             }
         }
-
-        UNREACHABLE();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -163,8 +161,6 @@ struct IntegerRoundingComputation
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
         }
-
-        UNREACHABLE();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>

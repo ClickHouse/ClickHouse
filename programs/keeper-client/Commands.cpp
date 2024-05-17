@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int KEEPER_EXCEPTION;
+    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
 }
 
 bool LSCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -441,7 +442,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
             new_members = query->args[1].safeGet<String>();
             break;
         default:
-            UNREACHABLE();
+            throw Exception(ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR, "Unexpected operation: {}", operation);
     }
 
     auto response = client->zookeeper->reconfig(joining, leaving, new_members);

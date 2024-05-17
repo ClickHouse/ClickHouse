@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
 }
 
 using namespace std::chrono_literals;
@@ -990,7 +991,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return Accepted;
     }
-    UNREACHABLE();
+    throw Exception(ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR, "Unexpected action");
 }
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)

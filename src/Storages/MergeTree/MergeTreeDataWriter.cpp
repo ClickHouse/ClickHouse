@@ -360,8 +360,6 @@ Block MergeTreeDataWriter::mergeBlock(
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
                     block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
         }
-
-        UNREACHABLE();
     };
 
     auto merging_algorithm = get_merging_algorithm();
