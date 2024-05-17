@@ -43,7 +43,6 @@ class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
 class IMergeTreeReader;
-class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
@@ -74,7 +73,6 @@ public:
     using VirtualFields = std::unordered_map<String, Field>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-//    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
@@ -105,15 +103,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
-
-////    virtual MergeTreeWriterPtr getWriter(
-////        const NamesAndTypesList & columns_list,
-////        const StorageMetadataPtr & metadata_snapshot,
-////        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-////        const Statistics & stats_to_recalc_,
-////        const CompressionCodecPtr & default_codec_,
-////        const MergeTreeWriterSettings & writer_settings,
-////        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
 
 // TODO: remove?
     virtual bool isStoredOnDisk() const = 0;

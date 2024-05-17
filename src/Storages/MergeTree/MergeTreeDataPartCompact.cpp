@@ -48,21 +48,20 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
 }
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
-        const String & data_part_name_,
-        const String & logger_name_,
-        const SerializationByName & serializations_,
-        MutableDataPartStoragePtr data_part_storage_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const MergeTreeSettingsPtr & storage_settings_,
-
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
-        const String & marks_file_extension_,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity)
+    const String & data_part_name_,
+    const String & logger_name_,
+    const SerializationByName & serializations_,
+    MutableDataPartStoragePtr data_part_storage_,
+    const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const MergeTreeSettingsPtr & storage_settings_,
+    const NamesAndTypesList & columns_list,
+    const StorageMetadataPtr & metadata_snapshot,
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const Statistics & stats_to_recalc_,
+    const String & marks_file_extension_,
+    const CompressionCodecPtr & default_codec_,
+    const MergeTreeWriterSettings & writer_settings,
+    const MergeTreeIndexGranularity & computed_index_granularity)
 {
 ////// TODO: fix the order of columns
 ////

@@ -2,30 +2,26 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/logger_useful.h>
-#include "Storages/MergeTree/IDataPartStorage.h"
-#include "Storages/StorageSet.h"
 
 namespace DB
 {
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-//    const MergeTreeMutableDataPartPtr & data_part,
     const MergeTreeSettingsPtr & storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
-    //: storage(data_part->storage)
     : storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage(data_part_storage_)//data_part->getDataPartStoragePtr())
+    , data_part_storage(data_part_storage_)
     , reset_columns(reset_columns_)
 {
     if (reset_columns)
     {
         SerializationInfo::Settings info_settings =
         {
-            .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,//storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,
             .choose_kind = false,
         };
 

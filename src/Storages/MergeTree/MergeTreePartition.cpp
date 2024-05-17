@@ -12,7 +12,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
-#include "Interpreters/Context_fwd.h"
 #include <base/hex.h>
 #include <Core/Block.h>
 
@@ -414,12 +413,10 @@ void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataM
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(/*const MergeTreeData & storage,*/
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
     StorageMetadataPtr metadata_snapshot, ContextPtr storage_context,
     IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
 {
-//    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-//    const auto & context = storage.getContext();
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage_context).sample_block;
     return store(partition_key_sample, data_part_storage, checksums, storage_context->getWriteSettings());
 }

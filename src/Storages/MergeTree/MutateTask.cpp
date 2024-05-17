@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
+#include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>

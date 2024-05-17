@@ -75,7 +75,7 @@ struct MergeTreeWriterSettings
         , query_write_settings(query_write_settings_)
         , max_threads_for_annoy_index_creation(global_settings.max_threads_for_annoy_index_creation)
         , low_cardinality_max_dictionary_size(global_settings.low_cardinality_max_dictionary_size)
-        , low_cardinality_use_single_dictionary_for_part(global_settings.low_cardinality_use_single_dictionary_for_part)
+        , low_cardinality_use_single_dictionary_for_part(global_settings.low_cardinality_use_single_dictionary_for_part != 0)
     {
     }
 

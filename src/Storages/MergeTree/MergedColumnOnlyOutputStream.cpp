@@ -24,7 +24,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
-//    const auto & storage_settings = data_part->storage.getSettings();
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
@@ -34,10 +33,10 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         /* rewrite_primary_key = */ false);
 
     writer = createMergeTreeDataPartWriter(
-            data_part->getType(),
-            data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
-            data_part_storage, data_part->index_granularity_info,
-            storage_settings,
+        data_part->getType(),
+        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+        data_part_storage, data_part->index_granularity_info,
+        storage_settings,
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,

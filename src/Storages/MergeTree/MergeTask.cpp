@@ -9,7 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-
+#include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/IReadableWriteBuffer.h>

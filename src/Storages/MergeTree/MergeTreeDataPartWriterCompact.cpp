@@ -10,14 +10,12 @@ namespace ErrorCodes
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
-//    const MergeTreeMutableDataPartPtr & data_part_,
-        const String & data_part_name_,
-        const String & logger_name_,
-        const SerializationByName & serializations_,
-        MutableDataPartStoragePtr data_part_storage_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const MergeTreeSettingsPtr & storage_settings_,
-
+    const String & data_part_name_,
+    const String & logger_name_,
+    const SerializationByName & serializations_,
+    MutableDataPartStoragePtr data_part_storage_,
+    const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
@@ -250,7 +248,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
     }
 }
 
-void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksums & checksums)
 {
     if (columns_buffer.size() != 0)
     {
@@ -420,7 +418,7 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
     return accumulated_columns.at(0)->size();
 }
 
-void MergeTreeDataPartWriterCompact::fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & /*checksums_to_remove*/)
+void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & /*checksums_to_remove*/)
 {
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())

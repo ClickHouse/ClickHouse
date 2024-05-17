@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>

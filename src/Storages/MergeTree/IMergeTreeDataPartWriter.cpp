@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include "Storages/MergeTree/MergeTreeSettings.h"
 
 namespace DB
 {
@@ -46,12 +45,10 @@ Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * per
 }
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
-//    const MergeTreeMutableDataPartPtr & data_part_,
     const String & data_part_name_,
     const SerializationByName & serializations_,
     MutableDataPartStoragePtr data_part_storage_,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
-
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -61,7 +58,6 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , serializations(serializations_)
     , data_part_storage(data_part_storage_)
     , index_granularity_info(index_granularity_info_)
-
     , storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
     , columns_list(columns_list_)
@@ -117,7 +113,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         MutableDataPartStoragePtr data_part_storage_,
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const MergeTreeSettingsPtr & storage_settings_,
-
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -134,7 +129,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         MutableDataPartStoragePtr data_part_storage_,
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const MergeTreeSettingsPtr & storage_settings_,
-
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -153,7 +147,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MutableDataPartStoragePtr data_part_storage_,
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const MergeTreeSettingsPtr & storage_settings_,
-
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,

@@ -146,7 +146,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     MutableDataPartStoragePtr data_part_storage_,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
     const MergeTreeSettingsPtr & storage_settings_,
-
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeIndices & indices_to_recalc_,
@@ -231,7 +230,6 @@ static size_t computeIndexGranularityImpl(
 
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
 {
-//    const auto storage_settings = storage.getSettings();
     return computeIndexGranularityImpl(
             block,
             storage_settings->index_granularity_bytes,
@@ -293,7 +291,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexFullText *>(&*skip_index) != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, /*storage.getSettings()*/storage_settings->max_digestion_size_per_segment);
+            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, storage_settings->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
         skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));
