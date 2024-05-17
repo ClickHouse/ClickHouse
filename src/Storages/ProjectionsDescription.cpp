@@ -318,7 +318,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     }
     else
     {
-        builder.addTransform(std::make_shared<SimpleSquashingTransform>(builder.getHeader(), block.rows(), 0));
+        builder.addTransform(std::make_shared<SquashingTransform>(builder.getHeader(), block.rows(), 0));
     }
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));

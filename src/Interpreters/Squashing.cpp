@@ -147,47 +147,35 @@ Block ApplySquashing::addImpl(Chunk && input_chunk)
         return Block();
 
     const auto *info = getInfoFromChunk(input_chunk);
-    append(info->chunks);
+    for (auto & chunk : info->chunks)
+        append(chunk);
 
     Block to_return;
     std::swap(to_return, accumulated_block);
     return to_return;
 }
 
-void ApplySquashing::append(const std::vector<Chunk> & input_chunks)
+void ApplySquashing::append(Chunk & input_chunk)
 {
-    std::vector<IColumn::MutablePtr> mutable_columns;
-    size_t rows = 0;
-    for (const Chunk & chunk : input_chunks)
-        rows += chunk.getNumRows();
-
-    // add here resize of mutable_column
-    for (const auto & input_chunk : input_chunks)
+    if (input_chunk.getNumColumns() == 0)
+        return;
+    if (!accumulated_block)
     {
-        if (!accumulated_block)
+        for (size_t i = 0; i < input_chunk.getNumColumns(); ++ i)
         {
-            for (size_t i = 0; i < input_chunks[0].getNumColumns(); ++ i)
-            {
-                ColumnWithTypeAndName col = ColumnWithTypeAndName(input_chunks[0].getColumns()[i], header.getDataTypes()[i], header.getNames()[i]);
-                mutable_columns.push_back(IColumn::mutate(col.column));
-                accumulated_block.insert(col);
-            }
+            ColumnWithTypeAndName col = ColumnWithTypeAndName(input_chunk.getColumns()[i], header.getDataTypes()[i], header.getNames()[i]);
+            accumulated_block.insert(accumulated_block.columns(), col);
         }
+        return;
+    }
 
-        if (input_chunk.getNumColumns() == 0)
-            continue;
+    for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
+    {
+        const auto source_column = input_chunk.getColumns()[i];
 
-        for (auto & column : mutable_columns)
-            column->reserve(rows);
-
-        for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
-        {
-            const auto source_column = input_chunk.getColumns()[i];
-
-            mutable_columns[i] = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
-            mutable_columns[i]->insertRangeFrom(*source_column, 0, source_column->size());
-            accumulated_block.getByPosition(i).column = mutable_columns[i]->cloneFinalized();
-        }
+        auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
+        mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
+        accumulated_block.getByPosition(i).column = std::move(mutable_column);
     }
 }
 

@@ -1,6 +1,5 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/IProcessor.h>
-#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 
 namespace DB

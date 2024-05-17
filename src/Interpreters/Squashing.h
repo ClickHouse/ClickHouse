@@ -70,7 +70,7 @@ private:
 
     const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
-    void append(const std::vector<Chunk> & input_chunk);
+    void append(Chunk & input_chunk);
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;
