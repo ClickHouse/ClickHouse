@@ -90,7 +90,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     {
         auto object_info = iterator->next(0);
         if (object_info)
-            return object_info->relative_path;
+            return object_info->getPath();
         else
             return "";
     });

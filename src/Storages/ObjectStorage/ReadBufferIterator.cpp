@@ -50,7 +50,7 @@ SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
         std::back_inserter(sources),
         [&](const auto & elem)
         {
-            return std::filesystem::path(configuration->getDataSourceDescription()) / elem->relative_path;
+            return std::filesystem::path(configuration->getDataSourceDescription()) / elem->getPath();
         });
     return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
 }
@@ -67,8 +67,9 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         const auto & object_info = (*it);
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
+            const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             if (!object_info->metadata)
-                object_info->metadata = object_storage->tryGetObjectMetadata(object_info->relative_path);
+                object_info->metadata = object_storage->tryGetObjectMetadata(path);
 
             return object_info->metadata
                 ? std::optional<time_t>(object_info->metadata->last_modified.epochTime())
@@ -77,7 +78,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 
         if (format)
         {
-            auto cache_key = getKeyForSchemaCache(object_info->relative_path, *format);
+            auto cache_key = getKeyForSchemaCache(object_info->getPath(), *format);
             if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                 return columns;
         }
@@ -88,7 +89,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             /// If we have such entry for some format, we can use this format to read the file.
             for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
             {
-                auto cache_key = getKeyForSchemaCache(object_info->relative_path, format_name);
+                auto cache_key = getKeyForSchemaCache(object_info->getPath(), format_name);
                 if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                 {
                     /// Now format is known. It should be the same for all files.
@@ -105,7 +106,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
     if (query_settings.schema_inference_use_cache)
-        schema_cache.addNumRows(getKeyForSchemaCache(current_object_info->relative_path, *format), num_rows);
+        schema_cache.addNumRows(getKeyForSchemaCache(current_object_info->getPath(), *format), num_rows);
 }
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
@@ -113,7 +114,7 @@ void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
     if (query_settings.schema_inference_use_cache
         && query_settings.schema_inference_mode == SchemaInferenceMode::UNION)
     {
-        schema_cache.addColumns(getKeyForSchemaCache(current_object_info->relative_path, *format), columns);
+        schema_cache.addColumns(getKeyForSchemaCache(current_object_info->getPath(), *format), columns);
     }
 }
 
@@ -134,7 +135,7 @@ void ReadBufferIterator::setFormatName(const String & format_name)
 String ReadBufferIterator::getLastFileName() const
 {
     if (current_object_info)
-        return current_object_info->relative_path;
+        return current_object_info->getFileName();
     else
         return "";
 }
@@ -142,9 +143,13 @@ String ReadBufferIterator::getLastFileName() const
 std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
 {
     auto context = getContext();
-    auto impl = object_storage->readObject(StoredObject(current_object_info->relative_path), context->getReadSettings());
-    const auto compression_method = chooseCompressionMethod(current_object_info->relative_path, configuration->compression_method);
+
+    const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
+    auto impl = object_storage->readObject(StoredObject(), context->getReadSettings());
+
+    const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+
     return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window_log_max);
 }
 
@@ -158,7 +163,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         {
             for (const auto & object_info : read_keys)
             {
-                if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(object_info->relative_path))
+                if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(object_info->getFileName()))
                 {
                     format = format_from_file_name;
                     break;
@@ -170,7 +175,9 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         if (first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
         {
             if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
+            {
                 return {nullptr, cached_columns, format};
+            }
         }
     }
 
@@ -178,7 +185,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
     {
         current_object_info = file_iterator->next(0);
 
-        if (!current_object_info || current_object_info->relative_path.empty())
+        if (!current_object_info)
         {
             if (first)
             {
@@ -203,6 +210,9 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             return {nullptr, std::nullopt, format};
         }
 
+        const auto filename = current_object_info->getFileName();
+        chassert(!filename.empty());
+
         /// file iterator could get new keys after new iteration
         if (read_keys.size() > prev_read_keys_size)
         {
@@ -211,7 +221,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             {
                 for (auto it = read_keys.begin() + prev_read_keys_size; it != read_keys.end(); ++it)
                 {
-                    if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->relative_path))
+                    if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->getFileName()))
                     {
                         format = format_from_file_name;
                         break;
@@ -250,15 +260,15 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (auto object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {
-            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+            compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
             auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
-            compression_method = chooseCompressionMethod(current_object_info->relative_path, configuration->compression_method);
+            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             read_buf = object_storage->readObject(
-                StoredObject(current_object_info->relative_path),
+                StoredObject(current_object_info->getPath()),
                 getContext()->getReadSettings(),
                 {},
                 current_object_info->metadata->size_bytes);

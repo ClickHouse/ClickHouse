@@ -92,7 +92,7 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        const String & getRelativePath() const { return object_info->relative_path; }
+        std::string getRelativePath() const { return object_info->getPath(); }
         const ObjectInfo & getObjectInfo() const { return *object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
@@ -250,6 +250,23 @@ public:
             ObjectInfoPtr archive_object_,
             const std::string & path_in_archive_,
             std::shared_ptr<IArchiveReader> archive_reader_);
+
+        std::string getFileName() const override
+        {
+            return path_in_archive;
+        }
+
+        std::string getPath() const override
+        {
+            return archive_object->getPath() + "::" + path_in_archive;
+        }
+
+        std::string getPathToArchive() const override
+        {
+            return archive_object->getPath();
+        }
+
+        bool isArchive() const override { return true; }
 
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;

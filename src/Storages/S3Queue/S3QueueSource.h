@@ -29,7 +29,7 @@ public:
     using FileStatusPtr = S3QueueFilesMetadata::FileStatusPtr;
     using ReaderHolder = StorageObjectStorageSource::ReaderHolder;
     using Metadata = S3QueueFilesMetadata;
-    using ObjectInfo = RelativePathWithMetadata;
+    using ObjectInfo = StorageObjectStorageSource::ObjectInfo;
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
 

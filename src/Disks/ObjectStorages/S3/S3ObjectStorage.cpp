@@ -457,7 +457,16 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true);
+    S3::ObjectInfo object_info;
+    try
+    {
+        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true);
+    }
+    catch (DB::Exception & e)
+    {
+        e.addMessage("while reading " + path);
+        throw;
+    }
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;

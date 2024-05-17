@@ -403,7 +403,12 @@ void StorageObjectStorage::Configuration::initialize(
         configuration.fromAST(engine_args, local_context, with_table_structure);
 
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.getPath()).value_or("auto");
+    {
+        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(
+            configuration.isArchive()
+            ? configuration.getPathInArchive()
+            : configuration.getPath()).value_or("auto");
+    }
     else
         FormatFactory::instance().checkFormatName(configuration.format);
 

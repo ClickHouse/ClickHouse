@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 class ReadBufferFromFileBase;
@@ -64,6 +65,11 @@ struct RelativePathWithMetadata
     {}
 
     virtual ~RelativePathWithMetadata() = default;
+
+    virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    virtual std::string getPath() const { return relative_path; }
+    virtual bool isArchive() const { return false; }
+    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
 };
 
 struct ObjectKeyWithMetadata
