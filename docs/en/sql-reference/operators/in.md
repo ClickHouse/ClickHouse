@@ -129,7 +129,7 @@ Remember that the algorithms described below may work differently depending on t
 
 When using the regular `IN`, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 
-When using `GLOBAL IN` / `GLOBAL JOINs`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOINs`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
+When using `GLOBAL IN` / `GLOBAL JOIN`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOIN`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
 
 For a non-distributed query, use the regular `IN` / `JOIN`.
 
