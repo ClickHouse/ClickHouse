@@ -146,7 +146,7 @@ static bool parseOperator(IParser::Pos & pos, std::string_view op, Expected & ex
     return false;
 }
 
-enum class SubqueryFunctionType
+enum class SubqueryFunctionType : uint8_t
 {
     NONE,
     ANY,
@@ -457,7 +457,7 @@ namespace
 }
 
 
-enum class Action
+enum class Action : uint8_t
 {
     NONE,
     OPERAND,
@@ -468,7 +468,7 @@ enum class Action
   * Operators can be grouped into some type if they have similar behaviour.
   * Certain operators are unique in terms of their behaviour, so they are assigned a separate type.
   */
-enum class OperatorType
+enum class OperatorType : uint8_t
 {
     None,
     Comparison,
@@ -521,7 +521,7 @@ static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... ar
     return ast_function;
 }
 
-enum class Checkpoint
+enum class Checkpoint : uint8_t
 {
     None,
     Interval,
