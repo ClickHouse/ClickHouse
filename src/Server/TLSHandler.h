@@ -27,8 +27,8 @@ class TLSHandler : public Poco::Net::TCPServerConnection
 #if USE_SSL
     using SecureStreamSocket = Poco::Net::SecureStreamSocket;
     using SSLManager = Poco::Net::SSLManager;
-#endif
     using Context = Poco::Net::Context;
+#endif
     using StreamSocket = Poco::Net::StreamSocket;
     using LayeredConfiguration = Poco::Util::LayeredConfiguration;
 public:
@@ -54,11 +54,13 @@ public:
 #endif
     }
 private:
+#if USE_SSL
     Context::Params params [[maybe_unused]];
     Context::Usage usage [[maybe_unused]];
     int disabled_protocols = 0;
     bool extended_verification = false;
     bool prefer_server_ciphers = false;
+#endif
     TCPProtocolStackData & stack_data [[maybe_unused]];
 };
 
