@@ -97,7 +97,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 :::note
 `is_deleted` can only be enabled when `ver` is used.
 
-The row is deleted only when `OPTIMIZE ... FINAL CLEANUP`. This `CLEANUP` special keywork is not allowed by default unless `allow_experimental_replacing_merge_with_cleanup` MergeTree setting is enabled.
+The row is deleted only when `OPTIMIZE ... FINAL CLEANUP`. This `CLEANUP` special keyword is not allowed by default unless `allow_experimental_replacing_merge_with_cleanup` MergeTree setting is enabled.
 
 No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
 
