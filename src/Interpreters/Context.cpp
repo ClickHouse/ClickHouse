@@ -4467,7 +4467,7 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
+    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 
     if (type == ApplicationType::SERVER)

@@ -3301,3 +3301,31 @@ The setting is not enabled by default for security reasons, because some headers
 HTTP headers are case sensitive for this function.
 
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
+
+## showCertificate
+
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](https://clickhouse.com/docs/en/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+
+**Syntax**
+
+```sql
+showCertificate()
+```
+
+**Returned value**
+
+- Map of key-value pairs relating to the configured SSL certificate. [Map](../../sql-reference/data-types/map.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+Query:
+
+```sql
+SELECT showCertificate() FORMAT LineAsString;
+```
+
+Result:
+
+```response
+{'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
+```
