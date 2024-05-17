@@ -51,15 +51,16 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
+    if (needsSetup())
+        setup();
+
     if (!isEffective())
     {
         /// It has no effect - disable it
         stop();
         return;
     }
-    setup();
 }
-
 
 template <typename T>
 static void initFromEnv(T & what, const char * name)
@@ -133,10 +134,16 @@ void ThreadFuzzer::initConfiguration()
 }
 
 
+bool ThreadFuzzer::needsSetup() const
+{
+    return cpu_time_period_us != 0
+        && (yield_probability > 0 || migrate_probability > 0 || (sleep_probability > 0 && sleep_time_us_max > 0));
+}
+
 bool ThreadFuzzer::isEffective() const
 {
-    if (!isStarted())
-        return false;
+    if (needsSetup())
+        return true;
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
@@ -163,10 +170,13 @@ bool ThreadFuzzer::isEffective() const
 #    undef INIT_WRAPPER_PARAMS
 #endif
 
-    return cpu_time_period_us != 0
-        && (yield_probability > 0
-            || migrate_probability > 0
-            || (sleep_probability > 0 && sleep_time_us_max > 0));
+    if (explicit_sleep_probability > 0 && sleep_time_us_max > 0)
+        return true;
+
+    if (explicit_memory_exception_probability > 0)
+        return true;
+
+    return false;
 }
 
 void ThreadFuzzer::stop()
@@ -220,11 +230,9 @@ static void injectionImpl(
     UNUSED(migrate_probability);
 #endif
 
-    if (sleep_probability > 0
-        && sleep_time_us_max > 0
-        && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
+    if (sleep_probability > 0 && sleep_time_us_max > 0.001 && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
     {
-        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max)) * 1000); /*may sleep(0)*/
+        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max * 1000)));
     }
 }
 
