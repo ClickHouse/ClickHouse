@@ -374,10 +374,7 @@ std::optional<Chain> generateViewChain(
 
             if (settings.allow_insert_threads_reduction_optimizaion)
             {
-                out.addSource(std::make_shared<ApplySquashingTransform>(
-                    out.getInputHeader(),
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
+                out.addSource(std::make_shared<ApplySquashingTransform>(out.getInputHeader()));
 
                 out.addSource(std::make_shared<PlanSquashingTransform>(
                     out.getInputHeader(),
@@ -643,10 +640,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         context->getSettingsRef().min_insert_block_size_rows,
         context->getSettingsRef().min_insert_block_size_bytes,
         pipeline.getNumStreams()));
-    pipeline.addTransform(std::make_shared<ApplySquashingTransform>(
-        pipeline.getHeader(),
-        context->getSettingsRef().min_insert_block_size_rows,
-        context->getSettingsRef().min_insert_block_size_bytes));
+    pipeline.addTransform(std::make_shared<ApplySquashingTransform>(pipeline.getHeader()));
 
     auto converting = ActionsDAG::makeConvertingActions(
         pipeline.getHeader().getColumnsWithTypeAndName(),

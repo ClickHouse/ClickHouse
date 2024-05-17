@@ -314,7 +314,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     if (mut_context->getSettings().allow_insert_threads_reduction_optimizaion)
     {
         builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0, 1));
-        builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader(), block.rows(), 0));
+        builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader()));
     }
     else
     {

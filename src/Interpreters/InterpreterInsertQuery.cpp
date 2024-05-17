@@ -630,10 +630,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
                 {
-                    return std::make_shared<ApplySquashingTransform>(
-                        in_header,
-                        table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                        table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+                    return std::make_shared<ApplySquashingTransform>(in_header);
                 });
             }
             else
@@ -699,10 +696,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             if (settings.allow_insert_threads_reduction_optimizaion)
             {
-                auto squashing = std::make_shared<ApplySquashingTransform>(
-                    chain.getInputHeader(),
-                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+                auto squashing = std::make_shared<ApplySquashingTransform>(chain.getInputHeader());
 
                 chain.addSource(std::move(squashing));
 
