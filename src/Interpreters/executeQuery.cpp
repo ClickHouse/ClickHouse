@@ -103,7 +103,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
