@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: function 'input' has complex pipeline and reattach affects it
+
 drop table if exists test;
 create table test (a Int8) engine = MergeTree order by tuple();
 INSERT INTO test

@@ -1,3 +1,7 @@
+-- Tags: no-random-detach
+-- no-random-detach: attach of a table affects
+-- used_aggregate_functions because of building minmax projection
+
 DROP TABLE IF EXISTS t_optimize_equal_ranges;
 
 CREATE TABLE t_optimize_equal_ranges (a UInt64, b String, c UInt64) ENGINE = MergeTree ORDER BY a;
@@ -19,7 +23,7 @@ SELECT a, sum(c) FROM t_optimize_equal_ranges GROUP BY a ORDER BY a SETTINGS max
 SYSTEM FLUSH LOGS;
 
 SELECT
-    used_aggregate_functions[1] AS func,
+    used_aggregate_functions AS func,
     Settings['max_threads'] AS threads,
     ProfileEvents['AggregationOptimizedEqualRangesOfKeys'] > 0
 FROM system.query_log

@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+
 SET check_query_single_value_result = 0;
 DROP TABLE IF EXISTS mt_table;
 
