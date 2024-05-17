@@ -324,30 +324,20 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     QueryPipelineBuilderPtr left,
     QueryPipelineBuilderPtr right,
-    std::vector<ProcessorPtr> transforms,
+    ProcessorPtr transform,
     Processors * collected_processors)
 {
-    size_t transforms_count = transforms.size();
+    if (transform->getOutputs().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge transform must have exactly 1 output, got {}", transform->getOutputs().size());
 
-    if (left->pipe.output_ports.size() != transforms_count || right->pipe.output_ports.size() != transforms_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of transforms doesn't match number of output ports");
+    connect(*left->pipe.output_ports.front(), transform->getInputs().front());
+    connect(*right->pipe.output_ports.front(), transform->getInputs().back());
 
-    for (size_t i = 0; i < transforms_count; ++i)
-    {
-        auto & transform = transforms[i];
-        if (transform->getOutputs().size() != 1 || transform->getInputs().size() != 2)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge transform {} must have exactly one output and two inputs, got {} outputs and {} inputs",
-                            transform->getName(), transform->getOutputs().size(), transform->getInputs().size());
+    if (collected_processors)
+        collected_processors->emplace_back(transform);
 
-        connect(*left->pipe.output_ports[i], transform->getInputs().front());
-        connect(*right->pipe.output_ports[i], transform->getInputs().back());
-
-        if (collected_processors)
-            collected_processors->emplace_back(transform);
-
-        left->pipe.output_ports[i] = &transform->getOutputs().front();
-        left->pipe.processors->emplace_back(transform);
-    }
+    left->pipe.output_ports.front() = &transform->getOutputs().front();
+    left->pipe.processors->emplace_back(transform);
 
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
@@ -368,27 +358,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
+    if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && (join->getTableJoin().kind() == JoinKind::Paste || isCrossOrComma(join->getTableJoin().kind())))
     {
-        if (join->getTableJoin().kind() == JoinKind::Paste)
-        {
-            left->pipe.resize(1, true);
-            right->pipe.resize(1, true);
-        }
-        else if (isCrossOrComma(join->getTableJoin().kind()))
-        {
-            size_t left_streams_num = left->getNumStreams();
-            size_t right_streams_num = right->getNumStreams();
-            if (left_streams_num > right_streams_num)
-                right->pipe.resize(left_streams_num, true);
-            else if (left_streams_num < right_streams_num)
-                left->pipe.resize(right_streams_num, true);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single stream in each pipeline to join, got {} and {}", left->getNumStreams(), right->getNumStreams());
-        }
+        left->pipe.resize(1, true);
+        right->pipe.resize(1, true);
     }
+    else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port");
 
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
@@ -398,19 +374,17 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     if (join->getTableJoin().kind() == JoinKind::Paste)
     {
         auto joining = std::make_shared<PasteJoinTransform>(join, inputs, out_header, max_block_size);
-        return mergePipelines(std::move(left), std::move(right), {std::move(joining)}, collected_processors);
+        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
     else if (isCrossOrComma(join->getTableJoin().kind()))
     {
-        std::vector<ProcessorPtr> joining_transforms;
-        for (size_t i = 0; i < left->getNumStreams(); ++i)
-            joining_transforms.emplace_back(std::make_shared<CrossJoinTransform>(join, inputs, out_header));
-        return mergePipelines(std::move(left), std::move(right), std::move(joining_transforms), collected_processors);
+        auto joining = std::make_shared<CrossJoinTransform>(join, inputs, out_header);
+        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
     else
     {
         auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
-        return mergePipelines(std::move(left), std::move(right), {std::move(joining)}, collected_processors);
+        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
 }
 

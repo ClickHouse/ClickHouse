@@ -114,7 +114,7 @@ public:
     static QueryPipelineBuilderPtr mergePipelines(
         QueryPipelineBuilderPtr left,
         QueryPipelineBuilderPtr right,
-        std::vector<ProcessorPtr> transforms,
+        ProcessorPtr transform,
         Processors * collected_processors);
 
     /// Join two pipelines together using JoinPtr.
