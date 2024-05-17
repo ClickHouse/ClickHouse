@@ -1004,9 +1004,91 @@ Result:
 
 ## reinterpretAsDate
 
+Accepts a string, fixed string or numeric value and interprets the bytes as a number in host order (little endian). It returns a date from the interpreted number as the number of days since the beginning of the Unix Epoch.
+
+**Syntax**
+
+```sql
+reinterpretAsDate(x)
+```
+
+**Parameters**
+
+- `x`: number of days since the beginning of the Unix Epoch. 
+
+:::note
+Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+:::
+
+**Returned value**
+
+- Date. [Date](../data-types/date.md).
+
+**Implementation details**
+
+:::note
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. 
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT reinterpretAsDate(65), reinterpretAsDate('A');
+```
+
+Result:
+
+```response
+┌─reinterpretAsDate(65)─┬─reinterpretAsDate('A')─┐
+│            1970-03-07 │             1970-03-07 │
+└───────────────────────┴────────────────────────┘
+```
+
 ## reinterpretAsDateTime
 
-These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn’t long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
+These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). Returns a date with time interpreted as the number of seconds since the beginning of the Unix Epoch.
+
+**Syntax**
+
+```sql
+reinterpretAsDateTime(x)
+```
+
+**Parameters**
+
+- `x`: number of seconds since the beginning of the Unix Epoch.
+
+:::note
+Accepts types that can be interpreted as numeric such as [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md). Accepts [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+:::
+
+**Returned value**
+
+- Date and Time. [DateTime](../data-types/datetime.md).
+
+**Implementation details**
+
+:::note
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. 
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A');
+```
+
+Result:
+
+```response
+┌─reinterpretAsDateTime(65)─┬─reinterpretAsDateTime('A')─┐
+│       1970-01-01 01:01:05 │        1970-01-01 01:01:05 │
+└───────────────────────────┴────────────────────────────┘
+```
 
 ## reinterpretAsString
 
