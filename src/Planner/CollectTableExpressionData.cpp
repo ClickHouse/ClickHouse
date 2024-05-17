@@ -138,12 +138,23 @@ public:
                column_source->getNodeType() != QueryTreeNodeType::ARRAY_JOIN;
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(QueryTreeNodePtr & parent_node, QueryTreeNodePtr & child_node)
     {
         auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY ||
-                 child_node_type == QueryTreeNodeType::UNION ||
-                 isAliasColumn(parent_node));
+
+        if (child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION)
+        {
+            auto * child_query_node = child_node->as<QueryNode>();
+            auto * child_union_node = child_node->as<UnionNode>();
+
+            auto & child_subquery_arguments_nodes = child_query_node ? child_query_node->getArguments().getNodes() : child_union_node->getArguments().getNodes();
+            for (auto & child_subquery_argument_node : child_subquery_arguments_nodes)
+                visitImpl(child_subquery_argument_node);
+
+            return false;
+        }
+
+        return !isAliasColumn(parent_node);
     }
 
     void setKeepAliasColumns(bool keep_alias_columns_)

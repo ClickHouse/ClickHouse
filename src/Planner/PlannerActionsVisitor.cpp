@@ -28,6 +28,7 @@
 
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
+#include <Planner/CorrelatedSubqueries.h>
 #include <Planner/Utils.h>
 
 
@@ -561,6 +562,8 @@ private:
 
     NodeNameAndNodeMinLevel visitFunction(const QueryTreeNodePtr & node);
 
+    NodeNameAndNodeMinLevel visitQueryOrUnion(const QueryTreeNodePtr & node);
+
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     const PlannerContextPtr planner_context;
@@ -609,6 +612,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return visitConstant(node);
     else if (node_type == QueryTreeNodeType::FUNCTION)
         return visitFunction(node);
+    else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return visitQueryOrUnion(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
         "Expected column, constant, function. Actual {} with type: {}",
@@ -621,6 +626,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & column_node = node->as<ColumnNode &>();
     if (column_node.hasExpression() && !use_column_identifier_as_action_node_name)
         return visitImpl(column_node.getExpression());
+
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {
@@ -977,6 +983,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     return {function_node_name, levels};
+}
+
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitQueryOrUnion(const QueryTreeNodePtr & node)
+{
+    auto execute_correlated_subquery_function_node = buildFunctionNodeToExecuteCorrelatedSubquery(node);
+    return visitFunction(execute_correlated_subquery_function_node);
 }
 
 }

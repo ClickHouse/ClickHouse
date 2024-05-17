@@ -248,6 +248,24 @@ public:
         is_order_by_all = is_order_by_all_value;
     }
 
+    /// Returns true if query node has arguments, false otherwise
+    bool hasArguments() const
+    {
+        return !getArguments().getNodes().empty();
+    }
+
+    /// Get query arguments
+    const ListNode & getArguments() const
+    {
+        return children[arguments_child_index]->as<const ListNode &>();
+    }
+
+    /// Get query arguments
+    ListNode & getArguments()
+    {
+        return children[arguments_child_index]->as<ListNode &>();
+    }
+
     /// Returns true if query node WITH section is not empty, false otherwise
     bool hasWith() const
     {
@@ -616,6 +634,8 @@ public:
         return QueryTreeNodeType::QUERY;
     }
 
+    DataTypePtr getResultType() const override;
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -645,23 +665,46 @@ private:
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 
-    static constexpr size_t with_child_index = 0;
-    static constexpr size_t projection_child_index = 1;
-    static constexpr size_t join_tree_child_index = 2;
-    static constexpr size_t prewhere_child_index = 3;
-    static constexpr size_t where_child_index = 4;
-    static constexpr size_t group_by_child_index = 5;
-    static constexpr size_t having_child_index = 6;
-    static constexpr size_t window_child_index = 7;
-    static constexpr size_t qualify_child_index = 8;
-    static constexpr size_t order_by_child_index = 9;
-    static constexpr size_t interpolate_child_index = 10;
-    static constexpr size_t limit_by_limit_child_index = 11;
-    static constexpr size_t limit_by_offset_child_index = 12;
-    static constexpr size_t limit_by_child_index = 13;
-    static constexpr size_t limit_child_index = 14;
-    static constexpr size_t offset_child_index = 15;
-    static constexpr size_t children_size = offset_child_index + 1;
+    enum ChildIndexes: uint8_t
+    {
+        ARGUMENTS = 0,
+        WITH,
+        PROJECTION,
+        JOIN_TREE,
+        PREWHERE,
+        WHERE,
+        GROUP_BY,
+        HAVING,
+        WINDOW,
+        QUALIFY,
+        ORDER_BY,
+        INTERPOLATE,
+        LIMIT_BY_LIMIT,
+        LIMIT_BY_OFFSET,
+        LIMIT_BY,
+        LIMIT,
+        OFFSET,
+        MAX
+    };
+
+    static constexpr size_t arguments_child_index = ChildIndexes::ARGUMENTS;
+    static constexpr size_t with_child_index = ChildIndexes::WITH;
+    static constexpr size_t projection_child_index = ChildIndexes::PROJECTION;
+    static constexpr size_t join_tree_child_index = ChildIndexes::JOIN_TREE;
+    static constexpr size_t prewhere_child_index = ChildIndexes::PREWHERE;
+    static constexpr size_t where_child_index = ChildIndexes::WHERE;
+    static constexpr size_t group_by_child_index = ChildIndexes::GROUP_BY;
+    static constexpr size_t having_child_index = ChildIndexes::HAVING;
+    static constexpr size_t window_child_index = ChildIndexes::WINDOW;
+    static constexpr size_t qualify_child_index = ChildIndexes::QUALIFY;
+    static constexpr size_t order_by_child_index = ChildIndexes::ORDER_BY;
+    static constexpr size_t interpolate_child_index = ChildIndexes::INTERPOLATE;
+    static constexpr size_t limit_by_limit_child_index = ChildIndexes::LIMIT_BY_LIMIT;
+    static constexpr size_t limit_by_offset_child_index = ChildIndexes::LIMIT_BY_OFFSET;
+    static constexpr size_t limit_by_child_index = ChildIndexes::LIMIT_BY;
+    static constexpr size_t limit_child_index = ChildIndexes::LIMIT;
+    static constexpr size_t offset_child_index = ChildIndexes::OFFSET;
+    static constexpr size_t children_size = ChildIndexes::MAX;
 };
 
 }

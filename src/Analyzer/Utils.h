@@ -19,6 +19,9 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 /// Returns true if storage is used in tree, false otherwise
 bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root);
 
+/// Collect QUERY or UNION node arguments
+QueryTreeNodes collectQueryOrUnionNodeArguments(const QueryTreeNodePtr & node);
+
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
 

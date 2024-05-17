@@ -2043,6 +2043,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    if (query_node && query_node->hasArguments())
+        return;
+
     auto & context = scope.context;
 
     Block scalar_block;
@@ -3947,8 +3950,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const Identifie
 
 /** Try resolve identifier in current scope parent scopes.
   *
-  * TODO: If column is matched, throw exception that nested subqueries are not supported.
-  *
   * If initial scope is expression. Then try to resolve identifier in parent scopes until query scope is hit.
   * For query scope resolve strategy is same as if initial scope if query.
   */
@@ -4013,10 +4014,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
               * During child scope table identifier resolve a, table node test_table with alias a from parent scope
               * is invalid.
               */
-            if (identifier_lookup.isTableExpressionLookup() && !is_valid_table_expression)
-                continue;
-
-            if (is_valid_table_expression || resolved_identifier->as<ConstantNode>())
+            if (identifier_lookup.isTableExpressionLookup() && is_valid_table_expression)
+            {
+                return lookup_result;
+            }
+            else if (identifier_lookup.isExpressionLookup() && isExpressionNodeType(resolved_identifier->getNodeType()))
             {
                 return lookup_result;
             }
@@ -5632,6 +5634,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
 
             resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+            const auto * in_second_argument_query_node = in_second_argument->as<const QueryNode>();
+            const auto * in_second_argument_union_node = in_second_argument->as<const UnionNode>();
+
+            if ((in_second_argument_query_node && in_second_argument_query_node->hasArguments()) ||
+                (in_second_argument_union_node && in_second_argument_union_node->hasArguments()))
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Correlated subqueries are not supported for {} function", function_name);
         }
     }
 
@@ -8273,6 +8282,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * Example: SELECT count(*) OVER w FROM test_table WINDOW w AS (PARTITION BY id);
       */
     query_node_typed.getWindow().getNodes().clear();
+
+    /// Collect arguments
+    query_node_typed.getArguments().getNodes() = collectQueryOrUnionNodeArguments(query_node);
 
     /// Remove aliases from expression and lambda nodes
 
