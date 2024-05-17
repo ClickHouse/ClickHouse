@@ -685,6 +685,9 @@ public:
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    void addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
+    void updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
+    void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
@@ -1385,11 +1388,6 @@ struct HTTPContext : public IHTTPContext
     uint64_t getMaxFieldValueSize() const override
     {
         return context->getSettingsRef().http_max_field_value_size;
-    }
-
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getSettingsRef().http_max_chunk_size;
     }
 
     Poco::Timespan getReceiveTimeout() const override
