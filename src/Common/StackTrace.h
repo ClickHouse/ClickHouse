@@ -44,14 +44,14 @@ public:
     using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
-    inline StackTrace() { tryCapture(); }
+    StackTrace() { tryCapture(); }
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
     explicit StackTrace(const ucontext_t & signal_context);
 
     /// Creates empty object for deferred initialization
-    explicit inline StackTrace(NoCapture) {}
+    explicit StackTrace(NoCapture) {}
 
     constexpr size_t getSize() const { return size; }
     constexpr size_t getOffset() const { return offset; }

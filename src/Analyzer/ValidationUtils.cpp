@@ -26,6 +26,10 @@ namespace
 
 void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view exception_place_message, const QueryTreeNodePtr & query_node)
 {
+    if (filter_node->getNodeType() == QueryTreeNodeType::LIST)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported expression '{}' in filter", filter_node->formatASTForErrorMessage());
+
     auto filter_node_result_type = filter_node->getResultType();
     if (!filter_node_result_type->canBeUsedInBooleanContext())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
@@ -265,6 +269,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
         if (query_node_typed.hasHaving())
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
+
+        if (query_node_typed.hasQualify())
+            validate_group_by_columns_visitor.visit(query_node_typed.getQualify());
 
         if (query_node_typed.hasOrderBy())
             validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
