@@ -7,7 +7,11 @@
 
 #endif
 
-DB::TLSHandler::TLSHandler(const StreamSocket & socket, const LayeredConfiguration & config, const std::string & prefix, TCPProtocolStackData & stack_data_)
+DB::TLSHandler::TLSHandler(
+    const StreamSocket & socket,
+    [[maybe_unused]] const LayeredConfiguration & config,
+    [[maybe_unused]] const std::string & prefix,
+    TCPProtocolStackData & stack_data_)
     : Poco::Net::TCPServerConnection(socket)
     , stack_data(stack_data_)
 {
