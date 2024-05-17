@@ -114,6 +114,7 @@ template <typename Key, typename Cell, typename Size, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
+
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
     /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
     bool only_emplace_was_used_to_insert_data = true;
@@ -175,7 +176,7 @@ protected:
 
             /// Skip empty cells in the main buffer.
             const auto * buf_end = container->buf + container->NUM_CELLS;
-            if (container->use_min_max_optimization())
+            if (container->canUseMinMaxOptimization())
                 buf_end = container->buf + container->max + 1;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
@@ -304,47 +305,23 @@ public:
         if (!buf)
             return end();
 
-        const Cell * ptr = buf;
-        if (!use_min_max_optimization())
-        {
-            auto buf_end = buf + NUM_CELLS;
-            while (ptr < buf_end && ptr->isZero(*this))
-                ++ptr;
-        }
-        else
-            ptr = buf + min;
-
-        return const_iterator(this, ptr);
+        return const_iterator(this, firstPopulatedCell());
     }
 
     const_iterator cbegin() const { return begin(); }
 
     iterator begin()
     {
-        /// If min > max, it might use emplace to insert the value or the container is empty.
         if (!buf)
             return end();
 
-        Cell * ptr = buf;
-        if (!use_min_max_optimization())
-        {
-            auto buf_end = buf + NUM_CELLS;
-            while (ptr < buf_end && ptr->isZero(*this))
-                ++ptr;
-        }
-        else
-            ptr = buf + min;
-
-        return iterator(this, ptr);
+        return iterator(this, const_cast<Cell *>(firstPopulatedCell()));
     }
 
     const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        if (!use_min_max_optimization())
-            return const_iterator(this, buf ? buf + NUM_CELLS: buf);
-        else
-            return const_iterator(this, buf ? buf + max + 1: buf);
+        return const_iterator(this, lastPopulatedCell());
     }
 
     const_iterator cend() const
@@ -354,10 +331,7 @@ public:
 
     iterator end()
     {
-        if (!use_min_max_optimization())
-            return iterator(this, buf ? buf + NUM_CELLS: buf);
-        else
-            return iterator(this, buf ? buf + max + 1: buf);
+        return iterator(this, lastPopulatedCell());
     }
 
 
@@ -403,9 +377,25 @@ public:
     bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
     bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
 
-    /// Decide if we use the min/max optimization. `max < min` means the FixedHashtable is empty. The flag `use_emplace_to_insert_data`
-    /// will check if the FixedHashTable will use `emplace()` to insert the raw data.
-    bool ALWAYS_INLINE canUseMinMaxOptimization() const {return ((max >= min) && use_emplace_to_insert_data);}
+    /// Decide if we use the min/max optimization. `max < min` means the FixedHashtable is empty. The flag `only_emplace_was_used_to_insert_data`
+    /// will check if the FixedHashTable will only use `emplace()` to insert the raw data.
+    bool ALWAYS_INLINE canUseMinMaxOptimization() const { return ((max >= min) && only_emplace_was_used_to_insert_data); }
+
+    const Cell * ALWAYS_INLINE firstPopulatedCell() const
+    {
+        const Cell * ptr = buf;
+        if (!canUseMinMaxOptimization())
+        {
+            while (ptr < buf + NUM_CELLS && ptr->isZero(*this))
+                ++ptr;
+        }
+        else
+            ptr = buf + min;
+
+        return ptr;
+    }
+
+    Cell * ALWAYS_INLINE lastPopulatedCell() const { return canUseMinMaxOptimization() ? buf + max + 1 : buf + NUM_CELLS; }
 
     void write(DB::WriteBuffer & wb) const
     {
@@ -463,7 +453,7 @@ public:
             x.read(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
-        use_emplace_to_insert_data = false;
+        only_emplace_was_used_to_insert_data = false;
     }
 
     void readText(DB::ReadBuffer & rb)
@@ -486,7 +476,7 @@ public:
             x.readText(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
-        use_emplace_to_insert_data = false;
+        only_emplace_was_used_to_insert_data = false;
     }
 
     size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
@@ -527,7 +517,7 @@ public:
     const Cell * data() const { return buf; }
     Cell * data()
     {
-        use_emplace_to_insert_data = false;
+        only_emplace_was_used_to_insert_data = false;
         return buf;
     }
 
