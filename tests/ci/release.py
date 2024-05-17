@@ -401,7 +401,7 @@ class Release:
     def _bump_release_branch(self):
         # Update only git, origal version stays the same
         self._git.update()
-        new_version = self.version.patch_update()
+        new_version = self.version.copy()
         version_type = self.get_stable_release_type()
         pr_labels = "--label release"
         if version_type == VersionType.LTS:
@@ -427,9 +427,10 @@ class Release:
                         "changes with it.'",
                         dry_run=self.dry_run,
                     )
-                    with self._create_gh_release(False):
-                        # Here the release branch part is done
-                        yield
+                    # Here the release branch part is done.
+                    # We don't create a release itself automatically to have a
+                    # safe window to backport possible bug fixes.
+                    yield
 
     @contextmanager
     def _bump_testing_version(self, helper_branch: str) -> Iterator[None]:
