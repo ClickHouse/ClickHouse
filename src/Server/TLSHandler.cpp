@@ -1,5 +1,10 @@
+#if USE_SSL
+
 #include <Poco/Net/Utility.h>
 #include <Poco/StringTokenizer.h>
+
+#endif
+
 #include <Server/TLSHandler.h>
 
 DB::TLSHandler::TLSHandler(const StreamSocket & socket, const LayeredConfiguration & config, const std::string & prefix, TCPProtocolStackData & stack_data_)
