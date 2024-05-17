@@ -1,9 +1,6 @@
 #pragma once
 
-#include <cstddef>
 #include <memory>
-#include <optional>
-
 #include <boost/core/noncopyable.hpp>
 
 #include <Core/Block.h>
@@ -13,24 +10,22 @@
 #include <Storages/StatisticsDescription.h>
 
 
+namespace DB
+{
+
 /// this is for user-defined statistic.
 constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
 
-namespace DB
-{
-
-/// Statistics contains the distribution of values in a column.
-/// right now we support
-/// - tdigest
-/// - uniq(hyperloglog)
+/// Statistics describe properties of the values in the column,
+/// e.g. how many unique values exist,
+/// what are the N most frequent values,
+/// how frequent is a value V, etc.
 class IStatistics
 {
 public:
-    explicit IStatistics(const SingleStatisticsDescription & stat_)
-        : stat(stat_)
-    {
-    }
+    explicit IStatistics(const SingleStatisticsDescription & stat_);
+
     virtual ~IStatistics() = default;
 
     virtual void serialize(WriteBuffer & buf) = 0;
@@ -40,16 +35,10 @@ public:
     virtual void update(const ColumnPtr & column) = 0;
 
 protected:
-
     SingleStatisticsDescription stat;
-
 };
 
 using StatisticsPtr = std::shared_ptr<IStatistics>;
-
-class ColumnStatistics;
-using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 class ColumnStatistics
 {
@@ -61,7 +50,7 @@ public:
 
     const String & columnName() const;
 
-    UInt64 count() const;
+    UInt64 rowCount() const;
 
     void update(const ColumnPtr & column);
 
@@ -80,6 +69,8 @@ private:
 };
 
 class ColumnsDescription;
+using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
+using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 class MergeTreeStatisticsFactory : private boost::noncopyable
 {

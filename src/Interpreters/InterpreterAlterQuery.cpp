@@ -345,22 +345,22 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::ADD_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_ADD_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_DROP_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_DROP_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::MATERIALIZE_STATISTICS:
         {
-            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

@@ -15,7 +15,6 @@ UniqStatistics::UniqStatistics(const SingleStatisticsDescription & stat_, const 
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
-    properties.returns_default_when_only_null = true;
     collector = AggregateFunctionFactory::instance().get("uniq", NullsAction::IGNORE_NULLS, {data_type}, Array(), properties);
     data = arena->alignedAlloc(collector->sizeOfData(), collector->alignOfData());
     collector->create(data);

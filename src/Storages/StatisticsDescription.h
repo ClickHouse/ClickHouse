@@ -14,7 +14,7 @@ enum class StatisticsType : UInt8
     TDigest = 0,
     Uniq = 1,
 
-    UnknownStatistics = 63,
+    Max = 63,
 };
 
 struct SingleStatisticsDescription
@@ -49,8 +49,8 @@ struct ColumnStatisticsDescription
 
     ASTPtr getAST() const;
 
-    static std::vector<ColumnStatisticsDescription> getStatisticsDescriptionsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
-    static ColumnStatisticsDescription getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column);
+    static std::vector<ColumnStatisticsDescription> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
+    static ColumnStatisticsDescription fromColumnDeclaration(const ASTColumnDeclaration & column);
 
     using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
     StatisticsTypeDescMap types_to_desc;

@@ -40,8 +40,6 @@ private:
     std::pair<String, Float64> extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const;
 
 public:
-    ConditionSelectivityEstimator() = default;
-
     /// TODO: Support the condition consists of CNF/DNF like (cond1 and cond2) or (cond3) ...
     /// Right now we only support simple condition like col = val / col < val
     Float64 estimateRowCount(const RPNBuilderTreeNode & node) const;

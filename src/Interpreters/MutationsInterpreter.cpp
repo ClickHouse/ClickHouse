@@ -806,7 +806,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             for (const auto & stat_column_name: command.statistics_columns)
             {
-                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).stats.empty())
+                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
                 dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);

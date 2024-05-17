@@ -58,19 +58,7 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    if (types_to_desc.size() != other.types_to_desc.size())
-        return false;
-
-    for (const auto & [type, desc] : types_to_desc)
-    {
-        StatisticsType stats_type = type;
-        if (!other.types_to_desc.contains(stats_type))
-            return false;
-        if (!(desc == other.types_to_desc.at(stats_type)))
-            return false;
-    }
-
-    return true;
+    return types_to_desc == other.types_to_desc;
 }
 
 bool ColumnStatisticsDescription::empty() const
@@ -117,7 +105,7 @@ void ColumnStatisticsDescription::clear()
     types_to_desc.clear();
 }
 
-std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::getStatisticsDescriptionsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
+std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
 {
     const auto * stat_definition_ast = definition_ast->as<ASTStatisticsDeclaration>();
     if (!stat_definition_ast)
@@ -158,7 +146,7 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::getStatist
     return result;
 }
 
-ColumnStatisticsDescription ColumnStatisticsDescription::getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column)
+ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(const ASTColumnDeclaration & column)
 {
     const auto & stat_type_list_ast = column.stat_type->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())

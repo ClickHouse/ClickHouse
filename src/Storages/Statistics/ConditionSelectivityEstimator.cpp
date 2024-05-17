@@ -1,4 +1,4 @@
-#include <Storages/Statistics/ConditionEstimator.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
@@ -25,7 +25,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(
     for (const auto & [key, estimator] : part_statistics)
     {
         result += estimator->estimateLess(val);
-        part_rows += estimator->count();
+        part_rows += estimator->rowCount();
     }
     return result * rows / part_rows;
 }
@@ -49,7 +49,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual
     for (const auto & [key, estimator] : part_statistics)
     {
         result += estimator->estimateEqual(val);
-        partial_cnt += estimator->count();
+        partial_cnt += estimator->rowCount();
     }
     return result * rows / partial_cnt;
 }

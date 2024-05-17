@@ -67,7 +67,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && stats == other.stats
+        && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
@@ -114,10 +114,10 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         DB::writeText(")", buf);
     }
 
-    if (!stats.empty())
+    if (!statistics.empty())
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(stats.getAST()), buf);
+        writeEscapedString(queryToString(statistics.getAST()), buf);
     }
 
     if (ttl)

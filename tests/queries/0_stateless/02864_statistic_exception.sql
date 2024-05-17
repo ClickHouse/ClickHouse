@@ -7,7 +7,7 @@ CREATE TABLE t1
     pk String,
 ) Engine = MergeTree() ORDER BY pk; -- { serverError INCORRECT_QUERY }
 
-SET allow_experimental_statistic = 1;
+SET allow_experimental_statistics = 1;
 
 CREATE TABLE t1 
 (

@@ -72,7 +72,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/Statistics/ConditionEstimator.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
@@ -469,7 +469,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     return storage_policy;
 }
 
-ConditionSelectivityEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
+ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
 {
     if (!local_context->getSettings().allow_statistics_optimize)
         return {};
@@ -698,8 +698,8 @@ void MergeTreeData::checkProperties(
 
     for (const auto & col : new_metadata.columns)
     {
-        if (!col.stats.empty())
-            MergeTreeStatisticsFactory::instance().validate(col.stats, col.type);
+        if (!col.statistics.empty())
+            MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type);
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
@@ -3475,7 +3475,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         new_metadata.getColumns().getPhysical(command.column_name));
 
                     const auto & old_column = old_metadata.getColumns().get(command.column_name);
-                    if (!old_column.stats.empty())
+                    if (!old_column.statistics.empty())
                     {
                         const auto & new_column = new_metadata.getColumns().get(command.column_name);
                         if (!old_column.type->equals(*new_column.type))

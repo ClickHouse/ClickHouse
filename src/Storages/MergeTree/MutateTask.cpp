@@ -523,9 +523,9 @@ static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMet
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & col_desc : columns)
     {
-        if (!col_desc.stats.empty() && materialized_stats.contains(col_desc.name))
+        if (!col_desc.statistics.empty() && materialized_stats.contains(col_desc.name))
         {
-            stats_to_recalc.insert(stats_factory.get(col_desc.stats));
+            stats_to_recalc.insert(stats_factory.get(col_desc.statistics));
         }
     }
     return stats_to_recalc;
@@ -667,7 +667,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(projection->getDirectoryName());
 
     for (const auto & stat : stats_to_recalc)
-        files_to_skip.insert(stat->getFileName() + STAT_FILE_SUFFIX);
+        files_to_skip.insert(stat->getFileName() + STATS_FILE_SUFFIX);
 
     if (isWidePart(source_part))
     {
@@ -759,8 +759,8 @@ static NameToNameVector collectFilesForRenames(
         else if (command.type == MutationCommand::Type::DROP_STATISTICS)
         {
             for (const auto & statistics_column_name : command.statistics_columns)
-                if (source_part->checksums.has(STAT_FILE_PREFIX + statistics_column_name + STAT_FILE_SUFFIX))
-                    add_rename(STAT_FILE_PREFIX + statistics_column_name + STAT_FILE_SUFFIX, "");
+                if (source_part->checksums.has(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX))
+                    add_rename(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX, "");
         }
         else if (isWidePart(source_part))
         {
@@ -782,8 +782,8 @@ static NameToNameVector collectFilesForRenames(
                     serialization->enumerateStreams(callback);
 
                 /// if we drop a column with statistics, we should also drop the stat file.
-                if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
-                    add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, "");
+                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
+                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, "");
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
@@ -818,8 +818,8 @@ static NameToNameVector collectFilesForRenames(
                     serialization->enumerateStreams(callback);
 
                 /// if we rename a column with statistics, we should also rename the stat file.
-                if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
-                    add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, STAT_FILE_PREFIX + command.rename_to + STAT_FILE_SUFFIX);
+                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
+                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX);
             }
             else if (command.type == MutationCommand::Type::READ_COLUMN)
             {
@@ -1461,8 +1461,8 @@ private:
                 for (const auto & column_name : command.statistics_columns)
                     removed_stats.insert(column_name);
             else if (command.type == MutationCommand::RENAME_COLUMN
-                     && ctx->source_part->checksums.files.contains(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
-                renamed_stats[STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX] = STAT_FILE_PREFIX + command.rename_to + STAT_FILE_SUFFIX;
+                     && ctx->source_part->checksums.files.contains(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
+                renamed_stats[STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX] = STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX;
         }
 
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
@@ -1502,19 +1502,19 @@ private:
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & col : columns)
         {
-            if (col.stats.empty() || removed_stats.contains(col.name))
+            if (col.statistics.empty() || removed_stats.contains(col.name))
                 continue;
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col.stats));
+                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col.statistics));
             }
             else
             {
                 /// We do not hard-link statistics which
                 /// 1. In `DROP STATISTICS` statement. It is filtered by `removed_stats`
                 /// 2. Not in column list anymore, including `DROP COLUMN`. It is not touched by this loop.
-                String stat_file_name = STAT_FILE_PREFIX + col.name + STAT_FILE_SUFFIX;
+                String stat_file_name = STATS_FILE_PREFIX + col.name + STATS_FILE_SUFFIX;
                 auto it = ctx->source_part->checksums.files.find(stat_file_name);
                 if (it != ctx->source_part->checksums.files.end())
                 {

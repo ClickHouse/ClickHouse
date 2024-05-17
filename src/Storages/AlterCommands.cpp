@@ -701,11 +701,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             }
         }
 
-        auto stats_vec = ColumnStatisticsDescription::getStatisticsDescriptionsFromAST(statistics_decl, metadata.columns);
+        auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
         for (const auto & stats : stats_vec)
         {
             metadata.columns.modify(stats.column_name,
-                [&](ColumnDescription & column) { column.stats.merge(stats, column.name, column.type, if_not_exists); });
+                [&](ColumnDescription & column) { column.statistics.merge(stats, column.name, column.type, if_not_exists); });
         }
     }
     else if (type == DROP_STATISTICS)
@@ -721,7 +721,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
             if (!clear && !partition)
                 metadata.columns.modify(statistics_column_name,
-                    [&](ColumnDescription & column) { column.stats.clear(); });
+                    [&](ColumnDescription & column) { column.statistics.clear(); });
         }
     }
     else if (type == MODIFY_STATISTICS)
@@ -734,11 +734,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             }
         }
 
-        auto stats_vec = ColumnStatisticsDescription::getStatisticsDescriptionsFromAST(statistics_decl, metadata.columns);
+        auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
         for (const auto & stats : stats_vec)
         {
             metadata.columns.modify(stats.column_name,
-                [&](ColumnDescription & column) { column.stats.assign(stats); });
+                [&](ColumnDescription & column) { column.statistics.assign(stats); });
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -862,8 +862,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
-                if (column_to_modify.name == column_name && !column_to_modify.stats.empty())
-                    column_to_modify.stats.column_name = rename_to;
+                if (column_to_modify.name == column_name && !column_to_modify.statistics.empty())
+                    column_to_modify.statistics.column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)
