@@ -710,6 +710,8 @@ BaseDaemon::~BaseDaemon()
         }
 
     signal_pipe.close();
+
+    SentryWriter::resetInstance();
 }
 
 

@@ -216,7 +216,19 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         configuration.auth_settings.no_sign_request = no_sign_request;
 
         if (configuration.format == "auto")
-            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(url).getPath()).value_or("auto");
+        {
+            if (configuration.url.archive_pattern.has_value())
+            {
+                configuration.format = FormatFactory::instance()
+                                           .tryGetFormatFromFileName(Poco::URI(configuration.url.archive_pattern.value()).getPath())
+                                           .value_or("auto");
+            }
+            else
+            {
+                configuration.format
+                    = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url.uri_str).getPath()).value_or("auto");
+            }
+        }
     }
 
     configuration.keys = {configuration.url.key};
