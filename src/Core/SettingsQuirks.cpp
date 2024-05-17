@@ -120,8 +120,8 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         "input_format_parquet_max_block_size"};
     for (auto const & setting : block_rows_settings)
     {
-        auto block_size = get_current_value(setting).get<UInt64>();
-        if (block_size > max_sane_block_rows_size)
+        if (auto block_size = get_current_value(setting).get<UInt64>();
+            block_size > max_sane_block_rows_size)
         {
             if (log)
                 LOG_WARNING(log, "Sanity check: '{}' value is too high ({}). Reduced to {}", setting, block_size, max_sane_block_rows_size);
