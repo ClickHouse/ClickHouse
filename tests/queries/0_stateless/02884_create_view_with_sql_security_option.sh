@@ -192,6 +192,41 @@ ${CLICKHOUSE_CLIENT} --user $user1 --query "
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $user2 TO $user1"
 
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE $db.source
+(
+    a UInt64
+)
+ORDER BY a;
+
+CREATE TABLE $db.destination1
+(
+    `a` UInt64
+)
+ORDER BY a;
+
+CREATE TABLE $db.destination2
+(
+    `a` UInt64
+)
+ORDER BY a;
+
+CREATE MATERIALIZED VIEW $db.mv1 TO $db.destination1
+AS SELECT *
+FROM $db.source;
+
+ALTER TABLE $db.mv1 MODIFY DEFINER=default SQL SECURITY DEFINER;
+
+CREATE MATERIALIZED VIEW $db.mv2 TO $db.destination2
+AS SELECT *
+FROM $db.destination1;
+
+GRANT INSERT ON $db.source TO $user2;
+EOF
+
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
+
 
 echo "===== TestRowPolicy ====="
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
