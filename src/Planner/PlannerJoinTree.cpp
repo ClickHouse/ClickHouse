@@ -943,6 +943,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_context,
                             table_expression_query_info.storage_limits);
                         query_plan = std::move(query_plan_parallel_replicas);
+                        from_stage = QueryProcessingStage::WithMergeableState;
+
+                        const Block & query_plan_header = query_plan.getCurrentDataStream().header;
+                        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Parallel replicas query_plan_header:\n{}", query_plan_header.dumpStructure());
                     }
                 }
 
@@ -1083,6 +1087,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, expected_header))
         {
             materializeBlockInplace(expected_header);
+
+            const Block & query_plan_header = query_plan.getCurrentDataStream().header;
+
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "query_plan_header:\n{}", query_plan_header.dumpStructure());
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "expected_header:\n{}", expected_header.dumpStructure());
 
             auto rename_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
