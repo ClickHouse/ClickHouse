@@ -9,10 +9,9 @@ namespace DB
 class ApplySquashingTransform : public ExceptionKeepingTransform
 {
 public:
-    ApplySquashingTransform(
-        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    explicit ApplySquashingTransform(const Block & header)
         : ExceptionKeepingTransform(header, header, false)
-        , squashing(header, min_block_size_rows, min_block_size_bytes)
+        , squashing(header)
     {
     }
 
