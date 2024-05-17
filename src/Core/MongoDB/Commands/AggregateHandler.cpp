@@ -98,4 +98,4 @@ BSON::Document::Ptr handleAggregate(const Command::Ptr command, ContextMutablePt
 }
 
 }
-} // namespace DB::MongoDB
+}

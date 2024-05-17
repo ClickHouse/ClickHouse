@@ -52,9 +52,7 @@ BSON::Element::Ptr Element::fromTypeId(UInt8 typeId, const std::string & name)
             element = new ConcreteElement<NullValue>(name, NullValue());
             break;
         default: {
-            std::stringstream ss;
-            ss << "Element " << name << " contains an unsupported type 0x" << std::hex << static_cast<int>(typeId);
-            throw Poco::NotImplementedException(ss.str());
+            throw Poco::NotImplementedException(fmt::format("Element {} contains an unsupported type {}", name, static_cast<int>(typeId)));
         }
             // TODO: everything else:)
     }
@@ -95,4 +93,4 @@ BSON::Element::Ptr Element::createElementWithType(const std::string & type, cons
 }
 
 }
-} // namespace DB::BSON
+}

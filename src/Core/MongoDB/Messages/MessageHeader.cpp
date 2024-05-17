@@ -22,13 +22,9 @@ void MessageHeader::write(WriteBuffer & writer) const
 
 void MessageHeader::read(ReadBuffer & reader)
 {
-    LoggerPtr log = getLogger("MessageHeader::read");
     readIntBinary(message_length, reader);
-    LOG_DEBUG(log, "Read message_length: {}", message_length);
     readIntBinary(request_id, reader);
-    LOG_DEBUG(log, "Read request_id: {}", request_id);
     readIntBinary(response_to, reader);
-    LOG_DEBUG(log, "Read response_to: {}", response_to);
     Int32 opcode;
     readIntBinary(opcode, reader);
     op_code = static_cast<OpCode>(opcode);
@@ -54,4 +50,4 @@ std::string MessageHeader::toString() const
 }
 
 }
-} // namespace DB::MongoDB
+}

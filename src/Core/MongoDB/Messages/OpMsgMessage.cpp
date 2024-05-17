@@ -3,7 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Loggers/Loggers.h>
 #include <fmt/format.h>
-#include "Array.h"
+#include "../BSON/Array.h"
 
 namespace DB
 {
@@ -363,4 +363,4 @@ std::string OpMsgMessage::toString() const
 }
 
 }
-} // namespace Poco::MongoDB
+}

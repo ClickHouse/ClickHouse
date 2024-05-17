@@ -48,4 +48,4 @@ void OpReply::writeContent(WriteBuffer & writer)
 }
 
 }
-} // namespace DB::MongoDB
+}

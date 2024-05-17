@@ -3,9 +3,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/CurrentThread.h>
-#include "../Binary.h"
-#include "../Document.h"
-#include "../Element.h"
+#include "../BSON/Binary.h"
+#include "../BSON/Document.h"
+#include "../BSON/Element.h"
 #include "Commands.h"
 
 namespace DB
@@ -33,4 +33,4 @@ FindCommand parseFindCommand(Command::Ptr command);
 BSON::Document::Ptr handleFind(Command::Ptr command, ContextMutablePtr context);
 
 }
-} // namespace DB::MongoDB
+}

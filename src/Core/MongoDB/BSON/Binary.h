@@ -1,6 +1,5 @@
 #pragma once
 
-#include <sstream>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Base64Encoder.h>
@@ -152,4 +151,4 @@ inline Int32 BSONWriter::getLength<Binary::Ptr>(const Binary::Ptr & from)
 
 
 }
-} // namespace DB::BSON
+}

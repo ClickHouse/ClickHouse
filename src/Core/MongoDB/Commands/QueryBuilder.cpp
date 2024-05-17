@@ -183,11 +183,6 @@ void QueryBuilder::handleGroup(BSON::Document::Ptr group)
             throw Poco::LogicException(fmt::format("Incorrect _id field with value: {}", _id->toString()));
     }
     handleGroupIds(std::move(ids), group);
-    /* 
-    // new columns
-    const auto & column_names = group->elementNames();
-    for (const auto & column_name : column_names)
-        addToSelect(column_name, group->get<BSON::Document::Ptr>(column_name)); */
 }
 
 void QueryBuilder::handleSort(BSON::Document::Ptr sort)
@@ -299,7 +294,6 @@ void QueryBuilder::handleCount(const std::string & new_col_name)
 
 std::string QueryBuilder::buildSelect() &&
 {
-    std::string query = "SELECT";
     // add only groupping columns
     if (has_group_operations)
     {
@@ -312,14 +306,8 @@ std::string QueryBuilder::buildSelect() &&
         }
     }
     std::vector<std::string> columns = std::move(proj_map).getNamesByStatus(true); // include columns
-    for (const auto & name : columns)
-        query += fmt::format(" {}, ", name);
-    for (const auto & name : select_elems)
-        query += fmt::format(" {}, ", name);
-    std::string end_ = ", ";
-    query.erase(query.size() - end_.size(), end_.size());
-    query += fmt::format(" FROM {}", collection_name);
-    return query;
+    return fmt::format(
+        "SELECT {}{} {} FROM {}", fmt::join(columns, ", "), columns.empty() ? ' ' : ',', fmt::join(select_elems, ", "), collection_name);
 }
 
 
@@ -337,11 +325,7 @@ std::string QueryBuilder::buildOrderBy() const
 {
     if (order_by.empty())
         return "";
-    std::string query = "ORDER BY";
-    for (const auto & name : order_by)
-        query += fmt::format(" {},", name);
-    query.pop_back(); // ','
-    return query;
+    return fmt::format("ORDER BY {}", fmt::join(order_by, ", "));
 }
 
 
@@ -349,24 +333,14 @@ std::string QueryBuilder::buildWhere() const
 {
     if (where.empty())
         return "";
-    std::string query = "WHERE";
-    for (const auto & name : where)
-        query += fmt::format(" {} AND", name);
-    std::string and_str = "AND";
-    query.erase(query.size() - and_str.size(), and_str.size());
-    return query;
+    return fmt::format("WHERE {}", fmt::join(where, " AND "));
 }
 
 std::string QueryBuilder::buildHaving() const
 {
     if (having_vec.empty())
         return "";
-    std::string query = "HAVING";
-    for (const auto & name : having_vec)
-        query += fmt::format(" {} AND", name);
-    std::string and_str = "AND";
-    query.erase(query.size() - and_str.size(), and_str.size());
-    return query;
+    return fmt::format("HAVING {}", fmt::join(having_vec, " AND "));
 }
 
 std::string QueryBuilder::buildQuery() &&
@@ -383,4 +357,4 @@ std::string QueryBuilder::buildQuery() &&
 }
 
 }
-} // namespace DB::MongoDB
+}

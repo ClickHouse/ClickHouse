@@ -126,4 +126,4 @@ BSON::Document::Ptr handleError(const std::string & err_what)
 }
 
 }
-} // namespace DB::MongoDB
+}

@@ -127,4 +127,4 @@ inline Int32 BSONWriter::getLength<ObjectId::Ptr>(const ObjectId::Ptr &)
 
 
 }
-} // namespace DB::BSON
+}

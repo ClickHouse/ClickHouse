@@ -17,12 +17,12 @@ class Message
 public:
     using Ptr = Poco::SharedPtr<Message>;
 
-    explicit Message(MessageHeader::OpCode opcode);
+    explicit Message(MessageHeader::OpCode opcode) : header(opcode) { }
     /// Creates a Message using the given OpCode.
 
     explicit Message(const MessageHeader & header_) : header(header_) { }
 
-    virtual ~Message();
+    virtual ~Message() { }
     /// Destructor
 
     MessageHeader & getHeader();
@@ -59,4 +59,4 @@ inline void Message::setContentLength(Int32 length)
 }
 
 }
-} // namespace DB::MongoDB
+}

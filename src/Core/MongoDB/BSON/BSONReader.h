@@ -52,4 +52,4 @@ inline std::string BSONReader::readCString()
 
 
 }
-} // namespace DB::BSON
+}

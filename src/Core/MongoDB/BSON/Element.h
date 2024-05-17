@@ -138,46 +138,48 @@ struct ElementTraits<std::string>
 
     static std::string toString(const std::string & value)
     {
+        WriteBufferFromOwnString writer;
         std::ostringstream oss;
 
-        oss << '\'';
+        writeChar('\'', writer);
 
         for (char it : value)
         {
             switch (it)
             {
                 case '"':
-                    oss << "\\\"";
+                    writeText("\\\"", writer);
                     break;
                 case '\\':
-                    oss << "\\\\";
+                    writeText("\\\\", writer);
                     break;
                 case '\b':
-                    oss << "\\b";
+                    writeText("\\b", writer);
                     break;
                 case '\f':
-                    oss << "\\f";
+                    writeText("\\f", writer);
                     break;
                 case '\n':
-                    oss << "\\n";
+                    writeText("\\n", writer);
                     break;
                 case '\r':
-                    oss << "\\r";
+                    writeText("\\r", writer);
                     break;
                 case '\t':
-                    oss << "\\t";
+                    writeText("\\t", writer);
                     break;
                 default: {
                     if (it > 0 && it <= 0x1F)
-                        oss << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << static_cast<int>(it);
+                        writeText(fmt::format("\\u{}", static_cast<int>(it)), writer); // FIXME make string like one line lower
+                    // oss << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << static_cast<int>(it);
                     else
-                        oss << it;
+                        writeChar(it, writer);
                     break;
                 }
             }
         }
-        oss << '\'';
-        return oss.str();
+        writeChar('\'', writer);
+        return writer.str();
     }
 
     static std::string fromString(const std::string & str) { return str; }
@@ -460,4 +462,4 @@ inline Int32 BSONWriter::getLength<NullValue>(const NullValue &)
 
 
 }
-} // namespace DB::BSON
+}

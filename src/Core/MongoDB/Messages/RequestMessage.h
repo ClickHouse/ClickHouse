@@ -18,26 +18,13 @@ public:
 
     explicit RequestMessage(const MessageHeader & header_) : Message(header_) { }
 
-    ~RequestMessage() override;
+    ~RequestMessage() override { }
     /// Destroys the RequestMessage.
 
     virtual void read(ReadBuffer & reader) = 0;
 
     virtual std::string toString() const = 0;
-
-    // protected:
-    //     virtual Int32 getLength() const = 0;
-    //     virtual void writeContent(WriteBuffer& writer) const = 0;
 };
 
-
-// void RequestMessage::send(WriteBuffer& writer)
-// {
-// 	Int32 size = getLength();
-// 	setMessageLength(size);
-// 	header.write(writer);
-// 	writeContent(writer);
-// }
-
 }
-} // namespace DB::MongoDB
+}

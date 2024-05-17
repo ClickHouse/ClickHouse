@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Document.h"
+#include "../BSON/Document.h"
 #include "AggregateHandler.h"
 #include "FindHandler.h"
 
@@ -26,4 +26,4 @@ BSON::Document::Ptr handleAtlasCLI(Command::Ptr command);
 BSON::Document::Ptr handleError(const std::string & err_what);
 
 }
-} // namespace DB::MongoDB
+}

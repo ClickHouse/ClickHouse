@@ -157,19 +157,21 @@ std::vector<BSON::Element::Ptr> Document::deconstruct() &&
 
 std::string Document::toString() const
 {
-    std::ostringstream oss;
-    oss << '{';
-    for (ElementSet::const_iterator it = elements.begin(); it != elements.end(); ++it)
+    WriteBufferFromOwnString writer;
+    writeChar('{', writer);
+    for (size_t i = 0; i < elements.size(); i++)
     {
-        if (it != elements.begin())
-            oss << ',';
+        if (i != 0)
+            writeChar(',', writer);
 
-        oss << '"' << (*it)->getName() << '"';
-        oss << ":";
-        oss << (*it)->toString();
+        writeChar('"', writer);
+        writeText(elements[i]->getName(), writer);
+        writeChar('"', writer);
+        writeChar(':', writer);
+        writeText(elements[i]->toString(), writer);
     }
-    oss << '}';
-    return oss.str();
+    writeChar('}', writer);
+    return writer.str();
 }
 
 Document::Document(Document && other) noexcept
@@ -185,4 +187,4 @@ Document & Document::operator=(Document && other) noexcept
 
 
 }
-} // namespace DB::MongoDB
+}

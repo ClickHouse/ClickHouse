@@ -137,4 +137,4 @@ inline Int32 BSONWriter::getLength<Array::Ptr>(const Array::Ptr & t)
     return t->getLength();
 }
 }
-} // namespace DB::BSON
+}

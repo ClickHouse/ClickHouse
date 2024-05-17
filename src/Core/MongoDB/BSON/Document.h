@@ -360,4 +360,4 @@ inline Int32 BSONWriter::getLength<Document::Vector>(const Document::Vector & t)
 
 
 }
-} // namespace DB::BSON
+}

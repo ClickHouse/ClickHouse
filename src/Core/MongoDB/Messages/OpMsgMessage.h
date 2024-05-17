@@ -2,7 +2,7 @@
 
 #include <string>
 #include <IO/WriteBuffer.h>
-#include "Document.h"
+#include "../BSON/Document.h"
 #include "Message.h"
 #include "RequestMessage.h"
 
@@ -153,4 +153,4 @@ inline void OpMsgMessage::setBody(BSON::Document::Ptr body_)
 }
 
 }
-} // namespace DB::MongoDB
+}

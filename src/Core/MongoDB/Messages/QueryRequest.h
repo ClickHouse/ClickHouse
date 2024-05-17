@@ -4,8 +4,8 @@
 #include <base/types.h>
 #include <Poco/SharedPtr.h>
 #include <Common/logger_useful.h>
-#include "Array.h"
-#include "Document.h"
+#include "../BSON/Array.h"
+#include "../BSON/Document.h"
 #include "RequestMessage.h"
 
 namespace DB
@@ -107,10 +107,6 @@ public:
 
     std::string toString() const override;
 
-    // protected:
-    //     Int32 getLength() const override;
-    //     void writeContent(WriteBuffer & write_buffer ) const override;
-
 private:
     Flags flags;
     String full_collection_name;
@@ -120,32 +116,5 @@ private:
     BSON::Document::Ptr return_field_selector;
 };
 
-
-// Int32 QueryRequest::getLength() const
-// {
-// 	// TODO add some kind of checks
-// 	Int32 length = sizeof(flags);
-// 	length += full_collection_name.size();
-// 	length += sizeof(number_to_skip);
-// 	length += sizeof(number_to_return);
-// 	length += selector->getLength();
-// 	length += return_field_selector->getLength();
-// 	return length;
-// }
-
-// void QueryRequest::writeContent(WriteBuffer& writer) const
-// {
-// 	writeIntBinary(static_cast<Int32>(flags), writer);
-// 	writeNullTerminatedString(full_collection_name, writer);
-// 	writeIntBinary(number_to_skip, writer);
-// 	writeIntBinary(number_to_return, writer);
-// 	selector->write(writer);
-// 	if (!return_field_selector->empty())
-// 	{
-// 		return_field_selector->write(writer);
-// 	}
-// }
-
-
 }
-} // namespace DB::MongoDB
+}

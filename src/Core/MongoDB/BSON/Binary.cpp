@@ -63,4 +63,4 @@ Poco::UUID Binary::uuid() const
 
 
 }
-} // namespace DB::BSON
+}

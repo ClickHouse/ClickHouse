@@ -67,4 +67,4 @@ void ProjectionMap::add(const std::string & column_name, bool status)
 
 
 }
-} // namespace DB::MongoDB
+}

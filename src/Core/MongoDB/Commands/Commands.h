@@ -7,10 +7,10 @@
 #include <Poco/StringTokenizer.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include "../Array.h"
-#include "../Binary.h"
-#include "../ObjectId.h"
-#include "../OpMsgMessage.h"
+#include "../BSON/Array.h"
+#include "../BSON/Binary.h"
+#include "../BSON/ObjectId.h"
+#include "../Messages/OpMsgMessage.h"
 #include "ProjectionMap.h"
 
 namespace DB
@@ -124,4 +124,4 @@ launchQuery(std::string && query, ContextMutablePtr context, const std::string &
 std::vector<std::string> getColumnsFromTable(ContextMutablePtr context, const std::string & table_name);
 
 }
-} // namespace DB::MongoDB
+}

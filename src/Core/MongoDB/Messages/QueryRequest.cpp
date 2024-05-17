@@ -4,9 +4,9 @@
 #include <Loggers/Loggers.h>
 #include <base/types.h>
 #include <fmt/format.h>
-#include "BSONReader.h"
-#include "BSONWriter.h"
-#include "Document.h"
+#include "../BSON/BSONReader.h"
+#include "../BSON/BSONWriter.h"
+#include "../BSON/Document.h"
 #include "RequestMessage.h"
 
 
@@ -122,4 +122,4 @@ std::string QueryRequest::toString() const
 }
 
 }
-} // namespace DB::MongoDB
+}

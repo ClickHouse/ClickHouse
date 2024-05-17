@@ -36,7 +36,6 @@ public:
                 LOG_INFO(log, "Unknown OpCode {}", static_cast<int>(header.getOpCode()));
                 throw Poco::NotImplementedException("Unknown OpCode");
         }
-        LOG_INFO(log, "Parsed OPcode: {}, request_id: {}, starting reading", static_cast<Int32>(header.getOpCode()), header.getRequestID());
         message->read(reader);
         LOG_INFO(log, "Successfully read message: request_id: {}, payload: {}", header.getRequestID(), message->toString());
         return message;
@@ -49,4 +48,4 @@ private:
 
 
 }
-} // namespace DB::MongoDB
+}

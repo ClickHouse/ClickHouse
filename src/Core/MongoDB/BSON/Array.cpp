@@ -23,16 +23,16 @@ Element::Ptr Array::get(std::size_t pos) const
 
 std::string Array::toString() const
 {
-    std::ostringstream oss;
-    oss << "[";
-    for (ElementSet::const_iterator it = elements.begin(); it != elements.end(); ++it)
+    WriteBufferFromOwnString writer;
+    writeChar('[', writer);
+    for (size_t i = 0; i < elements.size(); i++)
     {
-        if (it != elements.begin())
-            oss << ",";
-        oss << (*it)->toString();
+        if (i != 0)
+            writeChar(',', writer);
+        writeText(elements[i]->toString(), writer);
     }
-    oss << "]";
-    return oss.str();
+    writeChar(']', writer);
+    return writer.str();
 }
 }
-} // Namespace DB::BSON
+}

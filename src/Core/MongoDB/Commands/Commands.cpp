@@ -224,4 +224,4 @@ std::vector<std::string> getColumnsFromTable(ContextMutablePtr context, const st
 }
 
 }
-} // namespace DB::MongoDB
+}

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/MongoDB/MessageWriter.h>
-#include <Core/MongoDB/OpMsgMessage.h>
+#include <Core/MongoDB/Messages/MessageWriter.h>
+#include <Core/MongoDB/Messages/OpMsgMessage.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include "Common/ProfileEvents.h"
 #include <Common/CurrentMetrics.h>

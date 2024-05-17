@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../Document.h"
-#include "../Element.h"
+#include "../BSON/Document.h"
+#include "../BSON/Element.h"
 
 namespace DB
 {
@@ -64,4 +64,4 @@ inline bool ProjectionMap::isIncluded(size_t ind) const
 }
 
 }
-} // namespace DB::MongoDB
+}

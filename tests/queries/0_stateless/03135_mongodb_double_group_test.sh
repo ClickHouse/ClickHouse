@@ -13,5 +13,5 @@ EOF
 cat <<EOF | ${MONGODB_CLIENT} --quiet
 use ${CLICKHOUSE_DATABASE};
 db.aggr.aggregate([{\$group: {_id: {name: "\$name", age: "\$age"}}}, {\$group: {_id: "\$_id.age", c: {\$sum : 1}}}, {\$sort : {c: -1, age: -1}}]);
-db.aggr.aggregate([{\$match: {name : {\$ne: "Alex"}}},{\$group: {_id: {name: "\$name", age: "\$age"}}}, {\$group: {_id: "\$_id.age", c: {\$sum : 1}}}, {\$sort : {c : -1}}]);
+db.aggr.aggregate([{\$match: {name : {\$ne: "Alex"}}},{\$group: {_id: {name: "\$name", age: "\$age"}}}, {\$group: {_id: "\$_id.age", c: {\$sum : 1}}}, {\$sort : {age : -1}}]);
 EOF

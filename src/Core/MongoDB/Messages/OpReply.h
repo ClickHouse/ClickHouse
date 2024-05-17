@@ -4,8 +4,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
-#include "BSONWriter.h"
-#include "Document.h"
+#include "../BSON/BSONWriter.h"
+#include "../BSON/Document.h"
 #include "RequestMessage.h"
 
 
@@ -64,4 +64,4 @@ inline OpReply & OpReply::setNumberReturned(Int32 number_returned_)
 }
 
 }
-} // namespace DB::MongoDB
+}

@@ -56,4 +56,4 @@ BSON::Document::Ptr handleFind(Command::Ptr command, ContextMutablePtr context)
 }
 
 }
-} // namespace DB::MongoDB
+}
