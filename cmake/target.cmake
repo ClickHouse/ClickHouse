@@ -41,10 +41,7 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_ICU OFF CACHE INTERNAL "")
         set (ENABLE_FASTOPS OFF CACHE INTERNAL "")
     elseif (OS_LINUX OR OS_ANDROID)
-        if (ARCH_AARCH64)
-            # FIXME: broken dependencies
-            set (ENABLE_GRPC OFF CACHE INTERNAL "")
-        elseif (ARCH_PPC64LE)
+        if (ARCH_PPC64LE)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
         elseif (ARCH_RISCV64)
             # RISC-V support is preliminary
