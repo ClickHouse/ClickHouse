@@ -711,7 +711,7 @@ BlockIO InterpreterInsertQuery::execute()
                         table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
                         table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
                         presink_chains.size());
-                
+
                 chain.addSource(std::move(balancing));
             }
             else
@@ -723,7 +723,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 chain.addSource(std::move(squashing));
             }
-            
+
         }
 
         auto context_ptr = getContext();

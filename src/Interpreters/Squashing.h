@@ -58,14 +58,11 @@ private:
 class ApplySquashing
 {
 public:
-    ApplySquashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    explicit ApplySquashing(Block header_);
 
     Block add(Chunk && input_chunk);
 
 private:
-    size_t min_block_size_rows;
-    size_t min_block_size_bytes;
-
     Block accumulated_block;
     const Block header;
 
@@ -73,7 +70,7 @@ private:
 
     const ChunksToSquash * getInfoFromChunk(const Chunk & chunk);
 
-    void append(Chunk && input_chunk);
+    void append(const std::vector<Chunk> & input_chunk);
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;
