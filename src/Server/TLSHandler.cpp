@@ -61,8 +61,8 @@ DB::TLSHandler::TLSHandler(const StreamSocket & socket, const LayeredConfigurati
                 disabled_protocols |= Context::PROTO_TLSV1_2;
         }
 
-	    extended_verification = config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false);
-	    prefer_server_ciphers = config.getBool(prefix + SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
+        extended_verification = config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false);
+        prefer_server_ciphers = config.getBool(prefix + SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
     }
 #endif
 }

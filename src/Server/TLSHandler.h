@@ -42,9 +42,9 @@ public:
         {
             ctx = new Context(usage, params);
             ctx->disableProtocols(disabled_protocols);
-		    ctx->enableExtendedCertificateVerification(extended_verification);
+            ctx->enableExtendedCertificateVerification(extended_verification);
             if (prefer_server_ciphers)
-		        ctx->preferServerCiphers();
+                ctx->preferServerCiphers();
         }
         socket() = SecureStreamSocket::attach(socket(), ctx);
         stack_data.socket = socket();
