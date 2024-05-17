@@ -41,9 +41,9 @@ public:
         if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
         {
             ctx = new Context(usage, params);
-            ctx->disableProtocols(disabledProtocols);
-		    ctx->enableExtendedCertificateVerification(extendedVerification);
-            if (preferServerCiphers)
+            ctx->disableProtocols(disabled_protocols);
+		    ctx->enableExtendedCertificateVerification(extended_verification);
+            if (prefer_server_ciphers)
 		        ctx->preferServerCiphers();
         }
         socket() = SecureStreamSocket::attach(socket(), ctx);
@@ -56,9 +56,9 @@ public:
 private:
     Context::Params params [[maybe_unused]];
     Context::Usage usage [[maybe_unused]];
-    int disabledProtocols = 0;
-    bool extendedVerification = false;
-    bool preferServerCiphers = false;
+    int disabled_protocols = 0;
+    bool extended_verification = false;
+    bool prefer_server_ciphers = false;
     TCPProtocolStackData & stack_data [[maybe_unused]];
 };
 

@@ -29,14 +29,14 @@ DB::TLSHandler::TLSHandler(const StreamSocket & socket, const LayeredConfigurati
         params.cipherList = config.getString(prefix + SSLManager::CFG_CIPHER_LIST, SSLManager::VAL_CIPHER_LIST);
         params.cipherList = config.getString(prefix + SSLManager::CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
 
-        bool requireTLSv1 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1, false);
-        bool requireTLSv1_1 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_1, false);
-        bool requireTLSv1_2 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_2, false);
-        if (requireTLSv1_2)
+        bool require_tlsv1 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1, false);
+        bool require_tlsv1_1 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_1, false);
+        bool require_tlsv1_2 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_2, false);
+        if (require_tlsv1_2)
             usage = Context::TLSV1_2_SERVER_USE;
-        else if (requireTLSv1_1)
+        else if (require_tlsv1_1)
             usage = Context::TLSV1_1_SERVER_USE;
-        else if (requireTLSv1)
+        else if (require_tlsv1)
             usage = Context::TLSV1_SERVER_USE;
         else
             usage = Context::SERVER_USE;
@@ -44,25 +44,25 @@ DB::TLSHandler::TLSHandler(const StreamSocket & socket, const LayeredConfigurati
         params.dhParamsFile = config.getString(prefix + SSLManager::CFG_DH_PARAMS_FILE, "");
         params.ecdhCurve    = config.getString(prefix + SSLManager::CFG_ECDH_CURVE, "");
 
-        std::string disabledProtocolsList = config.getString(prefix + SSLManager::CFG_DISABLE_PROTOCOLS, "");
-        Poco::StringTokenizer dpTok(disabledProtocolsList, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
-        disabledProtocols = 0;
-        for (Poco::StringTokenizer::Iterator it = dpTok.begin(); it != dpTok.end(); ++it)
+        std::string disabled_protocols_list = config.getString(prefix + SSLManager::CFG_DISABLE_PROTOCOLS, "");
+        Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
+        disabled_protocols = 0;
+        for (Poco::StringTokenizer::Iterator it = dp_tok.begin(); it != dp_tok.end(); ++it)
         {
             if (*it == "sslv2")
-                disabledProtocols |= Context::PROTO_SSLV2;
+                disabled_protocols |= Context::PROTO_SSLV2;
             else if (*it == "sslv3")
-                disabledProtocols |= Context::PROTO_SSLV3;
+                disabled_protocols |= Context::PROTO_SSLV3;
             else if (*it == "tlsv1")
-                disabledProtocols |= Context::PROTO_TLSV1;
+                disabled_protocols |= Context::PROTO_TLSV1;
             else if (*it == "tlsv1_1")
-                disabledProtocols |= Context::PROTO_TLSV1_1;
+                disabled_protocols |= Context::PROTO_TLSV1_1;
             else if (*it == "tlsv1_2")
-                disabledProtocols |= Context::PROTO_TLSV1_2;
+                disabled_protocols |= Context::PROTO_TLSV1_2;
         }
 
-	    extendedVerification = config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false);
-	    preferServerCiphers = config.getBool(prefix + SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
+	    extended_verification = config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false);
+	    prefer_server_ciphers = config.getBool(prefix + SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
     }
 #endif
 }
