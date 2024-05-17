@@ -165,6 +165,21 @@ class ClickHouseVersion:
         self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
 
+    def copy(self) -> "ClickHouseVersion":
+        copy = ClickHouseVersion(
+            self.major,
+            self.minor,
+            self.patch,
+            self.revision,
+            self._git,
+            str(self.tweak),
+        )
+        try:
+            copy.with_description(self.description)
+        except ValueError:
+            pass
+        return copy
+
     def __eq__(self, other: Any) -> bool:
         if not isinstance(self, type(other)):
             return NotImplemented
