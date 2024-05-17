@@ -288,6 +288,7 @@
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
     \
     M(AddressesActive, "Total count of addresses which are used for creation connections with connection pools") \
+    M(AddressesBanned, "Total count of addresses which are banned as faulty for creation connections with connection pools") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
