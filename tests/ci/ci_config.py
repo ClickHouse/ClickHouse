@@ -175,8 +175,8 @@ class JobNames(metaclass=WithIter):
     COMPATIBILITY_TEST = "Compatibility check (amd64)"
     COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
-    CLCIKBENCH_TEST = "ClickBench (amd64)"
-    CLCIKBENCH_TEST_ARM = "ClickBench (aarch64)"
+    CLICKBENCH_TEST = "ClickBench (amd64)"
+    CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
@@ -1361,10 +1361,10 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_RELEASE, job_config=sqllogic_test_params
         ),
         JobNames.SQLTEST: TestConfig(Build.PACKAGE_RELEASE, job_config=sql_test_params),
-        JobNames.CLCIKBENCH_TEST: TestConfig(
+        JobNames.CLICKBENCH_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
-        JobNames.CLCIKBENCH_TEST_ARM: TestConfig(
+        JobNames.CLICKBENCH_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
         JobNames.LIBFUZZER_TEST: TestConfig(
