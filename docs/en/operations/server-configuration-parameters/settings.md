@@ -3010,3 +3010,21 @@ This setting is only necessary for the migration period and will become obsolete
 Type: Bool
 
 Default: 1
+
+## merge_workload {#merge_workload}
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload {#mutation_workload}
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
+
+Default value: "default"
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)

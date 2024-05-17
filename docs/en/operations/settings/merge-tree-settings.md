@@ -885,3 +885,21 @@ Default value: false
 **See Also**
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
+
+## merge_workload
+
+Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for background merges of this table. If not specified (empty string), then server setting `merge_workload` is used instead.
+
+Default value: an empty string
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## mutation_workload
+
+Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for background mutations of this table. If not specified (empty string), then server setting `mutation_workload` is used instead.
+
+Default value: an empty string
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
