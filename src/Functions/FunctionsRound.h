@@ -243,8 +243,6 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
     }
-
-    UNREACHABLE();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -256,8 +254,6 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
     }
-
-    UNREACHABLE();
 }
 
 template <typename T>
