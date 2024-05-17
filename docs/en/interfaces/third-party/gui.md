@@ -222,6 +222,17 @@ Features:
 - Useful tools: Zookeeper data exploration, query EXPLAIN, kill queries, etc.
 - Visualization metric charts: queries and resource usage, number of merges/mutation, merge performance, query performance, etc.
 
+### ch-ui {#ch-ui}
+
+[ch-ui](https://github.com/caioricciuti/ch-ui) is a simple React.js app interface for ClickHouse databases, designed for executing queries and visualizing data. Built with React and the ClickHouse client for web, it offers a sleek and user-friendly UI for easy database interactions.
+
+Features:
+
+- ClickHouse Integration: Easily manage connections and execute queries.
+- Responsive Tab Management: Dynamically handle multiple tabs, such as query and table tabs.
+- Performance Optimizations: Utilize IndexedDB for efficient caching and state management.
+- Local Data Storage: All data is stored locally in the browser, ensuring no data is sent anywhere else.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}
