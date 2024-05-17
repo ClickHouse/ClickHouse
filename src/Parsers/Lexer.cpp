@@ -41,6 +41,8 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             ++pos;
             continue;
         }
+
+        chassert(false);
     }
 }
 

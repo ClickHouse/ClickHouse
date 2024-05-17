@@ -146,6 +146,7 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::CustomType:
             return Field();
     }
+    UNREACHABLE();
 }
 
 void readBinary(Array & x, ReadBuffer & buf)

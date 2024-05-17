@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 ClusterUpdateActions joiningToClusterUpdates(const ClusterConfigPtr & cfg, std::string_view joining)
@@ -85,7 +85,7 @@ String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateA
             new_config.emplace_back(RaftServerConfig{*cfg->get_server(priority->id)});
         }
         else
-            throw Exception(ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR, "Unexpected update");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected update");
     }
 
     for (const auto & item : cfg->get_servers())

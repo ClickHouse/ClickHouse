@@ -142,9 +142,9 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -163,7 +163,7 @@ inline Int64 getMaxValueForByteSize(Int8 byte_size)
         case sizeof(UInt64):
             return std::numeric_limits<Int64>::max();
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "only 1, 2, 4 and 8 data sizes are supported");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "only 1, 2, 4 and 8 data sizes are supported");
     }
 }
 
