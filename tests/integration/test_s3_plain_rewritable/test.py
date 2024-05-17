@@ -80,6 +80,36 @@ def test_insert():
             == insert_values_arr[i]
         )
 
+    for i in range(NUM_WORKERS):
+        nodes[i].query("ALTER TABLE test MODIFY SETTING old_parts_lifetime = 59")
+        assert (
+            nodes[i]
+            .query(
+                "SELECT engine_full from system.tables WHERE database = currentDatabase() AND name = 'test'"
+            )
+            .find("old_parts_lifetime = 59")
+            != -1
+        )
+
+        nodes[i].query("ALTER TABLE test RESET SETTING old_parts_lifetime")
+        assert (
+            nodes[i]
+            .query(
+                "SELECT engine_full from system.tables WHERE database = currentDatabase() AND name = 'test'"
+            )
+            .find("old_parts_lifetime")
+            == -1
+        )
+        nodes[i].query("ALTER TABLE test MODIFY COMMENT 'new description'")
+        assert (
+            nodes[i]
+            .query(
+                "SELECT comment from system.tables WHERE database = currentDatabase() AND name = 'test'"
+            )
+            .find("new description")
+            != -1
+        )
+
 
 @pytest.mark.order(1)
 def test_restart():
