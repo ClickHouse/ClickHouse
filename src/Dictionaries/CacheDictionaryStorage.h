@@ -689,7 +689,11 @@ private:
             auto fetched_key = fetched_keys[fetched_key_index];
 
             if (unlikely(fetched_key.is_default))
+            {
                 default_mask[fetched_key_index] = 1;
+                auto v = ValueType{};
+                value_setter(v);
+            }
             else
             {
                 default_mask[fetched_key_index] = 0;

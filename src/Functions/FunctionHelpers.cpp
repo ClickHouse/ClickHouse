@@ -313,11 +313,12 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments [[maybe
         {
             size_t expected_size = arguments[0].column->size();
 
+            /// TODO: Function name in the message?
             for (size_t i = 1; i < arguments.size(); i++)
                 if (!isColumnConst(*arguments[i].column) && arguments[i].column->size() != expected_size)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Expected the #{} column ({} of type {}) to have {} rows, but it has {}",
+                        "Expected the argument nº#{} ('{}' of type {}) to have {} rows, but it has {}",
                         i + 1,
                         arguments[i].name,
                         arguments[i].type->getName(),
