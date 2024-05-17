@@ -405,7 +405,7 @@ public:
 
     /// Decide if we use the min/max optimization. `max < min` means the FixedHashtable is empty. The flag `use_emplace_to_insert_data`
     /// will check if the FixedHashTable will use `emplace()` to insert the raw data.
-    bool ALWAYS_INLINE use_min_max_optimization() const {return ((max >= min) && use_emplace_to_insert_data);}
+    bool ALWAYS_INLINE canUseMinMaxOptimization() const {return ((max >= min) && use_emplace_to_insert_data);}
 
     void write(DB::WriteBuffer & wb) const
     {
