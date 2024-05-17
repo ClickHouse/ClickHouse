@@ -6,11 +6,6 @@
 #include <base/defines.h>
 
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace DB
 {
     class RestoreChunkInfosTransform : public ISimpleTransform
