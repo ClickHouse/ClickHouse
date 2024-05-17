@@ -8,8 +8,8 @@ CLICKHOUSE_LOG_COMMENT=
 . "$CUR_DIR"/../shell_config.sh
 
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 "
 
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 --index_granularity_bytes 10485760 --merge_max_block_size 8192 --merge_max_block_size_bytes=10485760 --index_granularity 8192"
 function test()
 {
     echo "test"

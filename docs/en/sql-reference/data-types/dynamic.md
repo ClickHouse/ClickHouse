@@ -14,7 +14,7 @@ To declare a column of `Dynamic` type, use the following syntax:
 <column_name> Dynamic(max_types=N)
 ```
 
-Where `N` is an optional parameter between `1` and `255` indicating how many different data types can be stored inside a column with type `Dynamic`. If this limit is exceeded, all new types will be converted to type `String`. Default value of `max_types` is `32`.
+Where `N` is an optional parameter between `1` and `255` indicating how many different data types can be stored inside a column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all new types will be converted to type `String`. Default value of `max_types` is `32`.
 
 :::note
 The Dynamic data type is an experimental feature. To use it, set `allow_experimental_dynamic_type = 1`.
@@ -355,7 +355,7 @@ SELECT * FROM test WHERE d2 == [1,2,3]::Array(UInt32)::Dynamic;
 - Compare `Dynamic` subcolumn with required type:
 
 ```sql
-SELECT * FROM test WHERE d2.`Array(Int64)` == [1,2,3] -- or using variantElement(d2, 'Array(UInt32)')
+SELECT * FROM test WHERE d2.`Array(Int65)` == [1,2,3] -- or using variantElement(d2, 'Array(UInt32)')
 ```
 
 ```text

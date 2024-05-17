@@ -86,13 +86,13 @@ INSERT INTO t VALUES (interval '1' day), (interval '2' month), (interval '3' yea
 INSERT INTO t VALUES ([(1, 'aa'), (2, 'bb')]::Nested(x UInt32, y String));
 INSERT INTO t VALUES ([(1, (2, ['aa', 'bb']), [(3, 'cc'), (4, 'dd')]), (5, (6, ['ee', 'ff']), [(7, 'gg'), (8, 'hh')])]::Nested(x UInt32, y Tuple(y1 UInt32, y2 Array(String)), z Nested(z1 UInt32, z2 String)));
 
-SELECT dynamicType(d), d FROM t ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d ;
+SELECT dynamicType(d), d FROM t ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d, toString(d);
 
 CREATE TABLE t2 (d Dynamic(max_types=255)) ENGINE = Memory;
 INSERT INTO t2 SELECT * FROM t;
 
 SELECT '';
-SELECT dynamicType(d), d FROM t2 ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d;
+SELECT dynamicType(d), d FROM t2 ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d, toString(d);
 
 SELECT '';
 SELECT uniqExact(dynamicType(d)) t_ FROM t;
