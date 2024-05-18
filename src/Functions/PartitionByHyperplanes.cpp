@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <sys/syscall.h>
 #include <base/types.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -21,6 +22,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/IDataType.h>
 #include <config.h>
+
 
 #if defined(__AMX_BF16__)
 #include <immintrin.h>
@@ -64,6 +66,8 @@ DECLARE_DEFAULT_CODE(
 ) // DECLARE_DEFAULT_CODE
 
 DECLARE_AMXBF16_SPECIFIC_CODE(
+    static std::vector<uint16_t> bufA(2 * tile_size * tile_size), bufB(2 * tile_size * tile_size);
+
     // Config for AMX unit
     struct TileConfig
     {
@@ -74,6 +78,45 @@ DECLARE_AMXBF16_SPECIFIC_CODE(
         uint8_t rows[16]; // actual row count
     };
 
+    void doMultiplyConvertedTile(size_t K, const uint16_t* A0, const uint16_t* A1,
+        const uint16_t* B0, const uint16_t* B1,
+        float* C, size_t ldc)
+    {
+        _tile_stream_loadd(0, C, ldc * 4);
+        _tile_stream_loadd(1, C + 16, ldc * 4);
+        _tile_stream_loadd(2, C + 16 * ldc, ldc * 4);
+        _tile_stream_loadd(3, C + 16 * ldc + 16, ldc * 4);
+
+        for (size_t k = 0; k < K; k += tile_size) {
+            _tile_stream_loadd(4, A0 + k * 16, 64);
+            _tile_stream_loadd(5, A1 + k * 16, 64);
+            _tile_loadd(6, B0 + k * 16, 64);
+            _tile_loadd(7, B1 + k * 16, 64);
+            _tile_dpbf16ps(0, 4, 6);
+            _tile_dpbf16ps(1, 4, 7);
+            _tile_dpbf16ps(2, 5, 6);
+            _tile_dpbf16ps(3, 5, 7);
+        }
+
+        _tile_stored(0, C, ldc * 4);
+        _tile_stored(1, C + 16, ldc * 4);
+        _tile_stored(2, C + 16 * ldc, ldc * 4);
+        _tile_stored(3, C + 16 * ldc + 16, ldc * 4);
+    }
+
+    void convert(const float* src, uint16_t* dst)
+    {
+        __m512 s0 = _mm512_loadu_ps(src + 0 * 16);
+        __m512 s1 = _mm512_loadu_ps(src + 1 * 16);
+        _mm512_storeu_si512(dst, _mm512_cvtne2ps_pbh(s1, s0));
+    }
+
+    void convert(size_t K, const float* A, size_t lda, uint16_t* buf)
+    {
+        for (size_t k = 0; k < K; k += tile_size, A += tile_size)
+            for (size_t i = 0; i < 16; ++i, buf += tile_size)
+                convert(A + i * lda, buf);
+    }
     void doMultiplyTile(
         const ColumnFloat32 & nested_vectors_data,
         const ColumnFloat32 & nested_normals_data,
@@ -100,28 +143,29 @@ DECLARE_AMXBF16_SPECIFIC_CODE(
             tileinfo.colsb[2] = tile_size;
 
             _tile_loadconfig(&tileinfo);
+
+            const int ARCH_REQ_XCOMP_PERM = 0x1023;
+            const int XFEATURE_XTILEDATA = 18;
+            syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA);
+
             return 0;
         }();
         (void)load_config;
 
-        _tile_loadd(
-            0,
+        auto* vector_data = nested_vectors_data.getData().data() + vectors_data_index * dimension + coordinate_index;
+        auto* normals_data = nested_normals_data.getData().data() + normals_data_index * dimension + coordinate_index;
+
+        convert(dimension, normals_data + 0, vector_count, bufB.data());
+        convert(dimension, normals_data + tile_size, vector_count, bufB.data() + tile_size * tile_size);
+        convert(dimension, vector_data, normal_count, bufA.data());
+        convert(dimension, vector_data + tile_size, normal_count, bufA.data() + tile_size * tile_size);
+
+        doMultiplyConvertedTile(
+            dimension,
+            bufA.data(), bufA.data() + tile_size * tile_size,
+            bufB.data(), bufB.data() + tile_size * tile_size,
             col_res.getData().data() + vectors_data_index * normal_count + normals_data_index,
-            vector_count * col_res.sizeOfValueIfFixed());
-        _tile_loadd(
-            1,
-            nested_vectors_data.getData().data() + vectors_data_index * dimension + coordinate_index,
-            tile_size * nested_vectors_data.sizeOfValueIfFixed());
-        _tile_loadd(
-            2,
-            nested_normals_data.getData().data() + normals_data_index * dimension + coordinate_index,
-            dimension * nested_normals_data.sizeOfValueIfFixed());
-        // Multiply two tiles loaded to AMX registers
-        _tile_dpbf16ps(0, 1, 2);
-        _tile_stored(
-            0,
-            col_res.getData().data() + vectors_data_index * normal_count + normals_data_index,
-            vector_count * col_res.sizeOfValueIfFixed());
+            normal_count);
         _tile_release();
     }
 ) // DECLARE_AMX_SPECIFIC_CODE
