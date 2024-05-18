@@ -34,6 +34,9 @@ protected:
     using Widths = PODArray<size_t>;
     using WidthsPerColumn = std::vector<Widths>;
 
+    using BreakLinePosInRow = std::vector<std::deque<size_t>>;
+    using BreakLinePosInTable = std::vector<BreakLinePosInRow>;
+
     void write(Chunk chunk, PortKind port_kind);
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
@@ -44,15 +47,17 @@ protected:
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, size_t table_border_width);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths,
+        BreakLinePosInTable & break_line_pos_in_table, size_t table_border_width);
 
     void writeValueWithPadding(
-        String & value, size_t value_width, size_t pad_to_width, size_t cut_to_width,
-        bool align_right, bool is_number, bool has_break_line, bool is_transferred_value);
+        const IColumn & column, const ISerialization & serialization, size_t row_num,
+        size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number,
+        std::deque<size_t> & break_line_pos_in_value, size_t prefix, bool is_transferred_value);
 
-    void writeTransferredRow(const Widths & max_widths, const Block & header, std::vector<String> & transferred_row, size_t cut_to_width, bool space_block);
-
-    void splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width, size_t cut_to_width, size_t prefix);
+    void writeTransferredRow(
+        const Columns & columns, const Block & header, const WidthsPerColumn & widths, const Widths & max_widths,
+        BreakLinePosInRow & break_line_pos_in_row, size_t row_num, size_t cut_to_width, bool space_block);
 
     void resetFormatterImpl() override
     {
