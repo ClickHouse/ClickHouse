@@ -17,7 +17,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import PENDING, SUCCESS
 from synchronizer_utils import SYNC_BRANCH_PREFIX
-from tests.ci.env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 
 
 def main():

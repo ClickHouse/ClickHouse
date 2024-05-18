@@ -471,6 +471,7 @@ def trigger_mergeable_check(
     statuses: CommitStatuses,
     hide_url: bool = False,
     set_if_green: bool = False,
+    workflow_failed: bool = False,
 ) -> StatusType:
     """calculate and update StatusNames.MERGEABLE"""
     required_checks = [
@@ -500,6 +501,9 @@ def trigger_mergeable_check(
 
     if fail:
         description = "failed: " + ", ".join(fail)
+        state = FAILURE
+    elif workflow_failed:
+        description = "check workflow failures"
         state = FAILURE
     description = format_description(description)
 

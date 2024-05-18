@@ -886,9 +886,9 @@ class CiOptions:
                     for job in job_with_parents:
                         if job in jobs_to_do and job not in jobs_to_do_requested:
                             jobs_to_do_requested.append(job)
-            assert (
-                jobs_to_do_requested
-            ), f"Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
+            print(
+                f"WARNING: Include tags are set but no job configured - Invalid tags, probably [{self.include_keywords}]"
+            )
             if JobNames.STYLE_CHECK not in jobs_to_do_requested:
                 # Style check must not be omitted
                 jobs_to_do_requested.append(JobNames.STYLE_CHECK)
@@ -898,7 +898,7 @@ class CiOptions:
         if self.ci_sets:
             for tag in self.ci_sets:
                 label_config = CI_CONFIG.get_label_config(tag)
-                assert label_config, f"Unknonwn tag [{tag}]"
+                assert label_config, f"Unknown tag [{tag}]"
                 print(
                     f"NOTE: CI Set's tag: [{tag}], add jobs: [{label_config.run_jobs}]"
                 )

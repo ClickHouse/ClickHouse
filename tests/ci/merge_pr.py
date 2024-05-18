@@ -183,6 +183,12 @@ def parse_args() -> argparse.Namespace:
         help="if set, only update/set Mergeable Check status",
     )
     parser.add_argument(
+        "--wf-status",
+        type=str,
+        default="",
+        help="overall workflow status [success|failure]. used with --set-ci-status only",
+    )
+    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
@@ -237,10 +243,17 @@ def main():
     repo = gh.get_repo(args.repo)
 
     if args.set_ci_status:
+        assert args.wf_status in ("failure", "success")
         # set mergeable check status and exit
         commit = get_commit(gh, args.pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
-        trigger_mergeable_check(commit, statuses, hide_url=False, set_if_green=True)
+        trigger_mergeable_check(
+            commit,
+            statuses,
+            hide_url=False,
+            set_if_green=True,
+            workflow_failed=(args.wf_status != "success"),
+        )
         return
 
     # An ugly and not nice fix to patch the wrong organization URL,

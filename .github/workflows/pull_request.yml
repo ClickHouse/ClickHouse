@@ -140,13 +140,11 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
-  # Reports should by run even if Builds_1/2 fail, so put them separatly in wf (not in Tests_1/2)
+  # Reports should by run even if Builds_1/2 fail, so put them separately in wf (not in Tests_1/2)
   Builds_1_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
-    needs:
-      - RunConfig
-      - Builds_1
+    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse build check') }}
+    needs: [RunConfig, StyleCheck, Builds_1]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
@@ -154,10 +152,8 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   Builds_2_Report:
     # run report check for failed builds to indicate the CI error
-    if: ${{ !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse special build check') }}
-    needs:
-      - RunConfig
-      - Builds_2
+    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'ClickHouse special build check') }}
+    needs: [RunConfig, StyleCheck, Builds_2]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
@@ -165,7 +161,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
 
   CheckReadyForMerge:
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
@@ -176,7 +172,7 @@ jobs:
       - name: Check and set merge status
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --set-ci-status
+          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
 
   ################################# Stage Final #################################
   #
