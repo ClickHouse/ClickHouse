@@ -87,7 +87,8 @@ DECLARE_AMXBF16_SPECIFIC_CODE(
         _tile_stream_loadd(2, C + 16 * ldc, ldc * 4);
         _tile_stream_loadd(3, C + 16 * ldc + 16, ldc * 4);
 
-        for (size_t k = 0; k < K; k += tile_size) {
+        for (size_t k = 0; k < K; k += tile_size)
+        {
             _tile_stream_loadd(4, A0 + k * 16, 64);
             _tile_stream_loadd(5, A1 + k * 16, 64);
             _tile_loadd(6, B0 + k * 16, 64);
