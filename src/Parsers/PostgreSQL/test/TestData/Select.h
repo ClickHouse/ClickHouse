@@ -39,6 +39,16 @@ namespace DB::PostgreSQL::Testing
                         "Literal Bool_1"
     };
 
+    Test SelectAsterisk = {
+        "SELECT *",
+        "{\"version\":160001,\"stmts\":[{\"stmt\":{\"SelectStmt\":{\"targetList\":[{\"ResTarget\":{\"val\":{\"ColumnRef\":{\"fields\":[{\"A_Star\":{}}],\"location\":7}},\"location\":7}}],\"limitOption\":\"LIMIT_OPTION_DEFAULT\",\"op\":\"SETOP_NONE\"}}}]}",
+        "SelectWithUnionQuery (children 1) "
+            "ExpressionList (children 1) "
+                "SelectQuery (children 1) "
+                    "ExpressionList (children 1) "
+                        "Asterisk"
+    };
+
     Test SelectAsteriskFromTable = {
         "SELECT "
         " * "
