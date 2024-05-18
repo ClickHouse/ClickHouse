@@ -197,18 +197,21 @@ CREATE TABLE $db.source
 (
     a UInt64
 )
+ENGINE = MergeTree
 ORDER BY a;
 
 CREATE TABLE $db.destination1
 (
     `a` UInt64
 )
+ENGINE = MergeTree
 ORDER BY a;
 
 CREATE TABLE $db.destination2
 (
     `a` UInt64
 )
+ENGINE = MergeTree
 ORDER BY a;
 
 CREATE MATERIALIZED VIEW $db.mv1 TO $db.destination1
