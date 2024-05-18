@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 
 #include <Common/ArenaAllocator.h>
@@ -28,7 +28,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -40,7 +40,7 @@ struct GroupConcatDataBase
 {
     UInt64 size = 0;
     UInt64 allocated_size = 0;
-    bool is_empty = true;
+    bool is_state_empty = true;
     char * data = nullptr;
 
     void checkAndUpdateSize(UInt64 add, Arena * arena)
@@ -53,28 +53,19 @@ struct GroupConcatDataBase
         }
     }
 
+    void insertChar(const char * str, UInt64 str_size, Arena * arena)
+    {
+        checkAndUpdateSize(str_size, arena);
+        memcpy(data + size, str, str_size);
+        size += str_size;
+    }
+
     void insert(const IColumn * column, const DataTypePtr & data_type, size_t row_num, Arena * arena)
     {
         auto casted_column = castColumn({column->getPtr(), data_type, "tmp"}, std::make_shared<DataTypeString>());
         StringRef string = assert_cast<const ColumnString &>(*casted_column).getDataAt(row_num);
 
-        checkAndUpdateSize(string.size, arena);
-        memcpy(data + size, string.data, string.size);
-        size += string.size;
-    }
-
-    void insertStr(const String & str, Arena * arena)
-    {
-        checkAndUpdateSize(str.size(), arena);
-        memcpy(data + size, str.c_str(), str.size());
-        size += str.size();
-    }
-
-    void insertChar(const char * str, UInt64 cur_size, Arena * arena)
-    {
-        checkAndUpdateSize(cur_size, arena);
-        memcpy(data + size, str, cur_size);
-        size += cur_size;
+        insertChar(string.data, string.size, arena);
     }
 };
 
@@ -93,8 +84,9 @@ struct GroupConcatData<true> final : public GroupConcatDataBase
     using Allocator = MixedAlignedArenaAllocator<alignof(Offset), 4096>;
     using Offsets = PODArray<Offset, 32, Allocator>;
 
+    /// offset[i * 2] - beginning of the i-th column, offset[i * 2 + 1] - end of the i-th column
     Offsets offsets;
-    UInt64 count = 0;
+    UInt64 num_columns = 0;
 
     UInt64 getSize(size_t i) const { return offsets[i * 2 + 1] - offsets[i * 2]; }
 
@@ -103,14 +95,14 @@ struct GroupConcatData<true> final : public GroupConcatDataBase
     void insert(const IColumn * column, const DataTypePtr & data_type, size_t row_num, Arena * arena)
     {
         auto casted_column = castColumn({column->getPtr(), data_type, "tmp"}, std::make_shared<DataTypeString>());
-        StringRef string = assert_cast<const ColumnString &>(*casted_column).getDataAt(row_num);
+        StringRef string = assert_cast<const ColumnString &>(   *casted_column).getDataAt(row_num);
 
         checkAndUpdateSize(string.size, arena);
         memcpy(data + size, string.data, string.size);
         offsets.push_back(size, arena);
         size += string.size;
         offsets.push_back(size, arena);
-        count++;
+        num_columns++;
     }
 };
 
@@ -122,15 +114,15 @@ class GroupConcatImpl final
     using Data = GroupConcatData<has_limit>;
 
     DataTypePtr & data_type;
-    UInt64 max_elems;
-    const String & delimiter;
+    UInt64 limit;
+    const String delimiter;
 
 public:
-    GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_, const String & delimiter_)
+    GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
         : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
             {data_type_}, parameters_, std::make_shared<DataTypeString>())
         , data_type(this->argument_types[0])
-        , max_elems(max_elems_)
+        , limit(limit_)
         , delimiter(delimiter_)
     {
     }
@@ -142,45 +134,45 @@ public:
         auto & cur_data = this->data(place);
 
         if constexpr (has_limit)
-            if (cur_data.count >= max_elems)
+            if (cur_data.num_columns >= limit)
                 return;
 
-        if (!cur_data.is_empty)
-            cur_data.insertStr(delimiter, arena);
+        if (!cur_data.is_state_empty)
+            cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-        cur_data.is_empty = false;
+        cur_data.is_state_empty = false;
         cur_data.insert(columns[0], data_type, row_num, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
+    {   
         auto & cur_data = this->data(place);
         auto & rhs_data = this->data(rhs);
 
-        if (rhs_data.is_empty)
+        if (rhs_data.is_state_empty)
             return;
 
         if constexpr (has_limit)
         {
-            UInt64 new_elems_count = std::min(rhs_data.count, max_elems - cur_data.count);
+            UInt64 new_elems_count = std::min(rhs_data.num_columns, limit - cur_data.num_columns);
             for (UInt64 i = 0; i < new_elems_count; ++i)
             {
-                if (!cur_data.is_empty)
-                    cur_data.insertStr(delimiter, arena);
+                if (!cur_data.is_state_empty)
+                    cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-                cur_data.is_empty = false;
+                cur_data.is_state_empty = false;
                 cur_data.offsets.push_back(cur_data.size, arena);
                 cur_data.insertChar(rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i), arena);
-                cur_data.count++;
+                cur_data.num_columns++;
                 cur_data.offsets.push_back(cur_data.size, arena);
             }
         }
         else
         {
-            if (!cur_data.is_empty)
-                cur_data.insertStr(delimiter, arena);
+            if (!cur_data.is_state_empty)
+                cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-            cur_data.is_empty = false;
+            cur_data.is_state_empty = false;
             cur_data.insertChar(rhs_data.data, rhs_data.size, arena);
         }
     }
@@ -192,13 +184,13 @@ public:
         writeVarUInt(cur_data.size, buf);
         writeVarUInt(cur_data.allocated_size, buf);
 
-        writeBinary(cur_data.is_empty, buf);
+        writeBinary(cur_data.is_state_empty, buf);
 
         buf.write(cur_data.data, cur_data.size);
 
         if constexpr (has_limit)
         {
-            writeVarUInt(cur_data.count, buf);
+            writeVarUInt(cur_data.num_columns, buf);
             for (const auto & offset : cur_data.offsets)
                 writeVarUInt(offset, buf);
         }
@@ -211,14 +203,14 @@ public:
         readVarUInt(cur_data.size, buf);
         readVarUInt(cur_data.allocated_size, buf);
 
-        readBinary(cur_data.is_empty, buf);
+        readBinary(cur_data.is_state_empty, buf);
 
         buf.readStrict(cur_data.data, cur_data.size);
 
         if constexpr (has_limit)
         {
-            readVarUInt(cur_data.count, buf);
-            cur_data.offsets.resize_exact(cur_data.count * 2, arena);
+            readVarUInt(cur_data.num_columns, buf);
+            cur_data.offsets.resize_exact(cur_data.num_columns * 2, arena);
             for (auto & offset : cur_data.offsets)
                 readVarUInt(offset, buf);
         }
@@ -228,10 +220,10 @@ public:
     {
         auto & cur_data = this->data(place);
 
-        if (cur_data.is_empty)
+        if (cur_data.is_state_empty)
         {
-            auto & column_string = assert_cast<ColumnString &>(to);
-            column_string.insert(NULL);
+            auto column_nullable = IColumn::mutate(makeNullable(to.getPtr()));
+            column_nullable->insertDefault();
             return;
         }
 
@@ -248,14 +240,14 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
     assertUnary(name, argument_types);
 
     bool has_limit = false;
-    UInt64 max_elems = 0;
+    UInt64 limit = 0;
     String delimiter;
 
     if (parameters.size() > 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
             "Incorrect number of parameters for aggregate function {}, should be 0, 1 or 2", name);
 
-    if (parameters.size() >= 1)
+    if (!parameters.empty())
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::String)
@@ -266,21 +258,23 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
     if (parameters.size() == 2)
     {
         auto type = parameters[1].getType();
-        if (type != Field::Types::Int64 && type != Field::Types::UInt64)
-               throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second parameter for aggregate function {} should be positive number", name);
-
-        if ((type == Field::Types::Int64 && parameters[1].get<Int64>() <= 0) ||
-            (type == Field::Types::UInt64 && parameters[1].get<UInt64>() == 0))
+        if (type == Field::Types::Int64 || type == Field::Types::UInt64)
+        {
+            const auto get_limit = (type == Field::Types::Int64) ? parameters[1].get<Int64>() : parameters[1].get<UInt64>();
+            if (get_limit <= 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be positive number, got: {}", name, get_limit);
+        }
+        else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be positive number", name);
 
         has_limit = true;
-        max_elems = parameters[1].get<UInt64>();
+        limit = parameters[1].get<UInt64>();
     }
 
     if (has_limit)
-        return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, max_elems, delimiter);
+        return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, limit, delimiter);
     else
-        return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, max_elems, delimiter);
+        return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
 }
