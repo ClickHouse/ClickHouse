@@ -165,7 +165,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
 
   CheckReadyForMerge:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
@@ -176,7 +176,7 @@ jobs:
       - name: Check and set merge status
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 merge_pr.py --set-status
+          python3 merge_pr.py --set-ci-status
 
   ################################# Stage Final #################################
   #

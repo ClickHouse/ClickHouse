@@ -471,7 +471,7 @@ def trigger_mergeable_check(
     statuses: CommitStatuses,
     hide_url: bool = False,
     set_if_green: bool = False,
-) -> None:
+) -> StatusType:
     """calculate and update StatusNames.MERGEABLE"""
     required_checks = [
         status for status in statuses if status.context in REQUIRED_CHECKS
@@ -505,17 +505,19 @@ def trigger_mergeable_check(
 
     if not set_if_green and state == SUCCESS:
         # do not set green Mergeable Check status
-        return
+        pass
+    else:
+        if mergeable_status is None or mergeable_status.description != description:
+            set_mergeable_check(commit, description, state, hide_url)
 
-    if mergeable_status is None or mergeable_status.description != description:
-        set_mergeable_check(commit, description, state, hide_url)
+    return state
 
 
 def update_upstream_sync_status(
     upstream_pr_number: int,
     sync_pr_number: int,
     gh: Github,
-    mergeable_status: CommitStatus,
+    state: StatusType,
 ) -> None:
     upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
     upstream_pr = upstream_repo.get_pull(upstream_pr_number)
@@ -546,19 +548,19 @@ def update_upstream_sync_status(
         )
         return
 
-    sync_status = get_status(mergeable_status.state)
+    sync_status = get_status(state)
     logging.info(
         "Using commit %s to post the %s status `%s`: [%s]",
         upstream_commit.sha,
         sync_status,
         StatusNames.SYNC,
-        mergeable_status.description,
+        "",
     )
     post_commit_status(
         upstream_commit,
         sync_status,
         "",  # let's won't expose any urls from cloud
-        mergeable_status.description,
+        "",
         StatusNames.SYNC,
     )
     trigger_mergeable_check(
