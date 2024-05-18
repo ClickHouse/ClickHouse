@@ -74,7 +74,7 @@ ColumnsDescription StorageSystemAsyncLoader::getColumnsDescription()
     };
 }
 
-void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     TimePoint now = std::chrono::system_clock::now();
 

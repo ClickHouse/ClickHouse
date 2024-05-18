@@ -35,9 +35,9 @@ int main(int argc, char ** argv)
         DB::CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
 
         if (action == "-e")
-            std::cout << processor.encryptValue(codec_name, value) << std::endl;
+            std::cout << DB::ConfigProcessor::encryptValue(codec_name, value) << std::endl;
         else if (action == "-d")
-            std::cout << processor.decryptValue(codec_name, value) << std::endl;
+            std::cout << DB::ConfigProcessor::decryptValue(codec_name, value) << std::endl;
         else
             std::cerr << "Unknown action: " << action << std::endl;
     }

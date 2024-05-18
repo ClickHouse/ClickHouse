@@ -205,7 +205,7 @@ static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexe
                 else
                 {
                     size_t hash_value = global_map.hash(*it);
-                    size_t bucket = global_map.getBucketFromHash(hash_value);
+                    size_t bucket = MapTwoLevel::getBucketFromHash(hash_value);
 
                     if (mutexes[bucket].try_lock())
                     {

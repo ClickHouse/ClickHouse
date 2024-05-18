@@ -14,10 +14,11 @@ from build_download_helper import download_builds_filter
 
 from compress_files import compress_fast
 from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH as TEMP
+from env_helper import CI, REPORT_PATH, TEMP_PATH as TEMP
 from report import JobReport, TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_utils import set_job_timeout
 
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
@@ -32,7 +33,7 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
-systemctl start clickhouse-server
+systemctl restart clickhouse-server
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     initd_test = r"""#!/bin/bash
@@ -254,6 +255,9 @@ def main():
     stopwatch = Stopwatch()
 
     args = parse_args()
+
+    if CI:
+        set_job_timeout()
 
     TEMP_PATH.mkdir(parents=True, exist_ok=True)
     LOGS_PATH.mkdir(parents=True, exist_ok=True)

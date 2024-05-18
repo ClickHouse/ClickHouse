@@ -135,13 +135,11 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
-    const Names & required_columns = reading->getRealColumnNames();
-    const auto & parts = reading->getParts();
-    const auto & alter_conversions = reading->getAlterConvertionsForParts();
+    const Names & required_columns = reading->getAllColumnNames();
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
+    auto ordinary_reading_select_result = reading->selectRangesToRead();
     size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
     /// Nothing to read. Ignore projections.
@@ -163,10 +161,6 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
-        ActionDAGNodes added_filter_nodes;
-        if (query.filter_node)
-            added_filter_nodes.nodes.push_back(query.filter_node);
-
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             *reading,
@@ -176,7 +170,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             query_info,
             context,
             max_added_blocks,
-            added_filter_nodes);
+            query.filter_node ? query.dag : nullptr);
 
         if (!analyzed)
             continue;

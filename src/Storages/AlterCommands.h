@@ -50,10 +50,11 @@ struct AlterCommand
         MODIFY_DATABASE_SETTING,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
+        MODIFY_SQL_SECURITY,
     };
 
     /// Which property user wants to remove from column
-    enum class RemoveProperty
+    enum class RemoveProperty : uint8_t
     {
         NO_PROPERTY,
         /// Default specifiers
@@ -147,6 +148,9 @@ struct AlterCommand
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
 
+    /// For MODIFY_SQL_SECURITY
+    ASTPtr sql_security = nullptr;
+
     /// For MODIFY_REFRESH
     ASTPtr refresh = nullptr;
 
@@ -230,8 +234,8 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any inverted index
-    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have any full-text index
+    static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

@@ -84,9 +84,9 @@ struct GroupConcatData<true> final : public GroupConcatDataBase
     using Allocator = MixedAlignedArenaAllocator<alignof(Offset), 4096>;
     using Offsets = PODArray<Offset, 32, Allocator>;
 
-    /// offset[i * 2] - beginning of the i-th column, offset[i * 2 + 1] - end of the i-th column
+    /// offset[i * 2] - beginning of the i-th row, offset[i * 2 + 1] - end of the i-th row
     Offsets offsets;
-    UInt64 num_columns = 0;
+    UInt64 num_rows = 0;
 
     UInt64 getSize(size_t i) const { return offsets[i * 2 + 1] - offsets[i * 2]; }
 
@@ -102,7 +102,7 @@ struct GroupConcatData<true> final : public GroupConcatDataBase
         offsets.push_back(size, arena);
         size += string.size;
         offsets.push_back(size, arena);
-        num_columns++;
+        num_rows++;
     }
 };
 
@@ -134,7 +134,7 @@ public:
         auto & cur_data = this->data(place);
 
         if constexpr (has_limit)
-            if (cur_data.num_columns >= limit)
+            if (cur_data.num_rows >= limit)
                 return;
 
         if (!cur_data.is_state_empty)
@@ -145,7 +145,7 @@ public:
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {   
+    {
         auto & cur_data = this->data(place);
         auto & rhs_data = this->data(rhs);
 
@@ -154,7 +154,7 @@ public:
 
         if constexpr (has_limit)
         {
-            UInt64 new_elems_count = std::min(rhs_data.num_columns, limit - cur_data.num_columns);
+            UInt64 new_elems_count = std::min(rhs_data.num_rows, limit - cur_data.num_rows);
             for (UInt64 i = 0; i < new_elems_count; ++i)
             {
                 if (!cur_data.is_state_empty)
@@ -163,7 +163,7 @@ public:
                 cur_data.is_state_empty = false;
                 cur_data.offsets.push_back(cur_data.size, arena);
                 cur_data.insertChar(rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i), arena);
-                cur_data.num_columns++;
+                cur_data.num_rows++;
                 cur_data.offsets.push_back(cur_data.size, arena);
             }
         }
@@ -190,7 +190,7 @@ public:
 
         if constexpr (has_limit)
         {
-            writeVarUInt(cur_data.num_columns, buf);
+            writeVarUInt(cur_data.num_rows, buf);
             for (const auto & offset : cur_data.offsets)
                 writeVarUInt(offset, buf);
         }
@@ -209,8 +209,8 @@ public:
 
         if constexpr (has_limit)
         {
-            readVarUInt(cur_data.num_columns, buf);
-            cur_data.offsets.resize_exact(cur_data.num_columns * 2, arena);
+            readVarUInt(cur_data.num_rows, buf);
+            cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
             for (auto & offset : cur_data.offsets)
                 readVarUInt(offset, buf);
         }

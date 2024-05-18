@@ -15,6 +15,11 @@ namespace ErrorCodes
 
 void ServerUUID::load(const fs::path & server_uuid_file, Poco::Logger * log)
 {
+    server_uuid = loadServerUUID(server_uuid_file, log);
+}
+
+UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
+{
     /// Write a uuid file containing a unique uuid if the file doesn't already exist during server start.
 
     if (fs::exists(server_uuid_file))
@@ -25,8 +30,7 @@ void ServerUUID::load(const fs::path & server_uuid_file, Poco::Logger * log)
             ReadBufferFromFile in(server_uuid_file);
             readUUIDText(uuid, in);
             assertEOF(in);
-            server_uuid = uuid;
-            return;
+            return uuid;
         }
         catch (...)
         {
@@ -44,7 +48,7 @@ void ServerUUID::load(const fs::path & server_uuid_file, Poco::Logger * log)
         out.write(uuid_str.data(), uuid_str.size());
         out.sync();
         out.finalize();
-        server_uuid = new_uuid;
+        return new_uuid;
     }
     catch (...)
     {

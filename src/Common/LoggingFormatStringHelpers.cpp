@@ -1,4 +1,5 @@
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
@@ -26,7 +27,7 @@ void LogFrequencyLimiterIml::log(Poco::Message & message)
     SipHash hash;
     hash.update(logger->name());
     /// Format strings are compile-time constants, so they are uniquely identified by pointer and size
-    hash.update(pattern.data());
+    hash.update(reinterpret_cast<uintptr_t>(pattern.data()));
     hash.update(pattern.size());
 
     time_t now = time(nullptr);
@@ -130,13 +131,12 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     if (last_time + interval_s_ <= now)
     {
         debug_message = fmt::format(
-            " (LogSeriesLimiter: on interval from {} to {} accepted series {} / {} for the logger {} : {})",
+            " (LogSeriesLimiter: on interval from {} to {} accepted series {} / {} for the logger {})",
             DateLUT::instance().timeToString(last_time),
             DateLUT::instance().timeToString(now),
             accepted_count,
             total_count,
-            logger->name(),
-            double(name_hash));
+            logger->name());
 
         register_as_first();
         return;

@@ -27,7 +27,7 @@ namespace ErrorCodes
 bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserFunction p_function;
-    ParserKeyword s_external("EXTERNAL DDL FROM");
+    ParserKeyword s_external(Keyword::EXTERNAL_DDL_FROM);
 
     ASTPtr from;
     auto external_ddl_query = std::make_shared<ASTExternalDDLQuery>();
@@ -61,16 +61,16 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
         {
             /// Syntax error is ignored, so we need to convert the error code for parsing failure
 
-            if (ParserKeyword("ALTER TABLE").ignore(pos))
+            if (ParserKeyword(Keyword::ALTER_TABLE).ignore(pos))
                 throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL alter query.");
 
-            if (ParserKeyword("RENAME TABLE").ignore(pos))
+            if (ParserKeyword(Keyword::RENAME_TABLE).ignore(pos))
                 throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL rename query.");
 
-            if (ParserKeyword("DROP TABLE").ignore(pos) || ParserKeyword("TRUNCATE").ignore(pos))
+            if (ParserKeyword(Keyword::DROP_TABLE).ignore(pos) || ParserKeyword(Keyword::TRUNCATE).ignore(pos))
                 throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL drop query.");
 
-            if (ParserKeyword("CREATE TABLE").ignore(pos) || ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos))
+            if (ParserKeyword(Keyword::CREATE_TABLE).ignore(pos) || ParserKeyword(Keyword::CREATE_TEMPORARY_TABLE).ignore(pos))
                 throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL create query.");
         }
 #endif

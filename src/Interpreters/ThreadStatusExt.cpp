@@ -21,6 +21,7 @@
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
+#include <Core/ServerSettings.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -474,12 +475,22 @@ void ThreadStatus::initQueryProfiler()
     try
     {
         if (settings.query_profiler_real_time_period_ns > 0)
-            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+        {
+            if (!query_profiler_real)
+                query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
+                   /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+            else
+                query_profiler_real->setPeriod(static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+        }
 
         if (settings.query_profiler_cpu_time_period_ns > 0)
-            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+        {
+            if (!query_profiler_cpu)
+                query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
+                  /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+            else
+                query_profiler_cpu->setPeriod(static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+        }
     }
     catch (...)
     {

@@ -49,6 +49,12 @@ contents:
   dst: /usr/bin/clickhouse-client
 - src: root/usr/bin/clickhouse-local
   dst: /usr/bin/clickhouse-local
+- src: root/usr/bin/ch
+  dst: /usr/bin/ch
+- src: root/usr/bin/chc
+  dst: /usr/bin/chc
+- src: root/usr/bin/chl
+  dst: /usr/bin/chl
 - src: root/usr/bin/clickhouse-obfuscator
   dst: /usr/bin/clickhouse-obfuscator
 # docs

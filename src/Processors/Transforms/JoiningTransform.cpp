@@ -14,12 +14,12 @@ namespace ErrorCodes
 
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
-    LOG_DEBUG(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
-    LOG_DEBUG(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
 

@@ -121,7 +121,7 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
 
     /// Take local task from queue if has one.
     if (!queue.empty() && !context.hasAsyncTasks()
-        && context.num_scheduled_local_tasks < context.max_scheduled_local_tasks)
+        && context.num_scheduled_local_tasks < ExecutionThreadContext::max_scheduled_local_tasks)
     {
         ++context.num_scheduled_local_tasks;
         context.setTask(queue.front());
@@ -192,8 +192,7 @@ void ExecutorTasks::fill(Queue & queue)
 void ExecutorTasks::upscale(size_t use_threads_)
 {
     std::lock_guard lock(mutex);
-    if (use_threads < use_threads_)
-        use_threads = use_threads_;
+    use_threads = std::max(use_threads, use_threads_);
 }
 
 void ExecutorTasks::processAsyncTasks()

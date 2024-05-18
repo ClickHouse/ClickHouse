@@ -1,37 +1,36 @@
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/BoolMask.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Functions/CastOverloadResolver.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Functions/indexHint.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/Set.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/applyFunction.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/queryToString.h>
-#include <Storages/MergeTree/BoolMask.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/indexHint.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/Set.h>
+#include <Parsers/queryToString.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
 #include <algorithm>
 #include <cassert>
@@ -566,7 +565,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
                 /// Re-generate column name for constant.
                 /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-                /// DAG from PK does not use it. This is breakig match by column name sometimes.
+                /// DAG from PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare manes, but DAG subtrees instead.
                 name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
             else
@@ -837,6 +836,21 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     return node.tryGetConstant(out_value, out_type);
 }
 
+
+static Field applyFunctionForField(
+    const FunctionBasePtr & func,
+    const DataTypePtr & arg_type,
+    const Field & arg_value)
+{
+    ColumnsWithTypeAndName columns
+    {
+        { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+    };
+
+    auto col = func->execute(columns, func->getResultType(), 1);
+    return (*col)[0];
+}
+
 /// The case when arguments may have types different than in the primary key.
 static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
     const FunctionBasePtr & func,
@@ -874,6 +888,33 @@ static std::pair<Field, DataTypePtr> applyBinaryFunctionForFieldOfUnknownType(
     Field result = (*col)[0];
 
     return {std::move(result), std::move(return_type)};
+}
+
+
+static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+{
+    /// Fallback for fields without block reference.
+    if (field.isExplicit())
+        return applyFunctionForField(func, current_type, field);
+
+    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
+    const auto & columns = field.columns;
+    size_t result_idx = columns->size();
+
+    for (size_t i = 0; i < result_idx; ++i)
+    {
+        if ((*columns)[i].name == result_name)
+            result_idx = i;
+    }
+
+    if (result_idx == columns->size())
+    {
+        ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
+        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+    }
+
+    return {field.columns, field.row_idx, result_idx};
 }
 
 /** When table's key has expression with these functions from a column,
@@ -1144,8 +1185,7 @@ bool KeyCondition::tryPrepareSetIndex(
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
-            if (out_key_column_num < index_mapping.key_index)
-                out_key_column_num = index_mapping.key_index;
+            out_key_column_num = std::max(out_key_column_num, index_mapping.key_index);
         }
     };
 
@@ -1904,7 +1944,7 @@ KeyCondition::Description KeyCondition::getDescription() const
     /// Build and optimize it simultaneously.
     struct Node
     {
-        enum class Type
+        enum class Type : uint8_t
         {
             /// Leaf, which is RPNElement.
             Leaf,
@@ -2209,9 +2249,11 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
         return callback(hyperrectangle);
     }
@@ -2221,13 +2263,15 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
     else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             hyperrectangle[i] = Range::createWholeUniverse();
         else
             hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
@@ -2283,7 +2327,7 @@ BoolMask KeyCondition::checkInRange(
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             key_ranges.push_back(Range::createWholeUniverse());
         else
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
@@ -2819,9 +2863,9 @@ bool KeyCondition::mayBeTrueInRange(
 String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
-        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), true);
     else
-        return toString(fmt::format("column {}", key_column), false);
+        return toString(fmt::format("column {}", key_column), true);
 }
 
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const

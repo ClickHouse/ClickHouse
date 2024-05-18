@@ -287,7 +287,7 @@ Default value: 0 (seconds)
 
 ## remote_fs_execute_merges_on_single_replica_time_threshold
 
-When this setting has a value greater than than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
+When this setting has a value greater than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -852,18 +852,36 @@ If the file name for column is too long (more than `max_file_name_length` bytes)
 
 The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. The value of this setting does not include the length of file extension. So, it is recommended to set it below the maximum filename length (usually 255 bytes) with some gap to avoid filesystem errors. Default value: 127.
 
-## clean_deleted_rows
-
-Enable/disable automatic deletion of rows flagged as `is_deleted` when perform `OPTIMIZE ... FINAL` on a table using the ReplacingMergeTree engine. When disabled, the `CLEANUP` keyword has to be added to the `OPTIMIZE ... FINAL` to have the same behaviour.
-
-Possible values:
-
-- `Always` or `Never`.
-
-Default value: `Never`
-
 ## allow_experimental_block_number_column
 
 Persists virtual column `_block_number` on merges.
 
 Default value: false.
+
+## exclude_deleted_rows_for_part_size_in_merge {#exclude_deleted_rows_for_part_size_in_merge}
+
+If enabled, estimated actual size of data parts (i.e., excluding those rows that have been deleted through `DELETE FROM`) will be used when selecting parts to merge. Note that this behavior is only triggered for data parts affected by `DELETE FROM` executed after this setting is enabled.
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+**See Also**
+
+- [load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts) setting
+
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
+
+If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge), deleted rows count for existing data parts will be calculated during table starting up. Note that it may slow down start up table loading.
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+**See Also**
+
+- [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting

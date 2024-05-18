@@ -1,5 +1,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
@@ -7,6 +10,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -23,6 +27,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
@@ -41,6 +46,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
     , refresh(other.refresh ? other.refresh->clone() : nullptr)
+    , definer(other.definer)
+    , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
 {
@@ -71,6 +78,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         settings_changes.reset();
     select = other.select;
     refresh = other.refresh ? other.refresh->clone() : nullptr;
+    definer = other.definer;
+    sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
     return *this;
@@ -79,6 +88,71 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 void StorageInMemoryMetadata::setComment(const String & comment_)
 {
     comment = comment_;
+}
+
+void StorageInMemoryMetadata::setSQLSecurity(const ASTSQLSecurity & sql_security)
+{
+    if (sql_security.definer)
+        definer = sql_security.definer->toString();
+    else
+        definer = std::nullopt;
+
+    sql_security_type = sql_security.type;
+}
+
+UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
+{
+    if (!definer)
+    {
+        if (const auto definer_id = context->getUserID())
+            return *definer_id;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in context for sub query execution.");
+    }
+
+    const auto & access_control = context->getAccessControl();
+    return access_control.getID<User>(*definer);
+}
+
+ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
+{
+    if (!sql_security_type)
+        return Context::createCopy(context);
+
+    if (sql_security_type == SQLSecurityType::INVOKER)
+        return Context::createCopy(context);
+
+    auto new_context = Context::createCopy(context->getGlobalContext());
+    new_context->setClientInfo(context->getClientInfo());
+    new_context->makeQueryContext();
+
+    const auto & database = context->getCurrentDatabase();
+    if (!database.empty())
+        new_context->setCurrentDatabase(database);
+
+    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
+    new_context->setProgressCallback(context->getProgressCallback());
+    new_context->setProcessListElement(context->getProcessListElement());
+
+    if (context->getCurrentTransaction())
+        new_context->setCurrentTransaction(context->getCurrentTransaction());
+
+    if (context->getZooKeeperMetadataTransaction())
+        new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
+
+    if (sql_security_type == SQLSecurityType::NONE)
+    {
+        new_context->applySettingsChanges(context->getSettingsRef().changes());
+        return new_context;
+    }
+
+    new_context->setUser(getDefinerID(context));
+
+    auto changed_settings = context->getSettingsRef().changes();
+    new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
+    new_context->applySettingsChanges(changed_settings);
+
+    return new_context;
 }
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
@@ -200,7 +274,7 @@ TTLDescription StorageInMemoryMetadata::getRowsTTL() const
 
 bool StorageInMemoryMetadata::hasRowsTTL() const
 {
-    return table_ttl.rows_ttl.expression != nullptr;
+    return table_ttl.rows_ttl.expression_ast != nullptr;
 }
 
 TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
@@ -258,9 +332,8 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
-    auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
+    auto add_dependent_columns = [&updated_columns](const Names & required_columns, auto & to_set)
     {
-        auto required_columns = expression->getRequiredColumns();
         for (const auto & dependency : required_columns)
         {
             if (updated_columns.contains(dependency))
@@ -276,18 +349,18 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     for (const auto & index : getSecondaryIndices())
     {
         if (has_dependency(index.name, ColumnDependency::SKIP_INDEX))
-            add_dependent_columns(index.expression, indices_columns);
+            add_dependent_columns(index.expression->getRequiredColumns(), indices_columns);
     }
 
     for (const auto & projection : getProjections())
     {
         if (has_dependency(projection.name, ColumnDependency::PROJECTION))
-            add_dependent_columns(&projection, projections_columns);
+            add_dependent_columns(projection.getRequiredColumns(), projections_columns);
     }
 
     auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
     {
-        if (add_dependent_columns(expression, to_set) && include_ttl_target)
+        if (add_dependent_columns(expression.getNames(), to_set) && include_ttl_target)
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
@@ -296,25 +369,25 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     };
 
     if (hasRowsTTL())
-        add_for_rows_ttl(getRowsTTL().expression, required_ttl_columns);
+        add_for_rows_ttl(getRowsTTL().expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRowsWhereTTLs())
-        add_for_rows_ttl(entry.expression, required_ttl_columns);
+        add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
 
     for (const auto & entry : getGroupByTTLs())
-        add_for_rows_ttl(entry.expression, required_ttl_columns);
+        add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRecompressionTTLs())
-        add_dependent_columns(entry.expression, required_ttl_columns);
+        add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
-        if (add_dependent_columns(entry.expression, required_ttl_columns) && include_ttl_target)
+        if (add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns) && include_ttl_target)
             updated_ttl_columns.insert(name);
     }
 
     for (const auto & entry : getMoveTTLs())
-        add_dependent_columns(entry.expression, required_ttl_columns);
+        add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
 
     //TODO what about rows_where_ttl and group_by_ttl ??
 
