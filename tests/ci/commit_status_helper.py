@@ -447,9 +447,7 @@ def set_mergeable_check(
     )
 
 
-def update_mergeable_check(
-    commit: Commit, pr_info: PRInfo, check_name: str
-) -> Optional[CommitStatus]:
+def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
     "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
         pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
@@ -460,12 +458,12 @@ def update_mergeable_check(
 
     if not_run:
         # Let's avoid unnecessary work
-        return None
+        return
 
     logging.info("Update Mergeable Check by %s", check_name)
 
     statuses = get_commit_filtered_statuses(commit)
-    return trigger_mergeable_check(commit, statuses)
+    trigger_mergeable_check(commit, statuses)
 
 
 def trigger_mergeable_check(
@@ -473,7 +471,7 @@ def trigger_mergeable_check(
     statuses: CommitStatuses,
     hide_url: bool = False,
     set_if_green: bool = False,
-) -> CommitStatus:
+) -> None:
     """calculate and update StatusNames.MERGEABLE"""
     required_checks = [
         status for status in statuses if status.context in REQUIRED_CHECKS
@@ -507,12 +505,10 @@ def trigger_mergeable_check(
 
     if not set_if_green and state == SUCCESS:
         # do not set green Mergeable Check status
-        return SUCCESS
+        return
 
     if mergeable_status is None or mergeable_status.description != description:
-        return set_mergeable_check(commit, description, state, hide_url)
-
-    return mergeable_status
+        set_mergeable_check(commit, description, state, hide_url)
 
 
 def update_upstream_sync_status(

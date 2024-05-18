@@ -174,7 +174,6 @@ jobs:
         with:
           filter: tree:0
       - name: Check and set merge status
-        if: ${{ github.event_name != 'merge_group' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 merge_pr.py --set-status
