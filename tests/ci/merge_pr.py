@@ -13,7 +13,11 @@ from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
 
-from commit_status_helper import get_commit_filtered_statuses
+from commit_status_helper import (
+    get_commit_filtered_statuses,
+    get_commit,
+    trigger_mergeable_check,
+)
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
@@ -174,6 +178,11 @@ def parse_args() -> argparse.Namespace:
         help="if set, the script won't merge the PR, just check the conditions",
     )
     parser.add_argument(
+        "--set-ci-status",
+        action="store_true",
+        help="if set, only update/set Mergeable Check status",
+    )
+    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
@@ -226,6 +235,14 @@ def main():
     token = args.token or get_best_robot_token()
     gh = GitHub(token)
     repo = gh.get_repo(args.repo)
+
+    if args.set_ci_status:
+        # set mergeable check status and exit
+        commit = get_commit(gh, args.pr_info.sha)
+        statuses = get_commit_filtered_statuses(commit)
+        trigger_mergeable_check(commit, statuses, hide_url=False, set_if_green=True)
+        return
+
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
     # pylint: disable=protected-access

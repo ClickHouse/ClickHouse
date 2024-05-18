@@ -469,7 +469,10 @@ def update_mergeable_check(
 
 
 def trigger_mergeable_check(
-    commit: Commit, statuses: CommitStatuses, hide_url: bool = False
+    commit: Commit,
+    statuses: CommitStatuses,
+    hide_url: bool = False,
+    set_if_green: bool = False,
 ) -> CommitStatus:
     """calculate and update StatusNames.MERGEABLE"""
     required_checks = [
@@ -501,6 +504,10 @@ def trigger_mergeable_check(
         description = "failed: " + ", ".join(fail)
         state = FAILURE
     description = format_description(description)
+
+    if not set_if_green and state == SUCCESS:
+        # do not set green Mergeable Check status
+        return SUCCESS
 
     if mergeable_status is None or mergeable_status.description != description:
         return set_mergeable_check(commit, description, state, hide_url)

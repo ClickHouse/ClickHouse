@@ -25,6 +25,7 @@ class CIStages(metaclass=WithIter):
     BUILDS_2 = "Builds_2"
     TESTS_1 = "Tests_1"
     TESTS_2 = "Tests_2"
+    TESTS_3 = "Tests_3"
 
 
 class Runners(metaclass=WithIter):
@@ -579,7 +580,6 @@ class CIConfig:
         elif job_name == JobNames.BUILD_CHECK_SPECIAL:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
-            stage_type = CIStages.TESTS_1
             if job_name in CI_CONFIG.test_configs:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
                 assert required_build
@@ -591,6 +591,8 @@ class CIConfig:
                     stage_type = CIStages.TESTS_2
             else:
                 stage_type = CIStages.TESTS_1
+            if job_name not in REQUIRED_CHECKS:
+                stage_type = CIStages.TESTS_3
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 

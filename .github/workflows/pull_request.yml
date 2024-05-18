@@ -130,6 +130,14 @@ jobs:
     with:
       stage: Tests_2
       data: ${{ needs.RunConfig.outputs.data }}
+  # stage for jobs that do not prohibit merge
+  Tests_3:
+    needs: [RunConfig, Tests_1, Tests_2]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_3
+      data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
   # Reports should by run even if Builds_1/2 fail, so put them separatly in wf (not in Tests_1/2)
@@ -156,15 +164,32 @@ jobs:
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 
+  CheckReadyForMerge:
+    if: ${{ !failure() && !cancelled() }}
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          filter: tree:0
+      - name: Check and set merge status
+        if: ${{ github.event_name != 'merge_group' }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 merge_pr.py --set-status
+
   ################################# Stage Final #################################
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2, Tests_3, CheckReadyForMerge]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+        with:
+          filter: tree:0
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
