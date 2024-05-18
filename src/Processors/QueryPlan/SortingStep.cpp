@@ -262,12 +262,9 @@ void SortingStep::enableVirtualRow(const QueryPipelineBuilder & pipeline) const
         }
     }
 
-    /// If everything is okay, we enable virtual row in MergeTreeSelectProcessor
+    /// If everything is okay, enable virtual row in MergeTreeSelectProcessor.
     if (enable_virtual_row && merge_tree_sources.size() >= 2)
     {
-        /// We have to check further in the case of fixed prefix, for example,
-        /// primary key ab, query SELECT a, b FROM t WHERE a = 1 ORDER BY b,
-        /// merge sort would sort based on b, leading to wrong result in comparison.
         auto extractNameAfterDot = [](const String & name)
         {
             size_t pos = name.find_last_of('.');
@@ -278,10 +275,25 @@ void SortingStep::enableVirtualRow(const QueryPipelineBuilder & pipeline) const
         String column_name = extractNameAfterDot(type_and_name.name);
         for (const auto & merge_tree_source : merge_tree_sources)
         {
-            const auto& merge_tree_select_processor = merge_tree_source->getProcessor();
+            const auto & merge_tree_select_processor = merge_tree_source->getProcessor();
 
+            /// Check pk is not func based, as we only check type and name in filling in primary key of virtual row.
             const auto & primary_key = merge_tree_select_processor->getPrimaryKey();
-            if (primary_key.column_names[0] == column_name && primary_key.data_types[0] == type_and_name.type)
+            const auto & actions = primary_key.expression->getActions();
+            bool is_okay = true;
+            for (const auto & action : actions)
+            {
+                if (action.node->type != ActionsDAG::ActionType::INPUT)
+                {
+                    is_okay = false;
+                    break;
+                }
+            }
+
+            /// We have to check further in the case of fixed prefix, for example,
+            /// primary key ab, query SELECT a, b FROM t WHERE a = 1 ORDER BY b,
+            /// merge sort would sort based on b, leading to wrong result in comparison.
+            if (is_okay && primary_key.column_names[0] == column_name && primary_key.data_types[0] == type_and_name.type)
                 merge_tree_select_processor->enableVirtualRow();
         }
     }

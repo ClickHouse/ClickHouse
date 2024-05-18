@@ -13,21 +13,21 @@ ORDER BY (x, y, z)
 SETTINGS index_granularity = 8192,
 index_granularity_bytes = 10485760;
 
-INSERT INTO t SELECT
-    number,
-    number,
-    number,
-    number
-FROM numbers(8192 * 3);
-
-INSERT INTO t SELECT
-    number + (8192 * 3),
-    number + (8192 * 3),
-    number + (8192 * 3),
-    number
-FROM numbers(8192 * 3);
-
 SYSTEM STOP MERGES t;
+
+INSERT INTO t SELECT
+    number,
+    number,
+    number,
+    number
+FROM numbers(8192 * 3);
+
+INSERT INTO t SELECT
+    number + (8192 * 3),
+    number + (8192 * 3),
+    number + (8192 * 3),
+    number
+FROM numbers(8192 * 3);
 
 -- Expecting 2 virtual rows + one chunk (8192) for result + one extra chunk for next consumption in merge transform (8192),
 -- both chunks come from the same part.
@@ -126,15 +126,39 @@ DROP TABLE t;
 
 SELECT '========';
 -- from 02149_read_in_order_fixed_prefix
-DROP TABLE IF EXISTS t_read_in_order;
+DROP TABLE IF EXISTS fixed_prefix;
 
-CREATE TABLE t_read_in_order(a UInt32, b UInt32)
+CREATE TABLE fixed_prefix(a UInt32, b UInt32)
 ENGINE = MergeTree ORDER BY (a, b)
 SETTINGS index_granularity = 3;
 
-SYSTEM STOP MERGES t_read_in_order;
+SYSTEM STOP MERGES fixed_prefix;
 
-INSERT INTO t_read_in_order VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
-INSERT INTO t_read_in_order VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
+INSERT INTO fixed_prefix VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
+INSERT INTO fixed_prefix VALUES (0, 100), (1, 2), (1, 3), (1, 4), (2, 5);
 
-SELECT a, b FROM t_read_in_order WHERE a = 1 ORDER BY b SETTINGS max_threads = 1;
+SELECT a, b FROM fixed_prefix WHERE a = 1 ORDER BY b SETTINGS max_threads = 1;
+
+DROP TABLE fixed_prefix;
+
+SELECT '========';
+-- currently don't support virtual row in this case
+DROP TABLE IF EXISTS function_pk;
+
+CREATE TABLE function_pk
+(
+    `A` Int64,
+    `B` Int64
+)
+ENGINE = MergeTree ORDER BY (A, -B)
+SETTINGS index_granularity = 1;
+
+SYSTEM STOP MERGES function_pk;
+
+INSERT INTO function_pk values(1,1);
+INSERT INTO function_pk values(1,3);
+INSERT INTO function_pk values(1,2);
+
+SELECT * FROM function_pk ORDER BY (A,-B) ASC limit 3 SETTINGS max_threads = 1;
+
+DROP TABLE function_pk;
