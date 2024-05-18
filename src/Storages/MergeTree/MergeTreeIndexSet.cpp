@@ -108,7 +108,6 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         const auto & type = column.type;
         ColumnPtr new_column = type->createColumn();
 
-
         ISerialization::DeserializeBinaryBulkSettings settings;
         settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
         settings.position_independent_encoding = false;
