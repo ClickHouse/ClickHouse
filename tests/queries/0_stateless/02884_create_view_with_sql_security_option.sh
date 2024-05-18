@@ -202,14 +202,14 @@ ORDER BY a;
 
 CREATE TABLE $db.destination1
 (
-    `a` UInt64
+    a UInt64
 )
 ENGINE = MergeTree
 ORDER BY a;
 
 CREATE TABLE $db.destination2
 (
-    `a` UInt64
+    a UInt64
 )
 ENGINE = MergeTree
 ORDER BY a;
