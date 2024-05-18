@@ -439,20 +439,19 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
 
         PlannerActionsVisitor interpolate_actions_visitor(planner_context);
-        auto interpolate_actions_dag = std::make_shared<ActionsDAG>();
+        auto interpolate_expression_dag = std::make_shared<ActionsDAG>();
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
             auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getExpression());
-            interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
+            interpolate_actions_visitor.visit(interpolate_expression_dag, interpolate_node_typed.getInterpolateExpression());
         }
 
         std::unordered_map<std::string_view, const ActionsDAG::Node *> before_sort_actions_inputs_name_to_node;
         for (const auto & node : before_sort_actions->getInputs())
             before_sort_actions_inputs_name_to_node.emplace(node->result_name, node);
 
-        for (const auto & node : interpolate_actions_dag->getNodes())
+        for (const auto & node : interpolate_expression_dag->getNodes())
         {
             if (before_sort_actions_dag_output_node_names.contains(node.result_name) ||
                 node.type != ActionsDAG::ActionType::INPUT)
