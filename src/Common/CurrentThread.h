@@ -62,7 +62,7 @@ public:
     static void updatePerformanceCountersIfNeeded();
 
     static ProfileEvents::Counters & getProfileEvents();
-    ALWAYS_INLINE inline static MemoryTracker * getMemoryTracker()
+    inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
     {
         if (!current_thread) [[unlikely]]
             return nullptr;

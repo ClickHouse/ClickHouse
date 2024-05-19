@@ -124,7 +124,7 @@ public:
 
     bool hasEmptyBound() const { return has_empty_bound; }
 
-    bool ALWAYS_INLINE inline contains(CoordinateType x, CoordinateType y) const
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
     {
         Point point(x, y);
 
