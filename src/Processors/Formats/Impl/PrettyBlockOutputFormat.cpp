@@ -529,7 +529,7 @@ void PrettyBlockOutputFormat::writeTransferredRow(
         writeCString(grid_symbols.bar, out);
 
     bool has_transferred_row = false;
-    size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 2 : 2;
+    size_t prefix = format_settings.pretty.output_format_pretty_row_numbers ? row_number_width + 1 + !space_block : 1 + !space_block;
 
     for (size_t j = 0; j < columns.size(); ++j)
     {
