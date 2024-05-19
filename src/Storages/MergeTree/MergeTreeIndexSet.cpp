@@ -35,7 +35,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     size_t max_rows_)
     : index_name(index_name_)
     , max_rows(max_rows_)
-    , block(index_sample_block_)
+    , block(index_sample_block_.cloneEmpty())
 {
 }
 
