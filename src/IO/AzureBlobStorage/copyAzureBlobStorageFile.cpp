@@ -219,19 +219,33 @@ namespace
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), task.part_offset, task.part_size);
-            while (!read_buffer->eof())
+
+            const size_t strict_upload_part_size = settings->strict_upload_part_size
+                ? settings->strict_upload_part_size
+                : settings->max_upload_part_size;
+            size_t size_to_stage = task.part_size;
+
+            PODArray<char> memory;
+            memory.resize(std::min(size_to_stage, strict_upload_part_size));
+            /// FIXME: it will be better to preallocate the memory and reuse it for each processUploadPartRequest.
+            WriteBufferFromVector<PODArray<char>> wb(memory);
+
+            while (size_to_stage)
             {
-                  auto size = read_buffer->available();
-                  if (size > 0)
-                  {
-                      auto block_id = getRandomASCIIString(64);
-                      Azure::Core::IO::MemoryBodyStream memory(reinterpret_cast<const uint8_t *>(read_buffer->position()), size);
-                      block_blob_client.StageBlock(block_id, memory);
-                      task.block_ids.emplace_back(block_id);
-                      read_buffer->ignore(size);
-                      LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}", dest_container_for_logging, dest_blob, block_id);
-                  }
+                size_t size = std::min(size_to_stage, strict_upload_part_size);
+                wb.position() = wb.buffer().begin();
+                copyData(*read_buffer, wb, size);
+                size_to_stage -= size;
+
+                Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size);
+
+                const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
+                block_blob_client.StageBlock(block_id, stream);
+
+                LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}, size: {} (strict part upload size: {})",
+                          dest_container_for_logging, dest_blob, block_id, size, strict_upload_part_size);
             }
+
             std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
             LOG_TRACE(log, "Writing part finished. Container: {}, Blob: {}, Parts: {}", dest_container_for_logging, dest_blob, bg_tasks.size());
         }
@@ -321,8 +335,8 @@ void copyAzureBlobStorageFile(
         LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client, src_blob, read_settings, settings->max_single_read_retries,
-            settings->max_single_download_retries);
+            return std::make_unique<ReadBufferFromAzureBlobStorage>(
+                src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
         UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, &Poco::Logger::get("copyAzureBlobStorageFile")};
