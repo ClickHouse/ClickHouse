@@ -267,6 +267,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
 
     filter_actions_dag->removeUnusedActions();
     actions = std::make_shared<ExpressionActions>(filter_actions_dag);
+
+    actions_output_column_name = filter_actions_dag->getOutputs().at(0)->result_name;
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -288,7 +290,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     Block result = granule.block;
     actions->execute(result);
 
-    const auto & column = result.getByPosition(result.columns() - 1).column;
+    const auto & column = result.getByName(actions_output_column_name).column;
 
     for (size_t i = 0; i < size; ++i)
         if (!column->isNullAt(i) && (column->get64(i) & 1))
