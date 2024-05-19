@@ -162,6 +162,7 @@ public:
             {
                 const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
                 const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
+
                 Int64 deg = 1;
                 for (size_t j = 0; j < scale; ++j)
                     deg *= 10;
@@ -223,7 +224,7 @@ public:
         auto minutes = (time % 10'000) / 100;
         auto seconds = time % 100;
 
-        Int64 min_date, max_date;
+        Int64 min_date = 0, max_date = 0;
         Int16 min_year, max_year;
         if (isDate(result_type))
         {
@@ -242,7 +243,7 @@ public:
         else if (isDateTime(result_type))
         {
             min_date = 0;
-            max_date = 0x0ffffffffll;
+            max_date = 0x0FFFFFFFFLL;
             min_year = 1970;
             max_year = 2106;
         }
@@ -309,6 +310,9 @@ public:
                 date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
                 static_cast<Int64>(fraction),
                 static_cast<UInt32>(scale));
+
+        if (result < min_date)
+            return min_date;
 
         if (result > max_date)
             return max_date;
