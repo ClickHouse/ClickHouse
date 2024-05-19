@@ -21,6 +21,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 /** NOTE DoubleDelta is surprisingly bad name. The only excuse is that it comes from an academic paper.
   * Most people will think that "double delta" is just applying delta transform twice.
   * But in fact it is something more than applying delta transform twice.

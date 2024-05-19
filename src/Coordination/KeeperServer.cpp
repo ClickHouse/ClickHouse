@@ -45,7 +45,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
 }
 
 using namespace std::chrono_literals;
