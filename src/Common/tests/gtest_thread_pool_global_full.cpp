@@ -21,7 +21,7 @@ namespace CurrentMetrics
 
 TEST(ThreadPool, GlobalFull1)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+    auto & global_pool = GlobalThreadPool<FreeThreadPool>::instance();
 
     static constexpr size_t capacity = 5;
 
@@ -57,7 +57,7 @@ TEST(ThreadPool, GlobalFull1)
 
 TEST(ThreadPool, GlobalFull2)
 {
-    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+    auto & global_pool = GlobalThreadPool<FreeThreadPool>::instance();
 
     static constexpr size_t capacity = 5;
 

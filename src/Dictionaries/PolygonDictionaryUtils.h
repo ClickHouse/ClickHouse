@@ -252,7 +252,7 @@ private:
         std::vector<std::unique_ptr<ICell<ReturnCell>>> children;
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
 
-        ThreadPoolCallbackRunnerLocal<void, GlobalThreadPool> runner(GlobalThreadPool::instance(), "PolygonDict");
+        ThreadPoolCallbackRunnerLocal<void, GlobalThreadPool<FreeThreadPool>> runner(GlobalThreadPool<FreeThreadPool>::instance(), "PolygonDict");
         for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
         {
             auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i, x = current_min_x, y = current_min_y]() mutable

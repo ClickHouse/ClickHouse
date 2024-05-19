@@ -1,4 +1,5 @@
 #include <Common/ThreadPool.h>
+#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -25,6 +26,16 @@ namespace CurrentMetrics
     extern const Metric GlobalThread;
     extern const Metric GlobalThreadActive;
     extern const Metric GlobalThreadScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event GlobalThreadPoolExpansions;
+    extern const Event GlobalThreadPoolShrinks;
+    extern const Event GlobalThreadPoolJobScheduleMicroseconds;
+    extern const Event LocalThreadPoolExpansions;
+    extern const Event LocalThreadPoolShrinks;
+    extern const Event LocalThreadPoolJobScheduleMicroseconds;
 }
 
 class JobWithPriority
@@ -161,6 +172,7 @@ template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
+    Stopwatch watch;
     auto on_error = [&](const std::string & reason)
     {
         if constexpr (std::is_same_v<ReturnType, void>)
@@ -217,6 +229,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             try
             {
                 threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions
+                );
+
             }
             catch (...)
             {
@@ -238,7 +254,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
     /// Wake up a free thread to run the new job.
     new_job_or_shutdown.notify_one();
-
+    ProfileEvents::increment(
+        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds : ProfileEvents::LocalThreadPoolJobScheduleMicroseconds,
+        watch.elapsedMicroseconds());
     return static_cast<ReturnType>(true);
 }
 
@@ -263,6 +281,9 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         try
         {
             threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions
+            );
         }
         catch (...)
         {
@@ -334,7 +355,12 @@ void ThreadPoolImpl<Thread>::finalize()
 
     /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
     for (auto & thread : threads)
+    {
         thread.join();
+        ProfileEvents::increment(
+            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
+        );
+    }
 
     threads.clear();
 }
@@ -424,6 +450,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 {
                     thread_it->detach();
                     threads.erase(thread_it);
+                    ProfileEvents::increment(
+                        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
+                    );
                 }
                 return;
             }
@@ -501,10 +530,32 @@ template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
 
-std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
+// std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
 
-GlobalThreadPool::GlobalThreadPool(
+template <>
+GlobalThreadPool<tp::ThreadPool>::GlobalThreadPool(
+    size_t max_threads_,
+    size_t max_free_threads_,
+    size_t queue_size_,
+    const bool /* shutdown_on_exception_*/,
+    UInt64 global_profiler_real_time_period_ns_,
+    UInt64 global_profiler_cpu_time_period_ns_)
+  : tp::ThreadPool(CurrentMetrics::GlobalThread, CurrentMetrics::GlobalThreadActive, CurrentMetrics::GlobalThreadScheduled, tp::ThreadPoolOptions().setQueueSize(queue_size_).setMaxFreeThreads(max_free_threads_).setMaxThreads(max_threads_))
+        // CurrentMetrics::GlobalThread,
+        // CurrentMetrics::GlobalThreadActive,
+        // CurrentMetrics::GlobalThreadScheduled,
+        // max_threads_,
+        // max_free_threads_,
+        // queue_size_,
+        // shutdown_on_exception_)
+    , global_profiler_real_time_period_ns(global_profiler_real_time_period_ns_)
+    , global_profiler_cpu_time_period_ns(global_profiler_cpu_time_period_ns_)
+{
+}
+
+template <>
+GlobalThreadPool<FreeThreadPool>::GlobalThreadPool(
     size_t max_threads_,
     size_t max_free_threads_,
     size_t queue_size_,
@@ -524,7 +575,8 @@ GlobalThreadPool::GlobalThreadPool(
 {
 }
 
-void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
+template <typename Pool>
+void GlobalThreadPool<Pool>::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
 {
     if (the_instance)
     {
@@ -535,7 +587,8 @@ void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
     the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/, global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns));
 }
 
-GlobalThreadPool & GlobalThreadPool::instance()
+template <typename Pool>
+GlobalThreadPool<Pool> & GlobalThreadPool<Pool>::instance()
 {
     if (!the_instance)
     {
@@ -546,11 +599,19 @@ GlobalThreadPool & GlobalThreadPool::instance()
 
     return *the_instance;
 }
-void GlobalThreadPool::shutdown()
+
+template <typename Pool>
+bool GlobalThreadPool<Pool>::initialized()
+{
+    return the_instance.get() != nullptr;
+}
+
+template <typename Pool>
+void GlobalThreadPool<Pool>::shutdown()
 {
     if (the_instance)
     {
-        the_instance->finalize();
+        the_instance->wait/*finalize*/();
     }
 }
 
@@ -592,3 +653,6 @@ scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
     ins.block_fault_injections = true;
     return [&ins](){ ins.block_fault_injections = false; };
 }
+
+template class GlobalThreadPool<FreeThreadPool>;
+template class GlobalThreadPool<tp::ThreadPool>;

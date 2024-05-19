@@ -14,6 +14,8 @@ namespace CurrentMetrics
 
 static bool check()
 {
+    // GlobalThreadPool<tp::ThreadPool>::instance();
+    GlobalThreadPool<FreeThreadPool>::instance();
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 10);
 
     /// The throwing thread.
@@ -54,6 +56,8 @@ TEST(ThreadPool, ExceptionFromSchedule)
 
 static bool check2()
 {
+    // GlobalThreadPool<tp::ThreadPool>::instance();
+    GlobalThreadPool<FreeThreadPool>::instance();
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 2);
 
     try

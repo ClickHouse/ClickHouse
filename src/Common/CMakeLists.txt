@@ -1,5 +1,7 @@
 add_subdirectory(StringUtils)
 
+# add_subdirectory(thread_pool)
+
 if (ENABLE_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
