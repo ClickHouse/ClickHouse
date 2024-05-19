@@ -5090,14 +5090,14 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         auto * nearest_query_scope = scope.getNearestQueryScope();
 
         if (!nearest_query_scope)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window '{}' does not exists.", parent_window_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window '{}' does not exist.", parent_window_name);
 
         auto & scope_window_name_to_window_node = nearest_query_scope->window_name_to_window_node;
 
         auto window_node_it = scope_window_name_to_window_node.find(parent_window_name);
         if (window_node_it == scope_window_name_to_window_node.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Window '{}' does not exists. In scope {}",
+                "Window '{}' does not exist. In scope {}",
                 parent_window_name,
                 nearest_query_scope->scope_node->formatASTForErrorMessage());
 
@@ -5861,7 +5861,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exists. In scope {}{}",
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist. In scope {}{}",
                             function_name, scope.scope_node->formatASTForErrorMessage(),
                             getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
         }
@@ -5942,7 +5942,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name '{}' does not exists. In scope {}{}",
+                "Function with name '{}' does not exist. In scope {}{}",
                 function_name,
                 scope.scope_node->formatASTForErrorMessage(),
                 getHintsErrorMessageSuffix(hints));
@@ -8070,7 +8070,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto window_node_it = scope.window_name_to_window_node.find(parent_window_name);
             if (window_node_it == scope.window_name_to_window_node.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window '{}' does not exists. In scope {}",
+                    "Window '{}' does not exist. In scope {}",
                     parent_window_name,
                     scope.scope_node->formatASTForErrorMessage());
 
@@ -8268,7 +8268,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         if (!has_node_in_alias_table)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Node {} with duplicate alias {} does not exists in alias table. In scope {}",
+                "Node {} with duplicate alias {} does not exist in alias table. In scope {}",
                 node->formatASTForErrorMessage(),
                 node_alias,
                 scope.scope_node->formatASTForErrorMessage());

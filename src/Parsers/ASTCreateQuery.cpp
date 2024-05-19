@@ -170,6 +170,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->projections, projections->clone());
     if (primary_key)
         res->set(res->primary_key, primary_key->clone());
+    if (primary_key_from_columns)
+        res->set(res->primary_key_from_columns, primary_key_from_columns->clone());
 
     return res;
 }
