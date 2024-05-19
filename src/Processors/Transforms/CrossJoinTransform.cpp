@@ -122,13 +122,13 @@ IMergingAlgorithm::Status CrossJoinAlgorithm::merge()
     UInt32 rows_added = 0;
     Chunk left_table_res(headers[left_table_num].getColumns(), 0);
     Chunk right_table_res(headers[right_table_num].getColumns(), 0);
-    while (!sides[left_table_num].isEmpty())
+    while (rows_added <= max_joined_block_rows && !sides[left_table_num].isEmpty())
     {
         auto left_chunk = sides[left_table_num].getChunk();
         UInt64 rows_consumed = 0;
         UInt64 rows_in_left_chunk = left_chunk.first.getNumRows();
         const Chunks & right_chunks = sides[right_table_num].getAllChunks();
-        while (left_chunk.second + rows_consumed < rows_in_left_chunk)
+        while (rows_added <= max_joined_block_rows && left_chunk.second + rows_consumed < rows_in_left_chunk)
         {
             size_t left_row = left_chunk.second + rows_consumed;
             for (; last_consumed_right_chunk < right_chunks.size(); ++last_consumed_right_chunk)
@@ -146,12 +146,12 @@ IMergingAlgorithm::Status CrossJoinAlgorithm::merge()
                     break;
                 }
             }
-            if (rows_added > max_joined_block_rows && last_consumed_right_chunk != right_chunks.size())
-                break;
 
-            last_consumed_right_chunk = 0;
-
-            ++rows_consumed;
+            if (last_consumed_right_chunk == right_chunks.size())
+            {
+                last_consumed_right_chunk = 0;
+                ++rows_consumed;
+            }
         }
         sides[left_table_num].consume(rows_consumed);
     }
