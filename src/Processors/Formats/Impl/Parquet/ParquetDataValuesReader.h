@@ -18,8 +18,7 @@ namespace DB
 class RleValuesReader
 {
 public:
-    RleValuesReader(std::unique_ptr<arrow::bit_util::BitReader> bit_reader_, Int32 bit_width_)
-        : bit_reader(std::move(bit_reader_)), bit_width(bit_width_) {}
+    RleValuesReader(std::unique_ptr<arrow::bit_util::BitReader> bit_reader_, Int32 bit_width_);
 
     /**
      * @brief Used when the bit_width is 0, so all elements have same value.
@@ -71,12 +70,14 @@ public:
      * @tparam IndividualNullVisitor A callback with signature: void(size_t cursor), used to process null value
      * @tparam SteppedValidVisitor  A callback with signature:
      *  void(size_t cursor, const std::vector<UInt8> & valid_index_steps)
-     *  for n valid elements with null value interleaved in a BitPacked group,
+     *  valid_index_steps records the gap size between two valid elements,
      *  i-th item in valid_index_steps describes how many elements there are
      *  from i-th valid element (include) to (i+1)-th valid element (exclude).
      *
-     *  take following BitPacked group with 2 valid elements for example:
-     *      null valid null null valid null
+     *  take following BitPacked group values for example, and assuming max_def_level is 1:
+     *      [1,   0,    1,   1,   0,    1    ]
+     *       null valid null null valid null
+     *  the second line shows the corresponding validation state,
      *  then the valid_index_steps has values [1, 3, 2].
      *  Please note that the the sum of valid_index_steps is same as elements number in this group.
      *
@@ -117,7 +118,7 @@ private:
     std::vector<Int32> cur_packed_bit_values;
     std::vector<UInt8> valid_index_steps;
 
-    Int32 bit_width;
+    const Int32 bit_width;
 
     UInt32 cur_group_size = 0;
     UInt32 cur_group_cursor = 0;

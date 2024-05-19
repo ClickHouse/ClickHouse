@@ -14,6 +14,17 @@ namespace ErrorCodes
     extern const int PARQUET_EXCEPTION;
 }
 
+RleValuesReader::RleValuesReader(
+    std::unique_ptr<arrow::bit_util::BitReader> bit_reader_, Int32 bit_width_)
+    : bit_reader(std::move(bit_reader_)), bit_width(bit_width_)
+{
+    if (unlikely(bit_width >= 64))
+    {
+        // e.g. in GetValue_ in bit_stream_utils.h, uint64 type is used to read bit values
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported bit width {}", bit_width);
+    }
+}
+
 void RleValuesReader::nextGroup()
 {
     // refer to:
@@ -29,9 +40,6 @@ void RleValuesReader::nextGroup()
     {
         cur_group_size *= 8;
         cur_packed_bit_values.resize(cur_group_size);
-
-        // try to suppress clang tidy warnings by assertion
-        assert(bit_width < 64);
         bit_reader->GetBatch(bit_width, cur_packed_bit_values.data(), cur_group_size);
     }
     else
