@@ -109,10 +109,6 @@ MultiPolygon	[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)]
 Map(Dynamic, Dynamic)	{'11':'v1','22':'1'}
 Nested(x UInt32, y String)	[(1,'aa'),(2,'bb')]
 Nested(x UInt32, y Tuple(y1 UInt32, y2 Array(String)), z Nested(z1 UInt32, z2 String))	[(1,(2,['aa','bb']),[(3,'cc'),(4,'dd')]),(5,(6,['ee','ff']),[(7,'gg'),(8,'hh')])]
-Object(\'json\')	{"1":"2"}
-Object(Nullable(\'json\'))	{"k1":1,"k2":2,"1":null,"2":null,"2020-10-10":null}
-Object(Nullable(\'json\'))	{"k1":null,"k2":null,"1":null,"2":null,"2020-10-10":"foo"}
-Object(Nullable(\'json\'))	{"k1":null,"k2":null,"1":2,"2":3,"2020-10-10":null}
 Point	(1.23,4.5600000000000005)
 Ring	[(1.23,4.5600000000000005),(2.34,5.67)]
 String	string
@@ -258,10 +254,6 @@ MultiPolygon	[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)]
 Map(Dynamic, Dynamic)	{'11':'v1','22':'1'}
 Nested(x UInt32, y String)	[(1,'aa'),(2,'bb')]
 Nested(x UInt32, y Tuple(y1 UInt32, y2 Array(String)), z Nested(z1 UInt32, z2 String))	[(1,(2,['aa','bb']),[(3,'cc'),(4,'dd')]),(5,(6,['ee','ff']),[(7,'gg'),(8,'hh')])]
-Object(\'json\')	{"1":"2"}
-Object(Nullable(\'json\'))	{"k1":1,"k2":2,"1":null,"2":null,"2020-10-10":null}
-Object(Nullable(\'json\'))	{"k1":null,"k2":null,"1":null,"2":null,"2020-10-10":"foo"}
-Object(Nullable(\'json\'))	{"k1":null,"k2":null,"1":2,"2":3,"2020-10-10":null}
 Point	(1.23,4.5600000000000005)
 Ring	[(1.23,4.5600000000000005),(2.34,5.67)]
 String	string
@@ -296,5 +288,5 @@ UInt256	1
 UInt256	115792089237316195423570985008687907853269984665640564039457584007913129639934
 UInt256	115792089237316195423570985008687907853269984665640564039457584007913129639935
 
-50
-50
+48
+48

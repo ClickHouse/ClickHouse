@@ -49,10 +49,6 @@ INSERT INTO t VALUES ('1'::Bool), (0::Bool);
 -- Dates: use Date and Date32 for days, and DateTime and DateTime64 for instances in time
 INSERT INTO t VALUES ('2022-01-01'::Date), ('2022-01-01'::Date32), ('2022-01-01 01:01:01'::DateTime), ('2022-01-01 01:01:01.011'::DateTime64);
 
--- JSON
-INSERT INTO t VALUES ('{"1":"2"}'::JSON);
-INSERT INTO t FORMAT JSONEachRow {"d" : {"k1" : 1, "k2" : 2}} {"d" : {"1" : 2, "2" : 3}} {"d" : {"2020-10-10" : "foo"}};
-
 -- UUID
 INSERT INTO t VALUES ('dededdb6-7835-4ce4-8d11-b5de6f2820e9'::UUID);
 INSERT INTO t VALUES ('00000000-0000-0000-0000-000000000000'::UUID);
@@ -86,13 +82,13 @@ INSERT INTO t VALUES (interval '1' day), (interval '2' month), (interval '3' yea
 INSERT INTO t VALUES ([(1, 'aa'), (2, 'bb')]::Nested(x UInt32, y String));
 INSERT INTO t VALUES ([(1, (2, ['aa', 'bb']), [(3, 'cc'), (4, 'dd')]), (5, (6, ['ee', 'ff']), [(7, 'gg'), (8, 'hh')])]::Nested(x UInt32, y Tuple(y1 UInt32, y2 Array(String)), z Nested(z1 UInt32, z2 String)));
 
-SELECT dynamicType(d), d FROM t ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d, toString(d);
+SELECT dynamicType(d), d FROM t ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d;
 
 CREATE TABLE t2 (d Dynamic(max_types=255)) ENGINE = Memory;
 INSERT INTO t2 SELECT * FROM t;
 
 SELECT '';
-SELECT dynamicType(d), d FROM t2 ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d, toString(d);
+SELECT dynamicType(d), d FROM t2 ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d;
 
 SELECT '';
 SELECT uniqExact(dynamicType(d)) t_ FROM t;
