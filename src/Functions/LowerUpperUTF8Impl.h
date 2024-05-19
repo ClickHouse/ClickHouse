@@ -3,6 +3,7 @@
 #include <Functions/LowerUpperImpl.h>
 #include <base/defines.h>
 #include <Poco/UTF8Encoding.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 
 #ifdef __SSE2__
@@ -94,7 +95,7 @@ struct LowerUpperUTF8Impl
         if (data.empty())
             return;
 
-        bool all_ascii = UTF8::isAllASCII(data.data(), data.size());
+        bool all_ascii = isAllASCII(data.data(), data.size());
         if (all_ascii)
         {
             LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vector(data, offsets, res_data, res_offsets);

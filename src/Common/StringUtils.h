@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <type_traits>
 
+#include <base/types.h>
+
 
 namespace impl
 {
@@ -314,6 +316,9 @@ inline void trim(std::string & str, char c = ' ')
     trimRight(str, c);
     trimLeft(str, c);
 }
+
+/// If all characters in the string are ASCII, return true
+bool isAllASCII(const UInt8 * data, size_t size);
 
 constexpr bool containsGlobs(const std::string & str)
 {
