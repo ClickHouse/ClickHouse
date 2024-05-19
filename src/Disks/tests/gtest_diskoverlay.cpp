@@ -204,3 +204,23 @@ TEST_F(OverlayTest, moveDeleteReadListFile) {
     std::sort(paths.begin(), paths.end());
     EXPECT_EQ(paths, corr);
 }
+
+TEST_F(OverlayTest, hardlink) {
+    base->createDirectory("folder");
+    writeToFileBase("folder/file.txt", "test data");
+    
+    over->createHardLink("folder/file.txt", "folder/file1.txt");
+    EXPECT_EQ(readFromFileOver("folder/file1.txt"), "test data");
+}
+
+TEST_F(OverlayTest, badhardlink) {
+    base->createDirectory("folder");
+    writeToFileBase("folder/file.txt", "test data");
+    
+    over->createHardLink("folder/file.txt", "folder/file1.txt");
+    EXPECT_EQ(readFromFileOver("folder/file1.txt"), "test data");
+
+    writeToFileOver("folder/file.txt", "test data", /*append=*/false);
+
+    EXPECT_EQ(readFromFileOver("folder/file1.txt"), "test data");
+}

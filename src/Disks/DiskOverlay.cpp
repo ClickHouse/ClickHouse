@@ -1,5 +1,6 @@
 #include "DiskOverlay.h"
 
+#include <iostream>
 #include <Disks/DiskFactory.h>
 #include <Disks/DirectoryIterator.h>
 #include <Disks/IDisk.h>
@@ -153,6 +154,22 @@ void DiskOverlay::ensureHaveDirectories(const String& path)
         if (disk_base->exists(path))
         {
             setTracked(path);
+        }
+    }
+}
+
+void DiskOverlay::ensureHaveFile(const String& path)
+{
+    if (!disk_diff->exists(path))
+    {
+        ensureHaveDirectories(parentPath(path));
+        disk_diff->createFile(path);
+        if (disk_base->exists(path) && !isTracked(path))
+        {
+            setTracked(path);
+            auto trans = metadata->createTransaction();
+            trans->writeInlineDataToFile(dataPath(path), path);
+            trans->commit();
         }
     }
 }
@@ -320,8 +337,7 @@ void DiskOverlay::createFile(const String & path)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create file: parent path doesn't exist");
     }
-    ensureHaveDirectories(parentPath(path));
-    disk_diff->createFile(path);
+    ensureHaveFile(path);
 }
 
 void DiskOverlay::moveFile(const String & from_path, const String & to_path)
@@ -566,22 +582,18 @@ void DiskOverlay::removeRecursive(const String & dirpath)
 
 void DiskOverlay::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    if (!disk_diff->exists(path))
+    if (!exists(path))
     {
-        if (disk_base->exists(path) && !isTracked(path))
-        {
-            if (disk_base->isFile(path))
-            {
-                disk_diff->createFile(path);
-            } else
-            {
-                disk_diff->createDirectory(path);
-            }
-        } else
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set modification time: path doesn't exist");
-        }
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set modification time: path doesn't exist");
     }
+    if (isFile(path))
+    {
+        ensureHaveFile(path);
+    } else
+    {
+        ensureHaveDirectories(path);
+    }
+
     disk_diff->setLastModified(path, timestamp);
 }
 
@@ -613,26 +625,39 @@ time_t DiskOverlay::getLastChanged(const String &  path) const
 
 void DiskOverlay::setReadOnly(const String & path)
 {
-    if (!disk_diff->exists(path))
+    if (!exists(path))
     {
-        if (disk_base->exists(path) && !isTracked(path))
-        {
-            if (disk_base->isFile(path))
-            {
-                disk_diff->createFile(path);
-            } else
-            {
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set modification time: path is not a file");
-            }
-        } else
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set modification time: path doesn't exist");
-        }
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot set read only: path doesn't exist");
     }
+    if (isFile(path))
+    {
+        ensureHaveFile(path);
+    } else
+    {
+        ensureHaveDirectories(path);
+    }
+
     disk_diff->setReadOnly(path);
 }
 
-void DiskOverlay::createHardLink(const String &  /*src_path*/, const String &  /*dst_path*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO"); }
+void DiskOverlay::createHardLink(const String & src_path, const String & dst_path) {
+    // This doesn't work correctly for subsequent rewrite or deletion of the hardlinked file
+    if (!exists(src_path) || !isFile(src_path))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't create hardlink: src_path isn't a file");
+    }
+    ensureHaveFile(src_path);
+
+    disk_diff->createHardLink(src_path, dst_path);
+    if (metadata->exists(dataPath(src_path))) {
+        auto trans = metadata->createTransaction();
+        auto str = metadata->readInlineDataToString(dataPath(src_path));
+        std::cout << str << std::endl;
+        trans->writeInlineDataToFile(dataPath(dst_path), str);
+        trans->commit();
+    }
+}
+
 DataSourceDescription DiskOverlay::getDataSourceDescription() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There are two disks in overlay, which one do you want?"); }
 
 bool DiskOverlay::supportParallelWrite() const
