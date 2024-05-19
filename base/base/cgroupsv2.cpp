@@ -9,11 +9,18 @@
 bool cgroupsV2Enabled()
 {
 #if defined(OS_LINUX)
-    /// This file exists iff the host has cgroups v2 enabled.
-    auto controllers_file = default_cgroups_mount / "cgroup.controllers";
-    if (!std::filesystem::exists(controllers_file))
-        return false;
-    return true;
+    try
+    {
+        /// This file exists iff the host has cgroups v2 enabled.
+        auto controllers_file = default_cgroups_mount / "cgroup.controllers";
+        if (!std::filesystem::exists(controllers_file))
+            return false;
+        return true;
+    }
+    catch (...)
+    {
+        return false; /// e.g. permission denied exception
+    }
 #else
     return false;
 #endif
