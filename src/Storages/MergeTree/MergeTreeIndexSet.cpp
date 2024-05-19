@@ -163,7 +163,6 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     MutableColumnPtr granule_num_column = elem.column->assumeMutable();
 
     auto & data = assert_cast<ColumnUInt64 &>(*granule_num_column).getData();
-    data.reserve(data.size() + rows_to_read);
     for (size_t i = 0; i < rows_to_read; ++i)
         data.push_back(granule_num);
 }
