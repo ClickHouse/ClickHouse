@@ -455,7 +455,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     else
         value_width = 0;
 
-    if (has_break_line) {
+    if (has_break_line)
+    {
         size_t previous_pos = break_line_pos_in_value[0] == 0 ? 0 : break_line_pos_in_value[0] + 1;
         serialized_value = serialized_value.substr(previous_pos, break_line_pos_in_value[1] - previous_pos);
         value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
