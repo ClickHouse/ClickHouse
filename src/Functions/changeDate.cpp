@@ -1,24 +1,23 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
+#include "Common/DateLUTImpl.h"
+#include "Common/Exception.h"
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <Common/DateLUT.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
-#include "Common/DateLUTImpl.h"
-#include "Common/Exception.h"
-#include <Common/DateLUT.h>
-#include <Common/typeid_cast.h>
-#include "Columns/IColumn.h"
-#include "DataTypes/IDataType.h"
 
-#include <array>
 #include <memory>
 
 namespace DB
@@ -26,88 +25,62 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
-enum class ChangeDateFunctionsNames
+enum class Component
 {
-    CHANGE_YEAR = 0,
-    CHANGE_MONTH = 1,
-    CHANGE_DAY = 2,
-    CHANGE_HOUR = 3,
-    CHANGE_MINUTE = 4,
-    CHANGE_SECOND = 5
+    Year,
+    Month,
+    Day,
+    Hour,
+    Minute,
+    Second
 };
 
-constexpr bool isTimeChange(const ChangeDateFunctionsNames & type)
+bool isTimeComponentChange(Component type)
 {
-    return type == ChangeDateFunctionsNames::CHANGE_HOUR ||
-           type == ChangeDateFunctionsNames::CHANGE_MINUTE ||
-           type == ChangeDateFunctionsNames::CHANGE_SECOND;
+    return type == Component::Hour ||
+           type == Component::Minute ||
+           type == Component::Second;
 }
-
-template <typename DataType>
-constexpr bool isDate()
-{
-    return DataType::type_id == TypeIndex::Date;
-}
-
-template <typename DataType>
-constexpr bool isDate32()
-{
-    return DataType::type_id == TypeIndex::Date32;
-}
-
-template <typename DataType>
-constexpr bool isDateTime()
-{
-    return DataType::type_id == TypeIndex::DateTime;
-}
-
-template <typename DataType>
-constexpr bool isDateTime64()
-{
-    return DataType::type_id == TypeIndex::DateTime64;
-}
-
 
 template <typename Traits>
 class FunctionChangeDate : public IFunction
 {
 public:
-    static constexpr auto name = Traits::Name;
-
-    static constexpr std::array mandatory_argument_names = {"date", "new_value"};
-
-    String getName() const override { return name; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    size_t getNumberOfArguments() const override { return mandatory_argument_names.size(); }
+    static constexpr auto name = Traits::name;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionChangeDate>(); }
+    String getName() const override { return Traits::name; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 2 parameters: date, new_value. Passed {}.", getName(), arguments.size());
 
-        if (!isDateOrDate32OrDateTimeOrDateTime64(*arguments[0].type) || !isNumber(*arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Date(32) or DateTime(64), second - numeric", getName());
+        if (!isDateOrDate32OrDateTimeOrDateTime64(*arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Date, Date32, DateTime or DateTime64", getName());
+        if (!isNumber(*arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be numeric", getName());
 
-        if constexpr (isTimeChange(Traits::EnumName))
+        const auto & input_type = arguments[0].type;
+
+        if (isTimeComponentChange(Traits::component))
         {
-            if (isDate(arguments[0].type))
+            if (isDate(input_type))
                 return std::make_shared<DataTypeDateTime>();
-            if (isDate32(arguments[0].type))
+            if (isDate32(input_type))
                 return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
         }
 
-        return arguments[0].type;
+        return input_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -115,50 +88,53 @@ public:
         const auto & input_type = arguments[0].type;
         if (isDate(input_type))
         {
-            if constexpr (isTimeChange(Traits::EnumName))
+            if (isTimeComponentChange(Traits::component))
                 return execute<DataTypeDate, DataTypeDateTime>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate, DataTypeDate>(arguments, input_type, result_type, input_rows_count);
         }
         if (isDate32(input_type))
         {
-            if constexpr (isTimeChange(Traits::EnumName))
+            if (isTimeComponentChange(Traits::component))
                 return execute<DataTypeDate32, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate32, DataTypeDate32>(arguments, input_type, result_type, input_rows_count);
         }
         if (isDateTime(input_type))
             return execute<DataTypeDateTime, DataTypeDateTime>(arguments, input_type, result_type, input_rows_count);
-        return execute<DataTypeDateTime64, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
+        if (isDateTime64(input_type))
+            return execute<DataTypeDateTime64, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid input type");
     }
 
-    template <typename DataType, typename ResultDataType>
+    template <typename InputDataType, typename ResultDataType>
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & input_type, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         bool is_const = (isColumnConst(*arguments[0].column) && isColumnConst(*arguments[1].column));
         size_t result_rows_count = (is_const ? 1 : input_rows_count);
 
         typename ResultDataType::ColumnType::MutablePtr result_column;
-        if constexpr (isDateTime64<ResultDataType>())
+        if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
             auto scale = DataTypeDateTime64::default_scale;
-            if constexpr (isDateTime64<DataType>())
+            if constexpr (std::is_same_v<InputDataType, DateTime64>)
                 scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
             result_column = ResultDataType::ColumnType::create(result_rows_count, scale);
         }
         else
             result_column = ResultDataType::ColumnType::create(result_rows_count);
 
-        auto & result_data = result_column->getData();
-
         auto input_column = arguments[0].column->convertToFullIfNeeded();
-        const auto & input_column_data = typeid_cast<const typename DataType::ColumnType &>(*input_column).getData();
+        const auto & input_column_data = typeid_cast<const typename InputDataType::ColumnType &>(*input_column).getData();
 
         auto new_value_column = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
         new_value_column = new_value_column->convertToFullIfNeeded();
         const auto & new_value_column_data = typeid_cast<const ColumnFloat64 &>(*new_value_column).getData();
 
+        auto & result_data = result_column->getData();
+
         for (size_t i = 0; i < result_rows_count; ++i)
         {
-            if constexpr (isDateTime64<DataType>())
+            if constexpr (std::is_same_v<InputDataType, DataTypeDateTime64>)
             {
                 const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
                 const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
@@ -172,21 +148,21 @@ public:
 
                 result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, scale, fraction);
             }
-            else if constexpr (isDate32<DataType>() && isDateTime64<ResultDataType>())
+            else if constexpr (std::is_same_v<InputDataType, DataTypeDate32> && std::is_same_v<ResultDataType, DataTypeDateTime64>)
             {
                 const auto & date_lut = typeid_cast<const DataTypeDateTime64 &>(*result_type).getTimeZone();
                 Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
 
                 result_data[i] = getChangedDate(time, new_value_column_data[i], result_type, date_lut, 3, 0);
             }
-            else if constexpr (isDate<DataType>() && isDateTime<ResultDataType>())
+            else if constexpr (std::is_same_v<InputDataType, DataTypeDate> && std::is_same_v<ResultDataType, DataTypeDateTime>)
             {
                 const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
                 Int64 time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(input_column_data[i]))) * 1'000'000;
 
                 result_data[i] = static_cast<UInt32>(getChangedDate(time, new_value_column_data[i], result_type, date_lut));
             }
-            else if constexpr (isDateTime<DataType>())
+            else if constexpr (std::is_same_v<InputDataType, DataTypeDateTime>)
             {
                 const auto & date_lut = typeid_cast<const DataTypeDateTime &>(*result_type).getTimeZone();
                 Int64 time = date_lut.toNumYYYYMMDDhhmmss(input_column_data[i]);
@@ -264,36 +240,36 @@ public:
             max_year = 2299;
         }
 
-        switch (Traits::EnumName)
+        switch (Traits::component)
         {
-            case ChangeDateFunctionsNames::CHANGE_YEAR:
+            case Component::Year:
                 if (new_value < min_year)
                     return min_date;
                 else if (new_value > max_year)
                     return max_date;
                 year = static_cast<Int16>(new_value);
                 break;
-            case ChangeDateFunctionsNames::CHANGE_MONTH:
+            case Component::Month:
                 if (new_value < 1 || new_value > 12)
                     return min_date;
                 month = static_cast<UInt8>(new_value);
                 break;
-            case ChangeDateFunctionsNames::CHANGE_DAY:
+            case Component::Day:
                 if (new_value < 1 || new_value > 31)
                     return min_date;
                 day = static_cast<UInt8>(new_value);
                 break;
-            case ChangeDateFunctionsNames::CHANGE_HOUR:
+            case Component::Hour:
                 if (new_value < 0 || new_value > 23)
                     return min_date;
                 hours = static_cast<UInt8>(new_value);
                 break;
-            case ChangeDateFunctionsNames::CHANGE_MINUTE:
+            case Component::Minute:
                 if (new_value < 0 || new_value > 59)
                     return min_date;
                 minutes = static_cast<UInt8>(new_value);
                 break;
-            case ChangeDateFunctionsNames::CHANGE_SECOND:
+            case Component::Second:
                 if (new_value < 0 || new_value > 59)
                     return min_date;
                 seconds = static_cast<UInt8>(new_value);
@@ -324,38 +300,38 @@ public:
 
 struct ChangeYearTraits
 {
-    static constexpr auto Name = "changeYear";
-    static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_YEAR;
+    static constexpr auto name = "changeYear";
+    static constexpr auto component = Component::Year;
 };
 
 struct ChangeMonthTraits
 {
-    static constexpr auto Name = "changeMonth";
-    static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_MONTH;
+    static constexpr auto name = "changeMonth";
+    static constexpr auto component = Component::Month;
 };
 
 struct ChangeDayTraits
 {
-    static constexpr auto Name = "changeDay";
-    static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_DAY;
+    static constexpr auto name = "changeDay";
+    static constexpr auto component = Component::Day;
 };
 
 struct ChangeHourTraits
 {
-    static constexpr auto Name = "changeHour";
-    static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_HOUR;
+    static constexpr auto name = "changeHour";
+    static constexpr auto component = Component::Hour;
 };
 
 struct ChangeMinuteTraits
 {
-    static constexpr auto Name = "changeMinute";
-    static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_MINUTE;
+    static constexpr auto name = "changeMinute";
+    static constexpr auto component = Component::Minute;
 };
 
 struct ChangeSecondTraits
 {
-    static constexpr auto Name = "changeSecond";
-    static constexpr auto EnumName = ChangeDateFunctionsNames::CHANGE_SECOND;
+    static constexpr auto name = "changeSecond";
+    static constexpr auto component = Component::Second;
 };
 
 }
