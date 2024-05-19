@@ -291,7 +291,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     const auto & column = result.getByPosition(result.columns() - 1).column;
 
     for (size_t i = 0; i < size; ++i)
-        if (column->getUInt(i) & 1)
+        if (!column->isNullAt(i) && (column->get64(i) & 1))
             return true;
 
     return false;
