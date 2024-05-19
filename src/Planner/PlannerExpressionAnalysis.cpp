@@ -454,6 +454,13 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
             before_sort_actions_inputs_name_to_node.emplace(node->result_name, node);
 
         std::unordered_set<std::string_view> aggregation_keys;
+
+        auto projection_expression_dag = std::make_shared<ActionsDAG>();
+        for (const auto & node : query_node.getProjection())
+            actions_visitor.visit(projection_expression_dag, node);
+        for (const auto & node : projection_expression_dag->getNodes())
+            aggregation_keys.insert(node.result_name);
+
         if (aggregation_analysis_result_optional)
             aggregation_keys.insert(aggregation_analysis_result_optional->aggregation_keys.begin(), aggregation_analysis_result_optional->aggregation_keys.end());
 
