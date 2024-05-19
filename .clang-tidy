@@ -122,11 +122,11 @@ Checks: [
   '-readability-named-parameter',
   '-readability-redundant-declaration',
   '-readability-redundant-inline-specifier',
-  '-readability-redundant-member-init', # useful but triggers another problem. Imagine a struct S with String members. If S is
-                                        # initialized via designated initializer, then the caller needs to initialize *all* members
-                                        # (to avoid warning `missing-field-initializers`) unless the mebers are default-initialized
-                                        # in S. So this clang-tidy warning prevents default-initialization and writing out all members
-                                        # in a designated initializer is ugly...
+  '-readability-redundant-member-init', # Useful but triggers another problem. Imagine a struct S with multiple String members. Structs are often instantiated via designated
+        # initializer S s{.s1 = [...], .s2 = [...], [...]}. In this case, compiler warning `missing-field-initializers` requires to specify all members which are not in-struct
+        # initialized (example: s1 in struct S { String s1; String s2{};}; is not in-struct initialized, therefore it must be specified at instantiation time). As explicitly
+        # specifying all members is tedious for large structs, `missing-field-initializers` makes programmers initialize as many members as possible in-struct. Clang-tidy
+        # warning `readability-redundant-member-init` does the opposite thing, both are not compatible with each other.
   '-readability-simplify-boolean-expr',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
