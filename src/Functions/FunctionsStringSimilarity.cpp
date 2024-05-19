@@ -85,7 +85,7 @@ struct NgramDistanceImpl
     }
 
     template <size_t Offset, class Container, size_t... I>
-    static ALWAYS_INLINE void unrollLowering(Container & cont, const std::index_sequence<I...> &)
+    static ALWAYS_INLINE inline void unrollLowering(Container & cont, const std::index_sequence<I...> &)
     {
         ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
     }
@@ -195,7 +195,7 @@ struct NgramDistanceImpl
     }
 
     template <bool save_ngrams>
-    static ALWAYS_INLINE size_t calculateNeedleStats(
+    static ALWAYS_INLINE inline size_t calculateNeedleStats(
         const char * data,
         const size_t size,
         NgramCount * ngram_stats,
@@ -228,7 +228,7 @@ struct NgramDistanceImpl
     }
 
     template <bool reuse_stats>
-    static ALWAYS_INLINE UInt64 calculateHaystackStatsAndMetric(
+    static ALWAYS_INLINE inline UInt64 calculateHaystackStatsAndMetric(
         const char * data,
         const size_t size,
         NgramCount * ngram_stats,

@@ -118,6 +118,8 @@ Checks: [
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
+  '-readability-redundant-inline-specifier', # generally useful but incompatible with __attribute((always_inline))__ (aka. ALWAYS_INLINE).
+                                             # it has an effect only if combined with `inline`: https://godbolt.org/z/Eefd74qdM
   '-readability-simplify-boolean-expr',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',

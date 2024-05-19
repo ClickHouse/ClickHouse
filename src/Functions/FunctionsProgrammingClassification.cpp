@@ -21,7 +21,7 @@ namespace DB
 struct FunctionDetectProgrammingLanguageImpl
 {
     /// Calculate total weight
-    static ALWAYS_INLINE Float64 stateMachine(
+    static ALWAYS_INLINE inline Float64 stateMachine(
         const FrequencyHolder::Map & standard,
         const std::unordered_map<String, Float64> & model)
     {

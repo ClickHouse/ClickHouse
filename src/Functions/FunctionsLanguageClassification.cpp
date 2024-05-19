@@ -31,7 +31,7 @@ extern const int SUPPORT_IS_DISABLED;
 
 struct FunctionDetectLanguageImpl
 {
-    static ALWAYS_INLINE std::string_view codeISO(std::string_view code_string)
+    static ALWAYS_INLINE inline std::string_view codeISO(std::string_view code_string)
     {
         if (code_string.ends_with("-Latn"))
             code_string.remove_suffix(code_string.size() - 5);

@@ -99,7 +99,7 @@ struct Hash
     }
 
     template <bool CaseInsensitive>
-    static ALWAYS_INLINE UInt64 shingleHash(UInt64 crc, const UInt8 * start, size_t size)
+    static ALWAYS_INLINE inline UInt64 shingleHash(UInt64 crc, const UInt8 * start, size_t size)
     {
         if (size & 1)
         {
@@ -153,7 +153,7 @@ struct Hash
     }
 
     template <bool CaseInsensitive>
-    static ALWAYS_INLINE UInt64 shingleHash(const std::vector<BytesRef> & shingle, size_t offset = 0)
+    static ALWAYS_INLINE inline UInt64 shingleHash(const std::vector<BytesRef> & shingle, size_t offset = 0)
     {
         UInt64 crc = -1ULL;
 
@@ -177,14 +177,14 @@ struct SimHashImpl
     static constexpr size_t min_word_size = 4;
 
     /// Update fingerprint according to hash_value bits.
-    static ALWAYS_INLINE void updateFingerVector(Int64 * finger_vec, UInt64 hash_value)
+    static ALWAYS_INLINE inline void updateFingerVector(Int64 * finger_vec, UInt64 hash_value)
     {
         for (size_t i = 0; i < 64; ++i)
             finger_vec[i] += (hash_value & (1ULL << i)) ? 1 : -1;
     }
 
     /// Return a 64 bit value according to finger_vec.
-    static ALWAYS_INLINE UInt64 getSimHash(const Int64 * finger_vec)
+    static ALWAYS_INLINE inline UInt64 getSimHash(const Int64 * finger_vec)
     {
         UInt64 res = 0;
 
@@ -200,7 +200,7 @@ struct SimHashImpl
     // for each ngram, calculate a 64 bit hash value, and update the vector according the hash value
     // finally return a 64 bit value(UInt64), i'th bit is 1 means vector[i] > 0, otherwise, vector[i] < 0
 
-    static ALWAYS_INLINE UInt64 ngramHashASCII(const UInt8 * data, size_t size, size_t shingle_size)
+    static ALWAYS_INLINE inline UInt64 ngramHashASCII(const UInt8 * data, size_t size, size_t shingle_size)
     {
         if (size < shingle_size)
             return Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
@@ -217,7 +217,7 @@ struct SimHashImpl
         return getSimHash(finger_vec);
     }
 
-    static ALWAYS_INLINE UInt64 ngramHashUTF8(const UInt8 * data, size_t size, size_t shingle_size)
+    static ALWAYS_INLINE inline UInt64 ngramHashUTF8(const UInt8 * data, size_t size, size_t shingle_size)
     {
         const UInt8 * start = data;
         const UInt8 * end = data + size;
@@ -259,7 +259,7 @@ struct SimHashImpl
     // 2. next, we extract one word each time, and calculate a new hash value of the new word,then use the latest N hash
     // values to calculate the next word shingle hash value
 
-    static ALWAYS_INLINE UInt64 wordShingleHash(const UInt8 * data, size_t size, size_t shingle_size)
+    static ALWAYS_INLINE inline UInt64 wordShingleHash(const UInt8 * data, size_t size, size_t shingle_size)
     {
         const UInt8 * start = data;
         const UInt8 * end = data + size;
@@ -400,7 +400,7 @@ struct MinHashImpl
     using MaxHeap = Heap<std::less<>>;
     using MinHeap = Heap<std::greater<>>;
 
-    static ALWAYS_INLINE void ngramHashASCII(
+    static ALWAYS_INLINE inline void ngramHashASCII(
         MinHeap & min_heap,
         MaxHeap & max_heap,
         const UInt8 * data,
@@ -429,7 +429,7 @@ struct MinHashImpl
         }
     }
 
-    static ALWAYS_INLINE void ngramHashUTF8(
+    static ALWAYS_INLINE inline void ngramHashUTF8(
         MinHeap & min_heap,
         MaxHeap & max_heap,
         const UInt8 * data,
@@ -472,7 +472,7 @@ struct MinHashImpl
     // MinHash word shingle hash value calculate function: String ->Tuple(UInt64, UInt64)
     // for each word shingle, we calculate a hash value, but in fact, we just maintain the
     // K minimum and K maximum hash value
-    static ALWAYS_INLINE void wordShingleHash(
+    static ALWAYS_INLINE inline void wordShingleHash(
         MinHeap & min_heap,
         MaxHeap & max_heap,
         const UInt8 * data,

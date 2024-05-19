@@ -38,7 +38,7 @@ public:
         UInt64 version = 0;
         UInt64 prev_version = 0;
 
-        void ALWAYS_INLINE update()
+        void inline ALWAYS_INLINE update()
         {
             if (version == prev_version && update_list)
                 update_list->push_back(id);
@@ -46,7 +46,7 @@ public:
             ++version;
         }
 
-        void ALWAYS_INLINE trigger() { prev_version = version; }
+        void inline ALWAYS_INLINE trigger() { prev_version = version; }
     };
 
 protected:
@@ -249,7 +249,7 @@ public:
     }
 
 protected:
-    void ALWAYS_INLINE updateVersion()
+    void inline ALWAYS_INLINE updateVersion()
     {
         if (likely(update_info))
             update_info->update();

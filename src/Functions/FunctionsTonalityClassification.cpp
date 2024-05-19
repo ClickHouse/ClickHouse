@@ -18,7 +18,7 @@ namespace DB
   */
 struct FunctionDetectTonalityImpl
 {
-    static ALWAYS_INLINE Float32 detectTonality(
+    static ALWAYS_INLINE inline Float32 detectTonality(
         const UInt8 * str,
         const size_t str_len,
         const FrequencyHolder::Map & emotional_dict)
