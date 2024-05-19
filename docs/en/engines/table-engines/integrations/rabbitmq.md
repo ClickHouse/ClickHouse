@@ -18,8 +18,8 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1],
+    name2 [type2],
     ...
 ) ENGINE = RabbitMQ SETTINGS
     rabbitmq_host_port = 'host:port' [or rabbitmq_address = 'amqp(s)://guest:guest@localhost/vhost'],
@@ -73,6 +73,7 @@ Optional parameters:
 - `rabbitmq_queue_consume` - Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings. Default: `false`.
 - `rabbitmq_username` - RabbitMQ username.
 - `rabbitmq_password` - RabbitMQ password.
+- `reject_unhandled_messages` - Reject messages (send RabbitMQ negative acknowledgement) in case of errors. This setting is automatically enabled if there is a `x-dead-letter-exchange` defined in `rabbitmq_queue_settings_list`.
 - `rabbitmq_commit_on_select` - Commit messages when select query is made. Default: `false`.
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
 - `rabbitmq_empty_queue_backoff_start` — A start backoff point to reschedule read if the rabbitmq queue is empty.
@@ -197,6 +198,10 @@ Additional virtual columns when `kafka_handle_error_mode='stream'`:
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
+
+## Caveats {#caveats}
+
+Even though you may specify [default column expressions](/docs/en/sql-reference/statements/create/table.md/#default_values) (such as `DEFAULT`, `MATERIALIZED`, `ALIAS`) in the table definition, these will be ignored. Instead, the columns will be filled with their respective default values for their types.
 
 ## Data formats support {#data-formats-support}
 

@@ -193,3 +193,33 @@ Result:
 ## translateUTF8
 
 Like [translate](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
+
+**Syntax**
+
+``` sql
+translateUTF8(s, from, to)
+```
+
+**Parameters**
+
+- `s`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `from`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `to`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
+```
+
+``` response
+┌─res──────────────┐
+│ Munchener Strase │
+└──────────────────┘
+```

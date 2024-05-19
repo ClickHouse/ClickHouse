@@ -1,0 +1,44 @@
+{% for enable_vertical_merge_algorithm in [0, 1] -%}
+
+DROP TABLE IF EXISTS t_block_offset;
+
+CREATE TABLE t_block_offset (id UInt32, a UInt32) ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    index_granularity = 2,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    enable_vertical_merge_algorithm = {{ enable_vertical_merge_algorithm }};
+
+INSERT INTO t_block_offset(id,a) VALUES (1,1),(3,3),(4,4);
+INSERT INTO t_block_offset(id,a) VALUES (2,2),(5,5),(6,6);
+
+SELECT '*** BEFORE MUTATION BEFORE MERGE ***';
+SELECT id,a,_block_number,_block_offset,_part from t_block_offset ORDER BY id;
+
+set mutations_sync=1;
+ALTER TABLE t_block_offset UPDATE a=0 WHERE id<4;
+
+SELECT '*** AFTER MUTATION BEFORE MERGE ***';
+SELECT id,a,_block_number,_block_offset,_part from t_block_offset ORDER BY id;
+
+OPTIMIZE TABLE t_block_offset FINAL;
+
+SELECT '*** AFTER MUTATION AFTER MERGE ***';
+SELECT *,_block_number,_block_offset,_part from t_block_offset ORDER BY id;
+
+INSERT INTO t_block_offset(id,a) VALUES (7,7),(8,8),(9,9);
+
+SELECT '*** AFTER MUTATION AFTER MERGE , NEW BLOCK ***';
+SELECT *,_block_number,_block_offset,_part from t_block_offset ORDER BY id;
+
+OPTIMIZE TABLE t_block_offset FINAL;
+
+SELECT '*** AFTER MUTATION AFTER MERGE , NEW BLOCK MERGED ***';
+SELECT *,_block_number,_block_offset,_part from t_block_offset ORDER BY id;
+
+DROP TABLE t_block_offset;
+
+{% endfor %}

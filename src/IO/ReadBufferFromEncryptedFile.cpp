@@ -101,18 +101,6 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     return true;
 }
 
-size_t ReadBufferFromEncryptedFile::getFileSize()
-{
-    size_t size = in->getFileSize();
-    return size > FileEncryption::Header::kSize ? size - FileEncryption::Header::kSize : size;
-}
-
-size_t ReadBufferFromEncryptedFile::getFileOffsetOfBufferEnd() const
-{
-    size_t file_offset = in->getFileOffsetOfBufferEnd();
-    return file_offset > FileEncryption::Header::kSize ? file_offset - FileEncryption::Header::kSize : file_offset;
-}
-
 }
 
 #endif

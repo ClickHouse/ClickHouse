@@ -17,30 +17,30 @@ ColumnsDescription StorageSystemFilesystemCache::getColumnsDescription()
     /// TODO: Fill in all the comments.
     return ColumnsDescription
     {
-        {"cache_name", std::make_shared<DataTypeString>()},
-        {"cache_base_path", std::make_shared<DataTypeString>()},
-        {"cache_path", std::make_shared<DataTypeString>()},
-        {"key", std::make_shared<DataTypeString>()},
-        {"file_segment_range_begin", std::make_shared<DataTypeUInt64>()},
-        {"file_segment_range_end", std::make_shared<DataTypeUInt64>()},
-        {"size", std::make_shared<DataTypeUInt64>()},
-        {"state", std::make_shared<DataTypeString>()},
-        {"cache_hits", std::make_shared<DataTypeUInt64>()},
-        {"references", std::make_shared<DataTypeUInt64>()},
-        {"downloaded_size", std::make_shared<DataTypeUInt64>()},
-        {"kind", std::make_shared<DataTypeString>()},
-        {"unbound", std::make_shared<DataTypeNumber<UInt8>>()},
-        {"user_id", std::make_shared<DataTypeString>()},
-        {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"cache_name", std::make_shared<DataTypeString>(), "Name of the cache object. Can be used in `SYSTEM DESCRIBE FILESYSTEM CACHE <name>`, `SYSTEM DROP FILESYSTEM CACHE <name>` commands"},
+        {"cache_base_path", std::make_shared<DataTypeString>(), "Path to the base directory where all caches files (of a cache identidied by `cache_name`) are stored."},
+        {"cache_path", std::make_shared<DataTypeString>(), "Path to a particular cache file, corresponding to a file segment in a source file"},
+        {"key", std::make_shared<DataTypeString>(), "Cache key of the file segment"},
+        {"file_segment_range_begin", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the beginning of the file segment range"},
+        {"file_segment_range_end", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the (including) end of the file segment range"},
+        {"size", std::make_shared<DataTypeUInt64>(), "Size of the file segment"},
+        {"state", std::make_shared<DataTypeString>(), "File segment state (DOWNLOADED, DOWNLOADING, PARTIALLY_DOWNLOADED, ...)"},
+        {"cache_hits", std::make_shared<DataTypeUInt64>(), "Number of cache hits of corresponding file segment"},
+        {"references", std::make_shared<DataTypeUInt64>(), "Number of references to corresponding file segment. Value 1 means that nobody uses it at the moment (the only existing reference is in cache storage itself)"},
+        {"downloaded_size", std::make_shared<DataTypeUInt64>(), "Downloaded size of the file segment"},
+        {"kind", std::make_shared<DataTypeString>(), "File segment kind (used to distringuish between file segments added as a part of 'Temporary data in cache')"},
+        {"unbound", std::make_shared<DataTypeNumber<UInt8>>(), "Internal implementation flag"},
+        {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
+        {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "File size of the file to which current file segment belongs"},
     };
 }
 
 StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_)
+    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
 }
 
-void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto caches = FileCacheFactory::instance().getAll();
 

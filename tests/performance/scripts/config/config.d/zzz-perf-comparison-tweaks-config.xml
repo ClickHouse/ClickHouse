@@ -2,10 +2,7 @@
     <http_port remove="remove"/>
     <mysql_port remove="remove"/>
     <postgresql_port remove="remove"/>
-    <interserver_http_port remove="remove"/>
     <tcp_with_proxy_port remove="remove"/>
-    <keeper_server remove="remove"/>
-    <zookeeper remove="remove"/>
     <listen_host>::</listen_host>
 
     <logger>

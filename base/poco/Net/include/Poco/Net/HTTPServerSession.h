@@ -56,6 +56,8 @@ namespace Net
         SocketAddress serverAddress();
         /// Returns the server's address.
 
+        void setKeepAliveTimeout(Poco::Timespan keepAliveTimeout);
+
     private:
         bool _firstRequest;
         Poco::Timespan _keepAliveTimeout;

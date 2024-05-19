@@ -44,11 +44,12 @@ StorageS3QueueSource::FileIterator::FileIterator(
     std::shared_ptr<S3QueueFilesMetadata> metadata_,
     std::unique_ptr<GlobIterator> glob_iterator_,
     size_t current_shard_,
-    std::atomic<bool> & shutdown_called_)
+    std::atomic<bool> & shutdown_called_,
+    LoggerPtr logger_)
     : metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
     , shutdown_called(shutdown_called_)
-    , log(&Poco::Logger::get("StorageS3QueueSource"))
+    , log(logger_)
     , sharded_processing(metadata->isShardedProcessing())
     , current_shard(current_shard_)
 {
@@ -80,6 +81,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                     {
                         val = keys.front();
                         keys.pop_front();
+                        chassert(idx == metadata->getProcessingIdForPath(val->key));
                     }
                 }
                 else
@@ -103,7 +105,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                             LOG_TEST(log, "Putting key {} into queue of processor {} (total: {})",
                                      val->key, processing_id_for_key, sharded_keys.size());
 
-                            if (auto it = sharded_keys.find(idx); it != sharded_keys.end())
+                            if (auto it = sharded_keys.find(processing_id_for_key); it != sharded_keys.end())
                             {
                                 it->second.push_back(val);
                             }
@@ -111,7 +113,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next(si
                             {
                                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                                 "Processing id {} does not exist (Expected ids: {})",
-                                                idx, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
+                                                processing_id_for_key, fmt::join(metadata->getProcessingIdsForShard(current_shard), ", "));
                             }
                         }
                         continue;
@@ -236,7 +238,8 @@ Chunk StorageS3QueueSource::generate()
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                             key_with_info->key, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
@@ -262,7 +265,8 @@ Chunk StorageS3QueueSource::generate()
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                             key_with_info->key, getCurrentExceptionMessage(true));
                 }
 
                 appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
@@ -352,7 +356,11 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
     }
 }
 
-void StorageS3QueueSource::appendLogElement(const std::string & filename, S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed)
+void StorageS3QueueSource::appendLogElement(
+    const std::string & filename,
+    S3QueueFilesMetadata::FileStatus & file_status_,
+    size_t processed_rows,
+    bool processed)
 {
     if (!s3_queue_log)
         return;
@@ -363,6 +371,9 @@ void StorageS3QueueSource::appendLogElement(const std::string & filename, S3Queu
         elem = S3QueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .database = storage_id.database_name,
+            .table = storage_id.table_name,
+            .uuid = toString(storage_id.uuid),
             .file_name = filename,
             .rows_processed = processed_rows,
             .status = processed ? S3QueueLogElement::S3QueueStatus::Processed : S3QueueLogElement::S3QueueStatus::Failed,

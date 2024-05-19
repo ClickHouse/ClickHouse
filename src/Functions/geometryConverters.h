@@ -28,9 +28,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
-
 template <typename Point>
 using Ring = boost::geometry::model::ring<Point>;
 
@@ -371,8 +368,6 @@ static void callOnTwoGeometryDataTypes(DataTypePtr left_type, DataTypePtr right_
             return func(LeftConverterType(), RightConverterType());
         });
     });
-}
-
 }
 
 }

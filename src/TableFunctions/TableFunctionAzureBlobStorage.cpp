@@ -16,6 +16,7 @@
 #include <Storages/StorageAzureBlob.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -58,7 +59,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         configuration.blobs_paths = {configuration.blob_path};
 
         if (configuration.format == "auto")
-            configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
     }
     else
     {
@@ -80,7 +81,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
 
         if (engine_args.size() == 4)
         {
@@ -155,7 +156,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         configuration.blobs_paths = {configuration.blob_path};
 
         if (configuration.format == "auto")
-            configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path, true);
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
     }
 }
 
@@ -174,15 +175,24 @@ void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, 
     parseArgumentsImpl(args, context);
 }
 
-void TableFunctionAzureBlobStorage::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
+void TableFunctionAzureBlobStorage::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {
@@ -191,65 +201,126 @@ void TableFunctionAzureBlobStorage::addColumnsStructureToArguments(ASTs & args, 
                             "Storage Azure requires 3 to 7 arguments: "
                             "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])");
 
+        auto format_literal = std::make_shared<ASTLiteral>(format);
         auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
         auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().exists(s); };
 
-
+        /// (connection_string, container_name, blobpath)
         if (args.size() == 3)
         {
-            /// Add format=auto & compression=auto before structure argument.
-            args.push_back(std::make_shared<ASTLiteral>("auto"));
+            args.push_back(format_literal);
+            /// Add compression = "auto" before structure argument.
             args.push_back(std::make_shared<ASTLiteral>("auto"));
             args.push_back(structure_literal);
         }
+        /// (connection_string, container_name, blobpath, structure) or
+        /// (connection_string, container_name, blobpath, format)
+        /// We can distinguish them by looking at the 4-th argument: check if it's format name or not.
         else if (args.size() == 4)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name/structure");
+            /// (..., format) -> (..., format, compression, structure)
             if (is_format_arg(fourth_arg))
             {
+                if (fourth_arg == "auto")
+                    args[3] = format_literal;
                 /// Add compression=auto before structure argument.
                 args.push_back(std::make_shared<ASTLiteral>("auto"));
                 args.push_back(structure_literal);
             }
+            /// (..., structure) -> (..., format, compression, structure)
             else
             {
-                args.back() = structure_literal;
+                auto structure_arg = args.back();
+                args[3] = format_literal;
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                if (fourth_arg == "auto")
+                    args.push_back(structure_literal);
+                else
+                    args.push_back(structure_arg);
             }
         }
+        /// (connection_string, container_name, blobpath, format, compression) or
+        /// (storage_account_url, container_name, blobpath, account_name, account_key)
+        /// We can distinguish them by looking at the 4-th argument: check if it's format name or not.
         else if (args.size() == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
-            if (!is_format_arg(fourth_arg))
+            /// (..., format, compression) -> (..., format, compression, structure)
+            if (is_format_arg(fourth_arg))
             {
-                /// Add format=auto & compression=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                if (fourth_arg == "auto")
+                    args[3] = format_literal;
+                args.push_back(structure_literal);
             }
-            args.push_back(structure_literal);
-        }
-        else if (args.size() == 6)
-        {
-            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
-            if (!is_format_arg(fourth_arg))
+            /// (..., account_name, account_key) -> (..., account_name, account_key, format, compression, structure)
+            else
             {
+                args.push_back(format_literal);
                 /// Add compression=auto before structure argument.
                 args.push_back(std::make_shared<ASTLiteral>("auto"));
                 args.push_back(structure_literal);
             }
+        }
+        /// (connection_string, container_name, blobpath, format, compression, structure) or
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, structure) or
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, format)
+        else if (args.size() == 6)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/account_name");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(args[5], "format/structure");
+
+            /// (..., format, compression, structure)
+            if (is_format_arg(fourth_arg))
+            {
+                if (fourth_arg == "auto")
+                    args[3] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[5], "structure") == "auto")
+                    args[5] = structure_literal;
+            }
+            /// (..., account_name, account_key, format) -> (..., account_name, account_key, format, compression, structure)
+            else if (is_format_arg(sixth_arg))
+            {
+                if (sixth_arg == "auto")
+                    args[5] = format_literal;
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(structure_literal);
+            }
+            /// (..., account_name, account_key, structure) -> (..., account_name, account_key, format, compression, structure)
             else
             {
-                args.back() = structure_literal;
+                auto structure_arg = args.back();
+                args[5] = format_literal;
+                /// Add compression=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                if (sixth_arg == "auto")
+                    args.push_back(structure_literal);
+                else
+                    args.push_back(structure_arg);
             }
         }
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, format, compression)
         else if (args.size() == 7)
         {
+            /// (..., format, compression) -> (..., format, compression, structure)
+            if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
+                args[5] = format_literal;
             args.push_back(structure_literal);
         }
+        /// (storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
         else if (args.size() == 8)
         {
-            args.back() = structure_literal;
+            if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
+                args[5] = format_literal;
+            if (checkAndGetLiteralArgument<String>(args[7], "structure") == "auto")
+                args[7] = structure_literal;
         }
     }
 }
@@ -262,8 +333,10 @@ ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(Contex
         auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
         auto settings = StorageAzureBlob::createSettings(context);
 
-        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings));
-        return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context, false);
+        auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings), configuration.container);
+        if (configuration.format == "auto")
+            return StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, std::nullopt, context).first;
+        return StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -276,8 +349,7 @@ bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns(const Context
 
 std::unordered_set<String> TableFunctionAzureBlobStorage::getVirtualsToCheckBeforeUsingStructureHint() const
 {
-    auto virtual_column_names = StorageAzureBlob::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
+    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
 StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
@@ -293,7 +365,7 @@ StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_funct
 
     StoragePtr storage = std::make_shared<StorageAzureBlob>(
         configuration,
-        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings)),
+        std::make_unique<AzureObjectStorage>(table_name, std::move(client), std::move(settings), configuration.container),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

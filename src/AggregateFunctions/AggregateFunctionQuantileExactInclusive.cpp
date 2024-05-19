@@ -13,6 +13,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -26,8 +27,8 @@ template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
-    /// Second argument type check doesn't depend on the type of the first one.
-    Function<void, true>::assertSecondArg(argument_types);
+    if (argument_types.empty())
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires at least one argument", name);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);

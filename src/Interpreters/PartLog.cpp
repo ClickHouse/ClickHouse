@@ -101,7 +101,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "Can have one of the following values: "
             "NewPart — Inserting of a new data part, "
             "MergeParts — Merging of data parts, "
-            "DownloadParts — Downloading a data part, "
+            "DownloadPart — Downloading a data part, "
             "RemovePart — Removing or detaching a data part using DETACH PARTITION, "
             "MutatePart — Mutating of a data part, "
             "MovePart — Moving the data part from the one disk to another one."},
@@ -123,7 +123,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"table_uuid", std::make_shared<DataTypeUUID>(), "UUID of the table the data part belongs to."},
         {"part_name", std::make_shared<DataTypeString>(), "Name of the data part."},
         {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
-        {"partition", std::make_shared<DataTypeString>()},
+        {"partition", std::make_shared<DataTypeString>(), "The partition name."},
         {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},

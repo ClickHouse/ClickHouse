@@ -513,10 +513,6 @@ Part was moved to another disk and should be deleted in own destructor.
 
 Not active data part with identity refcounter, it is deleting right now by a cleaner.
 
-### PartsInMemory
-
-In-memory parts.
-
 ### PartsOutdated
 
 Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.
