@@ -22,6 +22,7 @@ Checks: [
   '-bugprone-exception-escape',
   '-bugprone-forward-declaration-namespace',
   '-bugprone-implicit-widening-of-multiplication-result',
+  '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
   '-bugprone-not-null-terminated-result',
   '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
@@ -98,6 +99,7 @@ Checks: [
   '-modernize-use-nodiscard',
   '-modernize-use-trailing-return-type',
 
+  '-performance-enum-size',
   '-performance-inefficient-string-concatenation',
   '-performance-no-int-to-ptr',
   '-performance-avoid-endl',
@@ -105,6 +107,7 @@ Checks: [
 
   '-portability-simd-intrinsics',
 
+  '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',
   '-readability-braces-around-statements',
   '-readability-convert-member-functions-to-static',
@@ -118,23 +121,18 @@ Checks: [
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
+  '-readability-redundant-inline-specifier',
+  '-readability-redundant-member-init', # useful but triggers another problem. Imagine a struct S with String members. If S is
+                                        # initialized via designated initializer, then the caller needs to initialize *all* members
+                                        # (to avoid warning `missing-field-initializers`) unless the mebers are default-initialized
+                                        # in S. So this clang-tidy warning prevents default-initialization and writing out all members
+                                        # in a designated initializer is ugly...
   '-readability-simplify-boolean-expr',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
 
   '-zircon-*',
-
-  # These are new in clang-18, and we have to sort them out:
-  '-readability-avoid-nested-conditional-operator',
-  '-modernize-use-designated-initializers',
-  '-performance-enum-size',
-  '-readability-redundant-inline-specifier',
-  '-readability-redundant-member-init',
-  '-bugprone-crtp-constructor-accessibility',
-  '-bugprone-suspicious-stringview-data-usage',
-  '-bugprone-multi-level-implicit-pointer-conversion',
-  '-cert-err33-c',
 
   # This is a good check, but clang-tidy crashes, see https://github.com/llvm/llvm-project/issues/91872
   '-modernize-use-constraints',
