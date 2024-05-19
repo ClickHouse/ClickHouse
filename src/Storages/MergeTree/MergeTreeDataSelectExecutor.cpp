@@ -1260,7 +1260,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = index_helper->supportsBulkFiltering();
+    bool bulk_filtering = settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering();
 
     auto index_granularity = index_helper->index.granularity;
 

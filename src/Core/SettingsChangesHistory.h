@@ -93,6 +93,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"http_max_chunk_size", 0, 0, "Internal limitation"},
               {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
               {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
+              {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
               }},
     {"24.4", {{"input_format_json_throw_on_bad_escape_sequence", true, true, "Allow to save JSON strings with bad escape sequences"},
               {"max_parsing_threads", 0, 0, "Add a separate setting to control number of threads in parallel parsing from files"},
