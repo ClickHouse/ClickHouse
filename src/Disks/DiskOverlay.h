@@ -11,7 +11,7 @@ namespace DB
 class DiskOverlay : public IDisk
 {
 public:
-    DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_overlay_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_);
+    DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_diff_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_);
     DiskOverlay(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
 
     const String & getPath() const override;
@@ -95,14 +95,14 @@ private:
     DiskPtr disk_base, disk_diff;
     MetadataStoragePtr metadata, tracked_metadata;
 
-    // A tracked file is a file that exists on the overlay disk (possibly under another name)
+    // A tracked file is a file that exists on the diff disk (possibly under another name)
     // If a file is tracked, we don't need to list it from the base disk in calls to file listing functions
 public:
     bool isTracked(const String& path) const;
 private:
     void setTracked(const String& path);
 
-    // When a file or directory needs to be created on disk_overlay, we might be missing some parent
+    // When a file or directory needs to be created on disk_diff, we might be missing some parent
     // directories that are present on disk_base
     void ensureHaveDirectories(const String& path);
 

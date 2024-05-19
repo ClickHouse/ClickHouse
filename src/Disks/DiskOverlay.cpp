@@ -45,20 +45,20 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-DiskOverlay::DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_overlay_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_) : IDisk(name_),
-disk_base(disk_base_), disk_diff(disk_overlay_), metadata(metadata_), tracked_metadata(tracked_metadata_)
+DiskOverlay::DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_diff_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_) : IDisk(name_),
+disk_base(disk_base_), disk_diff(disk_diff_), metadata(metadata_), tracked_metadata(tracked_metadata_)
 {
 }
 
 DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_) : IDisk(name_)
 {
     String disk_base_name = config_.getString(config_prefix_ + ".disk_base");
-    String disk_overlay_name = config_.getString(config_prefix_ + ".disk_overlay");
+    String disk_diff_name = config_.getString(config_prefix_ + ".disk_diff");
     String metadata_name = config_.getString(config_prefix_ + ".metadata");
     String tracked_metadata_name = config_.getString(config_prefix_ + ".tracked_metadata");
 
     disk_base = map_.at(disk_base_name);
-    disk_diff = map_.at(disk_overlay_name);
+    disk_diff = map_.at(disk_diff_name);
 
     if (disk_diff -> isReadOnly())
     {
@@ -270,17 +270,17 @@ class DiskOverlayDirectoryIterator final : public IDirectoryIterator
 {
 public:
     DiskOverlayDirectoryIterator() = default;
-    DiskOverlayDirectoryIterator(DirectoryIteratorPtr overlay_iter_, DirectoryIteratorPtr base_iter_, MetadataStoragePtr tracked_metadata_)
-    : done_overlay(false), overlay_iter(std::move(overlay_iter_)), base_iter(std::move(base_iter_)), tracked_metadata(tracked_metadata_)
+    DiskOverlayDirectoryIterator(DirectoryIteratorPtr diff_iter_, DirectoryIteratorPtr base_iter_, MetadataStoragePtr tracked_metadata_)
+    : done_diff(false), diff_iter(std::move(diff_iter_)), base_iter(std::move(base_iter_)), tracked_metadata(tracked_metadata_)
     {
         upd();
     }
 
     void next() override
     {
-        if (!done_overlay)
+        if (!done_diff)
         {
-            overlay_iter->next();
+            diff_iter->next();
         } else
         {
             base_iter->next();
@@ -290,12 +290,12 @@ public:
 
     bool isValid() const override
     {
-        return done_overlay ? base_iter->isValid() : true;
+        return done_diff ? base_iter->isValid() : true;
     }
 
     String path() const override
     {
-        return done_overlay ? base_iter->path() : overlay_iter->path();
+        return done_diff ? base_iter->path() : diff_iter->path();
     }
 
     String name() const override
@@ -304,18 +304,18 @@ public:
     }
 
 private:
-    bool done_overlay;
-    DirectoryIteratorPtr overlay_iter;
+    bool done_diff;
+    DirectoryIteratorPtr diff_iter;
     DirectoryIteratorPtr base_iter;
     MetadataStoragePtr tracked_metadata;
 
     void upd()
     {
-        if (!done_overlay && !overlay_iter->isValid())
+        if (!done_diff && !diff_iter->isValid())
         {
-            done_overlay = true;
+            done_diff = true;
         }
-        while (done_overlay && base_iter->isValid() && tracked_metadata->exists(dataPath(base_iter->path())))
+        while (done_diff && base_iter->isValid() && tracked_metadata->exists(dataPath(base_iter->path())))
         {
             next();
         }
@@ -363,7 +363,7 @@ void DiskOverlay::moveFile(const String & from_path, const String & to_path)
 
     if (disk_diff->exists(from_path))
     {
-        // In this case we need to move file in overlay disk and move metadata if there is any
+        // In this case we need to move file in diff disk and move metadata if there is any
         disk_diff->moveFile(from_path, to_path);
 
         auto transaction = metadata->createTransaction();
@@ -377,7 +377,7 @@ void DiskOverlay::moveFile(const String & from_path, const String & to_path)
         transaction->commit();
     } else
     {
-        // In this case from_path exists on base disk. We want to create an empty file on overlay, set metadata
+        // In this case from_path exists on base disk. We want to create an empty file on diff, set metadata
         // to show that it should be appended to from_path on base disk, and set that from_path is now tracked
         // by metadata
         disk_diff->createFile(to_path);
