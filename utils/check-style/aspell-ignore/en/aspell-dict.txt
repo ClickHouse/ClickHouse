@@ -475,7 +475,9 @@ LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
+LOONGARCH
 LONGLONG
+LoongArch
 Levenshtein
 Liao
 LibFuzzer
@@ -1910,6 +1912,7 @@ logTrace
 logagent
 loghouse
 london
+loongarch
 lookups
 lowcardinality
 lowerUTF
