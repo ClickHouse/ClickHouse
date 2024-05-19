@@ -143,6 +143,7 @@ private:
 
     std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
+    String actions_output_column_name;
 };
 
 

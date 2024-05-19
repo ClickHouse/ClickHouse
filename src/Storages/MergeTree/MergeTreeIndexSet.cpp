@@ -35,7 +35,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     size_t max_rows_)
     : index_name(index_name_)
     , max_rows(max_rows_)
-    , block(index_sample_block_)
+    , block(index_sample_block_.cloneEmpty())
 {
 }
 
@@ -119,7 +119,7 @@ MergeTreeIndexBulkGranulesSet::MergeTreeIndexBulkGranulesSet(
     size_t max_rows_)
     : index_name(index_name_)
     , max_rows(max_rows_)
-    , block(index_sample_block_)
+    , block(index_sample_block_.cloneEmpty())
 {
     block.insert(ColumnWithTypeAndName
     {
@@ -159,16 +159,13 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
 
     /// The last column is designating the granule
 
-    MutableColumnPtr granule_num_column = IColumn::mutate(std::move(block.getByPosition(block.columns() - 1).column));
-    size_t prev_block_size = granule_num_column->size();
-    size_t new_block_size = block.getByPosition(0).column->size();
+    auto & elem = block.getByPosition(num_columns);
+    MutableColumnPtr granule_num_column = elem.column->assumeMutable();
 
     auto & data = assert_cast<ColumnUInt64 &>(*granule_num_column).getData();
-    data.reserve(new_block_size);
-    for (size_t i = prev_block_size; i < new_block_size; ++i)
+    data.reserve(data.size() + rows_to_read);
+    for (size_t i = 0; i < rows_to_read; ++i)
         data.push_back(granule_num);
-
-    block.getByPosition(block.columns() - 1).column = std::move(granule_num_column);
 }
 
 
@@ -320,6 +317,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
 
     filter_actions_dag->removeUnusedActions();
     actions = std::make_shared<ExpressionActions>(filter_actions_dag);
+
+    actions_output_column_name = filter_actions_dag->getOutputs().at(0)->result_name;
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -341,7 +340,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     Block result = granule.block;
     actions->execute(result);
 
-    const auto & column = result.getByPosition(result.columns() - 1).column;
+    const auto & column = result.getByName(actions_output_column_name).column;
 
     for (size_t i = 0; i < size; ++i)
         if (column->getBool(i))
@@ -366,7 +365,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
 
     actions->execute(block);
 
-    const auto & column = block.getByPosition(block.columns() - 1).column;
+    const auto & column = block.getByName(actions_output_column_name).column;
     const auto & granule_nums = assert_cast<const ColumnUInt64 &>(*block.getByName("_granule_num").column).getData();
 
     UInt64 current_granule_num = 0;
