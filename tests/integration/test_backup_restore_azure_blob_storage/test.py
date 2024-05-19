@@ -317,14 +317,14 @@ def test_backup_restore_correct_block_ids(cluster):
         f"INSERT INTO test_simple_merge_tree {data_query}",
     )
 
-    strict_upload_part_size = 42
+    upload_part_size = 42
     data_path = "test_backup_correct_block_ids"
 
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{data_path}')"
     azure_query(
         node,
         f"""
-        SET azure_strict_upload_part_size = {strict_upload_part_size};
+        SET azure_min_upload_part_size = {upload_part_size};
         BACKUP TABLE test_simple_merge_tree TO {backup_destination};
         """,
     )
@@ -359,9 +359,9 @@ def test_backup_restore_correct_block_ids(cluster):
     for block in blob_client.get_block_list()[0]:
         count += 1
         if count < blocks_num:
-            assert block.get("size") == strict_upload_part_size
+            assert block.get("size") == upload_part_size
         else:
-            assert block.get("size") < strict_upload_part_size
+            assert block.get("size") < upload_part_size
 
     azure_query(
         node,

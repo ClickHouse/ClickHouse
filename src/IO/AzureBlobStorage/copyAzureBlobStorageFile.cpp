@@ -94,11 +94,56 @@ namespace
 
         void calculatePartSize()
         {
-            auto max_upload_part_size = settings->max_upload_part_size;
-            if (!max_upload_part_size)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be 0");
+            if (!total_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
+
+            auto max_part_number = settings->max_blocks_in_multipart_upload;
+            const auto min_upload_part_size = settings->min_upload_part_size;
+            const auto max_upload_part_size = settings->max_upload_part_size;
+
+            if (!max_part_number)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_blocks_in_multipart_upload must not be 0");
+            else if (!min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
+            else if (max_upload_part_size < min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
+
+            size_t part_size = min_upload_part_size;
+            auto num_parts = (total_size + part_size - 1) / part_size;
+
+            if (num_parts > max_part_number)
+            {
+                part_size = (total_size + max_part_number - 1) / max_part_number;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            if (part_size > max_upload_part_size)
+            {
+                part_size = max_upload_part_size;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
+            {
+                String msg;
+                if (num_parts < 1)
+                    msg = "Number of parts is zero";
+                else if (num_parts > max_part_number)
+                    msg = fmt::format("Number of parts exceeds {}", num_parts, max_part_number);
+                else if (part_size < min_upload_part_size)
+                    msg = fmt::format("Size of a part is less than {}", part_size, min_upload_part_size);
+                else
+                    msg = fmt::format("Size of a part exceeds {}", part_size, max_upload_part_size);
+
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "{} while writing {} bytes to Azure. Check max_part_number = {}, "
+                    "min_upload_part_size = {}, max_upload_part_size = {}",
+                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
+            }
+
             /// We've calculated the size of a normal part (the final part can be smaller).
-            normal_part_size = max_upload_part_size;
+            normal_part_size = part_size;
         }
 
     public:
@@ -220,34 +265,21 @@ namespace
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), task.part_offset, task.part_size);
 
-            const size_t strict_upload_part_size = settings->strict_upload_part_size
-                ? settings->strict_upload_part_size
-                : settings->max_upload_part_size;
+            /// task.part_size is already normalized according to min_upload_part_size and max_upload_part_size.
             size_t size_to_stage = task.part_size;
 
             PODArray<char> memory;
-            memory.resize(std::min(size_to_stage, strict_upload_part_size));
-            /// FIXME: it will be better to preallocate the memory and reuse it for each processUploadPartRequest.
+            memory.resize(size_to_stage);
             WriteBufferFromVector<PODArray<char>> wb(memory);
 
-            while (size_to_stage)
-            {
-                size_t size = std::min(size_to_stage, strict_upload_part_size);
-                wb.position() = wb.buffer().begin();
-                copyData(*read_buffer, wb, size);
-                size_to_stage -= size;
+            copyData(*read_buffer, wb, size_to_stage);
+            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
 
-                Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size);
+            const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
+            block_blob_client.StageBlock(block_id, stream);
 
-                const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
-                block_blob_client.StageBlock(block_id, stream);
-
-                LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}, size: {} (strict part upload size: {})",
-                          dest_container_for_logging, dest_blob, block_id, size, strict_upload_part_size);
-            }
-
-            std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
-            LOG_TRACE(log, "Writing part finished. Container: {}, Blob: {}, Parts: {}", dest_container_for_logging, dest_blob, bg_tasks.size());
+            LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}, size: {}",
+                      dest_container_for_logging, dest_blob, block_id, size_to_stage);
         }
 
 

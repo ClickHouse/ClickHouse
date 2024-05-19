@@ -255,6 +255,9 @@ AzureObjectStorage::SettingsPtr StorageAzureBlob::createSettings(const ContextPt
     settings_ptr->max_single_part_upload_size = context_settings.azure_max_single_part_upload_size;
     settings_ptr->max_single_read_retries = context_settings.azure_max_single_read_retries;
     settings_ptr->strict_upload_part_size = context_settings.azure_strict_upload_part_size;
+    settings_ptr->max_upload_part_size = context_settings.azure_max_upload_part_size;
+    settings_ptr->max_blocks_in_multipart_upload = context_settings.azure_max_blocks_in_multipart_upload;
+    settings_ptr->min_upload_part_size = context_settings.azure_min_upload_part_size;
     settings_ptr->list_object_keys_size = static_cast<int32_t>(context_settings.azure_list_object_keys_size);
 
     return settings_ptr;
