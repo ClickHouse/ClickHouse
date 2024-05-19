@@ -1173,8 +1173,8 @@ void Client::processConfig()
     }
     print_stack_trace = config().getBool("stacktrace", false);
 
-    if (config().has("multiquery"))
-        is_multiquery = true;
+    // set default to multiquery
+    is_multiquery = true;
 
     pager = config().getString("pager", "");
 

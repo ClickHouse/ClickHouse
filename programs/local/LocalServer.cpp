@@ -543,8 +543,8 @@ void LocalServer::processConfig()
     if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
-    if (config().has("multiquery"))
-        is_multiquery = true;
+    // set default to multiquery
+    is_multiquery = true;
 
     pager = config().getString("pager", "");
 

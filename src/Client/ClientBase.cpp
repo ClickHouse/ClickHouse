@@ -3006,7 +3006,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
-        ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
+        ("multiquery,n", "Since the query option now supports multiquery by default, there is no need to specify multiquery option. However, using --multiquery straightly or passing the query directly after --multiquery is compatible.")
         ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
         ("database,d", po::value<std::string>(), "database")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
