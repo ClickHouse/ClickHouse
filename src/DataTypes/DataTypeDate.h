@@ -10,7 +10,6 @@ class DataTypeDate final : public DataTypeNumberBase<UInt16>
 {
 public:
     static constexpr auto family_name = "Date";
-    static constexpr auto type_id = TypeIndex::Date;
 
     TypeIndex getTypeId() const override { return TypeIndex::Date; }
     TypeIndex getColumnType() const override { return TypeIndex::UInt16; }

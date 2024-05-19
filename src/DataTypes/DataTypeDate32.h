@@ -9,7 +9,6 @@ class DataTypeDate32 final : public DataTypeNumberBase<Int32>
 {
 public:
     static constexpr auto family_name = "Date32";
-    static constexpr auto type_id = TypeIndex::Date32;
 
     TypeIndex getTypeId() const override { return TypeIndex::Date32; }
     TypeIndex getColumnType() const override { return TypeIndex::Int32; }
