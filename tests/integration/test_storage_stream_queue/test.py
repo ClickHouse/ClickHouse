@@ -57,13 +57,10 @@ def test_simple_select(started_cluster):
     node.query(
         "CREATE TABLE simple_stream_queue_table(id UInt32, data String) ENGINE = StreamQueue(simple_mongo_table, id)"
     )
-    node.query(
-        "CREATE TABLE simple_result(id UInt32, data String) ORDER BY id"
-    )
+    node.query("CREATE TABLE simple_result(id UInt32, data String) ORDER BY id")
     node.query(
         "CREATE MATERIALIZED VIEW simple_consumer TO simple_result AS SELECT id, data FROM simple_stream_queue_table;"
     )
-
 
     data = []
     for i in range(0, 100):

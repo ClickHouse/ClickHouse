@@ -13,6 +13,7 @@
 #include <Storages/StreamQueue/StorageStreamQueue.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include "Common/ZooKeeper/Types.h"
+#include "IO/ReadHelpers.h"
 #include "Parsers/ASTLiteral.h"
 
 namespace DB
@@ -21,6 +22,7 @@ namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -112,14 +114,14 @@ std::unordered_set<int64_t> StorageStreamQueue::readSetOfKeys()
     auto zoo_keeper = getZooKeeper();
     zoo_keeper->createIfNotExists(keeper_key_path, "");
 
-    std::stringstream ss;
-    ss << zoo_keeper->get(keeper_key_path);
-
+    ReadBufferFromOwnString buf(zoo_keeper->get(keeper_key_path));
     std::unordered_set<int64_t> result;
-    std::string key;
-    while (ss >> key)
+    int64_t key;
+    while (!buf.eof())
     {
-        result.insert(std::stoll(key));
+        DB::readIntText(key, buf);
+        DB::skipWhitespaceIfAny(buf);
+        result.insert(key);
     }
     return result;
 }
@@ -127,13 +129,11 @@ std::unordered_set<int64_t> StorageStreamQueue::readSetOfKeys()
 void StorageStreamQueue::writeSetOfKeys(std::unordered_set<int64_t> keys)
 {
     auto zoo_keeper = getZooKeeper();
-    std::stringstream ss;
+    WriteBufferFromOwnString buf;
     for (const auto key : keys)
-    {
-        ss << key << " ";
-    }
+        buf << key << "\t";
 
-    zoo_keeper->set(keeper_key_path, ss.str());
+    zoo_keeper->set(keeper_key_path, buf.str());
 }
 
 bool StorageStreamQueue::createZooKeeperNode()
@@ -142,9 +142,7 @@ bool StorageStreamQueue::createZooKeeperNode()
     zookeeper->createAncestors(keeper_path);
     auto code = zookeeper->tryCreate(keeper_path, "", zkutil::CreateMode::Ephemeral);
     if (code == Coordination::Error::ZNODEEXISTS)
-    {
         return false;
-    }
 
     downloading = true;
     return true;
@@ -156,9 +154,7 @@ void StorageStreamQueue::threadFunc()
         return;
 
     if (!(downloading || createZooKeeperNode()))
-    {
         return;
-    }
 
     const size_t dependencies_count = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
     if (dependencies_count)
@@ -196,9 +192,7 @@ void StorageStreamQueue::move_data()
     {
         auto max_old_id = std::numeric_limits<int64_t>::min();
         for (const auto old_id : old_keys)
-        {
             max_old_id = std::max(max_old_id, old_id);
-        }
         new_keys.insert(max_old_id);
 
         auto gt_function = makeASTFunction("greater");
@@ -206,7 +200,8 @@ void StorageStreamQueue::move_data()
         if (settings->streamqueue_min_key + settings->streamqueue_max_shift_back_per_iter >= max_old_id)
             gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(settings->streamqueue_min_key.value));
         else
-            gt_function->arguments->children.push_back(std::make_shared<ASTLiteral>(max_old_id - settings->streamqueue_max_shift_back_per_iter));
+            gt_function->arguments->children.push_back(
+                std::make_shared<ASTLiteral>(max_old_id - settings->streamqueue_max_shift_back_per_iter));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(gt_function));
     }
     else
@@ -251,9 +246,7 @@ void StorageStreamQueue::move_data()
         {
             new_keys.insert(column->get64(i));
             if (old_keys.contains(column->get64(i)))
-            {
                 continue;
-            }
             unique.push_back(i);
         }
 
@@ -262,9 +255,7 @@ void StorageStreamQueue::move_data()
         {
             auto dist_column = src_column.column->cloneEmpty();
             for (const auto & unique_idx : unique)
-            {
                 dist_column->insertFrom(*src_column.column, unique_idx);
-            }
             without_duplicates.insert(ColumnWithTypeAndName(std::move(dist_column), src_column.type, src_column.name));
         }
         pushing_executor.push(without_duplicates);

@@ -1,8 +1,8 @@
-#include <Storages/StreamQueue/StreamQueueSettings.h>
-#include <Common/Exception.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/StreamQueue/StreamQueueSettings.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SETTING;
+extern const int UNKNOWN_SETTING;
 }
 
 IMPLEMENT_SETTINGS_TRAITS(StreamQueueSettingsTraits, LIST_OF_STREAMQUEUE_SETTINGS)
