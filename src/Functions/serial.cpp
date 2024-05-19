@@ -17,16 +17,16 @@ namespace ErrorCodes
 class FunctionSerial : public IFunction
 {
 private:
-    mutable zkutil::ZooKeeperPtr zk{nullptr};
+    mutable zkutil::ZooKeeperPtr zk;
     ContextPtr context;
 
 public:
     static constexpr auto name = "serial";
 
-    explicit FunctionSerial(ContextPtr ctx) : context(ctx)
+    explicit FunctionSerial(ContextPtr context_) : context(context_)
     {
-        if (ctx->hasZooKeeper()) {
-            zk = ctx->getZooKeeper();
+        if (context->hasZooKeeper()) {
+            zk = context->getZooKeeper();
         }
     }
 
@@ -37,7 +37,6 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
-
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
@@ -74,14 +73,14 @@ public:
 
         auto col_res = ColumnVector<Int64>::create();
         typename ColumnVector<Int64>::Container & vec_to = col_res->getData();
-        size_t size = input_rows_count;
-        vec_to.resize(size);
+
+        vec_to.resize(input_rows_count);
 
         const auto & serial_path = "/serials/" + arguments[0].column->getDataAt(0).toString();
 
-        // CAS in ZooKeeper
-        // `get` value and version, `trySet` new with version check
-        // I didn't get how to do it with `multi`
+        /// CAS in ZooKeeper
+        /// `get` value and version, `trySet` new with version check
+        /// I didn't get how to do it with `multi`
 
         Int64 counter;
         std::string counter_path = serial_path + "/counter";
@@ -93,10 +92,10 @@ public:
         Coordination::Stat stat;
         while (true)
         {
-            std::string counter_string = zk->get(counter_path, &stat);
+            const String counter_string = zk->get(counter_path, &stat);
             counter = std::stoll(counter_string);
-            std::string updated_counter = std::to_string(counter + input_rows_count);
-            Coordination::Error err = zk->trySet(counter_path, updated_counter);
+            String updated_counter = std::to_string(counter + input_rows_count);
+            const Coordination::Error err = zk->trySet(counter_path, updated_counter);
             if (err == Coordination::Error::ZOK)
             {
                 // CAS is done
@@ -111,7 +110,7 @@ public:
         }
 
         // Make a result
-        for (auto& val : vec_to)
+        for (auto & val : vec_to)
         {
             val = counter;
             ++counter;
@@ -137,16 +136,16 @@ The server should be configured with a ZooKeeper.
         },
         .returned_value = "Sequential numbers of type Int64 starting from the previous counter value",
         .examples{
-            {"first call", "SELECT serial('name')", R"(
-┌─serial('name')─┐
+            {"first call", "SELECT serial('id1')", R"(
+┌─serial('id1')──┐
 │              1 │
 └────────────────┘)"},
-            {"second call", "SELECT serial('name')", R"(
-┌─serial('name')─┐
+            {"second call", "SELECT serial('id1')", R"(
+┌─serial('id1')──┐
 │              2 │
 └────────────────┘)"},
-            {"column call", "SELECT *, serial('name') FROM test_table", R"(
-┌─CounterID─┬─UserID─┬─ver─┬─serial('name')─┐
+            {"column call", "SELECT *, serial('id1') FROM test_table", R"(
+┌─CounterID─┬─UserID─┬─ver─┬─serial('id1')──┐
 │         1 │      3 │   3 │              3 │
 │         1 │      1 │   1 │              4 │
 │         1 │      2 │   2 │              5 │
