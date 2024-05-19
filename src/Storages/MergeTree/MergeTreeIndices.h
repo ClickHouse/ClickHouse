@@ -130,12 +130,6 @@ public:
     virtual bool alwaysUnknownOrTrue() const = 0;
     virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const = 0;
 
-    using FilteredGranules = std::vector<size_t>;
-    FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
-    }
-
 protected:
     const size_t granularity;
 };
