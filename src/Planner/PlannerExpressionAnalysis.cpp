@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_AN_AGGREGATE;
 }
 
 namespace
@@ -397,7 +398,8 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
 SortAnalysisResult analyzeSort(const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    ActionsChain & actions_chain)
+    ActionsChain & actions_chain,
+    std::optional<AggregationAnalysisResult> aggregation_analysis_result_optional)
 {
     ActionsDAGPtr before_sort_actions = std::make_shared<ActionsDAG>(input_columns);
     auto & before_sort_actions_outputs = before_sort_actions->getOutputs();
@@ -451,6 +453,10 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
         for (const auto & node : before_sort_actions->getInputs())
             before_sort_actions_inputs_name_to_node.emplace(node->result_name, node);
 
+        std::unordered_set<std::string_view> aggregation_keys;
+        if (aggregation_analysis_result_optional)
+            aggregation_keys.insert(aggregation_analysis_result_optional->aggregation_keys.begin(), aggregation_analysis_result_optional->aggregation_keys.end());
+
         for (const auto & node : interpolate_expression_dag->getNodes())
         {
             if (before_sort_actions_dag_output_node_names.contains(node.result_name) ||
@@ -465,6 +471,12 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
                 auto [it, _] = before_sort_actions_inputs_name_to_node.emplace(node.result_name, input_node);
                 input_node_it = it;
             }
+
+            if (aggregation_analysis_result_optional)
+                if (!aggregation_keys.contains(node.result_name))
+                    throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                        "Column {} is not under aggregate function and not in GROUP BY keys. In query {}",
+                        node.result_name, query_node.formatASTForErrorMessage());
 
             before_sort_actions_outputs.push_back(input_node_it->second);
             before_sort_actions_dag_output_node_names.insert(node.result_name);
@@ -567,7 +579,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     std::optional<SortAnalysisResult> sort_analysis_result_optional;
     if (query_node.hasOrderBy())
     {
-        sort_analysis_result_optional = analyzeSort(query_node, current_output_columns, planner_context, actions_chain);
+        sort_analysis_result_optional = analyzeSort(query_node, current_output_columns, planner_context, actions_chain, aggregation_analysis_result_optional);
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
