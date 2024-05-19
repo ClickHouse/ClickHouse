@@ -34,6 +34,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
     const size_t max_rows;
 
     Block block;
+    Serializations serializations;
 };
 
 
@@ -50,6 +51,7 @@ struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
     const size_t max_rows;
 
     Block block;
+    Serializations serializations;
 };
 
 

@@ -37,6 +37,10 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneEmpty())
 {
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
 }
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
@@ -48,6 +52,10 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
 {
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
 }
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
@@ -55,34 +63,32 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty set index {}.", backQuote(index_name));
 
-    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    auto size_serialization = size_type->getDefaultSerialization();
-
     if (max_rows != 0 && size() > max_rows)
     {
-        size_serialization->serializeBinary(0, ostr, {});
+        UInt64 rows = 0;
+        writeBinary(rows, ostr);
         return;
     }
 
-    size_serialization->serializeBinary(size(), ostr, {});
+    UInt64 rows = size();
+    writeBinary(rows, ostr);
     size_t num_columns = block.columns();
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & type = block.getByPosition(i).type;
+        auto & elem = block.getByPosition(i);
 
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
         settings.low_cardinality_max_dictionary_size = 0;
 
-        auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
 
-        const auto & column = *block.getByPosition(i).column;
-        serialization->serializeBinaryBulkStatePrefix(column, settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(column, 0, size(), settings, state);
-        serialization->serializeBinaryBulkStateSuffix(settings, state);
+        const auto & column = *elem.column;
+        serializations[i]->serializeBinaryBulkStatePrefix(column, settings, state);
+        serializations[i]->serializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state);
+        serializations[i]->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
@@ -100,15 +106,16 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
 
-    for (auto & elem : block)
+    size_t num_columns = block.columns();
+    for (size_t i = 0; i < num_columns; ++i)
     {
+        auto & elem = block.getByPosition(i);
         elem.column = elem.column->cloneEmpty();
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        auto serialization = elem.type->getDefaultSerialization();
 
-        serialization->deserializeBinaryBulkStatePrefix(settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkStatePrefix(settings, state);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
     }
 }
 
@@ -121,6 +128,11 @@ MergeTreeIndexBulkGranulesSet::MergeTreeIndexBulkGranulesSet(
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneEmpty())
 {
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
+
     block.insert(ColumnWithTypeAndName
     {
         ColumnUInt64::create(),
@@ -151,10 +163,9 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
         auto & elem = block.getByPosition(i);
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        auto serialization = elem.type->getDefaultSerialization();
 
-        serialization->deserializeBinaryBulkStatePrefix(settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkStatePrefix(settings, state);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
     }
 
     /// The last column is designating the granule
