@@ -1259,6 +1259,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         return ranges;
     }
 
+    /// Whether we should use a more optimal filtering.
+    bool bulk_filtering = index_helper->supportsBulkFiltering();
+
     auto index_granularity = index_helper->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
@@ -1289,70 +1292,131 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         reader_settings);
 
     MarkRanges res;
+    size_t ranges_size = ranges.size();
 
-    /// Some granules can cover two or more ranges,
-    /// this variable is stored to avoid reading the same granule twice.
-    MergeTreeIndexGranulePtr granule = nullptr;
-    size_t last_index_mark = 0;
-
-    PostingsCacheForStore cache_in_store;
-    if (dynamic_cast<const MergeTreeIndexFullText *>(index_helper.get()))
-        cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-
-    for (size_t i = 0; i < ranges.size(); ++i)
+    if (bulk_filtering)
     {
-        const MarkRange & index_range = index_ranges[i];
+        MergeTreeIndexBulkGranulesPtr granules;
 
-        if (last_index_mark != index_range.begin || !granule)
-            reader.seek(index_range.begin);
-
-        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+        size_t last_index_mark = 0;
+        size_t current_granule_num = 0;
+        for (size_t i = 0; i < ranges_size; ++i)
         {
-            if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                reader.read(granule);
+            const MarkRange & index_range = index_ranges[i];
 
-            auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
-            if (ann_condition != nullptr)
+            if (last_index_mark != index_range.begin)
+                reader.seek(index_range.begin);
+
+            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
-                /// An array of indices of useful ranges.
-                auto result = ann_condition->getUsefulRanges(granule);
+                reader.read(current_granule_num, granules);
+                ++current_granule_num;
+            }
 
-                for (auto range : result)
+            last_index_mark = index_range.end - 1;
+        }
+
+        IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
+        if (filtered_granules.empty())
+            return res;
+
+        auto it = filtered_granules.begin();
+        current_granule_num = 0;
+        for (size_t i = 0; i < ranges_size; ++i)
+        {
+            const MarkRange & index_range = index_ranges[i];
+
+            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            {
+                if (current_granule_num == *it)
                 {
-                    /// The range for the corresponding index.
                     MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * index_granularity + range),
-                        std::min(ranges[i].end, index_mark * index_granularity + range + 1));
+                        std::max(ranges[i].begin, index_mark * index_granularity),
+                        std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
-                    if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
+
+                    ++it;
+                    if (it == filtered_granules.end())
+                        break;
                 }
-                continue;
+
+                ++current_granule_num;
             }
 
-            bool result = false;
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
-            if (!gin_filter_condition)
-                result = condition->mayBeTrueOnGranule(granule);
-            else
-                result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
-
-            if (!result)
-                continue;
-
-            MarkRange data_range(
-                std::max(ranges[i].begin, index_mark * index_granularity),
-                std::min(ranges[i].end, (index_mark + 1) * index_granularity));
-
-            if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                res.push_back(data_range);
-            else
-                res.back().end = data_range.end;
+            if (it == filtered_granules.end())
+                break;
         }
+    }
+    else
+    {
+        /// Some granules can cover two or more ranges,
+        /// this variable is stored to avoid reading the same granule twice.
+        MergeTreeIndexGranulePtr granule = nullptr;
+        size_t last_index_mark = 0;
 
-        last_index_mark = index_range.end - 1;
+        PostingsCacheForStore cache_in_store;
+        if (dynamic_cast<const MergeTreeIndexFullText *>(index_helper.get()))
+            cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+
+        for (size_t i = 0; i < ranges_size; ++i)
+        {
+            const MarkRange & index_range = index_ranges[i];
+
+            if (last_index_mark != index_range.begin || !granule)
+                reader.seek(index_range.begin);
+
+            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            {
+                if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
+                    reader.read(granule);
+
+                auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
+                if (ann_condition != nullptr)
+                {
+                    /// An array of indices of useful ranges.
+                    auto result = ann_condition->getUsefulRanges(granule);
+
+                    for (auto range : result)
+                    {
+                        /// The range for the corresponding index.
+                        MarkRange data_range(
+                            std::max(ranges[i].begin, index_mark * index_granularity + range),
+                            std::min(ranges[i].end, index_mark * index_granularity + range + 1));
+
+                        if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                            res.push_back(data_range);
+                        else
+                            res.back().end = data_range.end;
+                    }
+                    continue;
+                }
+
+                bool result = false;
+                const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
+                if (!gin_filter_condition)
+                    result = condition->mayBeTrueOnGranule(granule);
+                else
+                    result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+
+                if (!result)
+                    continue;
+
+                MarkRange data_range(
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+
+                if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                    res.push_back(data_range);
+                else
+                    res.back().end = data_range.end;
+            }
+
+            last_index_mark = index_range.end - 1;
+        }
     }
 
     return res;

@@ -89,4 +89,12 @@ void MergeTreeIndexReader::read(MergeTreeIndexGranulePtr & granule)
     granule->deserializeBinary(*stream->getDataBuffer(), version);
 }
 
+void MergeTreeIndexReader::read(size_t granule_num, MergeTreeIndexBulkGranulesPtr & granules)
+{
+    if (granules == nullptr)
+        granules = index->createIndexBulkGranules();
+
+    granules->deserializeBinary(granule_num, *stream->getDataBuffer(), version);
+}
+
 }
