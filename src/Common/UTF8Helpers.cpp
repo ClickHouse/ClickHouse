@@ -1,4 +1,4 @@
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/TargetSpecific.h>
 #include <Common/UTF8Helpers.h>
 

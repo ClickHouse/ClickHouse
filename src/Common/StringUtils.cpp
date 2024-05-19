@@ -1,7 +1,7 @@
 #include "StringUtils.h"
 
 
-namespace detail
+namespace impl
 {
 
 bool startsWith(const std::string & s, const char * prefix, size_t prefix_size)

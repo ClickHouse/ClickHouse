@@ -20,7 +20,7 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>

@@ -8,7 +8,7 @@
 #include <type_traits>
 
 
-namespace detail
+namespace impl
 {
     bool startsWith(const std::string & s, const char * prefix, size_t prefix_size);
     bool endsWith(const std::string & s, const char * suffix, size_t suffix_size);
@@ -17,12 +17,12 @@ namespace detail
 
 inline bool startsWith(const std::string & s, const std::string & prefix)
 {
-    return detail::startsWith(s, prefix.data(), prefix.size());
+    return impl::startsWith(s, prefix.data(), prefix.size());
 }
 
 inline bool endsWith(const std::string & s, const std::string & suffix)
 {
-    return detail::endsWith(s, suffix.data(), suffix.size());
+    return impl::endsWith(s, suffix.data(), suffix.size());
 }
 
 
@@ -30,12 +30,12 @@ inline bool endsWith(const std::string & s, const std::string & suffix)
 /// string that is known at compile time.
 inline bool startsWith(const std::string & s, const char * prefix)
 {
-    return detail::startsWith(s, prefix, strlen(prefix));
+    return impl::startsWith(s, prefix, strlen(prefix));
 }
 
 inline bool endsWith(const std::string & s, const char * suffix)
 {
-    return detail::endsWith(s, suffix, strlen(suffix));
+    return impl::endsWith(s, suffix, strlen(suffix));
 }
 
 /// Given an integer, return the adequate suffix for
