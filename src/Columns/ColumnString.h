@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstring>
-#include <cassert>
 
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -11,6 +10,8 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+
+#include <base/defines.h>
 
 
 class Collator;
@@ -42,7 +43,11 @@ private:
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
 
     /// Size of i-th element, including terminating zero.
-    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
+    size_t ALWAYS_INLINE sizeAt(ssize_t i) const
+    {
+        chassert(offsets[i] > offsets[i - 1]);
+        return offsets[i] - offsets[i - 1];
+    }
 
     struct ComparatorBase;
 
@@ -79,7 +84,7 @@ public:
 
     size_t byteSizeAt(size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return sizeAt(n) + sizeof(offsets[0]);
     }
 
@@ -94,25 +99,25 @@ public:
 
     Field operator[](size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     void get(size_t n, Field & res) const override
     {
-        assert(n < size());
+        chassert(n < size());
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     bool isDefaultAt(size_t n) const override
     {
-        assert(n < size());
+        chassert(n < size());
         return sizeAt(n) == 1;
     }
 

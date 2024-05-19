@@ -5,7 +5,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 
-#include <cassert>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -437,6 +436,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
             {
+                {
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    /// job can contain packaged_task which can set exception during destruction
+                    job_data.reset();
+                }
                 job_is_done = true;
                 continue;
             }

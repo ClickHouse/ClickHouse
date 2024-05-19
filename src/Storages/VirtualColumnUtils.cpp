@@ -219,7 +219,7 @@ void addRequestedPathFileAndSizeVirtualsToChunk(
     }
 }
 
-static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allowed_inputs)
+static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
@@ -228,7 +228,10 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
         const auto * cur = nodes.top();
         nodes.pop();
 
-        if (cur->type == ActionsDAG::ActionType::INPUT && !allowed_inputs.has(cur->result_name))
+        if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
+        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs && !allowed_inputs->has(cur->result_name))
             return false;
 
         for (const auto * child : cur->children)
@@ -336,7 +339,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         }
     }
 
-    if (allowed_inputs && !canEvaluateSubtree(node, *allowed_inputs))
+    if (!canEvaluateSubtree(node, allowed_inputs))
         return nullptr;
 
     return node;

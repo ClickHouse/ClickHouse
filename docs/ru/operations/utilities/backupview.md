@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/backupview
+slug: /ru/operations/utilities/backupview
 title: clickhouse_backupview
 ---
 

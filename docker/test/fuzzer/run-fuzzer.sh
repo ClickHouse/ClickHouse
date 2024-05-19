@@ -138,7 +138,7 @@ function filter_exists_and_template
             # but it doesn't allow to use regex
             echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
         else
-            echo "'$path' does not exists" >&2
+            echo "'$path' does not exist" >&2
         fi
     done
 }

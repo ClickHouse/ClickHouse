@@ -54,7 +54,7 @@ public:
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
-        return Storage::getConfiguration();
+        return Storage::getConfigurationCopy();
     }
 
     void updateConfiguration(const ContextPtr & local_context) override
@@ -106,7 +106,7 @@ private:
         const bool updated = base_configuration.update(local_context);
         auto new_keys = getDataFiles(base_configuration, local_context);
 
-        if (!updated && new_keys == Storage::getConfiguration().keys)
+        if (!updated && new_keys == Storage::getConfigurationCopy().keys)
             return;
 
         Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));

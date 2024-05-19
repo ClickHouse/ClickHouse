@@ -625,6 +625,8 @@ The server successfully detected this situation and will download merged part fr
     M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing")\
     M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed")\
     M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed")\
+    M(S3QueueFailedFiles, "Number of files which failed to be processed")\
+    M(S3QueueProcessedFiles, "Number of files which were processed")\
     M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
     M(S3QueuePullMicroseconds, "Time spent to read file data")\
     M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\

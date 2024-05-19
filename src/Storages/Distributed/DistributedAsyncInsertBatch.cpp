@@ -173,7 +173,7 @@ bool DistributedAsyncInsertBatch::valid()
     {
         if (!fs::exists(file))
         {
-            LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
+            LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
             res = false;
         }
     }

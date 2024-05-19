@@ -151,6 +151,14 @@ Result:
 
 Query with `INNER` type of a join and conditions with `OR` and `AND`:
 
+:::note
+
+By default, non-equal conditions are supported as long as they use columns from the same table.
+For example, `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, because `t1.b > 0` uses columns only from `t1` and `t2.b > t2.c` uses columns only from `t2`.
+However, you can try experimental support for conditions like `t1.a = t2.key AND t1.b > t2.key`, check out section below for more details.
+
+:::
+
 ``` sql
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
 ```
@@ -165,7 +173,7 @@ Result:
 └───┴────┴─────┘
 ```
 
-## [experimental] Join with inequality conditions
+## [experimental] Join with inequality conditions for columns from different tables
 
 :::note
 This feature is experimental. To use it, set `allow_experimental_join_condition` to 1 in your configuration files or by using the `SET` command:

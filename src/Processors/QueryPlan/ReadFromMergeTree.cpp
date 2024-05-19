@@ -1364,11 +1364,27 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead() const
+{
+    return selectRangesToReadImpl(
+        prepared_parts,
+        alter_conversions_for_parts,
+        metadata_for_reading,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        all_column_names,
+        log,
+        indexes);
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions) const
 {
-    return selectRangesToRead(
+    return selectRangesToReadImpl(
         std::move(parts),
         std::move(alter_conversions),
         metadata_for_reading,
@@ -1855,10 +1871,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
-    auto result_ptr = analyzed_result_ptr
-        ? analyzed_result_ptr
-        : selectRangesToRead(prepared_parts, alter_conversions_for_parts);
-
+    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
     return *result_ptr;
 }
 

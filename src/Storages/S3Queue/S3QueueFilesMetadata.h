@@ -193,7 +193,8 @@ public:
         const std::string & path_,
         const std::string & zk_node_path_,
         FileStatusPtr file_status_,
-        zkutil::ZooKeeperPtr zk_client_);
+        zkutil::ZooKeeperPtr zk_client_,
+        LoggerPtr logger_);
 
     ~ProcessingNodeHolder();
 

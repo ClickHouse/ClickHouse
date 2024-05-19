@@ -1806,7 +1806,7 @@ def _upload_build_profile_data(
                 address,
                 size,
                 type,
-                symbol,
+                symbol
             )
             SELECT {pr_info.number}, '{pr_info.sha}', '{job_report.start_time}', '{build_name}', '{instance_type}', '{instance_id}',
                 file, reinterpretAsUInt64(reverse(unhex(address))), reinterpretAsUInt64(reverse(unhex(size))), type, symbol

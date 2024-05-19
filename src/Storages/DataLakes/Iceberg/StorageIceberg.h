@@ -63,7 +63,7 @@ public:
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
-        return StorageS3::getConfiguration();
+        return StorageS3::getConfigurationCopy();
     }
 
     void updateConfiguration(const ContextPtr & local_context) override
