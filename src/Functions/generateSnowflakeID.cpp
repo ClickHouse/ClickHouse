@@ -105,7 +105,7 @@ public:
 
         Int64 available_snowflake_id, next_available_snowflake_id;
 
-        const Int64 size64 = static_cast<Int64>(input_rows_count);
+        const Int64 input_rows_count_signed = static_cast<Int64>(input_rows_count);
 
         do
         {
@@ -127,11 +127,11 @@ public:
             /// calculate new lowest_available_snowflake_id
             const Int64 seq_nums_in_current_timestamp_left = (max_machine_seq_num - current_machine_seq_num + 1);
             Int64 new_timestamp;
-            if (size64 >= seq_nums_in_current_timestamp_left)
-                new_timestamp = current_timestamp + 1 + (size64 - seq_nums_in_current_timestamp_left) / max_machine_seq_num;
+            if (input_rows_count_signed >= seq_nums_in_current_timestamp_left)
+                new_timestamp = current_timestamp + 1 + (input_rows_count_signed - seq_nums_in_current_timestamp_left) / max_machine_seq_num;
             else
                 new_timestamp = current_timestamp;
-            const Int64 new_machine_seq_num = (current_machine_seq_num + size64) & machine_seq_num_mask;
+            const Int64 new_machine_seq_num = (current_machine_seq_num + input_rows_count_signed) & machine_seq_num_mask;
             next_available_snowflake_id = (new_timestamp << (machine_id_bits_count + machine_seq_num_bits_count)) | machine_id | new_machine_seq_num;
         }
         while (!lowest_available_snowflake_id.compare_exchange_strong(available_snowflake_id, next_available_snowflake_id));
