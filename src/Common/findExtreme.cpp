@@ -11,13 +11,13 @@ namespace DB
 template <has_find_extreme_implementation T>
 struct MinComparator
 {
-    static ALWAYS_INLINE inline const T & cmp(const T & a, const T & b) { return std::min(a, b); }
+    static ALWAYS_INLINE const T & cmp(const T & a, const T & b) { return std::min(a, b); }
 };
 
 template <has_find_extreme_implementation T>
 struct MaxComparator
 {
-    static ALWAYS_INLINE inline const T & cmp(const T & a, const T & b) { return std::max(a, b); }
+    static ALWAYS_INLINE const T & cmp(const T & a, const T & b) { return std::max(a, b); }
 };
 
 MULTITARGET_FUNCTION_AVX2_SSE42(
