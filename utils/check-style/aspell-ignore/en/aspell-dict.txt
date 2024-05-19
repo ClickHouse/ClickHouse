@@ -272,8 +272,8 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
-FFFFFFFF
 FFFD
+FFFFFFFF
 FIPS
 FOSDEM
 FQDN
@@ -394,6 +394,8 @@ InterserverThreads
 IsPentagon
 IsResClassIII
 IsValid
+isNotDistinctFrom
+isNullable
 JBOD
 JOINed
 JOINs
@@ -473,7 +475,9 @@ LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
+LOONGARCH
 LONGLONG
+LoongArch
 Levenshtein
 Liao
 LibFuzzer
@@ -563,8 +567,7 @@ MinIO
 MinMax
 MindsDB
 Mongodb
-mortonDecode
-mortonEncode
+Monotonicity
 MsgPack
 multiSearchAllPositionsCaseInsensitive
 multiSearchAllPositionsCaseInsensitiveUTF
@@ -616,6 +619,7 @@ NetworkSendErrors
 NetworkSendPackets
 Noaa
 NodeJs
+NonMonotonic
 NuRaft
 NumHexagons
 NumPy
@@ -879,6 +883,7 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
+sigmoid
 Smirnov's
 Smirnov'test
 Soundex
@@ -924,6 +929,7 @@ TAVG
 TCPConnection
 TCPThreads
 TDigest
+ThreadMonotonic
 TINYINT
 TLSv
 TMAX
@@ -1001,6 +1007,7 @@ UMTS
 UNDROP
 UPDATEs
 URIs
+URL
 URL's
 URLHash
 URLHierarchy
@@ -1008,7 +1015,9 @@ URLPathHierarchy
 USearch
 UUIDNumToString
 UUIDStringToNum
+UUIDToNum
 UUIDs
+UUIDv
 UUid
 Uber
 Uint
@@ -1043,6 +1052,8 @@ Wether
 WikiStat
 WindowView
 Winkler
+WithCounter
+WithFastCounter
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1060,6 +1071,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZCurve
 ZSTDQAT
 Zabbix
 Zipkin
@@ -1089,6 +1101,8 @@ addQuarters
 addSeconds
 addWeeks
 addYears
+addInterval
+addTupleOfIntervals
 addr
 addressToLine
 addressToLineWithInlines
@@ -1362,6 +1376,7 @@ configs
 congruential
 conjuction
 conjuctive
+connectionId
 const
 contrib
 convertCharset
@@ -1372,6 +1387,8 @@ countEqual
 countMatches
 countMatchesCaseInsensitive
 countSubstrings
+countSubstringsCaseInsensitive
+countSubstringsCaseInsensitiveUTF
 covarPop
 covarSamp
 covariates
@@ -1578,6 +1595,7 @@ firstSignificantSubdomainCustom
 fixedstring
 flamegraph
 flatbuffers
+flattenTuple
 flink
 fluentd
 fmtlib
@@ -1894,6 +1912,7 @@ logTrace
 logagent
 loghouse
 london
+loongarch
 lookups
 lowcardinality
 lowerUTF
@@ -1939,6 +1958,8 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memtable
+memtables
 mergeTreeIndex
 mergeable
 mergetree
@@ -1966,7 +1987,10 @@ modularization
 moduloOrZero
 moduli
 mongodb
+monotonicity
 monthName
+mortonDecode
+mortonEncode
 moscow
 msgpack
 msgpk
@@ -2316,6 +2340,7 @@ retentions
 rethrow
 retransmit
 retriable
+rewritable
 reverseUTF
 rightPad
 rightPadUTF
@@ -2376,6 +2401,7 @@ sharded
 sharding
 shortcircuit
 shortkeys
+showCertificate
 shoutout
 simdjson
 simpleJSON
@@ -2391,6 +2417,8 @@ simpleaggregatefunction
 simplelinearregression
 simpod
 singlepart
+singleValueOrNull
+singlevalueornull
 sinh
 sipHash
 siphash
@@ -2437,6 +2465,10 @@ stddevPop
 stddevSamp
 stddevpop
 stddevsamp
+stddevpopstable
+stddevPopStable
+stddevsampstable
+stddevSampStable
 stderr
 stdin
 stdout
@@ -2506,6 +2538,8 @@ subtractQuarters
 subtractSeconds
 subtractWeeks
 subtractYears
+subtractInterval
+subtractTupleOfIntervals
 subtree
 subtrees
 subtype
@@ -2518,6 +2552,9 @@ sumWithOverflow
 sumcount
 sumkahan
 summap
+summapwithoverflow
+sumMapWithOverflow
+sumMapFilteredWithOverflow
 summingmergetree
 sumwithoverflow
 superaggregates
@@ -2588,6 +2625,7 @@ toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
+toMillisecond
 toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -2604,7 +2642,6 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
-toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2738,6 +2775,7 @@ uptime
 uptrace
 uring
 url
+urlencoded
 urlCluster
 urls
 usearch
@@ -2745,6 +2783,7 @@ userspace
 userver
 utils
 uuid
+uuidv
 varPop
 varPopStable
 varSamp
@@ -2812,7 +2851,6 @@ xz
 yaml
 yandex
 youtube
-ZCurve
 zLib
 zLinux
 zabbix

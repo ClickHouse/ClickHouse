@@ -326,6 +326,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
+    index = std::make_shared<Columns>();
     minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo();
@@ -339,25 +340,40 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 }
 
 
-const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
+IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
     if (!index_loaded)
         loadIndex();
     index_loaded = true;
-    return TSA_SUPPRESS_WARNING_FOR_READ(index); /// The variable is guaranteed to be unchanged after return.
+    return index;
 }
 
 
-void IMergeTreeDataPart::setIndex(Columns index_)
+void IMergeTreeDataPart::setIndex(const Columns & cols_)
 {
     std::scoped_lock lock(index_mutex);
-    if (!index.empty())
+    if (!index->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = std::move(index_);
+    index = std::make_shared<const Columns>(cols_);
     index_loaded = true;
 }
 
+void IMergeTreeDataPart::setIndex(Columns && cols_)
+{
+    std::scoped_lock lock(index_mutex);
+    if (!index->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
+    index = std::make_shared<const Columns>(std::move(cols_));
+    index_loaded = true;
+}
+
+void IMergeTreeDataPart::unloadIndex()
+{
+    std::scoped_lock lock(index_mutex);
+    index = std::make_shared<Columns>();
+    index_loaded = false;
+}
 
 void IMergeTreeDataPart::setName(const String & new_name)
 {
@@ -567,7 +583,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : index)
+    for (const ColumnPtr & column : *index)
         res += column->byteSize();
     return res;
 }
@@ -576,7 +592,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : index)
+    for (const ColumnPtr & column : *index)
         res += column->allocatedBytes();
     return res;
 }
@@ -843,10 +859,6 @@ void IMergeTreeDataPart::loadIndex() const
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    /// It can be empty in case of mutations
-    if (!index_granularity.isInitialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not loaded before index loading");
-
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
@@ -910,7 +922,7 @@ void IMergeTreeDataPart::loadIndex() const
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
-        index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+        index = std::make_shared<Columns>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 }
 
@@ -1255,6 +1267,33 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
 {
     files.push_back("checksums.txt");
+}
+
+void IMergeTreeDataPart::loadRowsCountFileForUnexpectedPart()
+{
+    auto read_rows_count = [&]()
+    {
+        auto buf = metadata_manager->read("count.txt");
+        readIntText(rows_count, *buf);
+        assertEOF(*buf);
+    };
+    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
+    {
+        if (metadata_manager->exists("count.txt"))
+        {
+            read_rows_count();
+            return;
+        }
+    }
+    else
+    {
+        if (getDataPartStorage().exists("count.txt"))
+        {
+            read_rows_count();
+            return;
+        }
+    }
+    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 }
 
 void IMergeTreeDataPart::loadRowsCount()
@@ -1935,7 +1974,6 @@ void IMergeTreeDataPart::remove()
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
-    String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
         *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
