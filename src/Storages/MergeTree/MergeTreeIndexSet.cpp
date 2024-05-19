@@ -343,7 +343,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     const auto & column = result.getByName(actions_output_column_name).column;
 
     for (size_t i = 0; i < size; ++i)
-        if (column->getBool(i))
+        if (!column->isNullAt(i) && (column->get64(i) & 1))
             return true;
 
     return false;
@@ -365,7 +365,25 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
 
     actions->execute(block);
 
-    const auto & column = block.getByName(actions_output_column_name).column;
+    const auto & column = block.getByName(actions_output_column_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    if (column->onlyNull())
+        return res;
+
+    const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+    const NullMap * null_map = nullptr;
+
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&*column))
+    {
+        col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
+        null_map = &col_nullable->getNullMapData();
+    }
+
+    if (!col_uint8)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ColumnUInt8 is expected as a Set index condition result");
+
+    const auto & condition = col_uint8->getData();
+
     const auto & granule_nums = assert_cast<const ColumnUInt64 &>(*block.getByName("_granule_num").column).getData();
 
     UInt64 current_granule_num = 0;
@@ -376,7 +394,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
             continue;
 
         current_granule_num = granule_nums[i];
-        current_granule_pass = column->getBool(i);
+        current_granule_pass = (!null_map || !(*null_map)[i]) && (condition[i] & 1);
 
         if (current_granule_pass)
             res.push_back(current_granule_num);
