@@ -50,7 +50,7 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
       */
     Strings processMetadataFiles(const Configuration & configuration)
     {
-        auto log = getLogger("HudiMetadataParser");
+        auto * log = &Poco::Logger::get("HudiMetadataParser");
 
         const auto keys = MetadataReadHelper::listFiles(configuration, "", Poco::toLower(configuration.format));
 

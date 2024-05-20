@@ -3,7 +3,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/checkStackSize.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -44,7 +43,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -77,7 +75,6 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
-    extern const int SYNTAX_ERROR;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -348,7 +345,7 @@ Block createBlockForSet(
 {
     auto get_tuple_type_from_ast = [context](const auto & func) -> DataTypePtr
     {
-        if ((func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
+        if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
             auto element = func->arguments->children.at(0);
@@ -359,7 +356,6 @@ Block createBlockForSet(
         return evaluateConstantExpression(func, context).second;
     };
 
-    assert(right_arg);
     const DataTypePtr & right_arg_type = get_tuple_type_from_ast(right_arg);
 
     size_t left_tuple_depth = getTypeDepth(left_arg_type);
@@ -415,7 +411,7 @@ FutureSetPtr makeExplicitSet(
 
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
 
-    auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
+    auto set_key = right_arg->getTreeHash();
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
@@ -694,8 +690,6 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 
 void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
-    checkStackSize();
-
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
     else if (const auto * table = ast->as<ASTTableIdentifier>())
@@ -763,8 +757,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-    auto untuple_alias = function->tryGetAlias();
-    for (const auto & element_name : tuple_type->getElementNames())
+    auto func_alias = function->tryGetAlias();
+    for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
 
@@ -778,12 +772,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-        if (!untuple_alias.empty())
-        {
-            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
-            func->setAlias(untuple_alias + "." + element_alias);
-        }
-
+        if (!func_alias.empty())
+            func->setAlias(func_alias + "." + toString(tid));
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 
@@ -848,19 +838,6 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
     }
 }
 
-namespace
-{
-void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
-{
-    if (node.nulls_action != NullsAction::EMPTY)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "Function {} cannot use {} NULLS",
-            node.name,
-            node.nulls_action == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
-}
-}
-
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
     auto column_name = ast->getColumnName();
@@ -875,7 +852,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     {
         if (node.arguments->children.size() != 1)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "arrayJoin requires exactly 1 argument");
-        checkFunctionHasEmptyNullsAction(node);
 
         ASTPtr arg = node.arguments->children.at(0);
         visit(arg, data);
@@ -887,7 +863,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "grouping")
     {
-        checkFunctionHasEmptyNullsAction(node);
         if (data.only_consts)
             return; // Can not perform constant folding, because this function can be executed only after GROUP BY
 
@@ -939,7 +914,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     FutureSetPtr prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
-        checkFunctionHasEmptyNullsAction(node);
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
@@ -970,7 +944,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     /// A special function `indexHint`. Everything that is inside it is not calculated
     if (node.name == "indexHint")
     {
-        checkFunctionHasEmptyNullsAction(node);
         if (data.only_consts)
         {
             /// We need to collect constants inside `indexHint` for index analysis.
@@ -1071,7 +1044,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     auto current_context = data.getContext();
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
     {
         Array parameters;
         if (node.parameters)
@@ -1087,7 +1060,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
         }
 
-        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
     }
 
     if (!function_builder)
@@ -1109,8 +1082,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
     }
 
-    checkFunctionHasEmptyNullsAction(node);
-
     Names argument_names;
     DataTypes argument_types;
     bool arguments_present = true;
@@ -1130,11 +1101,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             const auto * query_parameter = child->as<ASTQueryParameter>();
             if (function && function->name == "lambda")
             {
-                if (!isASTLambdaFunction(*function))
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
-
                 /// If the argument is a lambda expression, just remember its approximate type.
+                if (function->arguments->children.size() != 2)
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
+
                 const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
+
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
 
@@ -1322,12 +1294,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
-    DataTypePtr type;
-    if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
-        type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
-    else
-        type = applyVisitor(FieldToDataType(), literal.value);
-
+    DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
     const auto value = convertFieldToType(literal.value, *type);
 
     // FIXME why do we have a second pass with a clean sample block over the same
@@ -1416,12 +1383,12 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             set_key = query_tree->getTreeHash();
         }
         else
-            set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);
+            set_key = right_in_operand->getTreeHash();
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
             return set;
 
-        FutureSetFromSubqueryPtr external_table_set;
+        FutureSetPtr external_table_set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1465,8 +1432,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             interpreter->buildQueryPlan(*source);
         }
 
-        return data.prepared_sets->addFromSubquery(
-            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
+        return data.prepared_sets->addFromSubquery(set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
     else
     {

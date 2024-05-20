@@ -22,7 +22,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// Description of projections for Storage
 struct ProjectionDescription
 {
-    enum class Type : uint8_t
+    enum class Type
     {
         Normal,
         Aggregate,
@@ -106,7 +106,7 @@ struct ProjectionDescription
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
-struct ProjectionsDescription : public IHints<>
+struct ProjectionsDescription : public IHints<1, ProjectionsDescription>
 {
     ProjectionsDescription() = default;
     ProjectionsDescription(ProjectionsDescription && other) = default;

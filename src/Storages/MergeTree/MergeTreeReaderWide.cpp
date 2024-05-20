@@ -24,7 +24,6 @@ namespace
 MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeDataPartInfoForReaderPtr data_part_info_,
     NamesAndTypesList columns_,
-    const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
@@ -36,26 +35,27 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     : IMergeTreeReader(
         data_part_info_,
         columns_,
-        virtual_fields_,
         storage_snapshot_,
         uncompressed_cache_,
         mark_cache_,
         mark_ranges_,
         settings_,
         avg_value_size_hints_)
-    , read_without_marks(
-        settings.can_read_part_without_marks
-        && all_mark_ranges.isOneRangeForWholePart(data_part_info_for_read->getMarksCount()))
 {
     try
     {
         for (size_t i = 0; i < columns_to_read.size(); ++i)
             addStreams(columns_to_read[i], serializations[i], profile_callback_, clock_type_);
     }
+    catch (const Exception & e)
+    {
+        if (!isRetryableException(e))
+            data_part_info_for_read->reportBroken();
+        throw;
+    }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
-            data_part_info_for_read->reportBroken();
+        data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -78,10 +78,15 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
         /// of range only once so there is no such problem.
         /// 4. continue_reading == false, as we haven't read anything yet.
     }
+    catch (const Exception & e)
+    {
+        if (!isRetryableException(e))
+            data_part_info_for_read->reportBroken();
+        throw;
+    }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
-            data_part_info_for_read->reportBroken();
+        data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -179,21 +184,18 @@ size_t MergeTreeReaderWide::readRows(
         /// In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
     }
-    catch (...)
+    catch (Exception & e)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(e))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        try
-        {
-            rethrow_exception(std::current_exception());
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
-        }
-
+        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+        throw;
+    }
+    catch (...)
+    {
+        data_part_info_for_read->reportBroken();
         throw;
     }
 
@@ -211,60 +213,37 @@ void MergeTreeReaderWide::addStreams(
 
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
-        /** If data file is missing then we will not try to open it.
-          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
-          */
-        if (!stream_name)
-        {
-            has_all_streams = false;
-            return;
-        }
-
-        if (streams.contains(*stream_name))
+        if (streams.contains(stream_name))
         {
             has_any_stream = true;
             return;
         }
 
-        auto context = data_part_info_for_read->getContext();
-        auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-        size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
+        bool data_file_exists = data_part_info_for_read->getChecksums().files.contains(stream_name + DATA_FILE_EXTENSION);
 
-        auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
-            data_part_info_for_read,
-            mark_cache,
-            data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(*stream_name),
-            num_marks_in_part,
-            data_part_info_for_read->getIndexGranularityInfo(),
-            settings.save_marks_in_cache,
-            settings.read_settings,
-            load_marks_threadpool,
-            /*num_columns_in_mark=*/ 1);
+        /** If data file is missing then we will not try to open it.
+          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
+          */
+        if (!data_file_exists)
+        {
+            has_all_streams = false;
+            return;
+        }
 
         has_any_stream = true;
-        auto stream_settings = settings;
-        stream_settings.is_low_cardinality_dictionary = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
+        bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
-        auto create_stream = [&]<typename Stream>()
-        {
-            return std::make_unique<Stream>(
-                data_part_info_for_read->getDataPartStorage(), *stream_name, DATA_FILE_EXTENSION,
-                num_marks_in_part, all_mark_ranges, stream_settings,
-                uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION),
-                std::move(marks_loader), profile_callback, clock_type);
-        };
+        auto context = data_part_info_for_read->getContext();
+        auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
-        if (read_without_marks)
-        {
-            streams.emplace(*stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumnWholePart>());
-        }
-        else
-        {
-            marks_loader->startAsyncLoad();
-            streams.emplace(*stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumn>());
-        }
+        streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
+            data_part_info_for_read, stream_name, DATA_FILE_EXTENSION,
+            data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
+            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+            &data_part_info_for_read->getIndexGranularityInfo(),
+            profile_callback, clock_type, is_lc_dict, load_marks_threadpool));
     };
 
     serialization->enumerateStreams(callback);
@@ -273,14 +252,13 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
+
 static ReadBuffer * getStream(
     bool seek_to_start,
     const ISerialization::SubstreamPath & substream_path,
-    const MergeTreeDataPartChecksums & checksums,
     MergeTreeReaderWide::FileStreams & streams,
     const NameAndTypePair & name_and_type,
-    size_t from_mark,
-    bool seek_to_mark,
+    size_t from_mark, bool seek_to_mark,
     size_t current_task_last_mark,
     ISerialization::SubstreamsCache & cache)
 {
@@ -288,11 +266,9 @@ static ReadBuffer * getStream(
     if (cache.contains(ISerialization::getSubcolumnNameForStream(substream_path)))
         return nullptr;
 
-    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, checksums);
-    if (!stream_name)
-        return nullptr;
+    String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
-    auto it = streams.find(*stream_name);
+    auto it = streams.find(stream_name);
     if (it == streams.end())
         return nullptr;
 
@@ -319,7 +295,7 @@ void MergeTreeReaderWide::deserializePrefix(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), streams, name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
+            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
     }
@@ -338,16 +314,15 @@ void MergeTreeReaderWide::prefetchForColumn(
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
-        if (stream_name && !prefetched_streams.contains(*stream_name))
+        if (!prefetched_streams.contains(stream_name))
         {
-            bool seek_to_mark = !continue_reading && !read_without_marks;
-
-            if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
+            bool seek_to_mark = !continue_reading;
+            if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
             {
                 buf->prefetch(priority);
-                prefetched_streams.insert(*stream_name);
+                prefetched_streams.insert(stream_name);
             }
         }
     });
@@ -367,12 +342,11 @@ void MergeTreeReaderWide::readData(
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
+        bool seek_to_mark = !was_prefetched && !continue_reading;
 
         return getStream(
-            /* seek_to_start = */false, substream_path,
-            data_part_info_for_read->getChecksums(), streams,
-            name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache);
+            /* seek_to_start = */false, substream_path, streams, name_and_type, from_mark,
+            seek_to_mark, current_task_last_mark, cache);
     };
 
     deserialize_settings.continuous_reading = continue_reading;

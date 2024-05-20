@@ -2,22 +2,15 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IParser.h>
-#include <Parsers/TokenIterator.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/parseDatabaseAndTableName.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
-#include <Common/formatReadable.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -58,54 +51,7 @@ struct HasNonDeterministicFunctionsMatcher
     }
 };
 
-struct HasSystemTablesMatcher
-{
-    struct Data
-    {
-        const ContextPtr context;
-        bool has_system_tables = false;
-    };
-
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
-
-    static void visit(const ASTPtr & node, Data & data)
-    {
-        if (data.has_system_tables)
-            return;
-
-        String database_table; /// or whatever else we get, e.g. just a table
-
-        /// SELECT [...] FROM <table>
-        if (const auto * table_identifier = node->as<ASTTableIdentifier>())
-        {
-            database_table = table_identifier->name();
-        }
-        /// SELECT [...] FROM clusterAllReplicas(<cluster>, <table>)
-        else if (const auto * identifier = node->as<ASTIdentifier>())
-        {
-            database_table = identifier->name();
-        }
-        /// Handle SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
-        else if (const auto * literal = node->as<ASTLiteral>())
-        {
-            const auto & value = literal->value;
-            database_table = toString(value);
-        }
-
-        Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
-        IParser::Pos pos(tokens, /*max_depth*/ 42, /*max_backtracks*/ 42);
-        Expected expected;
-        String database;
-        String table;
-        bool successfully_parsed = parseDatabaseAndTableName(pos, expected, database, table);
-        if (successfully_parsed)
-            if (DatabaseCatalog::isPredefinedDatabase(database))
-                data.has_system_tables = true;
-    }
-};
-
 using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
-using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
@@ -114,13 +60,6 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions;
-}
-
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
-{
-    HasSystemTablesMatcher::Data finder_data{context};
-    HasSystemTablesVisitor(finder_data).visit(ast);
-    return finder_data.has_system_tables;
 }
 
 namespace
@@ -186,9 +125,6 @@ String queryStringFromAST(ASTPtr ast)
 
 }
 
-/// Hashing of ASTs must consider aliases (issue #56258)
-static constexpr bool ignore_aliases = false;
-
 QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_,
@@ -196,7 +132,7 @@ QueryCache::Key::Key(
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast_hash(removeQueryCacheSettings(ast_)->getTreeHash(ignore_aliases))
+    : ast(removeQueryCacheSettings(ast_))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -214,12 +150,15 @@ QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vecto
 
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast_hash == other.ast_hash;
+    return ast->getTreeHash() == other.ast->getTreeHash();
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    return key.ast_hash.low64;
+    SipHash hash;
+    hash.update(key.ast->getTreeHash());
+    auto res = hash.get64();
+    return res;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
@@ -254,7 +193,7 @@ QueryCache::Writer::Writer(
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
-        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.query_string);
     }
 }
 
@@ -324,17 +263,16 @@ void QueryCache::Writer::finalizeWrite()
 
     /// Check some reasons why the entry must not be cached:
 
-    if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
     {
-        LOG_TRACE(logger, "Skipped insert because the query is not expensive enough, query runtime: {} msec (minimum query runtime: {} msec), query: {}",
-                query_runtime.count(), min_query_runtime.count(), doubleQuoteString(key.query_string));
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query not expensive enough), query: {}", key.query_string);
         return;
     }
 
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
-        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.query_string);
         return;
     }
 
@@ -417,14 +355,11 @@ void QueryCache::Writer::finalizeWrite()
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
-        LOG_TRACE(logger, "Skipped insert because the query result is too big, query result size: {} (maximum size: {}), query result size in rows: {} (maximum size: {}), query: {}",
-                formatReadableSizeWithBinarySuffix(new_entry_size_in_bytes, 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), new_entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.query_string);
         return;
     }
 
     cache.set(key, query_result);
-
-    LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 
     was_finalized = true;
 }
@@ -455,7 +390,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
 
     if (!entry.has_value())
     {
-        LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "No entry found for query {}", key.query_string);
         return;
     }
 
@@ -466,13 +401,13 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
     const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
     if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
     {
-        LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.query_string);
         return;
     }
 
     if (IsStale()(entry_key))
     {
-        LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found for query {}", key.query_string);
         return;
     }
 
@@ -510,7 +445,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
 
-    LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
+    LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.query_string);
 }
 
 bool QueryCache::Reader::hasCacheEntryForKey() const

@@ -12,7 +12,6 @@ grep_options=(
     -e 'Cannot create file: /no/such/directory'
     -e 'Cannot load data for command line suggestions:'
     -e 'ClickHouse local version'
-    -e 'Empty query'
 )
 
 ASAN_OPTIONS=$ASAN_OPTIONS:exitcode=3 $CLICKHOUSE_LOCAL --history_file /no/such/directory |& grep -v "${grep_options[@]}"

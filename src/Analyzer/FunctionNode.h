@@ -5,12 +5,11 @@
 #include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+#include <Common/typeid_cast.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
-#include <Parsers/NullsAction.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -45,7 +44,7 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class FunctionNode;
 using FunctionNodePtr = std::shared_ptr<FunctionNode>;
 
-enum class FunctionKind : UInt8
+enum class FunctionKind
 {
     UNKNOWN,
     ORDINARY,
@@ -63,10 +62,6 @@ public:
 
     /// Get function name
     const String & getFunctionName() const { return function_name; }
-
-    /// Get NullAction modifier
-    NullsAction getNullsAction() const { return nulls_action; }
-    void setNullsAction(NullsAction action) { nulls_action = action; }
 
     /// Get parameters
     const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
@@ -201,19 +196,16 @@ public:
 
     void convertToNullable() override
     {
-        /// Ignore other function kinds.
-        /// We might try to convert aggregate/window function for invalid query
-        /// before the validation happened.
-        if (kind == FunctionKind::ORDINARY)
-            wrap_with_nullable = true;
+        chassert(kind == FunctionKind::ORDINARY);
+        wrap_with_nullable = true;
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
-    void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const override;
+    void updateTreeHashImpl(HashState & hash_state) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -222,7 +214,6 @@ protected:
 private:
     String function_name;
     FunctionKind kind = FunctionKind::UNKNOWN;
-    NullsAction nulls_action = NullsAction::EMPTY;
     IResolvedFunctionPtr function;
     bool wrap_with_nullable = false;
 

@@ -39,10 +39,14 @@
 
 
 // NOLINTBEGIN(google-explicit-constructor)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#endif
 POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception)
-#pragma clang diagnostic pop
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 // NOLINTEND(google-explicit-constructor)
 
 class JSON
@@ -74,7 +78,7 @@ public:
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }
 
-    enum ElementType : uint8_t
+    enum ElementType
     {
         TYPE_OBJECT,
         TYPE_ARRAY,

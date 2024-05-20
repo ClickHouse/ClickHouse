@@ -10,14 +10,11 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <IO/S3/BlobStorageLogWriter.h>
-#include <Common/BufferAllocationPolicy.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <memory>
 #include <vector>
 #include <list>
-
 
 namespace DB
 {
@@ -28,20 +25,19 @@ namespace DB
  * Data is divided on chunks with size greater than 'minimum_upload_part_size'. Last chunk can be less than this threshold.
  * Each chunk is written as a part to S3.
  */
-class TaskTracker;
-
 class WriteBufferFromS3 final : public WriteBufferFromFileBase
 {
 public:
     WriteBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
+        /// for CompleteMultipartUploadRequest, because it blocks on recv() for a few seconds on big uploads
+        std::shared_ptr<const S3::Client> client_with_long_timeout_ptr_,
         const String & bucket_,
         const String & key_,
         size_t buf_size_,
         const S3Settings::RequestSettings & request_settings_,
-        BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
+        ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;
@@ -49,6 +45,18 @@ public:
     void preFinalize() override;
     std::string getFileName() const override { return key; }
     void sync() override { next(); }
+
+    class IBufferAllocationPolicy
+    {
+    public:
+        virtual size_t getBufferNumber() const = 0;
+        virtual size_t getBufferSize() const = 0;
+        virtual void nextBuffer() = 0;
+        virtual ~IBufferAllocationPolicy() = 0;
+    };
+    using IBufferAllocationPolicyPtr = std::unique_ptr<IBufferAllocationPolicy>;
+
+    static IBufferAllocationPolicyPtr ChooseBufferPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings_);
 
 private:
     /// Receives response from the server after sending all data.
@@ -59,10 +67,10 @@ private:
 
     struct PartData;
     void hidePartialData();
+    void allocateFirstBuffer();
     void reallocateFirstBuffer();
     void detachBuffer();
     void allocateBuffer();
-    void allocateFirstBuffer();
     void setFakeBufferWhenPreFinalized();
 
     S3::UploadPartRequest getUploadRequest(size_t part_number, PartData & data);
@@ -82,17 +90,17 @@ private:
     const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
+    const std::shared_ptr<const S3::Client> client_with_long_timeout_ptr;
     const std::optional<std::map<String, String>> object_metadata;
-    LoggerPtr log = getLogger("WriteBufferFromS3");
+    Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
     LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
-    BufferAllocationPolicyPtr buffer_allocation_policy;
+    IBufferAllocationPolicyPtr buffer_allocation_policy;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
     std::deque<String> multipart_tags;
-    std::deque<String> multipart_checksums; // if enabled
     bool multipart_upload_finished = false;
 
     /// Track that prefinalize() is called only once
@@ -111,9 +119,8 @@ private:
     size_t total_size = 0;
     size_t hidden_size = 0;
 
+    class TaskTracker;
     std::unique_ptr<TaskTracker> task_tracker;
-
-    BlobStorageLogWriterPtr blob_log;
 };
 
 }

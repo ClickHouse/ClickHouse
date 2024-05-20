@@ -1,0 +1,14 @@
+Build clickhouse without tcmalloc. cmake -D ENABLE_TCMALLOC=0
+
+Copy clickhouse binary to your server.
+scp programs/clickhouse server:~
+
+ssh to your server
+
+Stop clickhouse:
+sudo service clickhouse-server stop
+
+Run clickhouse with heap profiler from the terminal:
+sudo -u clickhouse LD_PRELOAD=/usr/lib/libtcmalloc.so HEAPPROFILE=/var/log/clickhouse-server/heap.hprof ./clickhouse server --config /etc/clickhouse-server/config.xml
+
+Profiles will appear in /var/log/clickhouse-server/

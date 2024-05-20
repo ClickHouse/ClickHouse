@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
-# no-parallel: it checks the number of threads, which can be lowered in presence of other queries
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

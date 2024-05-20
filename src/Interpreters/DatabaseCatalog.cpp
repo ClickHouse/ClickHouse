@@ -1,8 +1,6 @@
 #include <string>
-#include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TableNameHints.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -27,8 +25,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include <boost/range/adaptor/map.hpp>
-
+#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -46,7 +43,6 @@ namespace CurrentMetrics
     extern const Metric TablesToDropQueueSize;
     extern const Metric DatabaseCatalogThreads;
     extern const Metric DatabaseCatalogThreadsActive;
-    extern const Metric DatabaseCatalogThreadsScheduled;
 }
 
 namespace DB
@@ -65,7 +61,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
-class DatabaseNameHints : public IHints<>
+class DatabaseNameHints : public IHints<1, DatabaseNameHints>
 {
 public:
     explicit DatabaseNameHints(const DatabaseCatalog & database_catalog_)
@@ -200,18 +196,15 @@ void DatabaseCatalog::createBackgroundTasks()
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
-            = getContext()->getSchedulePool().createTask("DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
+            = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
-    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
-
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
-    reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
+    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
 }
 
-void DatabaseCatalog::startupBackgroundTasks()
+void DatabaseCatalog::startupBackgroundCleanup()
 {
     /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
     if (cleanup_task)
@@ -333,7 +326,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     if (!table_id)
     {
         if (exception)
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty"));
+            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty");
         return {};
     }
 
@@ -355,9 +348,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-
-        /// Wait for table to be started because we are going to return StoragePtr
-        db_and_table.first->waitTableStarted(table_id.getTableName());
 
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
@@ -829,7 +819,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , referential_dependencies{"ReferentialDeps"}
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
-    , log(getLogger("DatabaseCatalog"))
+    , log(&Poco::Logger::get("DatabaseCatalog"))
     , first_async_drop_in_queue(tables_marked_dropped.end())
 {
 }
@@ -907,37 +897,19 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     /// TSA does not support unique_lock
     auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database);
+    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
 
-DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
+std::unique_lock<SharedMutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
 {
     DDLGuards::iterator db_guard_iter;
     {
         std::lock_guard lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
+        assert(db_guard_iter->second.first.contains(""));
     }
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return db_guard;
-}
-
-std::unique_lock<SharedMutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
-{
-    return std::unique_lock{getDatabaseGuard(database).database_ddl_mutex};
-}
-
-std::unique_lock<SharedMutex> DatabaseCatalog::getLockForDropDatabase(const String & database)
-{
-    return std::unique_lock{getDatabaseGuard(database).restart_replica_mutex};
-}
-
-std::optional<std::shared_lock<SharedMutex>> DatabaseCatalog::tryGetLockForRestartReplica(const String & database)
-{
-    DatabaseGuard & db_guard = getDatabaseGuard(database);
-    std::shared_lock lock(db_guard.restart_replica_mutex, std::defer_lock);
-    if (lock.try_lock())
-        return lock;
-    return {};
+    return std::unique_lock{db_guard.second};
 }
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
@@ -988,7 +960,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
+    String path = getContext()->getPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -1030,7 +1002,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
+    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive);
     for (const auto & elem : dropped_metadata)
     {
         pool.scheduleOrThrowOnError([&]()
@@ -1043,26 +1015,17 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
-        fmt::format("{}.{}.{}.sql",
-            escapeForFileName(table_id.getDatabaseName()),
-            escapeForFileName(table_id.getTableName()),
-            toString(table_id.uuid));
+    return getContext()->getPath() + "metadata_dropped/" +
+           escapeForFileName(table_id.getDatabaseName()) + "." +
+           escapeForFileName(table_id.getTableName()) + "." +
+           toString(table_id.uuid) + ".sql";
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 {
-    auto database = getDatabase(table_id.getDatabaseName());
-    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
-
-    if (!database_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get metadata path from database {}", table_id.getDatabaseName());
-
-    auto metadata_path = database_ptr->getMetadataPath();
-    if (metadata_path.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty metadata path in database {}", table_id.getDatabaseName());
-
-    return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
+    return getContext()->getPath() + "metadata/" +
+           escapeForFileName(table_id.getDatabaseName()) + "/" +
+           escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
@@ -1097,7 +1060,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             create->setTable(table_id.table_name);
             try
             {
-                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE).second;
+                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), /* force_restore */ true).second;
                 table->is_dropped = true;
             }
             catch (...)
@@ -1146,7 +1109,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
     TableMarkedAsDropped dropped_table;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        auto latest_drop_time = std::numeric_limits<time_t>::min();
+        time_t latest_drop_time = std::numeric_limits<time_t>::min();
         auto it_dropped_table = tables_marked_dropped.end();
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
@@ -1171,7 +1134,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         }
         if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
+                "The drop task of table {} is in progress, has been dropped or the database engine doesn't support it",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
@@ -1438,7 +1401,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
@@ -1595,40 +1558,6 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
     }
 }
 
-void DatabaseCatalog::reloadDisksTask()
-{
-    std::set<String> disks;
-    {
-        std::lock_guard lock{reload_disks_mutex};
-        disks.swap(disks_to_reload);
-    }
-
-    for (auto & database : getDatabases())
-    {
-        // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
-        // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
-        // TODO: We can split this task by table or by database to make loaded table operate as usual.
-        auto it = database.second->getTablesIterator(getContext());
-        while (it->isValid())
-        {
-            auto table = it->table();
-            table->initializeDiskOnConfigChange(disks);
-            it->next();
-        }
-    }
-
-    std::lock_guard lock{reload_disks_mutex};
-    if (!disks_to_reload.empty()) /// during reload, another disks configuration change
-        (*reload_disks_task)->scheduleAfter(DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC * 1000);
-}
-
-void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
-{
-    std::lock_guard lock{reload_disks_mutex};
-    disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
-    (*reload_disks_task)->schedule();
-}
-
 static void maybeUnlockUUID(UUID uuid)
 {
     if (uuid == UUIDHelpers::Nil)
@@ -1710,44 +1639,6 @@ DDLGuard::~DDLGuard()
     if (!is_database_guard)
         db_mutex.unlock_shared();
     releaseTableLock();
-}
-
-std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
-{
-    auto results = this->getHints(table_name, getAllRegisteredNames());
-    if (results.empty())
-        return getExtendedHintForTable(table_name);
-    return std::make_pair(database->getDatabaseName(), results[0]);
-}
-
-std::pair<String, String> TableNameHints::getExtendedHintForTable(const String & table_name) const
-{
-    /// load all available databases from the DatabaseCatalog instance
-    auto & database_catalog = DatabaseCatalog::instance();
-    auto all_databases = database_catalog.getDatabases();
-
-    for (const auto & [db_name, db] : all_databases)
-    {
-        /// this case should be covered already by getHintForTable
-        if (db_name == database->getDatabaseName())
-            continue;
-
-        TableNameHints hints(db, context);
-        auto results = hints.getHints(table_name);
-
-        /// if the results are not empty, return the first instance of the table_name
-        /// and the corresponding database_name that was found.
-        if (!results.empty())
-            return std::make_pair(db_name, results[0]);
-    }
-    return {};
-}
-
-Names TableNameHints::getAllRegisteredNames() const
-{
-    if (database)
-        return database->getAllTableNames(context);
-    return {};
 }
 
 }

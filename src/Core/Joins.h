@@ -6,15 +6,14 @@ namespace DB
 {
 
 /// Join method.
-enum class JoinKind : uint8_t
+enum class JoinKind
 {
     Inner, /// Leave only rows that was JOINed.
     Left, /// If in "right" table there is no corresponding rows, use default values instead.
     Right,
     Full,
     Cross, /// Direct product. Strictness and condition doesn't matter.
-    Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
-    Paste, /// Used to join parts without `ON` clause.
+    Comma /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
 };
 
 const char * toString(JoinKind kind);
@@ -28,10 +27,9 @@ inline constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::R
 inline constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }
 inline constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner || kind == JoinKind::Right; }
 inline constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
-inline constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
 
 /// Allows more optimal JOIN for typical cases.
-enum class JoinStrictness : uint8_t
+enum class JoinStrictness
 {
     Unspecified,
     RightAny, /// Old ANY JOIN. If there are many suitable rows in right table, use any from them to join.
@@ -45,7 +43,7 @@ enum class JoinStrictness : uint8_t
 const char * toString(JoinStrictness strictness);
 
 /// Algorithm for distributed query processing.
-enum class JoinLocality : uint8_t
+enum class JoinLocality
 {
     Unspecified,
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
@@ -55,7 +53,7 @@ enum class JoinLocality : uint8_t
 const char * toString(JoinLocality locality);
 
 /// ASOF JOIN inequality type
-enum class ASOFJoinInequality : uint8_t
+enum class ASOFJoinInequality
 {
     None,
     Less,
@@ -96,7 +94,7 @@ inline constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality
     return ASOFJoinInequality::None;
 }
 
-enum class JoinAlgorithm : uint8_t
+enum class JoinAlgorithm
 {
     DEFAULT = 0,
     AUTO,
@@ -111,7 +109,7 @@ enum class JoinAlgorithm : uint8_t
 
 const char * toString(JoinAlgorithm join_algorithm);
 
-enum class JoinTableSide : uint8_t
+enum class JoinTableSide
 {
     Left,
     Right

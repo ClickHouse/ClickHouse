@@ -26,7 +26,6 @@ public:
         QUERIES_ALL,
         QUERIES_DEFAULT,
         QUERIES_CUSTOM,
-        CLOUD,
         END
     };
 

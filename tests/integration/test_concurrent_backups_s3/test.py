@@ -24,7 +24,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.skip(reason="broken test")
 def test_concurrent_backups(start_cluster):
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
     columns = [f"column_{i} UInt64" for i in range(1000)]

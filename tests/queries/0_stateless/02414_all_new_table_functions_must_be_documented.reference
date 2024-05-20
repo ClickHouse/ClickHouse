@@ -4,10 +4,9 @@ dictionary
 executable
 file
 generateRandom
-generateSeries
-generate_series
 input
 jdbc
+meilisearch
 merge
 mongodb
 null

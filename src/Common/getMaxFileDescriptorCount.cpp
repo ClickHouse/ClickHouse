@@ -1,19 +1,36 @@
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Common/ShellCommand.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <sys/resource.h>
+#include <filesystem>
 
-std::optional<size_t> getMaxFileDescriptorCount()
+int getMaxFileDescriptorCount()
 {
+    namespace fs = std::filesystem;
+    int result = -1;
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    /// We want to calculate it only once.
-    static auto result = []() -> std::optional<size_t>
+    using namespace DB;
+
+    if (fs::exists("/proc/sys/fs/file-max"))
     {
-        rlimit rlim;
-        if (0 != getrlimit(RLIMIT_NOFILE, &rlim))
-            return std::nullopt;
-        return rlim.rlim_max;
-    }();
-    return result;
-#else
-    return std::nullopt;
+        ReadBufferFromFile reader("/proc/sys/fs/file-max");
+        readIntText(result, reader);
+    }
+    else
+    {
+        auto command = ShellCommand::execute("ulimit -n");
+        try
+        {
+            readIntText(result, command->out);
+            command->wait();
+        }
+        catch (...)
+        {
+        }
+    }
+
 #endif
+
+    return result;
 }
