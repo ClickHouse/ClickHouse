@@ -1148,32 +1148,9 @@ public:
 
     size_t size() const { return columns.size(); }
 
-    void buildOutput(void (AddedColumns<lazy>::*func)(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index));
-
-    void buildOutputFromRowRef(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index)
-    {
-        const auto & src = row_ref->block->getByPosition(src_col_index);
-        dst->insertFrom(*src.column, row_ref->row_num);
-    }
-
-    void buildOutputFromRowRefList(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index)
-    {
-        const RowRefList * row_ref_list = static_cast<const RowRefList *>(row_ref);
-        for (auto it = row_ref_list->begin(); it.ok(); ++it)
-        {
-            const auto & src = it->block->getByPosition(src_col_index);
-            dst->insertFrom(*src.column, it->row_num);
-        }
-    }
-
-    void buildJoinGetOutput(MutableColumnPtr & dst, const RowRef * row_ref, size_t src_col_index)
-    {
-        const auto & src = row_ref->block->getByPosition(src_col_index);
-        if (auto * nullable_col = typeid_cast<ColumnNullable *>(dst.get()); nullable_col && !src.column->isNullable())
-            nullable_col->insertFromNotNullable(*src.column, row_ref->row_num);
-        else
-            dst->insertFrom(*src.column, row_ref->row_num);
-    }
+    void buildOutputFromRowRef();
+    void buildOutputFromRowRefList();
+    void buildJoinGetOutput();
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
@@ -1184,7 +1161,7 @@ public:
 
     void appendDefaultRow();
 
-    void applyLazyDefaults();
+    void applyLazyDefaults(bool to_apply, const size_t col_index);
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
@@ -1270,39 +1247,9 @@ private:
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
-template<> void AddedColumns<false>::buildOutput(void (AddedColumns<false>::*)(MutableColumnPtr &, const RowRef *, size_t)) {}
-
-template<> void AddedColumns<true>::buildOutput(void (AddedColumns<true>::* func)(MutableColumnPtr &, const RowRef *, size_t))
-{
-    for (size_t i = 0; i < this->size(); ++i)
-    {
-        auto& col = columns[i];
-        size_t default_count = 0;
-        auto apply_default = [&]()
-        {
-            if (default_count > 0)
-            {
-                JoinCommon::addDefaultValues(*col, type_name[i].type, default_count);
-                default_count = 0;
-            }
-        };
-        for (auto row_ref_i : lazy_output.row_refs)
-        {
-            if (!row_ref_i)
-            {
-                default_count++;
-                continue;
-            }
-            apply_default();
-            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
-            (this->*func)(col, row_ref, right_indexes[i]);
-        }
-        apply_default();
-    }
-}
 
 template<>
-void AddedColumns<false>::applyLazyDefaults()
+void AddedColumns<false>::applyLazyDefaults(bool, const size_t)
 {
     if (lazy_defaults_count)
     {
@@ -1313,15 +1260,90 @@ void AddedColumns<false>::applyLazyDefaults()
 }
 
 template<>
-void AddedColumns<true>::applyLazyDefaults()
+void AddedColumns<true>::applyLazyDefaults(bool to_apply, const size_t col_index)
 {
+    if (to_apply && lazy_defaults_count > 0)
+    {
+        JoinCommon::addDefaultValues(*columns[col_index], type_name[col_index].type, lazy_defaults_count);
+        lazy_defaults_count = 0;
+    }
+}
+
+template<> void AddedColumns<false>::buildOutputFromRowRef() {}
+template<> void AddedColumns<false>::buildOutputFromRowRefList() {}
+template<> void AddedColumns<false>::buildJoinGetOutput() {}
+
+template<> void AddedColumns<true>::buildOutputFromRowRef()
+{
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            // if (!row_ref_i)
+            // {
+            //     lazy_defaults_count++;
+            //     continue;
+            // }
+            // applyLazyDefaults(true, i);
+            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
+            const auto & src = row_ref->block->getByPosition(right_indexes[i]);
+            columns[i]->insertFrom(*src.column, row_ref->row_num);
+        }
+        // applyLazyDefaults(true, i);
+    }
+}
+
+template<> void AddedColumns<true>::buildOutputFromRowRefList()
+{
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            // if (!row_ref_i)
+            // {
+            //     lazy_defaults_count++;
+            //     continue;
+            // }
+            // applyLazyDefaults(true, i);
+            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+            for (auto it = row_ref_list->begin(); it.ok(); ++it)
+            {
+                const auto & src = it->block->getByPosition(right_indexes[i]);
+                columns[i]->insertFrom(*src.column, it->row_num);
+            }
+        }
+        // applyLazyDefaults(true, i);
+    }
+}
+
+template<> void AddedColumns<true>::buildJoinGetOutput()
+{
+    for (size_t i = 0; i < this->size(); ++i)
+    {
+        for (auto row_ref_i : lazy_output.row_refs)
+        {
+            if (!row_ref_i)
+            {
+                lazy_defaults_count++;
+                continue;
+            }
+            applyLazyDefaults(true, i);
+            const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
+            const auto & src = row_ref->block->getByPosition(right_indexes[i]);
+            if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[i].get()); nullable_col && !src.column->isNullable())
+                nullable_col->insertFromNotNullable(*src.column, row_ref->row_num);
+            else
+                columns[i]->insertFrom(*src.column, row_ref->row_num);
+        }
+        applyLazyDefaults(true, i);
+    }
 }
 
 template <>
 void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
 {
     if (has_defaults)
-        applyLazyDefaults();
+        applyLazyDefaults(false, 0);
 
 #ifndef NDEBUG
     checkBlock(*row_ref->block);
@@ -1481,7 +1503,7 @@ void addFoundRowAll(
     JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]])
 {
     if constexpr (add_missing)
-        added.applyLazyDefaults();
+        added.applyLazyDefaults(false, 0);
 
     if constexpr (flag_per_row)
     {
@@ -1810,7 +1832,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 if (need_filter)
                     setUsed<true>(added_columns.filter, left_start_row + i - 1);
                 if (add_missing)
-                    added_columns.applyLazyDefaults();
+                    added_columns.applyLazyDefaults(false, 0);
             }
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
@@ -1856,7 +1878,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         added_columns.offsets_to_replicate->resize_assume_reserved(left_row_iter);
         added_columns.filter.resize_assume_reserved(left_row_iter);
     }
-    added_columns.applyLazyDefaults();
+    added_columns.applyLazyDefaults(false, 0);
     return left_row_iter;
 }
 
@@ -1997,7 +2019,7 @@ NO_INLINE size_t joinRightColumns(
         }
     }
 
-    added_columns.applyLazyDefaults();
+    added_columns.applyLazyDefaults(false, 0);
     return i;
 }
 
@@ -2208,12 +2230,13 @@ Block HashJoin::joinBlockImpl(
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
     Block remaining_block = sliceBlock(block, num_joined);
-    void (AddedColumns<!join_features.is_any_join>::*func)(MutableColumnPtr &, const RowRef *, size_t);
-    func = is_join_get ?
-        &AddedColumns<!join_features.is_any_join>::buildJoinGetOutput : added_columns.output_by_row_list ?
-        &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRefList :
-        &AddedColumns<!join_features.is_any_join>::buildOutputFromRowRef;
-    added_columns.buildOutput(func);
+
+    if (is_join_get)
+        added_columns.buildJoinGetOutput();
+    else if (added_columns.output_by_row_list)
+        added_columns.buildOutputFromRowRefList();
+    else
+        added_columns.buildOutputFromRowRef();
 
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
