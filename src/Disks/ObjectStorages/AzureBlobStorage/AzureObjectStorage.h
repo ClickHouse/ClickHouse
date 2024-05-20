@@ -173,7 +173,8 @@ private:
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
     const String object_namespace; /// container + prefix
-    const String description; /// url + container
+
+    const String description; /// source url without container and prefix
 
     LoggerPtr log;
 };

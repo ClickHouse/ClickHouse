@@ -36,7 +36,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.getConnectionURLWithContainer(), false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.getConnectionURL().toString(), false, false}
     , configuration(configuration_)
 {
     auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
@@ -47,7 +47,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
         std::move(client_ptr),
         StorageAzureBlob::createSettings(context_),
         configuration.container,
-        configuration.getConnectionURLWithContainer());
+        configuration.getConnectionURL().toString());
 
     client = object_storage->getAzureBlobStorageClient();
     auto settings_copy = *object_storage->getSettings();
@@ -128,7 +128,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const ContextPtr & context_,
     bool attempt_to_create_container)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.getConnectionURLWithContainer(), false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.getConnectionURL().toString(), false, false}
     , configuration(configuration_)
 {
     auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false, attempt_to_create_container);
@@ -138,7 +138,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
                                                           std::move(client_ptr),
                                                           StorageAzureBlob::createSettings(context_),
                                                           configuration_.container,
-                                                          configuration.getConnectionURLWithContainer());
+                                                          configuration_.getConnectionURL().toString());
     client = object_storage->getAzureBlobStorageClient();
     auto settings_copy = *object_storage->getSettings();
     settings_copy.use_native_copy = allow_azure_native_copy;
