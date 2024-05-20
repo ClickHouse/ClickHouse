@@ -2157,7 +2157,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             {
                 this_query_end = insert_ast->data + pos;
             }
-            // this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
             insert_ast->end = this_query_end;
         }
         query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
@@ -2193,7 +2192,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
+    /// INSERT data is ended by the empty line(\n\n), not ';'.
+    /// Unnecessary semicolons may cause data to be parsed containing ';'
     /// An exception is VALUES format where we also support semicolon in
     /// addition to end of line.
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
