@@ -82,7 +82,8 @@ public:
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_,
-        const String & object_namespace_);
+        const String & object_namespace_,
+        const String & description_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
@@ -94,7 +95,7 @@ public:
 
     std::string getCommonKeyPrefix() const override { return ""; }
 
-    std::string getDescription() const override { return client.get()->GetUrl(); }
+    std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -173,6 +174,7 @@ private:
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
     const String object_namespace; /// container + prefix
+    const String description; /// url + container
 
     LoggerPtr log;
 };
