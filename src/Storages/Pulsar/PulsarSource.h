@@ -24,6 +24,8 @@ public:
 
     Chunk generate() override;
 
+    bool isStalled() const { return !consumer || consumer->isStalled(); }
+
 private:
     StoragePulsar & storage;
     StorageSnapshotPtr storage_snapshot;

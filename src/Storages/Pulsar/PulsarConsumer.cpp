@@ -46,12 +46,15 @@ ReadBufferPtr PulsarConsumer::consume()
             message_ids.emplace_back(polled_messages[i].getMessageId());
         }
         consumer.acknowledge(message_ids);
+        polled_messages.clear();
+        next_message = polled_messages.end();
     }
     pulsar::Messages new_messages;
     consumer.batchReceive(new_messages);
-    if (!new_messages.empty()) {
-        LOG_TRACE(log, "polled messages: {}", new_messages.size());
+    if (new_messages.empty()) {
+        return nullptr;
     }
+    LOG_TRACE(log, "polled messages: {}", new_messages.size());
     polled_messages = std::move(new_messages);
     next_message = polled_messages.begin();
     return getNextMessage();

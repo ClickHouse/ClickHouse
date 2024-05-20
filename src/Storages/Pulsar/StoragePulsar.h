@@ -95,8 +95,9 @@ private:
 
     void streaming();
     bool checkDependencies(const StorageID & table_id);
-    void streamToViews();
+    bool streamToViews();
 
+    ContextMutablePtr addSettings(ContextPtr local_context) const;
 
     VirtualColumnsDescription createVirtuals();
 };

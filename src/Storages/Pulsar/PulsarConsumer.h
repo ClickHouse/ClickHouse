@@ -26,6 +26,8 @@ public:
     UInt64 currentTimestamp() const { return next_message[-1].getPublishTimestamp(); }
     String currentPayload() const { return next_message[-1].getDataAsString(); }
 
+    bool isStalled() const { return polled_messages.empty(); }
+
 private:
     LoggerPtr log;
     pulsar::Consumer consumer;

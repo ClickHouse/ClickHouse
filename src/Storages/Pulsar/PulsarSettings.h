@@ -16,15 +16,17 @@ const auto PULSAR_MAX_THREAD_WORK_DURATION_MS = 60'000;
     M(String, pulsar_topic_list, "", "A list of Pulsar topics.", 0) \
     M(String, pulsar_group_name, "", "Client group id string. All Pulsar consumers sharing the same group.id belong to the same group.", 0) \
     M(String, pulsar_format, "", "The message format for Pulsar engine.", 0) \
+    M(String, pulsar_schema, "", "Schema identifier (used by schema-based formats) for Pulsar engine", 0) \
     M(UInt64, pulsar_num_consumers, 1, "The number of consumers per table for Pulsar engine.", 0) \
     M(UInt64, pulsar_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Pulsar.", 0) \
+    M(UInt64, pulsar_skip_broken_messages, 0, "Skip at least this number of broken messages from Pulsar topic per block", 0) \
     M(Milliseconds, pulsar_poll_timeout_ms, 0, "Timeout for single poll from Pulsar.", 0) \
     M(UInt64, pulsar_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Pulsar poll.", 0) \
     M(Milliseconds, pulsar_flush_interval_ms, 0, "Timeout for flushing data from Pulsar.", 0) \
     M(StreamingHandleErrorMode, \
       pulsar_handle_error_mode, \
       StreamingHandleErrorMode::DEFAULT, \
-      "How to handle errors for Pulsar engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken " \
+      "How to handle errors for Pulsar engine. Possible values: default (throw an exception after pulsar_skip_broken_messages broken " \
       "messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", \
       0) \
     M(UInt64, pulsar_max_rows_per_message, 1, "The maximum number of rows produced in one Pulsar message for row-based formats.", 0)

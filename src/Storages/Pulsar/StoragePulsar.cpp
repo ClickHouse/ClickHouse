@@ -69,7 +69,7 @@ private:
         /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
         Pipes pipes;
         pipes.reserve(pulsar_storage.num_consumers);
-        auto modified_context = Context::createCopy(getContext());
+        auto modified_context = pulsar_storage.addSettings(getContext());
 
         // Claim as many consumers as requested, but don't block
         for (size_t i = 0; i < pulsar_storage.num_consumers; ++i)
@@ -120,10 +120,15 @@ void StoragePulsar::startup()
 void StoragePulsar::shutdown(bool /* is_drop */)
 {
     shutdown_called.store(true);
+    LOG_TRACE(log, "start shutting down");
     streamer->deactivate();
+    LOG_TRACE(log, "streaming deactiveated");
     // for (size_t i = 0; i < num_consumers; ++i)
     //     popConsumer()->consumer.close();
+
+    LOG_TRACE(log, "Start closing pulsar client");
     pulsar_client.close();
+    LOG_TRACE(log, "Pulsar client closed");
 }
 
 
@@ -172,7 +177,7 @@ PulsarConsumerPtr StoragePulsar::popConsumer(std::chrono::milliseconds timeout)
 SinkToStoragePtr
 StoragePulsar::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    auto modified_context = Context::createCopy(local_context);
+    auto modified_context = addSettings(local_context);
 
     if (topics.size() > 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Pulsar table with multiple topics!");
@@ -186,6 +191,33 @@ StoragePulsar::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
         max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
     return std::make_shared<MessageQueueSink>(header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
+}
+
+ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
+{
+    auto modified_context = Context::createCopy(local_context);
+    modified_context->setSetting("input_format_skip_unknown_fields", true);
+    modified_context->setSetting("input_format_allow_errors_ratio", 0.);
+    if (pulsar_settings->pulsar_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
+        modified_context->setSetting("input_format_allow_errors_num", pulsar_settings->pulsar_skip_broken_messages.value);
+    else
+        modified_context->setSetting("input_format_allow_errors_num", Field(0));
+
+    /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
+    modified_context->setSetting("max_analyze_depth", Field{0});
+
+    if (pulsar_settings->pulsar_schema.changed)
+        modified_context->setSetting("format_schema", pulsar_settings->pulsar_schema.value);
+
+    for (const auto & setting : *pulsar_settings)
+    {
+        const auto & setting_name = setting.getName();
+
+        if (!setting_name.starts_with("pulsar_"))
+            modified_context->setSetting(setting_name, setting.getValue());
+    }
+
+    return modified_context;
 }
 
 ProducerPtr StoragePulsar::createProducer()
@@ -309,7 +341,8 @@ void StoragePulsar::streaming()
                 if (!checkDependencies(table_id))
                     break;
 
-                streamToViews();
+                if (streamToViews())
+                    break;
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
@@ -329,7 +362,7 @@ void StoragePulsar::streaming()
         streamer->scheduleAfter(PULSAR_RESCHEDULE_MS);
 }
 
-void StoragePulsar::streamToViews()
+bool StoragePulsar::streamToViews()
 {
     Stopwatch watch;
 
@@ -346,7 +379,7 @@ void StoragePulsar::streamToViews()
 
     size_t block_size = getMaxBlockSize();
 
-    auto pulsar_context = Context::createCopy(getContext());
+    auto pulsar_context = addSettings(getContext());
     pulsar_context->makeQueryContext();
 
     // Create a stream for each consumer and join them in a union stream
@@ -358,7 +391,7 @@ void StoragePulsar::streamToViews()
     std::vector<std::shared_ptr<PulsarSource>> sources;
     Pipes pipes;
 
-    size_t stream_count = 1;
+    size_t stream_count = num_consumers;
     sources.reserve(stream_count);
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
@@ -378,25 +411,30 @@ void StoragePulsar::streamToViews()
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
-        // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
+    block_io.pipeline.complete(std::move(pipe));
+
+    block_io.pipeline.setNumThreads(stream_count);
+    block_io.pipeline.setConcurrencyControl(pulsar_context->getSettingsRef().use_concurrency_control);
+
     std::atomic_size_t rows = 0;
+    block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+    CompletedPipelineExecutor executor(block_io.pipeline);
+    executor.execute();
+
+    LOG_TRACE(log, "Processed messages: {}", rows);
+
+    bool some_stream_is_stalled = false;
+    for (auto & source : sources)
     {
-        block_io.pipeline.complete(std::move(pipe));
-
-        // we need to read all consumers in parallel (sequential read may lead to situation
-        // when some of consumers are not used, and will break some Kafka consumer invariants)
-        block_io.pipeline.setNumThreads(stream_count);
-        block_io.pipeline.setConcurrencyControl(pulsar_context->getSettingsRef().use_concurrency_control);
-
-        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
-        CompletedPipelineExecutor executor(block_io.pipeline);
-        executor.execute();
+        some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
     }
+
+    return some_stream_is_stalled;
 }
 
 void registerStoragePulsar(StorageFactory & factory)
