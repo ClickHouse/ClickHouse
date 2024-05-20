@@ -93,7 +93,7 @@ public:
 
 private:
     DiskPtr disk_base, disk_diff;
-    MetadataStoragePtr metadata, tracked_metadata;
+    MetadataStoragePtr forward_metadata, tracked_metadata;
 
     // A tracked file is a file that exists on the diff disk (possibly under another name)
     // If a file is tracked, we don't need to list it from the base disk in calls to file listing functions

@@ -46,7 +46,7 @@ namespace ErrorCodes
 }
 
 DiskOverlay::DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_diff_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_) : IDisk(name_),
-disk_base(disk_base_), disk_diff(disk_diff_), metadata(metadata_), tracked_metadata(tracked_metadata_)
+disk_base(disk_base_), disk_diff(disk_diff_), forward_metadata(metadata_), tracked_metadata(tracked_metadata_)
 {
 }
 
@@ -62,10 +62,10 @@ DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfigu
 
     if (disk_diff -> isReadOnly())
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overlay disk has to be writable");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Diff disk has to be writable");
     }
 
-    metadata = MetadataStorageFactory::instance().create(metadata_name, config_, config_prefix_, nullptr, "");
+    forward_metadata = MetadataStorageFactory::instance().create(metadata_name, config_, config_prefix_, nullptr, "");
     tracked_metadata = MetadataStorageFactory::instance().create(tracked_metadata_name, config_, config_prefix_, nullptr, "");
 }
 
@@ -167,7 +167,7 @@ void DiskOverlay::ensureHaveFile(const String& path)
         if (disk_base->exists(path) && !isTracked(path))
         {
             setTracked(path);
-            auto trans = metadata->createTransaction();
+            auto trans = forward_metadata->createTransaction();
             trans->writeInlineDataToFile(dataPath(path), path);
             trans->commit();
         }
@@ -216,11 +216,11 @@ void DiskOverlay::clearDirectory(const String & path)
 // Find the file in the base disk if it exists
 std::optional<String> DiskOverlay::basePath(const String& path) const
 {
-    if (!metadata->exists(dataPath(path)))
+    if (!forward_metadata->exists(dataPath(path)))
     {
         return {};
     }
-    String res = metadata->readInlineDataToString(dataPath(path));
+    String res = forward_metadata->readInlineDataToString(dataPath(path));
     if (res == "r")
     {
         return {};
@@ -366,10 +366,10 @@ void DiskOverlay::moveFile(const String & from_path, const String & to_path)
         // In this case we need to move file in diff disk and move metadata if there is any
         disk_diff->moveFile(from_path, to_path);
 
-        auto transaction = metadata->createTransaction();
-        if (metadata->exists(dataPath(from_path)))
+        auto transaction = forward_metadata->createTransaction();
+        if (forward_metadata->exists(dataPath(from_path)))
         {
-            String data = metadata->readInlineDataToString(dataPath(from_path));
+            String data = forward_metadata->readInlineDataToString(dataPath(from_path));
             transaction->writeInlineDataToFile(dataPath(to_path), data);
             transaction->unlinkFile(dataPath(from_path));
         }
@@ -382,7 +382,7 @@ void DiskOverlay::moveFile(const String & from_path, const String & to_path)
         // by metadata
         disk_diff->createFile(to_path);
 
-        auto trans = metadata->createTransaction();
+        auto trans = forward_metadata->createTransaction();
         trans->writeInlineDataToFile(dataPath(to_path), from_path);
         trans->commit();
 
@@ -476,11 +476,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
     }
     ensureHaveDirectories(parentPath(path));
 
-    auto transaction = metadata->createTransaction();
+    auto transaction = forward_metadata->createTransaction();
     if (mode == WriteMode::Rewrite)
     {
         // This means that we don't need to look for this file on disk_base
-        if (metadata->exists(dataPath(path)))
+        if (forward_metadata->exists(dataPath(path)))
         {
             transaction->writeInlineDataToFile(dataPath(path), "r");
         } else
@@ -526,8 +526,8 @@ void DiskOverlay::removeFileIfExists(const String & path)
 {
     disk_diff->removeFileIfExists(path);
 
-    auto transaction = metadata->createTransaction();
-    if (metadata->exists(dataPath(path)))
+    auto transaction = forward_metadata->createTransaction();
+    if (forward_metadata->exists(dataPath(path)))
     {
         transaction->unlinkFile(dataPath(path));
     } else
@@ -649,9 +649,9 @@ void DiskOverlay::createHardLink(const String & src_path, const String & dst_pat
     ensureHaveFile(src_path);
 
     disk_diff->createHardLink(src_path, dst_path);
-    if (metadata->exists(dataPath(src_path))) {
-        auto trans = metadata->createTransaction();
-        auto str = metadata->readInlineDataToString(dataPath(src_path));
+    if (forward_metadata->exists(dataPath(src_path))) {
+        auto trans = forward_metadata->createTransaction();
+        auto str = forward_metadata->readInlineDataToString(dataPath(src_path));
         std::cout << str << std::endl;
         trans->writeInlineDataToFile(dataPath(dst_path), str);
         trans->commit();
