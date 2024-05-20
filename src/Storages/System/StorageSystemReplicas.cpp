@@ -141,6 +141,8 @@ public:
                 if (thread_group)
                     CurrentThread::attachToGroupIfDetached(thread_group);
 
+                setThreadName("SystemReplicas");
+
                 try
                 {
                     ReplicatedTableStatus status;
