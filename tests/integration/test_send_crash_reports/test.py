@@ -35,10 +35,6 @@ def started_node():
             pass
 
 
-@pytest.mark.skipif(
-    helpers.cluster.is_arm(),
-    reason="Fails on ARM, issue https://github.com/ClickHouse/ClickHouse/issues/63855",
-)
 def test_send_segfault(started_node):
     # NOTE: another option is to increase waiting time.
     if (
