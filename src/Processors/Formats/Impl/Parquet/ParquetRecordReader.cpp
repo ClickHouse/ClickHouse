@@ -314,10 +314,10 @@ ParquetRecordReader::ParquetRecordReader(
     log = &Poco::Logger::get("ParquetRecordReader");
 
     std::unordered_map<String, parquet::schema::NodePtr> parquet_columns;
-    auto root = file_reader->metadata()->schema()->group_node();
+    const auto * root = file_reader->metadata()->schema()->group_node();
     for (int i = 0; i < root->field_count(); ++i)
     {
-        auto & node = root->field(i);
+        const auto & node = root->field(i);
         parquet_columns.emplace(node->name(), node);
     }
 
@@ -329,7 +329,7 @@ ParquetRecordReader::ParquetRecordReader(
         if (it == parquet_columns.end())
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", col_with_name.name);
 
-        auto node = it->second;
+        const auto & node = it->second;
         if (!node->is_primitive())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "arrays and maps are not implemented in native parquet reader");
 
