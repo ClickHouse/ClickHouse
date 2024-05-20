@@ -135,7 +135,7 @@ struct RowRefList : RowRef
             *next = Batch(nullptr);
         }
         next = next->insert(std::move(row_ref), pool);
-        ++ rows;
+        ++rows;
     }
 
 public:
