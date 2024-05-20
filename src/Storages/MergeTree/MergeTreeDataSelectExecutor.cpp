@@ -1296,8 +1296,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t last_index_mark = 0;
 
     PostingsCacheForStore cache_in_store;
-
-    if (dynamic_cast<const MergeTreeIndexFullText *>(&*index_helper) != nullptr)
+    if (dynamic_cast<const MergeTreeIndexFullText *>(index_helper.get()))
         cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
 
     for (size_t i = 0; i < ranges.size(); ++i)
@@ -1315,12 +1314,12 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
             if (ann_condition != nullptr)
             {
-                // vector of indexes of useful ranges
+                /// An array of indices of useful ranges.
                 auto result = ann_condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {
-                    // range for corresponding index
+                    /// The range for the corresponding index.
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * index_granularity + range),
                         std::min(ranges[i].end, index_mark * index_granularity + range + 1));
@@ -1344,8 +1343,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
 
             MarkRange data_range(
-                    std::max(ranges[i].begin, index_mark * index_granularity),
-                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+                std::max(ranges[i].begin, index_mark * index_granularity),
+                std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                 res.push_back(data_range);
