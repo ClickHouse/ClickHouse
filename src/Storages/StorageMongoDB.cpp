@@ -24,7 +24,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMongoDB.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/ErrorCodes.h>
 #include <Common/parseAddress.h>
 
 #include <bsoncxx/json.hpp>
@@ -48,12 +47,12 @@ namespace ErrorCodes
 
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
-    const Configuration & configuration_,
+    MongoDBConfiguration configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
     : IStorage{table_id_}
-    , configuration{configuration_}
+    , configuration{std::move(configuration_)}
     , log(getLogger("StorageMongoDB (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -87,26 +86,31 @@ Pipe StorageMongoDB::read(
         std::move(options), sample_block, max_block_size));
 }
 
-SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /* context */, bool /*async_insert*/)
+MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    return nullptr; // TODO: implement
-}
-
-StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
-{
-    Configuration configuration;
-
+    MongoDBConfiguration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
-        validateNamedCollection(
-            *named_collection,
-            ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
-            {"options"});
-
-        configuration.collection = named_collection->getAny<String>({"collection", "table"});
-        configuration.uri = std::make_shared<mongocxx::uri>(mongocxx::uri{"mongodb://" + named_collection->getAny<String>({"user", "username"}) + ":" + named_collection->get<String>("password")
-            + "@" + named_collection->getAny<String>({"host", "hostname"}) + ":" + named_collection->get<String>("port")
-            + "/" + named_collection->getAny<String>({"database", "db"}) + "?" + named_collection->getOrDefault<String>("options", "")});
+        if (named_collection->has("uri"))
+        {
+            validateNamedCollection(*named_collection, {"collection"}, {});
+            configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
+        }
+        else
+        {
+            validateNamedCollection(*named_collection, {"host", "port", "user", "password", "database", "collection"}, {"options"});
+            String user = named_collection->get<String>("user");
+            String auth_string;
+            if (!user.empty())
+                auth_string = fmt::format("{}:{}@", user, named_collection->get<String>("password"));
+            configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+                                                          auth_string,
+                                                          named_collection->get<String>("host"),
+                                                          named_collection->get<String>("port"),
+                                                          named_collection->get<String>("database"),
+                                                          named_collection->getOrDefault<String>("options", "")));
+        }
+        configuration.collection = named_collection->get<String>("collection");
     }
     else
     {
@@ -115,22 +119,28 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
 
         if (engine_args.size() == 5 || engine_args.size() == 6)
         {
-            /// 27017 is the default MongoDB port.
-            auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
+            configuration.collection = checkAndGetLiteralArgument<String>(engine_args[2], "collection");
 
             String options;
             if (engine_args.size() == 6)
                 options = checkAndGetLiteralArgument<String>(engine_args[5], "options");
 
-            configuration.collection = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-            configuration.uri = std::make_shared<mongocxx::uri>(mongocxx::uri{"mongodb://" + checkAndGetLiteralArgument<String>(engine_args[3], "username") + ":" + checkAndGetLiteralArgument<String>(engine_args[4], "password")
-                + "@" + parsed_host_port.first + ":" + toString(parsed_host_port.second)
-                + "/" + checkAndGetLiteralArgument<String>(engine_args[1], "database") + "?" + options});
+            String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
+            String auth_string;
+            if (!user.empty())
+                auth_string = fmt::format("{}:{}@", user, checkAndGetLiteralArgument<String>(engine_args[4], "password"));
+            auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
+            configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+                                                              auth_string,
+                                                              parsed_host_port.first,
+                                                              parsed_host_port.second,
+                                                              checkAndGetLiteralArgument<String>(engine_args[1], "database"),
+                                                              options));
         }
         else if (engine_args.size() == 2)
         {
             configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-            configuration.uri = std::make_shared<mongocxx::uri>(mongocxx::uri{checkAndGetLiteralArgument<String>(engine_args[0], "hostname")});
+            configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
         }
         else
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -138,9 +148,7 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
                                 "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, 'options']) or MongoDB('uri', 'collection').");
     }
 
-    // Because domain records will be resolved inside the driver, we can't check IPs for our restrictions.
-    for (const auto & host : configuration.uri->hosts())
-        context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
+    configuration.checkHosts(context);
 
     return configuration;
 }
@@ -179,10 +187,18 @@ bsoncxx::types::bson_value::value StorageMongoDB::toBSONValue(const Field * fiel
     {
         case Field::Types::Null:
             return bsoncxx::types::b_null();
-        case Field::Types::UInt64:
-            return static_cast<Int64>(field->get<UInt64 &>());
         case Field::Types::Int64:
             return field->get<Int64 &>();
+        case Field::Types::UInt64:
+            return static_cast<Int64>(field->get<UInt64 &>());
+        case Field::Types::Int128:
+            return static_cast<Int64>(field->get<Int128 &>());
+        case Field::Types::UInt128:
+            return static_cast<Int64>(field->get<UInt128 &>());
+        case Field::Types::Int256:
+            return static_cast<Int64>(field->get<Int256 &>());
+        case Field::Types::UInt256:
+            return static_cast<Int64>(field->get<UInt256 &>());
         case Field::Types::Float64:
             return field->get<Float64 &>();
         case Field::Types::String:
@@ -196,7 +212,7 @@ bsoncxx::types::bson_value::value StorageMongoDB::toBSONValue(const Field * fiel
         }
         case Field::Types::Tuple:
         {
-            auto arr =array();
+            auto arr = array();
             for (const auto & tuple_field : field->get<Tuple &>())
                 arr.append(toBSONValue(&tuple_field));
             return arr.view();

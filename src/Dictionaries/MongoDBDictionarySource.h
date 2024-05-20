@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <Processors/Sources/MongoDBSource.h>
+#include <Storages/StorageMongoDB.h>
 #include <Core/Block.h>
 
 #include "DictionaryStructure.h"
@@ -22,21 +22,8 @@ class MongoDBDictionarySource final : public IDictionarySource
 public:
     MongoDBDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const std::string & uri_str_,
-        const std::string & host_,
-        const UInt16 & port_,
-        const std::string & username_,
-        const std::string & password_,
-        const std::string & database_name_,
-        const std::string & collection_,
-        const std::string & options_,
-        Block & sample_block_);
-
-    MongoDBDictionarySource(
-        const DictionaryStructure & dict_struct_,
-        const mongocxx::uri & uri_,
-        const std::string & collection_,
-        Block & sample_block_);
+        std::shared_ptr<MongoDBConfiguration> configuration_,
+        Block sample_block_);
 
     MongoDBDictionarySource(const MongoDBDictionarySource & other);
 
@@ -67,11 +54,8 @@ public:
 
 private:
     const DictionaryStructure dict_struct;
-
-    mongocxx::uri uri;
-    std::string collection;
-
-    Block & sample_block;
+    const std::shared_ptr<MongoDBConfiguration> configuration;
+    Block sample_block;
 };
 
 }

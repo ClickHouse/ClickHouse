@@ -12,19 +12,19 @@ Only MongoDB v3.6+ servers are supported.
 
 ## Types mappings
 
-| MongoDB     | ClickHouse                         |
-|-------------|------------------------------------|
-| bool        | UInt8, String                      |
-| int32       | Int32, String                      |
-| int64       | Int64, String                      |
-| double      | Float64, String                    |
-| date        | Date, DateTime, DateTime64, String |
-| timestamp   | Date, DateTime, DateTime64, String |
-| string      | String, UUID                       |
-| document    | String(as JSON)                    |
-| array       | Array, String(as JSON)             |
-| oid         | String                             |
-| *any other* | String                             |
+| MongoDB            | ClickHouse                         |
+|--------------------|------------------------------------|
+| bool, int32, int64 | *any numeric type*, String         |
+| int32              | Int32, String                      |
+| int64              | Int64, String                      |
+| double             | Float64, String                    |
+| date               | Date, DateTime, DateTime64, String |
+| timestamp          | Date, DateTime, DateTime64, String |
+| string             | String, UUID                       |
+| document           | String(as JSON)                    |
+| array              | Array, String(as JSON)             |
+| oid                | String                             |
+| *any other*        | String                             |
 
 If key not found in MongoDB document, default value or null(if the column is nullable) will be inserted.
 
@@ -33,19 +33,6 @@ If key not found in MongoDB document, default value or null(if the column is nul
 
 ### WHERE
 Only constant literals are allowed.
-
-Types that can be used in WHERE section:
- * Null
- * UInt64
- * Int64
- * Float64
- * String
- * Array
- * Tuple
- * Map
- * UUID
- * Bool
- * Object
 
 PREWHERE and HAVING are not supported.
 
@@ -99,7 +86,7 @@ If you are using the MongoDB Atlas cloud offering please add these options:
 
 :::
 
-Also, you can simply pass an URI:
+Also, you can simply pass a URI:
 ``` sql
 ENGINE = MongoDB(uri, collection);
 ```

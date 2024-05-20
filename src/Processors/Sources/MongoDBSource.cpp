@@ -83,6 +83,25 @@ std::string MongoDBSource::bsonElementAsString(const T & value)
     }
 }
 
+template <typename T, typename T2>
+T MongoDBSource::getNumber(const T2 & value, const std::string & name)
+{
+    switch (value.type())
+    {
+        case bsoncxx::type::k_int64:
+            return static_cast<T>(value.get_int64());
+        case bsoncxx::type::k_int32:
+            return static_cast<T>(value.get_int32());
+        case bsoncxx::type::k_double:
+            return static_cast<T>(value.get_double());
+        case bsoncxx::type::k_bool:
+            return static_cast<T>(value.get_bool());
+        default:
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, {} cannot be converted to number for column {}",
+                            bsoncxx::to_string(value.type()), name);
+    }
+}
+
 Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types::b_array & array, const DataTypePtr & type, const std::string & name)
 {
     auto arr = Array();
@@ -92,7 +111,7 @@ Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types
         for (auto const & elem : array.value)
         {
             if (elem.type() != bsoncxx::type::k_array)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Array {} must have exactly {} dimensions", name, dimensions+1);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Array {} have less dimensions then defined in the schema", name);
 
             arr.emplace_back(convertMongoDBArray(dimensions, elem.get_array(), type, name));
         }
@@ -103,42 +122,48 @@ Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types
         {
             switch (type->getTypeId())
             {
+                case TypeIndex::Int8:
+                    arr.emplace_back(getNumber<Int8, bsoncxx::array::element>(value, name));
+                    break;
                 case TypeIndex::UInt8:
-                {
-                    if (value.type() != bsoncxx::type::k_bool)
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected bool, got {} for array {}",
-                                        bsoncxx::to_string(value.type()), name);
-
-                    arr.emplace_back(value.get_bool().value);
+                    arr.emplace_back(getNumber<UInt8, bsoncxx::array::element>(value, name));
                     break;
-                }
+                case TypeIndex::Int16:
+                    arr.emplace_back(getNumber<Int16, bsoncxx::array::element>(value, name));
+                    break;
+                case TypeIndex::UInt16:
+                    arr.emplace_back(getNumber<UInt16, bsoncxx::array::element>(value, name));
+                    break;
                 case TypeIndex::Int32:
-                {
-                    if (value.type() != bsoncxx::type::k_int32)
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int32, got {} for array {}",
-                                        bsoncxx::to_string(value.type()), name);
-
-                    arr.emplace_back(value.get_int32().value);
+                    arr.emplace_back(getNumber<Int32, bsoncxx::array::element>(value, name));
                     break;
-                }
+                case TypeIndex::UInt32:
+                    arr.emplace_back(getNumber<UInt32, bsoncxx::array::element>(value, name));
+                    break;
                 case TypeIndex::Int64:
-                {
-                    if (value.type() != bsoncxx::type::k_int64)
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int64, got {} for array {}",
-                                        bsoncxx::to_string(value.type()), name);
-
-                    arr.emplace_back(value.get_int64().value);
+                    arr.emplace_back(getNumber<Int64, bsoncxx::array::element>(value, name));
                     break;
-                }
+                case TypeIndex::UInt64:
+                    arr.emplace_back(getNumber<UInt64, bsoncxx::array::element>(value, name));
+                    break;
+                case TypeIndex::Int128:
+                    arr.emplace_back(getNumber<Int128, bsoncxx::array::element>(value, name));
+                    break;
+                case TypeIndex::UInt128:
+                    arr.emplace_back(getNumber<UInt128, bsoncxx::array::element>(value, name));
+                    break;
+                case TypeIndex::Int256:
+                    arr.emplace_back(getNumber<Int256, bsoncxx::array::element>(value, name));
+                    break;
+                case TypeIndex::UInt256:
+                    arr.emplace_back(getNumber<UInt256, bsoncxx::array::element>(value, name));
+                    break;
+                case TypeIndex::Float32:
+                    arr.emplace_back(getNumber<Float32, bsoncxx::array::element>(value, name));
+                    break;
                 case TypeIndex::Float64:
-                {
-                    if (value.type() != bsoncxx::type::k_double)
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected double, got {} for array {}",
-                                        bsoncxx::to_string(value.type()), name);
-
-                    arr.emplace_back(value.get_double().value);
+                    arr.emplace_back(getNumber<Float64, bsoncxx::array::element>(value, name));
                     break;
-                }
                 case TypeIndex::Date:
                 {
                     if (value.type() == bsoncxx::type::k_date)
@@ -146,7 +171,7 @@ Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types
                     else if (value.type() == bsoncxx::type::k_timestamp)
                         arr.emplace_back(DateLUT::instance().toDayNum(value.get_timestamp().timestamp));
                     else
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for array {}",
+                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
                                         bsoncxx::to_string(value.type()), name);
                     break;
                 }
@@ -157,7 +182,7 @@ Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types
                     else if (value.type() == bsoncxx::type::k_timestamp)
                         arr.emplace_back(value.get_timestamp().timestamp);
                     else
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for array {}",
+                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
                                         bsoncxx::to_string(value.type()), name);
                     break;
                 }
@@ -168,24 +193,22 @@ Array MongoDBSource::convertMongoDBArray(size_t dimensions, const bsoncxx::types
                     else if (value.type() == bsoncxx::type::k_timestamp)
                         arr.emplace_back(static_cast<Int64>(value.get_timestamp().timestamp * 1000));
                     else
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for array {}",
+                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date or timestamp, got {} for column {}",
                                         bsoncxx::to_string(value.type()), name);
                     break;
                 }
                 case TypeIndex::UUID:
                 {
                     if (value.type() != bsoncxx::type::k_string)
-                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for array {}",
+                        throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
                                         bsoncxx::to_string(value.type()), name);
 
                     arr.emplace_back(parse<UUID>(value.get_string().value.data()));
                     break;
                 }
                 case TypeIndex::String:
-                {
                     arr.emplace_back(bsonElementAsString(value));
                     break;
-                }
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Array {} has unsupported nested type {}", name, type->getName());
             }
@@ -200,42 +223,50 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::Int8:
+            assert_cast<ColumnInt8 &>(column).insertValue(getNumber<Int8, bsoncxx::document::element>(value, name));
+            break;
         case TypeIndex::UInt8:
-        {
-            if (value.type() != bsoncxx::type::k_bool)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected bool, got {} for column {}",
-                                bsoncxx::to_string(value.type()), name);
-
-            assert_cast<ColumnUInt8 &>(column).insertValue(value.get_bool().value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(getNumber<UInt8, bsoncxx::document::element>(value, name));
             break;
-        }
+        case TypeIndex::Int16:
+            assert_cast<ColumnInt16 &>(column).insertValue(getNumber<Int16, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt16:
+            assert_cast<ColumnUInt16 &>(column).insertValue(getNumber<UInt16, bsoncxx::document::element>(value, name));
+            break;
         case TypeIndex::Int32:
-        {
-            if (value.type() != bsoncxx::type::k_int32)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int32, got {} for column {}",
-                                bsoncxx::to_string(value.type()), name);
-
-            assert_cast<ColumnInt32 &>(column).insertValue(value.get_int32().value);
+            assert_cast<ColumnInt32 &>(column).insertValue(getNumber<Int32, bsoncxx::document::element>(value, name));
             break;
-        }
+        case TypeIndex::UInt32:
+            assert_cast<ColumnUInt32 &>(column).insertValue(getNumber<UInt32, bsoncxx::document::element>(value, name));
+            break;
         case TypeIndex::Int64:
-        {
-            if (value.type() != bsoncxx::type::k_int64)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected int64, got {} for column {}",
-                                bsoncxx::to_string(value.type()), name);
-
-            assert_cast<ColumnInt64 &>(column).insertValue(value.get_int64().value);
+            assert_cast<ColumnInt64 &>(column).insertValue(getNumber<Int64, bsoncxx::document::element>(value, name));
             break;
-        }
+        case TypeIndex::UInt64:
+            assert_cast<ColumnUInt64 &>(column).insertValue(getNumber<UInt64, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Int128:
+            assert_cast<ColumnInt128 &>(column).insertValue(getNumber<Int128, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt128:
+            assert_cast<ColumnUInt128 &>(column).insertValue(getNumber<UInt128, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Int256:
+            assert_cast<ColumnInt256 &>(column).insertValue(getNumber<Int256, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::UInt256:
+            assert_cast<ColumnUInt256 &>(column).insertValue(getNumber<UInt256, bsoncxx::document::element>(value, name));
+            break;
+        case TypeIndex::Float32:
+            assert_cast<ColumnFloat32 &>(column).insertValue(getNumber<Float32, bsoncxx::document::element>(value, name));
+            break;
         case TypeIndex::Float64:
-        {
-            if (value.type() != bsoncxx::type::k_double)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected double, got {} for column {}",
-                                bsoncxx::to_string(value.type()), name);
-
-            assert_cast<ColumnFloat64 &>(column).insertValue(value.get_double().value);
+            assert_cast<ColumnFloat64 &>(column).insertValue(getNumber<Float64, bsoncxx::document::element>(value, name));
             break;
-        }
+        case TypeIndex::Decimal32:
+            break;
         case TypeIndex::Date:
         {
             if (value.type() == bsoncxx::type::k_date)

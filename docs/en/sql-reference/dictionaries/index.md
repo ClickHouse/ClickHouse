@@ -1700,6 +1700,17 @@ Example of settings:
 
 or
 
+``` xml
+<source>
+    <mongodb>
+        <uri>mongodb://localhost:27017/test?ssl=true</uri>
+        <collection>dictionary_source</collection>
+    </mongodb>
+</source>
+```
+
+or
+
 ``` sql
 SOURCE(MONGODB(
     host 'localhost'
@@ -1721,6 +1732,20 @@ Setting fields:
 - `db` – Name of the database.
 - `collection` – Name of the collection.
 - `options` -  MongoDB connection string options (optional parameter).
+
+or
+
+``` sql
+SOURCE(MONGODB(
+    uri 'mongodb://localhost:27017/clickhouse'
+    collection 'dictionary_source'
+))
+```
+
+Setting fields:
+
+- 'uri' - URI for establish the connection.
+- `collection` – Name of the collection.
 
 
 #### Redis

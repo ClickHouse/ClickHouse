@@ -31,6 +31,7 @@ public:
 
 private:
     template <typename T> static std::string bsonElementAsString(const T & value);
+    template <typename T, typename T2> static T getNumber(const T2 & value, const std::string & name);
     static Array convertMongoDBArray(size_t dimensions, const bsoncxx::types::b_array & array, const DataTypePtr & type, const std::string & name);
     static void insertDefaultValue(IColumn & column, const IColumn & sample_column);
     void insertValue(IColumn & column, const size_t & idx, const DataTypePtr & type, const std::string & name, const bsoncxx::document::element & value);

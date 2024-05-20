@@ -4,6 +4,8 @@
 
 #if USE_MONGODB
 
+#include <Interpreters/Context.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -21,19 +23,27 @@ namespace DB
 
 inline mongocxx::instance inst{};
 
+struct MongoDBConfiguration
+{
+    std::unique_ptr<mongocxx::uri> uri;
+    String collection;
+
+    void checkHosts(ContextPtr context)
+    {
+        // Because domain records will be resolved inside the driver, we can't check IPs for our restrictions.
+        for (const auto & host : uri->hosts())
+            context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
+    }
+};
+
 class StorageMongoDB final : public IStorage
 {
 public:
-    struct Configuration
-    {
-        std::shared_ptr<mongocxx::uri> uri;
-        String collection;
-    };
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+    static MongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
     StorageMongoDB(
         const StorageID & table_id_,
-        const Configuration & configuration_,
+        MongoDBConfiguration configuration_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment);
@@ -50,19 +60,13 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
-
 private:
     static bsoncxx::types::bson_value::value toBSONValue(const Field * field);
     static String getMongoFuncName(const String & func);
     static bsoncxx::document::value visitWhereFunction(const ASTFunction * func);
     bsoncxx::document::value buildMongoDBQuery(mongocxx::options::find * options, SelectQueryInfo * query, const Block & sample_block);
 
-    Configuration configuration;
+    const MongoDBConfiguration configuration;
     LoggerPtr log;
 };
 
