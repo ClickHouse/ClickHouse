@@ -57,6 +57,10 @@ public:
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
+    Float64 getFloat64(size_t n) const override;
+    Float32 getFloat32(size_t n) const override;
+    UInt64 getUInt(size_t n) const override;
+    Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
     StringRef getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr

@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -114,6 +115,38 @@ void ColumnNullable::get(size_t n, Field & res) const
         res = Null();
     else
         getNestedColumn().get(n, res);
+}
+
+Float64 ColumnNullable::getFloat64(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat64", getName(), n);
+    else
+        return getNestedColumn().getFloat64(n);
+}
+
+Float32 ColumnNullable::getFloat32(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat32", getName(), n);
+    else
+        return getNestedColumn().getFloat32(n);
+}
+
+UInt64 ColumnNullable::getUInt(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getUInt", getName(), n);
+    else
+        return getNestedColumn().getUInt(n);
+}
+
+Int64 ColumnNullable::getInt(size_t n) const
+{
+    if (isNullAt(n))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getInt", getName(), n);
+    else
+        return getNestedColumn().getInt(n);
 }
 
 void ColumnNullable::insertData(const char * pos, size_t length)

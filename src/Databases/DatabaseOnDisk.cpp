@@ -26,6 +26,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+
 
 namespace fs = std::filesystem;
 
@@ -665,6 +667,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
         pool.scheduleOrThrowOnError(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
+                setThreadName("DatabaseOnDisk");
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);

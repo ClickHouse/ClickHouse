@@ -302,8 +302,8 @@ void registerStorageAzureBlob(StorageFactory & factory)
         auto settings = StorageAzureBlob::createSettings(args.getContext());
 
         return std::make_shared<StorageAzureBlob>(
-            std::move(configuration),
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings),configuration.container),
+            configuration,
+            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container, configuration.getConnectionURL().toString()),
             args.getContext(),
             args.table_id,
             args.columns,
