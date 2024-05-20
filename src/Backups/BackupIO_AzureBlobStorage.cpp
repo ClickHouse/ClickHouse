@@ -82,7 +82,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
-    LOG_TRACE(log, "Source description {} desctionation description {}", data_source_description.description, destination_data_source_description.description);
+    LOG_TRACE(log, "Source description {}, desctionation description {}", data_source_description.description, destination_data_source_description.description);
     if (destination_data_source_description.sameKind(data_source_description)
         && destination_data_source_description.is_encrypted == encrypted_in_backup)
     {
