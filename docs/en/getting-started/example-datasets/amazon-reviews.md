@@ -12,7 +12,7 @@ The queries below were executed on a **Production** instance of [ClickHouse Clou
 :::
 
 
-1. Without inserting the data into ClickHouse, we can query it in place. Let's grab some rows so we can see what they look like:
+1. Without inserting the data into ClickHouse, we can query it in place. Let's grab some rows, so we can see what they look like:
 
 ```sql
 SELECT *

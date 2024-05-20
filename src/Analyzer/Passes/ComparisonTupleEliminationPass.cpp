@@ -213,7 +213,7 @@ private:
 
 }
 
-void ComparisonTupleEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ComparisonTupleEliminationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     ComparisonTupleEliminationPassVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

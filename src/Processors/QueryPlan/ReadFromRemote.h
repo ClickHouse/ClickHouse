@@ -9,10 +9,6 @@
 
 namespace DB
 {
-
-class ConnectionPoolWithFailover;
-using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
-
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
 
@@ -73,6 +69,7 @@ public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
         ClusterPtr cluster_,
+        const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
@@ -91,11 +88,11 @@ public:
     void enforceAggregationInOrder();
 
 private:
-
-    void addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
+    StorageID storage_id;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;

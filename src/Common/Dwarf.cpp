@@ -2067,8 +2067,8 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
     if (opcode != 0)
     { // standard opcode
         // Only interpret opcodes that are recognized by the version we're parsing;
-        // the others are vendor extensions and we should ignore them.
-        switch (opcode) // NOLINT(bugprone-switch-missing-default-case)
+        // the others are vendor extensions, and we should ignore them.
+        switch (opcode)
         {
             case DW_LNS_copy:
                 basicBlock_ = false;
@@ -2121,6 +2121,7 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
                 }
                 isa_ = readULEB(program);
                 return CONTINUE;
+            default:
         }
 
         // Unrecognized standard opcode, slurp the appropriate number of LEB

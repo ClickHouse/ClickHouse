@@ -63,4 +63,3 @@ SELECT changeSecond(toDateTime('2106-02-07 13:28:15'), 16) SETTINGS session_time
 SELECT changeHour(toDateTime('1970-01-01 23:59:59'), 6) SETTINGS session_timezone = 'Asia/Novosibirsk';
 SELECT changeYear(toDateTime64('2000-01-01 00:00:00.000', 3), 2300) SETTINGS session_timezone = 'Asia/Novosibirsk';
 SELECT changeYear(toDateTime64('2000-01-01 00:00:00.000', 3), 1899) SETTINGS session_timezone = 'Asia/Novosibirsk';
-

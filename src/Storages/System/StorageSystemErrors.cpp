@@ -25,7 +25,7 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
 }
 
 
-void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote)
     {

@@ -6,6 +6,8 @@
 #include <base/types.h>
 #include <Common/Config/ConfigProcessor.h>
 
+#include <Poco/Util/MapConfiguration.h>
+
 using namespace DB;
 
 int main()

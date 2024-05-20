@@ -178,7 +178,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--password` – The password. Default value: empty string.
 - `--ask-password` - Prompt the user to enter a password.
 - `--query, -q` – The query to process when using non-interactive mode. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
-- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
+- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--queries-file  queries1.sql --queries-file  queries2.sql`. Cannot be used simultaneously with `--query`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 - `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
@@ -243,7 +243,7 @@ If no database is specified, the `default` database will be used.
 
 If the user name, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
-The host component can either be an a host name and IP address. Put an IPv6 address in square brackets to specify it:
+The host component can either be a host name and IP address. Put an IPv6 address in square brackets to specify it:
 
 ```text
 clickhouse://[2001:db8::1234]

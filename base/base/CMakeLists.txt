@@ -10,13 +10,17 @@ set (CMAKE_CXX_STANDARD 20)
 
 set (SRCS
     argsToConfig.cpp
+    cgroupsv2.cpp
     coverage.cpp
     demangle.cpp
+    Decimal.cpp
     getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getPageSize.cpp
     getThreadId.cpp
+    int8_to_string.cpp
+    itoa.cpp
     JSON.cpp
     mremap.cpp
     phdr_cache.cpp

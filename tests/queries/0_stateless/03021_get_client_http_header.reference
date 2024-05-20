@@ -1,0 +1,26 @@
+-- It works.
+application/x-www-form-urlencoded
+-- It supports non constant arguments.
+application/x-www-form-urlencoded
+*/*
+-- Empty string for non-existent headers.
+application/x-www-form-urlencoded
+
+-- I can use my own headers.
+wtf
+-- Some headers cannot be obtained.
+
+
+-- The setting matters.
+FUNCTION_NOT_ALLOWED
+-- The setting is not enabled by default.
+FUNCTION_NOT_ALLOWED
+-- Are headers case-sentitive?
+application/x-www-form-urlencoded
+
+-- Using it from non-HTTP does not make sense.
+
+
+-- Does it work for distributed queries? (not yet, but maybe it will be needed later)
+
+

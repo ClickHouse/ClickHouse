@@ -1,15 +1,16 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/TraceSender.h>
+#include <base/defines.h>
+#include <base/errnoToString.h>
+#include <base/phdr_cache.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
-#include <Common/thread_local_rng.h>
+#include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
-#include <base/phdr_cache.h>
-#include <base/errnoToString.h>
+#include <Common/thread_local_rng.h>
 
 #include <random>
 
@@ -151,8 +152,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 void Timer::set(UInt32 period)
 {
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
-    if (period < 1000000)
-        period = 1000000;
+    period = std::max<UInt32>(period, 1000000);
     /// Randomize offset as uniform random value from 0 to period - 1.
     /// It will allow to sample short queries even if timer period is large.
     /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
@@ -210,23 +210,13 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase([[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
     : log(getLogger("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif defined(__APPLE__)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     /// Sanity check.
@@ -258,6 +248,20 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         throw;
     }
 #endif
+}
+
+
+template <typename ProfilerImpl>
+void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt32 period_)
+{
+#if defined(SANITIZER)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+#elif defined(__APPLE__)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
+#else
+    timer.set(period_);
+#endif
+
 }
 
 template <typename ProfilerImpl>

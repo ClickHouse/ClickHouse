@@ -153,6 +153,12 @@ SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
     return std::make_shared<SerializationLowCardinality>(dictionary_type);
 }
 
+void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
+{
+    callback(*dictionary_type);
+    dictionary_type->forEachChild(callback);
+}
+
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

@@ -267,7 +267,7 @@ StorageStripeLog::StorageStripeLog(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
     : IStorage(table_id_)
     , WithMutableContext(context_)
@@ -295,7 +295,7 @@ StorageStripeLog::StorageStripeLog(
         file_checker.setEmpty(index_file_path);
     }
 
-    if (!attach)
+    if (mode < LoadingStrictnessLevel::ATTACH)
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
@@ -371,8 +371,7 @@ Pipe StorageStripeLog::read(
         = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
 
     size_t size = indices_for_selected_columns->blocks.size();
-    if (num_streams > size)
-        num_streams = size;
+    num_streams = std::min(num_streams, size);
 
     ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
@@ -698,7 +697,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.attach,
+            args.mode,
             args.getContext());
     }, features);
 }

@@ -131,6 +131,21 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         elem.source_line = msg.getSourceLine();
         elem.message_format_string = msg.getFormatString();
 
+#define SET_VALUE_IF_EXISTS(INDEX) if ((INDEX) <= msg.getFormatStringArgs().size()) (elem.value##INDEX) = msg.getFormatStringArgs()[(INDEX) - 1]
+
+        SET_VALUE_IF_EXISTS(1);
+        SET_VALUE_IF_EXISTS(2);
+        SET_VALUE_IF_EXISTS(3);
+        SET_VALUE_IF_EXISTS(4);
+        SET_VALUE_IF_EXISTS(5);
+        SET_VALUE_IF_EXISTS(6);
+        SET_VALUE_IF_EXISTS(7);
+        SET_VALUE_IF_EXISTS(8);
+        SET_VALUE_IF_EXISTS(9);
+        SET_VALUE_IF_EXISTS(10);
+
+#undef SET_VALUE_IF_EXISTS
+
         std::shared_ptr<SystemLogQueue<TextLogElement>> text_log_locked{};
         text_log_locked = text_log.lock();
         if (text_log_locked)
