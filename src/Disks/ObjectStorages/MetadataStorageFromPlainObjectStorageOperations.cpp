@@ -166,6 +166,8 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     auto object = StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
     object_storage->removeObject(object);
     path_map.erase(path_it);
+
+    removed = true;
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
