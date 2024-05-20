@@ -80,6 +80,7 @@ public:
      *  the second line shows the corresponding validation state,
      *  then the valid_index_steps has values [1, 3, 2].
      *  Please note that the the sum of valid_index_steps is same as elements number in this group.
+     *  TODO the definition of valid_index_steps should be updated when supporting nested types
      *
      * @tparam RepeatedVisitor  A callback with signature: void(bool is_valid, UInt32 cursor, UInt32 count)
      */
