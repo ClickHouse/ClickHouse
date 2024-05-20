@@ -3520,6 +3520,216 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
+## changeYear
+
+Changes the year component of a date or date time.
+
+**Syntax**
+
+``` sql
+changeYear(date_or_datetime, value)
+```
+
+**Arguments**
+
+- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a new value of the year. [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Return value**
+
+- The same type as `date_or_datetime`.
+
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+    SELECT changeYear(toDate('1999-01-01'), 2000), changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000);
+```
+
+Result:
+
+```
+┌─changeYear(toDate('1999-01-01'), 2000)─┬─changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)─┐
+│                             2000-01-01 │                                      2000-01-01 00:00:00.000 │
+└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
+```
+
+## changeMonth
+
+Changes the month component of a date or date time.
+
+**Syntax**
+
+``` sql
+changeMonth(date_or_datetime, value)
+```
+
+**Arguments**
+
+- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a new value of the month. [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Return value**
+
+- The same type as `date_or_datetime`.
+
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+    SELECT changeMonth(toDate('1999-01-01'), 2), changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2);
+```
+
+Result:
+
+```
+┌─changeMonth(toDate('1999-01-01'), 2)─┬─changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2)─┐
+│                           1999-02-01 │                                    1999-02-01 00:00:00.000 │
+└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+## changeDay
+
+Changes the day component of a date or date time.
+
+**Syntax**
+
+``` sql
+changeDay(date_or_datetime, value)
+```
+
+**Arguments**
+
+- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a new value of the day. [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Return value**
+
+- The same type as `date_or_datetime`.
+
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+    SELECT changeDay(toDate('1999-01-01'), 5), changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5);
+```
+
+Result:
+
+```
+┌─changeDay(toDate('1999-01-01'), 5)─┬─changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5)─┐
+│                         1999-01-05 │                                  1999-01-05 00:00:00.000 │
+└────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+```
+
+## changeHour
+
+Changes the hour component of a date or date time.
+
+**Syntax**
+
+``` sql
+changeHour(date_or_datetime, value)
+```
+
+**Arguments**
+
+- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a new value of the hour. [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Return value**
+
+- The same type as `date_or_datetime`. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.
+
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+    SELECT changeHour(toDate('1999-01-01'), 14), changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14);
+```
+
+Result:
+
+```
+┌─changeHour(toDate('1999-01-01'), 14)─┬─changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14)─┐
+│                  1999-01-01 14:00:00 │                                    1999-01-01 14:00:00.000 │
+└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+## changeMinute
+
+Changes the minute component of a date or date time.
+
+**Syntax**
+
+``` sql
+changeMinute(date_or_datetime, value)
+```
+
+**Arguments**
+
+- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a new value of the minute. [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Return value**
+
+- The same type as `date_or_datetime`. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.
+
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+    SELECT changeMinute(toDate('1999-01-01'), 15), changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15);
+```
+
+Result:
+
+```
+┌─changeMinute(toDate('1999-01-01'), 15)─┬─changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
+│                    1999-01-01 00:15:00 │                                      1999-01-01 00:15:00.000 │
+└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
+```
+
+## changeSecond
+
+Changes the second component of a date or date time.
+
+**Syntax**
+
+``` sql
+changeSecond(date_or_datetime, value)
+```
+
+**Arguments**
+
+- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a new value of the second. [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Return value**
+
+- The same type as `date_or_datetime`. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.
+
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+    SELECT changeSecond(toDate('1999-01-01'), 15), changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15);
+```
+
+Result:
+
+```
+┌─changeSecond(toDate('1999-01-01'), 15)─┬─changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
+│                    1999-01-01 00:00:15 │                                      1999-01-01 00:00:15.000 │
+└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
+```
+
 ## timeSlots(StartTime, Duration,\[, Size\])
 
 For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
@@ -4102,212 +4312,3 @@ timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'));
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 
-## changeYear
-
-Changes the year component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeYear(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the year. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Return value**
-
-- The same type as `date_or_datetime`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-``` sql
-    SELECT changeYear(toDate('1999-01-01'), 2000), changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000);
-```
-
-Result:
-
-```
-┌─changeYear(toDate('1999-01-01'), 2000)─┬─changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)─┐
-│                             2000-01-01 │                                      2000-01-01 00:00:00.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-```
-
-## changeMonth
-
-Changes the month component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeMonth(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the month. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Return value**
-
-- The same type as `date_or_datetime`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-``` sql
-    SELECT changeMonth(toDate('1999-01-01'), 2), changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2);
-```
-
-Result:
-
-```
-┌─changeMonth(toDate('1999-01-01'), 2)─┬─changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2)─┐
-│                           1999-02-01 │                                    1999-02-01 00:00:00.000 │
-└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-## changeDay
-
-Changes the day component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeDay(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the day. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Return value**
-
-- The same type as `date_or_datetime`.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-``` sql
-    SELECT changeDay(toDate('1999-01-01'), 5), changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5);
-```
-
-Result:
-
-```
-┌─changeDay(toDate('1999-01-01'), 5)─┬─changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5)─┐
-│                         1999-01-05 │                                  1999-01-05 00:00:00.000 │
-└────────────────────────────────────┴──────────────────────────────────────────────────────────┘
-```
-
-## changeHour
-
-Changes the hour component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeHour(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the hour. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Return value**
-
-- The same type as `date_or_datetime`. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-``` sql
-    SELECT changeHour(toDate('1999-01-01'), 14), changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14);
-```
-
-Result:
-
-```
-┌─changeHour(toDate('1999-01-01'), 14)─┬─changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14)─┐
-│                  1999-01-01 14:00:00 │                                    1999-01-01 14:00:00.000 │
-└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-## changeMinute
-
-Changes the minute component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeMinute(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the minute. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Return value**
-
-- The same type as `date_or_datetime`. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-``` sql
-    SELECT changeMinute(toDate('1999-01-01'), 15), changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15);
-```
-
-Result:
-
-```
-┌─changeMinute(toDate('1999-01-01'), 15)─┬─changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
-│                    1999-01-01 00:15:00 │                                      1999-01-01 00:15:00.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-```
-
-## changeSecond
-
-Changes the second component of a date or date time.
-
-**Syntax**
-
-``` sql
-changeSecond(date_or_datetime, value)
-```
-
-**Arguments**
-
-- `date_or_datetime` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-- `value` - a new value of the second. [Integer](../../sql-reference/data-types/int-uint.md).
-
-**Return value**
-
-- The same type as `date_or_datetime`. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.
-
-Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-``` sql
-    SELECT changeSecond(toDate('1999-01-01'), 15), changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15);
-```
-
-Result:
-
-```
-┌─changeSecond(toDate('1999-01-01'), 15)─┬─changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
-│                    1999-01-01 00:00:15 │                                      1999-01-01 00:00:15.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-```
