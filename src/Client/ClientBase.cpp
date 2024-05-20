@@ -2148,7 +2148,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                     break;
                 ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0);
             }
-            insert_ast->end = insert_ast->data + data_in.count();
+            this_query_end = insert_ast->data + data_in.count();
         }
         else
         {
@@ -2157,8 +2157,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             {
                 this_query_end = insert_ast->data + pos;
             }
-            insert_ast->end = this_query_end;
         }
+        insert_ast->end = this_query_end;
         query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
     }
 
