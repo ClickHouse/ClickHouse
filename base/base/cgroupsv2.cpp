@@ -17,9 +17,9 @@ bool cgroupsV2Enabled()
             return false;
         return true;
     }
-    catch (...)
+    catch (const std::filesystem::filesystem_error &) /// all "underlying OS API errors", typically: permission denied
     {
-        return false; /// e.g. permission denied exception
+        return false; /// not logging the exception as most callers fall back to cgroups v1
     }
 #else
     return false;
