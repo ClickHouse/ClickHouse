@@ -1279,17 +1279,17 @@ template<> void AddedColumns<true>::buildOutputFromRowRef()
     {
         for (auto row_ref_i : lazy_output.row_refs)
         {
-            // if (!row_ref_i)
-            // {
-            //     lazy_defaults_count++;
-            //     continue;
-            // }
-            // applyLazyDefaults(true, i);
+            if (!row_ref_i)
+            {
+                lazy_defaults_count++;
+                continue;
+            }
+            applyLazyDefaults(true, i);
             const auto * row_ref = reinterpret_cast<const RowRef *>(row_ref_i);
             const auto & src = row_ref->block->getByPosition(right_indexes[i]);
             columns[i]->insertFrom(*src.column, row_ref->row_num);
         }
-        // applyLazyDefaults(true, i);
+        applyLazyDefaults(true, i);
     }
 }
 
@@ -1297,22 +1297,23 @@ template<> void AddedColumns<true>::buildOutputFromRowRefList()
 {
     for (size_t i = 0; i < this->size(); ++i)
     {
+        auto & col = columns[i];
         for (auto row_ref_i : lazy_output.row_refs)
         {
-            // if (!row_ref_i)
-            // {
-            //     lazy_defaults_count++;
-            //     continue;
-            // }
-            // applyLazyDefaults(true, i);
+            if (!row_ref_i)
+            {
+                lazy_defaults_count++;
+                continue;
+            }
+            applyLazyDefaults(true, i);
             const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
             for (auto it = row_ref_list->begin(); it.ok(); ++it)
             {
                 const auto & src = it->block->getByPosition(right_indexes[i]);
-                columns[i]->insertFrom(*src.column, it->row_num);
+                col->insertFrom(*src.column, it->row_num);
             }
         }
-        // applyLazyDefaults(true, i);
+        applyLazyDefaults(true, i);
     }
 }
 
@@ -1895,7 +1896,7 @@ NO_INLINE size_t joinRightColumns(
     size_t rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
-    if (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
+    if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
         added_columns.output_by_row_list = true;
 
     Arena pool;
