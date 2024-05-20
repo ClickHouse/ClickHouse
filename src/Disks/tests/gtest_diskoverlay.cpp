@@ -211,16 +211,9 @@ TEST_F(OverlayTest, hardlink) {
     
     over->createHardLink("folder/file.txt", "folder/file1.txt");
     EXPECT_EQ(readFromFileOver("folder/file1.txt"), "test data");
-}
 
-TEST_F(OverlayTest, badhardlink) {
-    base->createDirectory("folder");
-    writeToFileBase("folder/file.txt", "test data");
-    
-    over->createHardLink("folder/file.txt", "folder/file1.txt");
-    EXPECT_EQ(readFromFileOver("folder/file1.txt"), "test data");
+    over->removeFile("folder/file.txt");
+    writeToFileOver("folder/file1.txt", " more data", true);
 
-    writeToFileOver("folder/file.txt", "test data", /*append=*/false);
-
-    EXPECT_EQ(readFromFileOver("folder/file1.txt"), "test data");
+    EXPECT_EQ(readFromFileOver("folder/file1.txt"), "test data more data");
 }

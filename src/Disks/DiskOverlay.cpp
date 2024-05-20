@@ -507,7 +507,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
 }
 
 Strings DiskOverlay::getBlobPath(const String &  /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay is not an object storage"); }
-void DiskOverlay::writeFileUsingBlobWritingFunction(const String &  /*path*/, WriteMode  /*mode*/, WriteBlobFunction &&  /*write_blob_function*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO"); }
+void DiskOverlay::writeFileUsingBlobWritingFunction(const String &  /*path*/, WriteMode  /*mode*/, WriteBlobFunction &&  /*write_blob_function*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay is not an object storage"); }
 
 void DiskOverlay::removeFile(const String & path)
 {
