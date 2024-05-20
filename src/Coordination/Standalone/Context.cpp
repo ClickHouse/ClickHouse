@@ -457,4 +457,9 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
+bool Context::hasTraceCollector() const
+{
+    return false;
+}
+
 }
