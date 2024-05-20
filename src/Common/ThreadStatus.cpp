@@ -23,12 +23,8 @@ thread_local ThreadStatus constinit * current_thread = nullptr;
 namespace
 {
 
-#if defined(__aarch64__)
 /// For aarch64 16K is not enough (likely due to tons of registers)
-static constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
-#else
-static constexpr size_t UNWIND_MINSIGSTKSZ = 16 << 10;
-#endif
+constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 
 /// Alternative stack for signal handling.
 ///
