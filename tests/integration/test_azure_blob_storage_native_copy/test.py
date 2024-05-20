@@ -182,7 +182,6 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
     azure_query(node1, f"DROP TABLE test_simple_merge_tree_restored")
 
 
-
 def test_backup_restore_on_merge_tree_different_container(cluster):
     node2 = cluster.instances["node2"]
     azure_query(
