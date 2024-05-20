@@ -51,7 +51,13 @@ def main():
             and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
         ):
             upstream_pr_number = int(pr_info.head_ref.split("/pr/", maxsplit=1)[1])
-            update_upstream_sync_status(upstream_pr_number, pr_info.number, gh, state)
+            update_upstream_sync_status(
+                upstream_pr_number,
+                pr_info.number,
+                gh,
+                state,
+                can_set_green_mergeable_status=True,
+            )
 
         statuses = [s for s in statuses if s.context == StatusNames.CI]
         if not statuses:

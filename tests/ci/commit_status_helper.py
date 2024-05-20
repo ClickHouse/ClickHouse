@@ -522,6 +522,7 @@ def update_upstream_sync_status(
     sync_pr_number: int,
     gh: Github,
     state: StatusType,
+    can_set_green_mergeable_status: bool = False,
 ) -> None:
     upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
     upstream_pr = upstream_repo.get_pull(upstream_pr_number)
@@ -571,4 +572,5 @@ def update_upstream_sync_status(
         upstream_commit,
         get_commit_filtered_statuses(upstream_commit),
         True,
+        set_if_green=can_set_green_mergeable_status,
     )
