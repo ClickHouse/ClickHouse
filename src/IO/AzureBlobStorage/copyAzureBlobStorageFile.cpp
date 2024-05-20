@@ -289,7 +289,7 @@ void copyAzureBlobStorageFile(
 
     if (settings->use_native_copy)
     {
-        LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
+        LOG_TRACE(getLogger("copyAzureBlobStorageFile"), "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (dest_client->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
