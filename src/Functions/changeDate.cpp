@@ -45,9 +45,9 @@ enum class Component
 
 bool isTimeComponentChange(Component type)
 {
-    return type == Component::Hour ||
-           type == Component::Minute ||
-           type == Component::Second;
+    return type == Component::Hour || type == Component::Minute || type == Component::Second;
+}
+
 }
 
 template <typename Traits>
@@ -63,13 +63,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 2 parameters: date, new_value. Passed {}.", getName(), arguments.size());
-
-        if (!isDateOrDate32OrDateTimeOrDateTime64(*arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Date, Date32, DateTime or DateTime64", getName());
-        if (!isNumber(*arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be numeric", getName());
+        FunctionArgumentDescriptors args{
+            {"date_or_datetime", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date or date with time"},
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         const auto & input_type = arguments[0].type;
 
@@ -335,62 +333,62 @@ struct ChangeSecondTraits
     static constexpr auto component = Component::Second;
 };
 
-}
-
 REGISTER_FUNCTION(ChangeDate)
 {
-    factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(
-        FunctionDocumentation{
-            .description = R"(
-Changes the year of the given Date(32) or DateTime(64).
-Returns the same type as the input data.
-)",
-            .categories{"Dates and Times"}
-        }
-    );
-    factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(
-        FunctionDocumentation{
-            .description = R"(
-Same as changeYear function, but changes month of the date.
-)",
-            .categories{"Dates and Times"}
-        }
-    );
-    factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(
-        FunctionDocumentation{
-            .description = R"(
-Same as changeYear function, but changes day_of_month of the date.
-)",
-            .categories{"Dates and Times"}
-        }
-    );
-    factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(
-        FunctionDocumentation{
-            .description = R"(
-Changes the hour of the given Date(32) or DateTime(64).
-If the input data is Date, return DateTime;
-if the input data is Date32, return DateTime64;
-In other cases returns the same type as the input data.
-)",
-            .categories{"Dates and Times"}
-        }
-    );
-    factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(
-        FunctionDocumentation{
-            .description = R"(
-Same as changeHour function, but changes minute of the date.
-)",
-            .categories{"Dates and Times"}
-        }
-    );
-    factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(
-        FunctionDocumentation{
-            .description = R"(
-Same as changeHour function, but changes seconds of the date.
-)",
-            .categories{"Dates and Times"}
-        }
-    );
+    {
+        FunctionDocumentation::Description description = "Changes the year component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeYear(date_or_datetime, value);";
+        FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
+        FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime.";
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
+        factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
+    }
+    {
+        FunctionDocumentation::Description description = "Changes the month component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeMonth(date_or_datetime, value);";
+        FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
+        FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime.";
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
+        factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
+    }
+    {
+        FunctionDocumentation::Description description = "Changes the day component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeDay(date_or_datetime, value);";
+        FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
+        FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime.";
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
+        factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
+    }
+    {
+        FunctionDocumentation::Description description = "Changes the hour component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeHour(date_or_datetime, value);";
+        FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
+        FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.";
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
+        factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
+    }
+    {
+        FunctionDocumentation::Description description = "Changes the minute component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeMinute(date_or_datetime, value);";
+        FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
+        FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.";
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
+        factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
+    }
+    {
+        FunctionDocumentation::Description description = "Changes the second component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeSecond(date_or_datetime, value);";
+        FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
+        FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.";
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
+        factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
+    }
 }
 
 }
