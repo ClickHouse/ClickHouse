@@ -61,8 +61,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # Sanitizers are too heavy
-    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE)
+    # Sanitizers are too heavy. Some architectures too.
+    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
