@@ -83,6 +83,8 @@ EOT
 
 # Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
 echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
+# Workarond for sanitizers uncompatibility with some kernels, see https://github.com/google/sanitizers/issues/856
+echo "vm.mmap_rnd_bits=28" > /etc/sysctl.d/02-vm-mmap_rnd_bits.conf
 
 systemctl restart docker
 
