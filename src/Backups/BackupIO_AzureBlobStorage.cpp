@@ -150,7 +150,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
 {
     /// Use the native copy as a more optimal way to copy a file from AzureBlobStorage to AzureBlobStorage if it's possible.
     auto source_data_source_description = src_disk->getDataSourceDescription();
-    LOG_TRACE(log, "Source description {} desctionation description {}", source_data_source_description.description, data_source_description.description);
+    LOG_TRACE(log, "Source description {}, desctionation description {}", source_data_source_description.description, data_source_description.description);
     if (source_data_source_description.sameKind(data_source_description)
         && source_data_source_description.is_encrypted == copy_encrypted)
     {
