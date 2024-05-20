@@ -49,8 +49,12 @@ function check_refcnt_for_table()
         sleep 0.1
     done
 
-    # NOTE: parts that are used in query will have refcount increased for each range
-    $CLICKHOUSE_CLIENT -q "select table, name, refcount from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount > 1"
+    # NOTE: parts that are used in query will be holded in multiple places, and
+    # this is where magic 6 came from. Also there could be some other
+    # background threads (i.e. asynchronous metrics) that uses the part, so we
+    # simply filter parts not by "refcount > 1" but with some delta - "3", to
+    # avoid flakiness.
+    $CLICKHOUSE_CLIENT -q "select table, name, refcount>=6 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 3"
 
     # Kill the query gracefully.
     kill -INT $PID
