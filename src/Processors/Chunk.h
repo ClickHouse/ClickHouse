@@ -59,7 +59,7 @@ public:
 
     Chunk clone() const;
 
-    void swap(Chunk & other)
+    void swap(Chunk & other) noexcept
     {
         columns.swap(other.columns);
         chunk_info.swap(other.chunk_info);
@@ -155,5 +155,8 @@ private:
 /// and their structure must be equal (e.g. compareAt).
 void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
+
+/// Creates a chunk with the same columns but makes them constants with a default value and a specified number of rows.
+Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows);
 
 }

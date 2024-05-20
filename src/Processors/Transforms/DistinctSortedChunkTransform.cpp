@@ -154,8 +154,7 @@ size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end, Predi
 
     const size_t linear_probe_threadhold = 16;
     size_t linear_probe_end = begin + linear_probe_threadhold;
-    if (linear_probe_end > end)
-        linear_probe_end = end;
+    linear_probe_end = std::min(linear_probe_end, end);
 
     for (size_t pos = begin; pos < linear_probe_end; ++pos)
     {
@@ -204,6 +203,8 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
     const size_t chunk_rows = chunk.getNumRows();
     if (unlikely(0 == chunk_rows))
         return;
+
+    convertToFullIfSparse(chunk);
 
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns

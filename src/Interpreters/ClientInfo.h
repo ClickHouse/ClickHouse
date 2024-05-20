@@ -4,7 +4,14 @@
 #include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/VersionNumber.h>
 #include <boost/algorithm/string/trim.hpp>
+
+
+namespace Poco::Net
+{
+    class HTTPRequest;
+}
 
 namespace DB
 {
@@ -47,7 +54,6 @@ public:
         INITIAL_QUERY = 1,
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
-
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
@@ -93,6 +99,7 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
+    std::unordered_map<String, String> http_headers;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
@@ -135,8 +142,18 @@ public:
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
 
+    /// Initialize parameters related to HTTP request.
+    void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);
+
+    bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
+
+    String getVersionStr() const;
+    VersionNumber getVersionNumber() const;
+
 private:
     void fillOSUserHostNameAndVersionInfo();
 };
+
+String toString(ClientInfo::Interface interface);
 
 }

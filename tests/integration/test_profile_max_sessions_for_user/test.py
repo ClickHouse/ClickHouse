@@ -9,8 +9,14 @@ import threading
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 from helpers.test_tools import assert_logs_contain_with_retry
-
 from helpers.uclient import client, prompt
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
+if grpc_protocol_pb2_dir not in sys.path:
+    sys.path.append(grpc_protocol_pb2_dir)
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+
 
 MAX_SESSIONS_FOR_USER = 2
 POSTGRES_SERVER_PORT = 5433
@@ -20,25 +26,8 @@ GRPC_PORT = 9100
 TEST_USER = "test_user"
 TEST_PASSWORD = "123"
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -99,7 +88,10 @@ def threaded_run_test(sessions):
         thread.start()
 
     if len(sessions) > MAX_SESSIONS_FOR_USER:
-        assert_logs_contain_with_retry(instance, "overflown session count")
+        # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
+        assert_logs_contain_with_retry(
+            instance, "overflown session count", retry_count=60
+        )
 
     instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
 
@@ -111,6 +103,10 @@ def threaded_run_test(sessions):
 def started_cluster():
     try:
         cluster.start()
+        # Wait for the PostgreSQL handler to start.
+        # Cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        instance.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     finally:
         cluster.shutdown()

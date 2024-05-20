@@ -7,6 +7,8 @@
 #include <base/types.h>
 #include "GeodataProviders/INamesProvider.h"
 
+namespace DB
+{
 
 /** A class that allows you to recognize by region id its text name in one of the supported languages.
   *
@@ -111,3 +113,5 @@ public:
 
     void reload();
 };
+
+}

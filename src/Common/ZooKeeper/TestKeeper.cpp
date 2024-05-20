@@ -42,9 +42,9 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
     auto it = watches.find(watch_response.path);
     if (it != watches.end())
     {
-        for (auto & callback : it->second)
+        for (const auto & callback : it->second)
             if (callback)
-                callback(watch_response);
+                (*callback)(watch_response);
 
         watches.erase(it);
     }
@@ -55,9 +55,9 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
     it = list_watches.find(watch_list_response.path);
     if (it != list_watches.end())
     {
-        for (auto & callback : it->second)
+        for (const auto & callback : it->second)
             if (callback)
-                callback(watch_list_response);
+                (*callback)(watch_list_response);
 
         list_watches.erase(it);
     }
@@ -99,6 +99,7 @@ struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
     TestKeeperGetRequest() = default;
+    explicit TestKeeperGetRequest(const GetRequest & base) : GetRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -118,6 +119,8 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 
 struct TestKeeperListRequest : ListRequest, TestKeeperRequest
 {
+    TestKeeperListRequest() = default;
+    explicit TestKeeperListRequest(const ListRequest & base) : ListRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -154,6 +157,10 @@ struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
+        : TestKeeperMultiRequest(std::span(generic_requests))
+    {}
+
+    explicit TestKeeperMultiRequest(std::span<const RequestPtr> generic_requests)
     {
         requests.reserve(generic_requests.size());
 
@@ -176,8 +183,16 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
             {
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
+            else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
+            {
+                requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
+            }
+            else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
+            {
+                requests.push_back(std::make_shared<TestKeeperListRequest>(*concrete_request_list));
+            }
             else
-                throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
+                throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
         }
     }
 
@@ -389,7 +404,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
     {
         auto path_prefix = path;
         if (path_prefix.empty())
-            throw Exception("Logical error: path cannot be empty", Error::ZSESSIONEXPIRED);
+            throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Logical error: path cannot be empty");
 
         if (path_prefix.back() != '/')
             path_prefix += '/';
@@ -587,11 +602,11 @@ void TestKeeper::processingThread()
                             ? list_watches
                             : watches;
 
-                        watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
+                        watches_type[info.request->getPath()].insert(info.watch);
                     }
                     else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
                     {
-                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
+                        watches[info.request->getPath()].insert(info.watch);
                     }
                 }
 
@@ -634,13 +649,13 @@ void TestKeeper::finalize(const String &)
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
 
-                for (auto & callback : path_watch.second)
+                for (const auto & callback : path_watch.second)
                 {
                     if (callback)
                     {
                         try
                         {
-                            callback(response);
+                            (*callback)(response);
                         }
                         catch (...)
                         {
@@ -677,7 +692,7 @@ void TestKeeper::finalize(const String &)
                 response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    info.watch(response);
+                    (*info.watch)(response);
                 }
                 catch (...)
                 {
@@ -705,10 +720,10 @@ void TestKeeper::pushRequest(RequestInfo && request)
         std::lock_guard lock(push_request_mutex);
 
         if (expired)
-            throw Exception("Session expired", Error::ZSESSIONEXPIRED);
+            throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
         if (!requests_queue.tryPush(std::move(request), args.operation_timeout_ms))
-            throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
+            throw Exception::fromMessage(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout");
     }
     catch (...)
     {
@@ -756,7 +771,7 @@ void TestKeeper::remove(
 void TestKeeper::exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch)
+        WatchCallbackPtr watch)
 {
     TestKeeperExistsRequest request;
     request.path = path;
@@ -771,7 +786,7 @@ void TestKeeper::exists(
 void TestKeeper::get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch)
+        WatchCallbackPtr watch)
 {
     TestKeeperGetRequest request;
     request.path = path;
@@ -804,7 +819,7 @@ void TestKeeper::list(
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch)
+        WatchCallbackPtr watch)
 {
     TestKeeperFilteredListRequest request;
     request.path = path;
@@ -863,12 +878,21 @@ void TestKeeper::reconfig(
         .callback = [callback](const Response & response)
         {
             callback(dynamic_cast<const ReconfigResponse &>(response));
-        }
+        },
+        .watch = nullptr,
+        .time = {}
     });
 }
 
 void TestKeeper::multi(
         const Requests & requests,
+        MultiCallback callback)
+{
+    multi(std::span(requests), std::move(callback));
+}
+
+void TestKeeper::multi(
+        std::span<const RequestPtr> requests,
         MultiCallback callback)
 {
     TestKeeperMultiRequest request(requests);

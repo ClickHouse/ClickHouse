@@ -13,14 +13,6 @@ IAccumulatingTransform::IAccumulatingTransform(Block input_header, Block output_
 {
 }
 
-InputPort * IAccumulatingTransform::addTotalsPort()
-{
-    if (inputs.size() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to IAccumulatingTransform");
-
-    return &inputs.emplace_back(getInputPort().getHeader(), this);
-}
-
 IAccumulatingTransform::Status IAccumulatingTransform::prepare()
 {
     /// Check can output.

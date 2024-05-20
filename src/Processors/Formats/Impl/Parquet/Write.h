@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray.h>
 #include <IO/CompressionMethod.h>
@@ -42,7 +43,8 @@ struct ColumnChunkWriteState
 
     ColumnPtr primitive_column;
     CompressionMethod compression; // must match what's inside column_chunk
-    bool is_bool = false;
+    Int64 datetime64_multiplier = 1; // for converting e.g. seconds to milliseconds
+    bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
 
     /// Repetition and definition levels. Produced by prepareColumnForWrite().
     /// def is empty iff max_def == 0, which means no arrays or nullables.

@@ -34,14 +34,18 @@ public:
 
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool) override { throwNotAllowed(); }
 
-    NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
     StoragePtr getNested() const override { return nested_storage; }
 
     void drop() override { nested_storage->drop(); }
 
-    bool supportsTrivialCountOptimization() const override { return false; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return false; }
+
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        return nested_storage->getSecondaryIndexSizes();
+    }
 
 private:
     [[noreturn]] static void throwNotAllowed()

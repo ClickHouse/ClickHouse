@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -21,6 +22,13 @@ thread_local ThreadStatus constinit * current_thread = nullptr;
 #if !defined(SANITIZER)
 namespace
 {
+
+#if defined(__aarch64__)
+/// For aarch64 16K is not enough (likely due to tons of registers)
+static constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
+#else
+static constexpr size_t UNWIND_MINSIGSTKSZ = 16 << 10;
+#endif
 
 /// Alternative stack for signal handling.
 ///
@@ -49,7 +57,7 @@ struct ThreadStack
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
+    static size_t getSize() { return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ); }
     void * getData() const { return data; }
 
 private:
@@ -75,7 +83,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
-    log = &Poco::Logger::get("ThreadStatus");
+    log = getLogger("ThreadStatus");
 
     current_thread = this;
 
@@ -95,7 +103,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = alt_stack.getSize();
+        altstack_description.ss_size = ThreadStack::getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
@@ -119,6 +127,26 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
                 }
             }
         }
+    }
+#endif
+}
+
+void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
+{
+#if !defined(SANITIZER) && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD) && !defined(__APPLE__)
+    try
+    {
+        if (global_profiler_real_time_period > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
+
+        if (global_profiler_cpu_time_period > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
+    }
+    catch (...)
+    {
+        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
     }
 #endif
 }
@@ -188,6 +216,16 @@ void ThreadStatus::flushUntrackedMemory()
 
     memory_tracker.adjustWithUntrackedMemory(untracked_memory);
     untracked_memory = 0;
+}
+
+bool ThreadStatus::isQueryCanceled() const
+{
+    if (!thread_group)
+        return false;
+
+    if (local_data.query_is_canceled_predicate)
+        return local_data.query_is_canceled_predicate();
+    return false;
 }
 
 ThreadStatus::~ThreadStatus()

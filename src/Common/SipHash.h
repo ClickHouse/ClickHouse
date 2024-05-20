@@ -20,15 +20,16 @@
 #include <base/extended_types.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/hex.h>
 #include <Common/Exception.h>
+#include <Common/transformEndianness.h>
+
+#include <city.h>
 
 
-namespace DB
-{
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
 }
 
 #define SIPROUND                                                  \
@@ -148,7 +149,7 @@ public:
 
         /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
-        switch (end - data)
+        switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
             case 6: current_bytes[CURRENT_BYTES_IDX(5)] = data[5]; [[fallthrough]];
@@ -161,71 +162,46 @@ public:
         }
     }
 
-    template <typename T>
+    template <typename Transform = void, typename T>
     ALWAYS_INLINE void update(const T & x)
     {
         if constexpr (std::endian::native == std::endian::big)
         {
-            T rev_x = x;
-            char *start = reinterpret_cast<char *>(&rev_x);
-            char *end = start + sizeof(T);
-            std::reverse(start, end);
-            update(reinterpret_cast<const char *>(&rev_x), sizeof(rev_x)); /// NOLINT
+            auto transformed_x = x;
+            if constexpr (!std::is_same_v<Transform, void>)
+                transformed_x = Transform()(x);
+            else
+                DB::transformEndianness<std::endian::little>(transformed_x);
+
+            update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
         }
         else
             update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
-    ALWAYS_INLINE void update(const std::string & x)
-    {
-        update(x.data(), x.length());
-    }
+    ALWAYS_INLINE void update(const std::string & x) { update(x.data(), x.length()); }
+    ALWAYS_INLINE void update(const std::string_view x) { update(x.data(), x.size()); }
+    ALWAYS_INLINE void update(const char * s) { update(std::string_view(s)); }
 
-    ALWAYS_INLINE void update(const std::string_view x)
-    {
-        update(x.data(), x.size());
-    }
-
-    /// Get the result in some form. This can only be done once!
-
-    ALWAYS_INLINE void get128(char * out)
-    {
-        finalize();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStore<UInt64>(out + 8, v0 ^ v1);
-        unalignedStore<UInt64>(out, v2 ^ v3);
-#else
-        unalignedStore<UInt64>(out, v0 ^ v1);
-        unalignedStore<UInt64>(out + 8, v2 ^ v3);
-#endif
-    }
-
-    template <typename T>
-    ALWAYS_INLINE void get128(T & lo, T & hi)
-    {
-        static_assert(sizeof(T) == 8);
-        finalize();
-        lo = v0 ^ v1;
-        hi = v2 ^ v3;
-    }
-
-    template <typename T>
-    ALWAYS_INLINE void get128(T & dst)
-    {
-        static_assert(sizeof(T) == 16);
-        get128(reinterpret_cast<char *>(&dst));
-    }
-
-    UInt64 get64()
+    ALWAYS_INLINE UInt64 get64()
     {
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
     }
 
-    UInt128 get128()
+    template <typename T>
+    requires (sizeof(T) == 8)
+    ALWAYS_INLINE void get128(T & lo, T & hi)
+    {
+        finalize();
+        lo = v0 ^ v1;
+        hi = v2 ^ v3;
+    }
+
+    ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;
-        get128(res);
+        get128(res.items[UInt128::_impl::little(0)], res.items[UInt128::_impl::little(1)]);
         return res;
     }
 
@@ -233,24 +209,15 @@ public:
     {
         if (!is_reference_128)
             throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR, "Logical error: can't call get128Reference when is_reference_128 is not set");
+                DB::ErrorCodes::LOGICAL_ERROR, "Can't call get128Reference when is_reference_128 is not set");
         finalize();
-        auto lo = v0 ^ v1 ^ v2 ^ v3;
+        const auto lo = v0 ^ v1 ^ v2 ^ v3;
         v1 ^= 0xdd;
         SIPROUND;
         SIPROUND;
         SIPROUND;
         SIPROUND;
-        auto hi = v0 ^ v1 ^ v2 ^ v3;
-
-        if constexpr (std::endian::native == std::endian::big)
-        {
-            lo = std::byteswap(lo);
-            hi = std::byteswap(hi);
-            auto tmp = hi;
-            hi = lo;
-            lo = tmp;
-        }
+        const auto hi = v0 ^ v1 ^ v2 ^ v3;
 
         UInt128 res = hi;
         res <<= 64;
@@ -265,11 +232,18 @@ public:
 
 #include <cstddef>
 
-inline void sipHash128(const char * data, const size_t size, char * out)
+inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {
-    SipHash hash;
-    hash.update(data, size);
-    hash.get128(out);
+    std::array<char, 16> arr;
+    *reinterpret_cast<UInt128*>(arr.data()) = sip_hash.get128();
+    return arr;
+}
+
+inline CityHash_v1_0_2::uint128 getSipHash128AsPair(SipHash & sip_hash)
+{
+    CityHash_v1_0_2::uint128 result;
+    sip_hash.get128(result.low64, result.high64);
+    return result;
 }
 
 inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
@@ -282,6 +256,16 @@ inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, cons
 inline UInt128 sipHash128(const char * data, const size_t size)
 {
     return sipHash128Keyed(0, 0, data, size);
+}
+
+inline String sipHash128String(const char * data, const size_t size)
+{
+    return getHexUIntLowercase(sipHash128(data, size));
+}
+
+inline String sipHash128String(const String & str)
+{
+    return sipHash128String(str.data(), str.size());
 }
 
 inline UInt128 sipHash128ReferenceKeyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
@@ -309,7 +293,7 @@ inline UInt64 sipHash64(const char * data, const size_t size)
 }
 
 template <typename T>
-UInt64 sipHash64(const T & x)
+inline UInt64 sipHash64(const T & x)
 {
     SipHash hash;
     hash.update(x);

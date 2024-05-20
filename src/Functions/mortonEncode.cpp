@@ -210,7 +210,7 @@ public:
 
     static UInt64 expand(UInt64 ratio, UInt64 value)
     {
-        switch (ratio)
+        switch (ratio) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 1:
                 return value;
@@ -321,6 +321,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 

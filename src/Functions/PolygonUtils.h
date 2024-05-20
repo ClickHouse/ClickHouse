@@ -170,7 +170,7 @@ public:
     inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
 
 private:
-    enum class CellType
+    enum class CellType : uint8_t
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.
@@ -635,9 +635,7 @@ UInt128 sipHash128(Polygon && polygon)
     for (auto & inner : inners)
         hash_ring(inner);
 
-    UInt128 res;
-    hash.get128(res);
-    return res;
+    return hash.get128();
 }
 
 }

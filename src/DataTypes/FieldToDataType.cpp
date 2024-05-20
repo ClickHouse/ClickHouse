@@ -36,6 +36,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const UInt64 & x) const
     if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
+    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64>(/*unsigned_can_be_signed=*/true);
     return std::make_shared<DataTypeUInt64>();
 }
 
@@ -188,8 +189,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Object &) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateData & x) const
 {
-    const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
-    return DataTypeFactory::instance().get(name);
+    return DataTypeFactory::instance().get(x.name);
 }
 
 template <LeastSupertypeOnError on_error>
@@ -207,5 +207,6 @@ DataTypePtr FieldToDataType<on_error>::operator()(const bool &) const
 template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
+template class FieldToDataType<LeastSupertypeOnError::Variant>;
 
 }

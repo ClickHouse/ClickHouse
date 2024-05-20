@@ -1,11 +1,13 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
 
 namespace DB
 {
@@ -17,12 +19,14 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
-    auto & query = query_ptr->as<ASTDropAccessEntityQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
@@ -90,6 +94,15 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
             break;
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
+}
+
+void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropAccessEntityQuery", create_fn);
 }
 
 }

@@ -1,5 +1,6 @@
 SET send_logs_level = 'fatal';
 SET convert_query_to_cnf = 0;
+SET allow_deprecated_functions = 1;
 
 DROP TABLE IF EXISTS test_00808;
 CREATE TABLE test_00808(date Date, id Int8, name String, value Int64, sign Int8) ENGINE = CollapsingMergeTree(sign) ORDER BY (id, date);
@@ -48,7 +49,8 @@ SELECT
     intDiv(number, 25) AS n,
     avgState(number) AS s
 FROM numbers(2500)
-GROUP BY n;
+GROUP BY n
+ORDER BY n;
 
 SET force_primary_key = 1, enable_optimize_predicate_expression = 1;
 
@@ -60,7 +62,8 @@ FROM
         finalizeAggregation(s)
     FROM test_00808_push_down_with_finalizeAggregation
 )
-WHERE (n >= 2) AND (n <= 5);
+WHERE (n >= 2) AND (n <= 5)
+ORDER BY n;
 
 EXPLAIN SYNTAX SELECT *
 FROM

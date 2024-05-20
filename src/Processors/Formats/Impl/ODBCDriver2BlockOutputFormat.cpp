@@ -16,7 +16,7 @@ ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
 
 static void writeODBCString(WriteBuffer & out, const std::string & str)
 {
-    writeIntBinary(Int32(str.size()), out);
+    writeBinaryLittleEndian(Int32(str.size()), out);
     out.write(str.data(), str.size());
 }
 
@@ -30,7 +30,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Columns & columns, size_t row_
 
         if (column->isNullAt(row_idx))
         {
-            writeIntBinary(Int32(-1), out);
+            writeBinaryLittleEndian(Int32(-1), out);
         }
         else
         {
@@ -69,11 +69,11 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     const size_t columns = header.columns();
 
     /// Number of header rows.
-    writeIntBinary(Int32(2), out);
+    writeBinaryLittleEndian(Int32(2), out);
 
     /// Names of columns.
     /// Number of columns + 1 for first name column.
-    writeIntBinary(Int32(columns + 1), out);
+    writeBinaryLittleEndian(Int32(columns + 1), out);
     writeODBCString(out, "name");
     for (size_t i = 0; i < columns; ++i)
     {
@@ -82,7 +82,7 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     }
 
     /// Types of columns.
-    writeIntBinary(Int32(columns + 1), out);
+    writeBinaryLittleEndian(Int32(columns + 1), out);
     writeODBCString(out, "type");
     for (size_t i = 0; i < columns; ++i)
     {

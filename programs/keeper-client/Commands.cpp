@@ -2,18 +2,24 @@
 #include "Commands.h"
 #include <queue>
 #include "KeeperClient.h"
+#include "Parsers/CommonParsers.h"
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int KEEPER_EXCEPTION;
+}
+
 bool LSCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return true;
 
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
     return true;
 }
 
@@ -42,11 +48,11 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
 bool CDCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return true;
 
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
     return true;
 }
 
@@ -57,18 +63,19 @@ void CDCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
     auto new_path = client->getAbsolutePath(query->args[0].safeGet<String>());
     if (!client->zookeeper->exists(new_path))
-        std::cerr << "Path " << new_path << " does not exists\n";
+        std::cerr << "Path " << new_path << " does not exist\n";
     else
         client->cwd = new_path;
 }
 
 bool SetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
+    String arg;
     if (!parseKeeperArg(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
@@ -93,27 +100,28 @@ void SetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
 
 bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
+    String arg;
     if (!parseKeeperArg(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
 
     int mode = zkutil::CreateMode::Persistent;
 
-    if (ParserKeyword{"PERSISTENT"}.ignore(pos, expected))
+    if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
         mode = zkutil::CreateMode::Persistent;
-    else if (ParserKeyword{"EPHEMERAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
         mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword{"EPHEMERAL SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::PersistentSequential;
 
-    node->args.push_back(mode);
+    node->args.push_back(std::move(mode));
 
     return true;
 }
@@ -143,10 +151,10 @@ void TouchCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) 
 
 bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
     return true;
 }
@@ -156,13 +164,28 @@ void GetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
     std::cout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
+bool ExistsCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        return false;
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+{
+    std::cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+}
+
 bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return true;
 
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
     return true;
 }
 
@@ -198,6 +221,8 @@ bool FindSuperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> &
 
     node->args.push_back(threshold->as<ASTLiteral &>().value);
 
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
     String path;
     if (!parseKeeperPath(pos, expected, path))
         path = ".";
@@ -212,19 +237,23 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
     auto path = client->getAbsolutePath(query->args[1].safeGet<String>());
 
     Coordination::Stat stat;
-    client->zookeeper->get(path, &stat);
+    if (!client->zookeeper->exists(path, &stat))
+        return; /// It is ok if node was deleted meanwhile
 
     if (stat.numChildren >= static_cast<Int32>(threshold))
-    {
         std::cout << static_cast<String>(path) << "\t" << stat.numChildren << "\n";
-        return;
-    }
 
-    auto children = client->zookeeper->getChildren(path);
+    Strings children;
+    auto status = client->zookeeper->tryGetChildren(path, children);
+    if (status == Coordination::Error::ZNONODE)
+        return; /// It is ok if node was deleted meanwhile
+    else if (status != Coordination::Error::ZOK)
+        throw DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, "Error {} while getting children of {}", status, path.string());
+
     std::sort(children.begin(), children.end());
+    auto next_query = *query;
     for (const auto & child : children)
     {
-        auto next_query = *query;
         next_query.args[1] = DB::Field(path / child);
         execute(&next_query, client);
     }
@@ -292,31 +321,34 @@ bool FindBigFamily::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     return true;
 }
 
+/// DFS the subtree and return the number of nodes in the subtree
+static Int64 traverse(const fs::path & path, KeeperClient * client, std::vector<std::tuple<Int64, String>> & result)
+{
+    Int64 nodes_in_subtree = 1;
+
+    Strings children;
+    auto status = client->zookeeper->tryGetChildren(path, children);
+    if (status == Coordination::Error::ZNONODE)
+        return 0;
+    else if (status != Coordination::Error::ZOK)
+        throw DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, "Error {} while getting children of {}", status, path.string());
+
+    for (auto & child : children)
+        nodes_in_subtree += traverse(path / child, client, result);
+
+    result.emplace_back(nodes_in_subtree, path.string());
+
+    return nodes_in_subtree;
+}
+
 void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto n = query->args[1].safeGet<UInt64>();
 
-    std::vector<std::tuple<Int32, String>> result;
+    std::vector<std::tuple<Int64, String>> result;
 
-    std::queue<fs::path> queue;
-    queue.push(path);
-    while (!queue.empty())
-    {
-        auto next_path = queue.front();
-        queue.pop();
-
-        auto children = client->zookeeper->getChildren(next_path);
-        std::transform(children.cbegin(), children.cend(), children.begin(), [&](const String & child) { return next_path / child; });
-
-        auto response = client->zookeeper->get(children);
-
-        for (size_t i = 0; i < response.size(); ++i)
-        {
-            result.emplace_back(response[i].stat.numChildren, children[i]);
-            queue.push(children[i]);
-        }
-    }
+    traverse(path, client, result);
 
     std::sort(result.begin(), result.end(), std::greater());
     for (UInt64 i = 0; i < std::min(result.size(), static_cast<size_t>(n)); ++i)
@@ -325,25 +357,33 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client)
 
 bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
+
+    ASTPtr version;
+    if (ParserNumber{}.parse(pos, version, expected))
+        node->args.push_back(version->as<ASTLiteral &>().value);
 
     return true;
 }
 
 void RMCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
-    client->zookeeper->remove(client->getAbsolutePath(query->args[0].safeGet<String>()));
+    Int32 version{-1};
+    if (query->args.size() == 2)
+        version = static_cast<Int32>(query->args[1].get<Int32>());
+
+    client->zookeeper->remove(client->getAbsolutePath(query->args[0].safeGet<String>()), version);
 }
 
 bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
     return true;
 }
@@ -351,8 +391,76 @@ bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
 void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
-    client->askConfirmation("You are going to recursively delete path " + path,
-                            [client, path]{ client->zookeeper->removeRecursive(path); });
+    client->askConfirmation(
+        "You are going to recursively delete path " + path, [client, path] { client->zookeeper->removeRecursive(path); });
+}
+
+bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+{
+    ParserKeyword s_add(Keyword::ADD);
+    ParserKeyword s_remove(Keyword::REMOVE);
+    ParserKeyword s_set(Keyword::SET);
+
+    ReconfigCommand::Operation operation;
+    if (s_add.ignore(pos, expected))
+        operation = ReconfigCommand::Operation::ADD;
+    else if (s_remove.ignore(pos, expected))
+        operation = ReconfigCommand::Operation::REMOVE;
+    else if (s_set.ignore(pos, expected))
+        operation = ReconfigCommand::Operation::SET;
+    else
+        return false;
+
+    node->args.push_back(operation);
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
+    String arg;
+    if (!parseKeeperArg(pos, expected, arg))
+        return false;
+    node->args.push_back(std::move(arg));
+
+    return true;
+}
+
+void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+{
+    String joining;
+    String leaving;
+    String new_members;
+
+    auto operation = query->args[0].get<ReconfigCommand::Operation>();
+    switch (operation)
+    {
+        case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
+            joining = query->args[1].safeGet<String>();
+            break;
+        case static_cast<UInt8>(ReconfigCommand::Operation::REMOVE):
+            leaving = query->args[1].safeGet<String>();
+            break;
+        case static_cast<UInt8>(ReconfigCommand::Operation::SET):
+            new_members = query->args[1].safeGet<String>();
+            break;
+        default:
+            UNREACHABLE();
+    }
+
+    auto response = client->zookeeper->reconfig(joining, leaving, new_members);
+    std::cout << response.value << '\n';
+}
+
+bool SyncCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        return false;
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+{
+    std::cout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
 bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
@@ -384,6 +492,68 @@ bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQ
 void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     std::cout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
+}
+
+bool GetDirectChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        path = ".";
+
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+
+    Coordination::Stat stat;
+    client->zookeeper->get(path, &stat);
+
+    std::cout << stat.numChildren << "\n";
+}
+
+bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        path = ".";
+
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+
+    std::queue<fs::path> queue;
+    queue.push(path);
+    Coordination::Stat stat;
+    client->zookeeper->get(path, &stat);
+
+    int totalNumChildren = stat.numChildren;
+    while (!queue.empty())
+    {
+        auto next_path = queue.front();
+        queue.pop();
+
+        auto children = client->zookeeper->getChildren(next_path);
+        for (auto & child : children)
+            child = next_path / child;
+        auto response = client->zookeeper->get(children);
+
+        for (size_t i = 0; i < response.size(); ++i)
+        {
+            totalNumChildren += response[i].stat.numChildren;
+            queue.push(children[i]);
+        }
+    }
+
+    std::cout << totalNumChildren << "\n";
 }
 
 }

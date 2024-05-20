@@ -11,9 +11,10 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <absl/container/flat_hash_map.h>
 
-/// GinIndexStore manages the generalized inverted index ("gin") for a data part, and it is made up of one or more immutable
-/// index segments.
+/// GinIndexStore manages the generalized inverted index ("gin") (full-text index )for a data part, and it is made up of one or more
+/// immutable index segments.
 ///
 /// There are 4 types of index files in a store:
 ///  1. Segment ID file(.gin_sid): it contains one byte for version followed by the next available segment ID.
@@ -52,13 +53,16 @@ public:
     void add(UInt32 row_id);
 
     /// Serialize the content of builder to given WriteBuffer, returns the bytes of serialized data
-    UInt64 serialize(WriteBuffer & buffer) const;
+    UInt64 serialize(WriteBuffer & buffer);
 
     /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
     constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
+
+    static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
+    static constexpr auto GIN_COMPRESSION_LEVEL = 1;
 
     /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
     /// As a special case, rowid_lst[0] == CONTAINS_ALL encodes that all rowids are set.
@@ -124,7 +128,7 @@ class GinIndexStore
 {
 public:
     /// Container for all term's Gin Index Postings List Builder
-    using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
+    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
@@ -210,7 +214,7 @@ private:
         v1 = 1, /// Initial version
     };
 
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v0;
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -295,5 +299,10 @@ private:
     GinIndexStores stores;
     std::mutex mutex;
 };
+
+inline bool isGinFile(const String &file_name)
+{
+    return (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"));
+}
 
 }

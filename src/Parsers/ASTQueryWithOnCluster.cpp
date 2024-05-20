@@ -19,7 +19,7 @@ std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const Witho
 
 bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected & expected)
 {
-    if (!ParserKeyword{"CLUSTER"}.ignore(pos, expected))
+    if (!ParserKeyword(Keyword::CLUSTER).ignore(pos, expected))
         return false;
 
     return parseIdentifierOrStringLiteral(pos, expected, cluster_str);

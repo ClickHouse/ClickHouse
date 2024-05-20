@@ -20,7 +20,7 @@ For example:
 
 where path can be any other valid ZooKeeper path.
 
-## Creating a Table {#table_engine-KeeperMap-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -74,7 +74,7 @@ If multiple tables are created on the same ZooKeeper path, the values are persis
 As a result, it is possible to use `ON CLUSTER` clause when creating the table and sharing the data from multiple ClickHouse instances.  
 Of course, it's possible to manually run `CREATE TABLE` with same path on unrelated ClickHouse instances to have same data sharing effect.
 
-## Supported operations {#table_engine-KeeperMap-supported-operations}
+## Supported operations {#supported-operations}
 
 ### Inserts
 

@@ -10,6 +10,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <IO/AsyncReadCounters.h>
 #include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace ProfileEvents
@@ -85,12 +86,14 @@ struct QueryLogElement
     String exception;
     String stack_trace;
     std::string_view exception_format_string{};
+    std::vector<std::string> exception_format_string_args{};
 
     ClientInfo client_info;
 
     String log_comment;
 
     std::vector<UInt64> thread_ids;
+    UInt64 peak_threads_usage = 0;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
@@ -101,10 +104,9 @@ struct QueryLogElement
 
     static std::string name() { return "QueryLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };

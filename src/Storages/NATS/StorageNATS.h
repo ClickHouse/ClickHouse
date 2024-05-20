@@ -24,21 +24,21 @@ public:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<NATSSettings> nats_settings_,
-        bool is_attach_);
+        LoadingStrictnessLevel mode);
 
     std::string getName() const override { return "NATS"; }
 
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
     /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
     /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
     /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
-    void checkTableCanBeDropped() const override { drop_table = true; }
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
     void read(
@@ -61,7 +61,6 @@ public:
     NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
-    NamesAndTypesList getVirtuals() const override;
 
     void incrementReader();
     void decrementReader();
@@ -78,7 +77,7 @@ private:
     size_t num_consumers;
     size_t max_rows_per_message;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     NATSConnectionManagerPtr connection; /// Connection for all consumers
     NATSConfiguration configuration;
@@ -117,7 +116,7 @@ private:
     std::mutex loop_mutex;
 
     mutable bool drop_table = false;
-    bool is_attach;
+    bool throw_on_startup_failure;
 
     NATSConsumerPtr createConsumer();
 
@@ -137,6 +136,7 @@ private:
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;

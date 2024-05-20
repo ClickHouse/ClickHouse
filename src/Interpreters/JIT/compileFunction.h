@@ -4,10 +4,10 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <Core/SortDescription.h>
-#include <Functions/IFunction.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Interpreters/JIT/CHJIT.h>
+#    include <AggregateFunctions/IAggregateFunction_fwd.h>
+#    include <Core/SortDescription.h>
+#    include <Functions/IFunction.h>
+#    include <Interpreters/JIT/CHJIT.h>
 
 
 namespace DB
@@ -56,7 +56,7 @@ struct AggregateFunctionWithOffset
 using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
 using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
 using JITAddIntoAggregateStatesFunctionSinglePlace = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr);
-using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
+using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr *, AggregateDataPtr *, size_t);
 using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
 
 struct CompiledAggregateFunctions

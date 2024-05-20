@@ -44,6 +44,10 @@ public:
 
     virtual String getInfoForLog() { return ""; }
 
+    /// NOTE: This method should be thread-safe against seek(), since it can be
+    /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
+    /// it first releases the buffer, and then do logging, and so other thread
+    /// can already call seek() which will lead to data-race).
     virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
 
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
@@ -78,7 +82,7 @@ public:
     ///    (e.g. next() or supportsReadAt()).
     ///  * Performance: there's no buffering. Each readBigAt() call typically translates into actual
     ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
-    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/ = nullptr)
+    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const
         { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented"); }
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
@@ -86,7 +90,11 @@ public:
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
-    virtual bool seekIsCheap() { return false; }
+    virtual bool isSeekCheap() { return false; }
+
+    /// For tables that have an external storage (like S3) as their main storage we'd like to distinguish whether we're reading from this storage or from a local cache.
+    /// It allows to reuse all the optimisations done for reading from local tables when reading from cache.
+    virtual bool isContentCached([[maybe_unused]] size_t offset, [[maybe_unused]] size_t size) { return false; }
 };
 
 
@@ -98,6 +106,7 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableRead
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
 
 /// Helper for implementing readBigAt().
-size_t copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, bool * out_cancelled = nullptr);
+/// Updates *out_bytes_copied after each call to the callback, as well as at the end.
+void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
 }

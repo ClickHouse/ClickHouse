@@ -36,11 +36,11 @@ ipv6	Nullable(FixedString(16))
 1	1000000	1
 3914219105369203805
 4	1000000	1
-(1000000,0,NULL,'100','299')
-(1000000,0,NULL,'0','-1294970296')
-(1000000,0,NULL,'-2147483296','2147481000')
+(1000000,NULL,NULL,'100','299')
+(1000000,NULL,NULL,'0','-1294970296')
+(1000000,NULL,NULL,'-2147483296','2147481000')
 (100000,900000,NULL,'100009','999999')
-[(2,0,NULL,'','[]')]
+[(2,NULL,NULL,'','[]')]
 1	1
 0	1
 5090915589685802007
@@ -54,3 +54,10 @@ BYTE_ARRAY	String
 never	gonna
 give	you
 up
+ms	Nullable(DateTime64(3, \'UTC\'))					
+us	Nullable(DateTime64(6, \'UTC\'))					
+ns	Nullable(DateTime64(9, \'UTC\'))					
+cs	Nullable(DateTime64(3, \'UTC\'))					
+s	Nullable(DateTime64(3, \'UTC\'))					
+dus	Nullable(DateTime64(9, \'UTC\'))					
+12670676506515577395

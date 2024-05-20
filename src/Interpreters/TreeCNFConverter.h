@@ -20,15 +20,15 @@ public:
         /// for set
         bool operator<(const AtomicFormula & rhs) const
         {
-            return ast->getTreeHash() == rhs.ast->getTreeHash()
+            return ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true)
                 ? negative < rhs.negative
-                : ast->getTreeHash() < rhs.ast->getTreeHash();
+                : ast->getTreeHash(/*ignore_aliases=*/ true) < rhs.ast->getTreeHash(/*ignore_aliases=*/ true);
         }
 
         bool operator==(const AtomicFormula & rhs) const
         {
             return negative == rhs.negative &&
-                ast->getTreeHash() == rhs.ast->getTreeHash() &&
+                ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true) &&
                 ast->getColumnName() == rhs.ast->getColumnName();
         }
     };
@@ -58,7 +58,7 @@ public:
         for (const auto & or_group : statements)
         {
             OrGroup filtered_group;
-            for (auto ast : or_group)
+            for (const auto & ast : or_group)
             {
                 if (predicate_is_unknown(ast))
                     filtered_group.insert(ast);

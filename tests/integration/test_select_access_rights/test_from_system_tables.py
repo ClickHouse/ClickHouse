@@ -6,6 +6,7 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["configs/remote_servers.xml"],
     user_configs=[
         "configs/another_user.xml",
     ],
@@ -189,16 +190,4 @@ def test_information_schema():
             user="sqluser",
         )
         == "1\n"
-    )
-    assert (
-        node.query(
-            "SELECT count() FROM information_schema.TABLES WHERE table_name='TABLES'"
-        )
-        == "2\n"
-    )
-    assert (
-        node.query(
-            "SELECT count() FROM INFORMATION_SCHEMA.tables WHERE table_name='tables'"
-        )
-        == "3\n"
     )

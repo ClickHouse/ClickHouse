@@ -1,14 +1,17 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/formatAST.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/RowPolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/formatAST.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -51,7 +54,8 @@ namespace
 
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
-    auto & query = query_ptr->as<ASTCreateRowPolicyQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
     auto required_access = getRequiredAccess();
 
     if (!query.cluster.empty())
@@ -59,7 +63,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         query.replaceCurrentUserTag(getContext()->getUserName());
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext(), params);
     }
 
     assert(query.names->cluster.empty());
@@ -143,6 +147,15 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
     for (const auto & row_policy_name : query.names->full_names)
         res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
     return res;
+}
+
+void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateRowPolicyQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateRowPolicyQuery", create_fn);
 }
 
 }

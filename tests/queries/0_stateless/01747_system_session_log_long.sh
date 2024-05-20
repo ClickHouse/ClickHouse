@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest
+# Tags: long, no-parallel, no-fasttest, no-debug
 
 ##################################################################################################
 # Verify that login, logout, and login failure events are properly stored in system.session_log
@@ -33,8 +33,10 @@ set -eu
 
 # Since there is no way to cleanup system.session_log table,
 # make sure that we can identify log entries from this test by a random user name.
-readonly BASE_USERNAME="session_log_test_user_$(cat /dev/urandom | tr -cd 'a-f0-9' | head -c 32)"
-readonly TMP_QUERY_FILE=$(mktemp /tmp/tmp_query.log.XXXXXX)
+BASE_USERNAME="session_log_test_user_$(tr -cd 'a-f0-9' < /dev/urandom | head -c 32)"
+readonly BASE_USERNAME
+TMP_QUERY_FILE=$(mktemp /tmp/tmp_query.log.XXXXXX)
+readonly TMP_QUERY_FILE
 declare -a ALL_USERNAMES
 ALL_USERNAMES+=("${BASE_USERNAME}")
 
@@ -80,7 +82,7 @@ trap "cleanup" EXIT
 function executeQueryExpectError()
 {
     cat - > "${TMP_QUERY_FILE}"
-    ! ${CLICKHOUSE_CLIENT} --multiquery --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a ${TMP_QUERY_FILE}
+    ! ${CLICKHOUSE_CLIENT} --multiquery --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a "${TMP_QUERY_FILE}"
 }
 
 function createUser()
@@ -95,7 +97,8 @@ function createUser()
 
     elif [[ "${auth_type}" == "plaintext_password" ]]
     then
-        password="${password}"
+        # password="${password}"
+        :
 
     elif [[ "${auth_type}" == "sha256_password" ]]
     then
@@ -198,7 +201,7 @@ function testHTTPNamedSession()
 {
     echo "HTTP endpoint with named session"
     local HTTP_SESSION_ID
-    HTTP_SESSION_ID="session_id_$(cat /dev/urandom | tr -cd 'a-f0-9' | head -c 32)"
+    HTTP_SESSION_ID="session_id_$(tr -cd 'a-f0-9' < /dev/urandom | head -c 32)"
     if [ -v CLICKHOUSE_URL_PARAMS ]
     then
         CLICKHOUSE_URL_WITH_SESSION_ID="${CLICKHOUSE_URL}&session_id=${HTTP_SESSION_ID}"
@@ -233,7 +236,7 @@ function testMySQL()
     executeQueryExpectError \
         <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 \
         FORMAT Null" \
-        | grep -Eq "Code: 1000\. DB::Exception: .* invalid_${username}"
+        | grep -Eq "Code: 279\. DB::Exception: .* invalid_${username}"
 
 
     echo 'Wrong password'
@@ -244,7 +247,7 @@ function testMySQL()
     else
         executeQueryExpectError \
             <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 \
-            FORMAT Null" | grep -Eq "Code: 1000\. DB::Exception: .* ${username}"
+            FORMAT Null" | grep -Eq "Code: 279\. DB::Exception: .* ${username}"
     fi
 }
 
@@ -343,7 +346,8 @@ SET DEFAULT ROLE session_log_test_role, session_log_test_role2 TO ${username};
 }
 
 # to cut off previous runs
-readonly start_time="$(executeQuery <<< 'SELECT now64(6);')"
+start_time="$(executeQuery <<< 'SELECT now64(6);')"
+readonly start_time
 
 # Special case: user and profile are both defined in XML
 runEndpointTests "User with profile from XML" "no_password" "session_log_test_xml_user" ''

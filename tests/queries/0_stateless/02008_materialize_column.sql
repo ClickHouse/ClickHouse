@@ -17,6 +17,7 @@ ALTER TABLE tmp MATERIALIZE COLUMN s;
 ALTER TABLE tmp MODIFY COLUMN s String DEFAULT toString(x+2);
 SELECT arraySort(groupArray(x)), groupArray(s) FROM tmp;
 
+ALTER TABLE tmp CLEAR COLUMN s; -- Need to clear because MATERIALIZE COLUMN won't override past values;
 ALTER TABLE tmp MATERIALIZE COLUMN s;
 ALTER TABLE tmp MODIFY COLUMN s String DEFAULT toString(x+3);
 SELECT arraySort(groupArray(x)), groupArray(s) FROM tmp;

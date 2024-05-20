@@ -783,6 +783,16 @@ public:
             for (size_t i = 0; i < size; ++i)
                 result[i] = std::numeric_limits<float>::quiet_NaN();
     }
+
+    friend void writeBinary(const Kind & x, WriteBuffer & buf)
+    {
+        writePODBinary(x, buf);
+    }
+
+    friend void readBinary(Kind & x, ReadBuffer & buf)
+    {
+        readPODBinary(x, buf);
+    }
 };
 
 #undef SMALL_THRESHOLD

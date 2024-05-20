@@ -40,6 +40,9 @@ public:
 
     bool isExpired() const override { return expired; }
     bool hasReachedDeadline() const override { return false; }
+    Int8 getConnectedNodeIdx() const override { return 0; }
+    String getConnectedHostPort() const override { return "TestKeeper:0000"; }
+    int32_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
 
 
@@ -59,12 +62,12 @@ public:
     void exists(
             const String & path,
             ExistsCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void get(
             const String & path,
             GetCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void set(
             const String & path,
@@ -76,7 +79,7 @@ public:
             const String & path,
             ListRequestType list_request_type,
             ListCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void check(
             const String & path,
@@ -98,6 +101,10 @@ public:
             const Requests & requests,
             MultiCallback callback) override;
 
+    void multi(
+            std::span<const RequestPtr> requests,
+            MultiCallback callback) override;
+
     void finalize(const String & reason) override;
 
     bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
@@ -117,7 +124,7 @@ public:
 
     using Container = std::map<std::string, Node>;
 
-    using WatchCallbacks = std::vector<WatchCallback>;
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
 private:
@@ -127,7 +134,7 @@ private:
     {
         TestKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallback watch;
+        WatchCallbackPtr watch;
         clock::time_point time;
     };
 

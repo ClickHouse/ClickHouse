@@ -34,10 +34,11 @@ public:
         , partition_id(part_->info.partition_id)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr_)
+    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
@@ -52,9 +53,10 @@ public:
         if (!hasDynamicSubcolumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
+        auto data_parts = storage.getDataPartsVectorForInternalUsage();
+
         auto object_columns = getConcreteObjectColumns(
-            parts.begin(), parts.end(),
-            storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
+            data_parts.begin(), data_parts.end(), storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
     }
@@ -85,20 +87,9 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsIndexForIn() const override { return true; }
-
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(
-        const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
-    {
-        return storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
-
-    NamesAndTypesList getVirtuals() const override
-    {
-        return storage.getVirtuals();
-    }
+    bool supportsSubcolumns() const override { return true; }
 
     String getPartitionId() const
     {
@@ -132,7 +123,7 @@ private:
     const std::vector<AlterConversionsPtr> alter_conversions;
     const MergeTreeData & storage;
     const String partition_id;
-    const MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
+    const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {

@@ -7,11 +7,19 @@
 
     <storage_configuration>
         <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3>
             <broken_s3>
                 <type>s3</type>
                 <endpoint>http://resolver:8083/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
+                <skip_access_check>1</skip_access_check>
+                <s3_connect_timeout_ms>10000</s3_connect_timeout_ms>
             </broken_s3>
         </disks>
 
@@ -23,9 +31,16 @@
                     </main>
                 </volumes>
             </broken_s3>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
         </policies>
     </storage_configuration>
     <merge_tree>
-        <storage_policy>broken_s3</storage_policy>
+        <storage_policy>s3</storage_policy>
     </merge_tree>
 </clickhouse>

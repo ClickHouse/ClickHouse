@@ -86,6 +86,37 @@ struct DataTypeDecimalTrait
     }
 };
 
+/// Calculates result = x * multiplier + delta.
+/// If the multiplication or the addition overflows, returns false or throws DECIMAL_OVERFLOW.
+template <typename T, bool throw_on_error>
+inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+{
+    T multiplied = 0;
+    if (common::mulOverflow(x, multiplier, multiplied))
+    {
+        if constexpr (throw_on_error)
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+        return false;
+    }
+
+    if (common::addOverflow(multiplied, delta, result))
+    {
+        if constexpr (throw_on_error)
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+        return false;
+    }
+
+    return true;
+}
+
+template <typename T>
+inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
+{
+    T res;
+    multiplyAdd<T, true>(x, multiplier, delta, res);
+    return res;
+}
+
 /** Make a decimal value from whole and fractional components with given scale multiplier.
   * where scale_multiplier = scaleMultiplier<T>(scale)
   * this is to reduce number of calls to scaleMultiplier when scale is known.
@@ -104,23 +135,10 @@ inline bool decimalFromComponentsWithMultiplierImpl(
 {
     using T = typename DecimalType::NativeType;
     const auto fractional_sign = whole < 0 ? -1 : 1;
-
-    T whole_scaled = 0;
-    if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
-    {
-        if constexpr (throw_on_error)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-        return false;
-    }
-
     T value;
-    if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
-    {
-        if constexpr (throw_on_error)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+    if (!multiplyAdd<T, throw_on_error>(
+            whole, scale_multiplier, fractional_sign * (fractional % scale_multiplier), value))
         return false;
-    }
-
     result = DecimalType(value);
     return true;
 }

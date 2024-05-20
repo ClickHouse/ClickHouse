@@ -6,6 +6,7 @@ set output_format_parquet_data_page_size = 800;
 set output_format_parquet_batch_size = 100;
 set output_format_parquet_row_group_size_bytes = 1000000000;
 set engine_file_truncate_on_insert=1;
+set allow_suspicious_low_cardinality_types=1;
 
 -- Write random data to parquet file, then read from it and check that it matches what we wrote.
 -- Do this for all kinds of data types: primitive, Nullable(primitive), Array(primitive),
@@ -168,3 +169,15 @@ select columns.5, columns.6 from file(strings3_02735.parquet, ParquetMetadata) a
 select * from file(strings1_02735.parquet);
 select * from file(strings2_02735.parquet);
 select * from file(strings3_02735.parquet);
+
+-- DateTime64 with different units.
+insert into function file(datetime64_02735.parquet) select
+    toDateTime64(number / 1e3, 3) as ms,
+    toDateTime64(number / 1e6, 6) as us,
+    toDateTime64(number / 1e9, 9) as ns,
+    toDateTime64(number / 1e2, 2) as cs,
+    toDateTime64(number, 0) as s,
+    toDateTime64(number / 1e7, 7) as dus
+    from numbers(2000);
+desc file(datetime64_02735.parquet);
+select sum(cityHash64(*)) from file(datetime64_02735.parquet);

@@ -10,7 +10,7 @@
             <cached_s3>
                 <type>cache</type>
                 <max_size>1Gi</max_size>
-                <path>/var/lib/clickhouse/s3_cache/</path>
+                <path>cached_s3/</path>
                 <disk>s3</disk>
             </cached_s3>
         </disks>
@@ -25,4 +25,5 @@
     <merge_tree>
         <storage_policy>s3</storage_policy>
     </merge_tree>
+    <temporary_data_in_cache>cached_s3</temporary_data_in_cache>
 </clickhouse>

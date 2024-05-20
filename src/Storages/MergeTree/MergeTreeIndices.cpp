@@ -115,25 +115,30 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("set", setIndexCreator);
     registerValidator("set", setIndexValidator);
 
-    registerCreator("ngrambf_v1", bloomFilterIndexCreator);
-    registerValidator("ngrambf_v1", bloomFilterIndexValidator);
+    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator);
+    registerValidator("ngrambf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("tokenbf_v1", bloomFilterIndexCreator);
-    registerValidator("tokenbf_v1", bloomFilterIndexValidator);
+    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
+    registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("bloom_filter", bloomFilterIndexCreatorNew);
-    registerValidator("bloom_filter", bloomFilterIndexValidatorNew);
+    registerCreator("bloom_filter", bloomFilterIndexCreator);
+    registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
-    registerValidator("hypothesis", hypothesisIndexValidator);
 
+    registerValidator("hypothesis", hypothesisIndexValidator);
 #ifdef ENABLE_ANNOY
     registerCreator("annoy", annoyIndexCreator);
     registerValidator("annoy", annoyIndexValidator);
 #endif
 
-    registerCreator("inverted", invertedIndexCreator);
-    registerValidator("inverted", invertedIndexValidator);
+#ifdef ENABLE_USEARCH
+    registerCreator("usearch", usearchIndexCreator);
+    registerValidator("usearch", usearchIndexValidator);
+#endif
+
+    registerCreator("full_text", fullTextIndexCreator);
+    registerValidator("full_text", fullTextIndexValidator);
 
 }
 

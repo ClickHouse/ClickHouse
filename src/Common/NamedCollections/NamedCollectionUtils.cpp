@@ -17,6 +17,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -112,17 +113,17 @@ private:
 public:
     explicit LoadFromSQL(ContextPtr context_)
         : WithContext(context_)
-        , metadata_path(
-            fs::canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
+        , metadata_path(fs::weakly_canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
     {
         if (fs::exists(metadata_path))
-            cleanUp();
-        else
-            fs::create_directories(metadata_path);
+            cleanup();
     }
 
     std::vector<std::string> listCollections() const
     {
+        if (!fs::exists(metadata_path))
+            return {};
+
         std::vector<std::string> collection_names;
         fs::directory_iterator it{metadata_path};
         for (; it != fs::directory_iterator{}; ++it)
@@ -135,7 +136,7 @@ public:
             else
             {
                 LOG_WARNING(
-                    &Poco::Logger::get("NamedCollectionsLoadFromSQL"),
+                    getLogger("NamedCollectionsLoadFromSQL"),
                     "Unexpected file {} in named collections directory",
                     current_path.filename().string());
             }
@@ -199,6 +200,12 @@ public:
         for (const auto & [name, value] : create_query.changes)
             result_changes_map.emplace(name, value);
 
+        std::unordered_map<std::string, bool> result_overridability_map;
+        for (const auto & [name, value] : query.overridability)
+            result_overridability_map.emplace(name, value);
+        for (const auto & [name, value] : create_query.overridability)
+            result_overridability_map.emplace(name, value);
+
         for (const auto & delete_key : query.delete_keys)
         {
             auto it = result_changes_map.find(delete_key);
@@ -210,12 +217,24 @@ public:
                     delete_key);
             }
             else
+            {
                 result_changes_map.erase(it);
+                auto it_override = result_overridability_map.find(delete_key);
+                if (it_override != result_overridability_map.end())
+                    result_overridability_map.erase(it_override);
+            }
         }
 
         create_query.changes.clear();
         for (const auto & [name, value] : result_changes_map)
             create_query.changes.emplace_back(name, value);
+        create_query.overridability = std::move(result_overridability_map);
+
+        if (create_query.changes.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Named collection cannot be empty (collection name: {})",
+                query.collection_name);
 
         writeCreateQueryToMetadata(
             create_query,
@@ -234,7 +253,7 @@ public:
                 "Cannot remove collection `{}`, because it doesn't exist",
                 collection_name);
         }
-        fs::remove(collection_path);
+        (void)fs::remove(collection_path);
     }
 
 private:
@@ -244,8 +263,7 @@ private:
         const ASTCreateNamedCollectionQuery & query)
     {
         const auto & collection_name = query.collection_name;
-        const auto config = NamedCollectionConfiguration::createConfiguration(
-            collection_name, query.changes);
+        const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, query.changes, query.overridability);
 
         std::set<std::string, std::less<>> keys;
         for (const auto & [name, _] : query.changes)
@@ -262,7 +280,7 @@ private:
 
     /// Delete .tmp files. They could be left undeleted in case of
     /// some exception or abrupt server restart.
-    void cleanUp()
+    void cleanup()
     {
         fs::directory_iterator it{metadata_path};
         std::vector<std::string> files_to_remove;
@@ -273,7 +291,7 @@ private:
                 files_to_remove.push_back(current_path);
         }
         for (const auto & file : files_to_remove)
-            fs::remove(file);
+            (void)fs::remove(file);
     }
 
     static ASTCreateNamedCollectionQuery readCreateQueryFromMetadata(
@@ -285,16 +303,16 @@ private:
         readStringUntilEOF(query, in);
 
         ParserCreateNamedCollectionQuery parser;
-        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth);
+        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth, settings.max_parser_backtracks);
         const auto & create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
         return create_query;
     }
 
-    static void writeCreateQueryToMetadata(
+    void writeCreateQueryToMetadata(
         const ASTCreateNamedCollectionQuery & query,
         const std::string & path,
         const Settings & settings,
-        bool replace = false)
+        bool replace = false) const
     {
         if (!replace && fs::exists(path))
         {
@@ -303,6 +321,8 @@ private:
                 "Metadata file {} for named collection already exists",
                 path);
         }
+
+        fs::create_directories(metadata_path);
 
         auto tmp_path = path + ".tmp";
         String formatted_query = serializeAST(query);
@@ -328,7 +348,7 @@ void loadFromConfigUnlocked(const Poco::Util::AbstractConfiguration & config, st
 {
     auto named_collections = LoadFromConfig(config).getAll();
     LOG_TRACE(
-        &Poco::Logger::get("NamedCollectionsUtils"),
+        getLogger("NamedCollectionsUtils"),
         "Loaded {} collections from config", named_collections.size());
 
     NamedCollectionFactory::instance().add(std::move(named_collections));
@@ -355,7 +375,7 @@ void loadFromSQLUnlocked(ContextPtr context, std::unique_lock<std::mutex> &)
 {
     auto named_collections = LoadFromSQL(context).getAll();
     LOG_TRACE(
-        &Poco::Logger::get("NamedCollectionsUtils"),
+        getLogger("NamedCollectionsUtils"),
         "Loaded {} collections from SQL", named_collections.size());
 
     NamedCollectionFactory::instance().add(std::move(named_collections));
@@ -382,7 +402,7 @@ void loadIfNot()
     if (is_loaded_from_sql && is_loaded_from_config)
         return;
     auto lock = lockNamedCollectionsTransaction();
-    return loadIfNotUnlocked(lock);
+    loadIfNotUnlocked(lock);
 }
 
 void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context)
@@ -446,7 +466,13 @@ void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr contex
     auto collection_lock = collection->lock();
 
     for (const auto & [name, value] : query.changes)
-        collection->setOrUpdate<String, true>(name, convertFieldToString(value));
+    {
+        auto it_override = query.overridability.find(name);
+        if (it_override != query.overridability.end())
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
+        else
+            collection->setOrUpdate<String, true>(name, convertFieldToString(value), {});
+    }
 
     for (const auto & key : query.delete_keys)
         collection->remove<true>(key);

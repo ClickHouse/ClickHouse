@@ -33,7 +33,7 @@
 ///  * `def` and `rep` arrays can be longer than `primitive_column`, because they include nulls and
 ///    empty arrays; the values in primitive_column correspond to positions where def[i] == max_def.
 ///
-/// If you do want to learn it, dremel paper: https://research.google/pubs/pub36632/
+/// If you do want to learn it, see dremel paper: https://research.google/pubs/pub36632/
 /// Instead of reading the whole paper, try staring at figures 2-3 for a while - it might be enough.
 /// (Why does Parquet do all this instead of just storing array lengths and null masks? I'm not
 /// really sure.)
@@ -279,6 +279,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
     auto decimal = [&](Int32 bytes, UInt32 precision, UInt32 scale)
     {
+        /// Currently we encode all decimals as byte arrays, even though Decimal32 and Decimal64
+        /// could be INT32 and INT64 instead. There doesn't seem to be much difference.
         state.column_chunk.meta_data.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
         schema.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
         schema.__set_type_length(bytes);
@@ -335,32 +337,42 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
         case TypeIndex::DateTime64:
         {
-            std::optional<parq::ConvertedType::type> converted;
-            std::optional<parq::TimeUnit> unit;
-            switch (assert_cast<const DataTypeDateTime64 &>(*type).getScale())
+            parq::ConvertedType::type converted;
+            parq::TimeUnit unit;
+            const auto & dt = assert_cast<const DataTypeDateTime64 &>(*type);
+            UInt32 scale = dt.getScale();
+            UInt32 converted_scale;
+            if (scale <= 3)
             {
-                case 3:
-                    converted = parq::ConvertedType::TIMESTAMP_MILLIS;
-                    unit.emplace().__set_MILLIS({});
-                    break;
-                case 6:
-                    converted = parq::ConvertedType::TIMESTAMP_MICROS;
-                    unit.emplace().__set_MICROS({});
-                    break;
-                case 9:
-                    unit.emplace().__set_NANOS({});
-                    break;
+                converted = parq::ConvertedType::TIMESTAMP_MILLIS;
+                unit.__set_MILLIS({});
+                converted_scale = 3;
+            }
+            else if (scale <= 6)
+            {
+                converted = parq::ConvertedType::TIMESTAMP_MICROS;
+                unit.__set_MICROS({});
+                converted_scale = 6;
+            }
+            else if (scale <= 9)
+            {
+                unit.__set_NANOS({});
+                converted_scale = 9;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DateTime64 scale: {}", scale);
             }
 
-            std::optional<parq::LogicalType> t;
-            if (unit)
-            {
-                parq::TimestampType tt;
-                tt.__set_isAdjustedToUTC(true);
-                tt.__set_unit(*unit);
-                t.emplace().__set_TIMESTAMP(tt);
-            }
+            parq::TimestampType tt;
+            /// (Shouldn't we check the DateTime64's timezone parameter here? No, the actual number
+            /// in DateTime64 column is always in UTC, regardless of the timezone parameter.)
+            tt.__set_isAdjustedToUTC(true);
+            tt.__set_unit(unit);
+            parq::LogicalType t;
+            t.__set_TIMESTAMP(tt);
             types(T::INT64, converted, t);
+            state.datetime64_multiplier = DataTypeDateTime64::getScaleMultiplier(converted_scale - scale);
             break;
         }
 
@@ -418,13 +430,16 @@ void prepareColumnNullable(
 
     if (schemas[child_schema_idx].repetition_type == parq::FieldRepetitionType::REQUIRED)
     {
-        /// Normal case: we just slap a FieldRepetitionType::OPTIONAL onto the nested column.
+        /// Normal case: the column inside Nullable is a primitive type (not Nullable/Array/Map).
+        /// Just slap a FieldRepetitionType::OPTIONAL onto it.
         schemas[child_schema_idx].repetition_type = parq::FieldRepetitionType::OPTIONAL;
     }
     else
     {
         /// Weird case: Nullable(Nullable(...)). Or Nullable(Tuple(Nullable(...))), etc.
         /// This is probably not allowed in ClickHouse, but let's support it just in case.
+        /// The nested column already has a nontrivial repetition type, so we have to wrap it in a
+        /// group and assign repetition type OPTIONAL to the group.
         auto & schema = *schemas.insert(schemas.begin() + child_schema_idx, {});
         schema.__set_repetition_type(parq::FieldRepetitionType::OPTIONAL);
         schema.__set_name("nullable");

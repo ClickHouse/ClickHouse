@@ -34,9 +34,9 @@ UInt64
 	</data>
 	<rows>0</rows>
 </result>
- number
+    number
 
-      0 
+1.       0 
 0
 1
 2
@@ -70,7 +70,5 @@ UInt64
 		["9"]
 	],
 
-	"rows": 10,
-
-	"rows_before_limit_at_least": 10
+	"rows": 10
 }

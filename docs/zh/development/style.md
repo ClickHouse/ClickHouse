@@ -485,7 +485,7 @@ catch (const DB::Exception & e)
 
 ``` cpp
 if (0 != close(fd))
-    throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+    throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
 ```
 
 `不要使用断言`。

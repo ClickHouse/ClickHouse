@@ -23,11 +23,9 @@ public:
     {
         const char * assert_no_aggregates = nullptr;
         const char * assert_no_windows = nullptr;
-        // Explicit empty initializers are needed to make designated initializers
-        // work on GCC 10.
         std::unordered_set<String> uniq_names {};
-        ASTs aggregates;
-        ASTs window_functions;
+        ASTs aggregates{};
+        ASTs window_functions{};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -70,7 +68,7 @@ private:
                                 node.getColumnName(), String(data.assert_no_aggregates));
 
             String column_name = node.getColumnName();
-            if (data.uniq_names.count(column_name))
+            if (data.uniq_names.contains(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
@@ -83,7 +81,7 @@ private:
                                 node.getColumnName(), String(data.assert_no_windows));
 
             String column_name = node.getColumnName();
-            if (data.uniq_names.count(column_name))
+            if (data.uniq_names.contains(column_name))
                 return;
 
             data.uniq_names.insert(column_name);

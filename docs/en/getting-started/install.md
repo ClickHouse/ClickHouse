@@ -11,7 +11,7 @@ import CodeBlock from '@theme/CodeBlock';
 
 # Install ClickHouse
 
-You have three options for getting up and running with ClickHouse:
+You have four options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
 - **[Quick Install](#quick-install):** an easy-to-download binary for testing and developing with ClickHouse
@@ -32,37 +32,49 @@ On Linux, macOS and FreeBSD:
 
 1. If you are just getting started and want to see what ClickHouse can do, the simplest way to download ClickHouse locally is to run the
    following command. It downloads a single binary for your operating system that can be used to run the ClickHouse server,
-   clickhouse-client, clickhouse-local, ClickHouse Keeper, and other tools:
+   `clickhouse-client`, `clickhouse-local`, ClickHouse Keeper, and other tools:
 
-  ```bash
-  curl https://clickhouse.com/ | sh
-  ```
+   ```bash
+   curl https://clickhouse.com/ | sh
+   ```
 
-1. Run the following command to start the ClickHouse server:
+2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
+
+   ```bash
+   ./clickhouse
+   ```
+
+   `clickhouse-local` allows you to process local and remote files using ClickHouse's powerful SQL and without a need for configuration. Table
+   data is stored in a temporary location, meaning that after a restart of `clickhouse-local` previously created tables are no longer
+   available.
+
+   As an alternative, you can start the ClickHouse server with this command ...
 
     ```bash
     ./clickhouse server
     ```
 
-   The first time you run this script, the necessary files and folders are created in the current directory, then the server starts.
+   ... and open a new terminal to connect to the server with `clickhouse-client`:
 
-1. Open a new terminal and use the **./clickhouse client** to connect to your service:
+    ```bash
+    ./clickhouse client
+    ```
 
-  ```bash
-  ./clickhouse client
-  ```
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
 
-  ```response
-  ./clickhouse client
-  ClickHouse client version 23.2.1.1501 (official build).
-  Connecting to localhost:9000 as user default.
-  Connected to ClickHouse server version 23.2.1 revision 54461.
+    local-host :)
+    ```
 
-  local-host :)
-  ```
+   Table data is stored in the current directory and still available after a restart of ClickHouse server. If necessary, you can pass
+   `-C config.xml` as an additional command line argument to `./clickhouse server` and provide further configuration in a configuration
+   file. All available configuration settings are documented [here](../operations/settings/settings.md) and in an [example configuration file
+   template](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
 
-  You are ready to start sending DDL and SQL commands to ClickHouse!
-
+   You are ready to start sending SQL commands to ClickHouse!
 
 :::tip
 The [Quick Start](/docs/en/quick-start.mdx) walks through the steps for creating tables and inserting data.
@@ -78,11 +90,8 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 
 #### Setup the Debian repository
 ``` bash
-sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-GNUPGHOME=$(mktemp -d)
-sudo GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring --keyring /usr/share/keyrings/clickhouse-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754
-sudo rm -r "$GNUPGHOME"
-sudo chmod +r /usr/share/keyrings/clickhouse-keyring.gpg
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
 
 echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
@@ -265,7 +274,7 @@ The required version can be downloaded with `curl` or `wget` from repository htt
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest stable version:
 
 ``` bash
-LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
+LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 export LATEST_VERSION
 
@@ -380,14 +389,14 @@ build.
 
 ### macOS-only: Install with Homebrew
 
-To install ClickHouse using the popular `brew` package manager, follow the instructions listed in the [ClickHouse Homebrew tap](https://github.com/ClickHouse/homebrew-clickhouse).
+To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
 ## Launch {#launch}
 
 To start the server as a daemon, run:
 
 ``` bash
-$ sudo clickhouse start
+$ clickhouse start
 ```
 
 There are also other ways to run ClickHouse:

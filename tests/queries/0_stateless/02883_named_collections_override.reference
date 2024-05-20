@@ -1,0 +1,32 @@
+allow_named_collection_override_by_default=1 u1
+1\n
+1\n
+1
+allow_named_collection_override_by_default=1 u2
+1\n
+1\n
+2\n
+1
+allow_named_collection_override_by_default=0 u1
+1\n
+1
+allow_named_collection_override_by_default=0 u2
+1\n
+Test ALTER
+2\n
+1\n
+Test XML collections
+allow_named_collection_override_by_default=1 url_override1
+1\n
+1\n
+1
+allow_named_collection_override_by_default=1 url_override2
+1\n
+1\n
+2\n
+1
+allow_named_collection_override_by_default=0 url_override1
+1\n
+1
+allow_named_collection_override_by_default=0 url_override2
+1\n

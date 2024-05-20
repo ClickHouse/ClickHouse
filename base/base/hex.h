@@ -146,7 +146,7 @@ namespace impl
             TUInt res;
             if constexpr (sizeof(TUInt) == 1)
             {
-                res = static_cast<UInt8>(unhexDigit(data[0])) * 0x10 + static_cast<UInt8>(unhexDigit(data[1]));
+                res = unhexDigit(data[0]) * 0x10 + unhexDigit(data[1]);
             }
             else if constexpr (sizeof(TUInt) == 2)
             {
@@ -176,17 +176,19 @@ namespace impl
     };
 
     /// Helper template class to convert a value of any supported type to hexadecimal representation and back.
-    template <typename T, typename SFINAE = void>
+    template <typename T>
     struct HexConversion;
 
     template <typename TUInt>
-    struct HexConversion<TUInt, std::enable_if_t<std::is_integral_v<TUInt>>> : public HexConversionUInt<TUInt> {};
+    requires(std::is_integral_v<TUInt>)
+    struct HexConversion<TUInt> : public HexConversionUInt<TUInt> {};
 
     template <size_t Bits, typename Signed>
     struct HexConversion<wide::integer<Bits, Signed>> : public HexConversionUInt<wide::integer<Bits, Signed>> {};
 
     template <typename CityHashUInt128> /// Partial specialization here allows not to include <city.h> in this header.
-    struct HexConversion<CityHashUInt128, std::enable_if_t<std::is_same_v<CityHashUInt128, typename CityHash_v1_0_2::uint128>>>
+    requires(std::is_same_v<CityHashUInt128, typename CityHash_v1_0_2::uint128>)
+    struct HexConversion<CityHashUInt128>
     {
         static const constexpr size_t num_hex_digits = 32;
 
@@ -288,4 +290,14 @@ constexpr UInt16 unhex4(const char * data)
 inline void writeBinByte(UInt8 byte, void * out)
 {
     memcpy(out, &impl::bin_byte_to_char_table[static_cast<size_t>(byte) * 8], 8);
+}
+
+/// Converts byte array to a hex string. Useful for debug logging.
+inline std::string hexString(const void * data, size_t size)
+{
+    const char * p = reinterpret_cast<const char *>(data);
+    std::string s(size * 2, '\0');
+    for (size_t i = 0; i < size; ++i)
+        writeHexByteLowercase(p[i], s.data() + i * 2);
+    return s;
 }

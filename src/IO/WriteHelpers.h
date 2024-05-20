@@ -15,11 +15,10 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
-#include <Common/TransformEndianness.hpp>
+#include <Common/transformEndianness.h>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
-#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -29,6 +28,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/NaNUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -36,16 +36,13 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wsign-compare"
-#endif
 #include <dragonbox/dragonbox_to_chars.h>
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif
 
 #include <Formats/FormatSettings.h>
 
@@ -63,9 +60,7 @@ namespace ErrorCodes
 
 inline void writeChar(char x, WriteBuffer & buf)
 {
-    buf.nextIfAtEnd();
-    *buf.position() = x;
-    ++buf.position();
+    buf.write(x);
 }
 
 /// Write the same character n times.
@@ -86,6 +81,13 @@ template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
     buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+}
+
+inline void writeUUIDBinary(const UUID & x, WriteBuffer & buf)
+{
+    const auto & uuid = x.toUnderType();
+    writePODBinary(uuid.items[0], buf);
+    writePODBinary(uuid.items[1], buf);
 }
 
 template <typename T>
@@ -373,6 +375,146 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
+/// Define special characters in Markdown according to the standards specified by CommonMark.
+inline void writeAnyMarkdownEscapedString(const char * begin, const char * end, WriteBuffer & buf)
+{
+    for (const char * it = begin; it != end; ++it)
+    {
+        switch (*it)
+        {
+            case '!':
+                writeChar('\\', buf);
+                writeChar('!', buf);
+                break;
+            case '"':
+                writeChar('\\', buf);
+                writeChar('"', buf);
+                break;
+            case '#':
+                writeChar('\\', buf);
+                writeChar('#', buf);
+                break;
+            case '$':
+                writeChar('\\', buf);
+                writeChar('$', buf);
+                break;
+            case '%':
+                writeChar('\\', buf);
+                writeChar('%', buf);
+                break;
+            case '&':
+                writeChar('\\', buf);
+                writeChar('&', buf);
+                break;
+            case '\'':
+                writeChar('\\', buf);
+                writeChar('\'', buf);
+                break;
+            case '(':
+                writeChar('\\', buf);
+                writeChar('(', buf);
+                break;
+            case ')':
+                writeChar('\\', buf);
+                writeChar(')', buf);
+                break;
+            case '*':
+                writeChar('\\', buf);
+                writeChar('*', buf);
+                break;
+            case '+':
+                writeChar('\\', buf);
+                writeChar('+', buf);
+                break;
+            case ',':
+                writeChar('\\', buf);
+                writeChar(',', buf);
+                break;
+            case '-':
+                writeChar('\\', buf);
+                writeChar('-', buf);
+                break;
+            case '.':
+                writeChar('\\', buf);
+                writeChar('.', buf);
+                break;
+            case '/':
+                writeChar('\\', buf);
+                writeChar('/', buf);
+                break;
+            case ':':
+                writeChar('\\', buf);
+                writeChar(':', buf);
+                break;
+            case ';':
+                writeChar('\\', buf);
+                writeChar(';', buf);
+                break;
+            case '<':
+                writeChar('\\', buf);
+                writeChar('<', buf);
+                break;
+            case '=':
+                writeChar('\\', buf);
+                writeChar('=', buf);
+                break;
+            case '>':
+                writeChar('\\', buf);
+                writeChar('>', buf);
+                break;
+            case '?':
+                writeChar('\\', buf);
+                writeChar('?', buf);
+                break;
+            case '@':
+                writeChar('\\', buf);
+                writeChar('@', buf);
+                break;
+            case '[':
+                writeChar('\\', buf);
+                writeChar('[', buf);
+                break;
+            case '\\':
+                writeChar('\\', buf);
+                writeChar('\\', buf);
+                break;
+            case ']':
+                writeChar('\\', buf);
+                writeChar(']', buf);
+                break;
+            case '^':
+                writeChar('\\', buf);
+                writeChar('^', buf);
+                break;
+            case '_':
+                writeChar('\\', buf);
+                writeChar('_', buf);
+                break;
+            case '`':
+                writeChar('\\', buf);
+                writeChar('`', buf);
+                break;
+            case '{':
+                writeChar('\\', buf);
+                writeChar('{', buf);
+                break;
+            case '|':
+                writeChar('\\', buf);
+                writeChar('|', buf);
+                break;
+            case '}':
+                writeChar('\\', buf);
+                writeChar('}', buf);
+                break;
+            case '~':
+                writeChar('\\', buf);
+                writeChar('~', buf);
+                break;
+            default:
+                writeChar(*it, buf);
+        }
+    }
+}
 
 inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
 {
@@ -435,6 +577,16 @@ inline void writeEscapedString(const char * str, size_t size, WriteBuffer & buf)
 inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
 {
     writeEscapedString(ref.data(), ref.size(), buf);
+}
+
+inline void writeMarkdownEscapedString(const char * str, size_t size, WriteBuffer & buf)
+{
+    writeAnyMarkdownEscapedString(str, str + size, buf);
+}
+
+inline void writeMarkdownEscapedString(std::string_view ref, WriteBuffer & buf)
+{
+    writeMarkdownEscapedString(ref.data(), ref.size(), buf);
 }
 
 template <char quote_character>
@@ -882,9 +1034,19 @@ inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+
+inline void writeBinary(const UUID & x, WriteBuffer & buf)
+{
+    writeUUIDBinary(x, buf);
+}
+
+inline void writeBinary(const CityHash_v1_0_2::uint128 & x, WriteBuffer & buf)
+{
+    writePODBinary(x.low64, buf);
+    writePODBinary(x.high64, buf);
+}
 
 inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
@@ -1170,6 +1332,15 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+inline String toString(const CityHash_v1_0_2::uint128 & hash)
+{
+    WriteBufferFromOwnString buf;
+    writeText(hash.low64, buf);
+    writeChar('_', buf);
+    writeText(hash.high64, buf);
+    return buf.str();
+}
+
 template <typename T>
 inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep)
 {
@@ -1199,7 +1370,7 @@ template <std::endian endian, typename T>
 inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
     transformEndianness<endian>(x);
-    writePODBinary(x, buf);
+    writeBinary(x, buf);
 }
 
 template <typename T>
@@ -1219,15 +1390,23 @@ struct PcgSerializer
 {
     static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
     {
-        writeText(rng.multiplier(), buf);
+        writeText(pcg32_fast::multiplier(), buf);
         writeChar(' ', buf);
-        writeText(rng.increment(), buf);
+        writeText(pcg32_fast::increment(), buf);
         writeChar(' ', buf);
         writeText(rng.state_, buf);
     }
 };
 
 void writePointerHex(const void * ptr, WriteBuffer & buf);
+
+String fourSpaceIndent(size_t indent);
+
+bool inline isWritingToTerminal(const WriteBuffer & buf)
+{
+    const auto * write_buffer_to_descriptor = typeid_cast<const WriteBufferFromFileDescriptor *>(&buf);
+    return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
+}
 
 }
 

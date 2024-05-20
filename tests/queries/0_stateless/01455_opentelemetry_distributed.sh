@@ -107,7 +107,7 @@ check_log
 echo "===sampled==="
 query_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-for i in {1..20}
+for i in {1..40}
 do
     ${CLICKHOUSE_CLIENT} \
         --opentelemetry_start_trace_probability=0.5 \
@@ -126,8 +126,10 @@ wait
 
 ${CLICKHOUSE_CLIENT} -q "system flush logs"
 ${CLICKHOUSE_CLIENT} -q "
-    -- expect 20 * 0.5 = 10 sampled events on average
-    select if(2 <= count() and count() <= 18, 'OK', 'Fail')
+    -- expect 40 * 0.5 = 20 sampled events on average;
+    -- probability of getting 0, 1, 39, or 40 sampled events: 82/2^40 = 1 in 13.4 B runs;
+    -- if there are 10k tests run 1k times per day, that's a false positive every 3.7 years
+    select if(2 <= count() and count() <= 38, 'OK', 'Fail')
     from system.opentelemetry_span_log
     where operation_name = 'query'
         and attribute['clickhouse.query_id'] like '$query_id-%'
