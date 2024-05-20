@@ -154,7 +154,6 @@ public:
     virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */, size_t /* size */)
     {
         throwNotImplemented();
-        return nullptr;
     }
 
     virtual ~IMetadataTransaction() = default;

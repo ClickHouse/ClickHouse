@@ -588,7 +588,7 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
             if (!metadata_storage.isFile(path))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not a file", path);
 
-            truncate_outcome = tx->truncateFile(path,size);
+            truncate_outcome = tx->truncateFile(path, size);
         }
     }
 
@@ -599,6 +599,9 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
     void finalize() override
     {
+        if (!truncate_outcome)
+            return;
+
         if (!truncate_outcome->objects_to_remove.empty())
             object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
     }

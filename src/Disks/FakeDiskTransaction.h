@@ -142,7 +142,7 @@ public:
 
     void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
     }
 
 private:
