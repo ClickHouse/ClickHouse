@@ -48,6 +48,14 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
+    void copyFile( /// NOLINT
+    const String & from_file_path,
+    IDisk & to_disk,
+    const String & to_file_path,
+    const ReadSettings & read_settings = {},
+    const WriteSettings & write_settings = {},
+    const std::function<void()> & cancellation_hook = {}) override;
+
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(

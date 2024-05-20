@@ -402,6 +402,26 @@ void DiskOverlay::replaceFile(const String & from_path, const String & to_path)
     moveFile(from_path, to_path);
 }
 
+void DiskOverlay::copyFile( /// NOLINT
+const String & from_file_path,
+IDisk & to_disk,
+const String & to_file_path,
+const ReadSettings & read_settings,
+const WriteSettings & write_settings,
+const std::function<void()> & cancellation_hook) {
+    if (&to_disk == this) {
+        disk_diff->copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+
+        if (forward_metadata->exists(dataPath(from_file_path))) {
+            auto trans = forward_metadata->createTransaction();
+            trans->writeInlineDataToFile(dataPath(to_file_path), forward_metadata->readInlineDataToString(dataPath(from_file_path)));
+            trans->commit();
+        }
+    } else {
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+    }
+}
+
 void DiskOverlay::listFiles(const String & path, std::vector<String> & file_names) const
 {
     if (!exists(path) || !isDirectory(path))
