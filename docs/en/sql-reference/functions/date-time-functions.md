@@ -3039,3 +3039,88 @@ Result:
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 
+## changeYear
+
+Changes a year of the passed date argument.
+
+**Syntax**
+
+``` sql
+changeYear(date, new_value)
+```
+
+**Arguments**
+
+- `date` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+
+- `new_value` - a new value of the year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+**Return value**
+
+- A date or date with time. Same data type as input date argument.
+
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+``` sql
+    SELECT changeYear(toDate('1999-01-01'), 2000), hangeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000);
+```
+
+Result:
+```
+┌─changeYear(toDate('1999-01-01'), 2000)─┬─changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)─┐
+│                             2000-01-01 │                                      2000-01-01 00:00:00.000 │
+└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
+```
+
+## changeMonth
+
+Like [changeYear](#changeYear) but changes a month of the passed date argument.
+
+## changeMonth
+
+Like [changeYear](#changeYear) but changes a day of year of the passed date argument.
+
+## changeHour
+
+Changes an hour of the passed date argument.
+
+**Syntax**
+
+``` sql
+changeHour(date, new_value)
+```
+
+**Arguments**
+
+- `date` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+
+- `new_value` - a new value of the hour. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+**Return value**
+
+- A date with time. If date argument is Date - returns DateTime, if Date32 - returns DateTime64, otherwise returns same data type as input date argument.
+
+Type: [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Exapmle**
+
+``` sql
+SELECT changeHour(toDate('1999-01-01'), 12), changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 12);
+```
+
+Result:
+```
+┌─changeHour(toDate('1999-01-01'), 12)─┬─changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 12)─┐
+│                  1999-01-01 12:00:00 │                                    1999-01-01 12:00:00.000 │
+└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+## changeMinute
+
+Like [changeHour](#changeHour) but changes a minute of the passed date argument.
+
+## changeSecond
+
+Like [changeHour](#changeHour) but changes a seconds of the passed date argument.
