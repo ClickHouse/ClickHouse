@@ -277,6 +277,12 @@ void TCPHandler::runImpl()
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
+        {
+            in->enableChunked();
+            out->enableChunked();
+        }
+
         if (!is_interserver_mode)
         {
             /// If session created, then settings in session context has been updated.
@@ -286,12 +292,6 @@ void TCPHandler::runImpl()
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
                 session->sessionContext()->setCurrentDatabase(default_database);
-        }
-
-        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
-        {
-            in->enableChunked();
-            out->enableChunked();
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
