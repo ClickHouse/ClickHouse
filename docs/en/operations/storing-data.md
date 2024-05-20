@@ -466,7 +466,7 @@ By the way, HDFS is unsupported and therefore there might be issues when using i
 </clickhouse>
 ```
 
-Keep in mind that HDFS does not work at all.
+Keep in mind that HDFS may not work in corner cases.
 
 ### Using Data Encryption {#encrypted-virtual-file-system}
 
