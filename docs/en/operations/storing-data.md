@@ -434,7 +434,7 @@ In this sample configuration:
 - the disk is of type `hdfs` (unsupported)
 - the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
 
-By the way, HDFS is unsupported and won't work.
+By the way, HDFS is unsupported and therefore there might be issues when using it. Feel free to make a pull request with the fix if any issue arises.
 
 ```xml
 <clickhouse>
