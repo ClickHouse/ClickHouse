@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 
