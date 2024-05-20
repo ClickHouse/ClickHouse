@@ -45,6 +45,8 @@ public:
 
         Poco::URI getConnectionURL() const;
 
+        std::string getConnectionURLWithContainer() const;
+
         std::string connection_url;
         bool is_connection_string;
 
