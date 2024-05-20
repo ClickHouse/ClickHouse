@@ -221,10 +221,6 @@ std::optional<String> DiskOverlay::basePath(const String& path) const
         return {};
     }
     String res = forward_metadata->readInlineDataToString(dataPath(path));
-    if (res == "r")
-    {
-        return {};
-    }
     return res;
 }
 
@@ -482,7 +478,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
         // This means that we don't need to look for this file on disk_base
         if (forward_metadata->exists(dataPath(path)))
         {
-            transaction->writeInlineDataToFile(dataPath(path), "r");
+            transaction->unlinkFile(dataPath(path));
         } else
         {
             if (disk_base->exists(path))
