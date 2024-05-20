@@ -78,9 +78,9 @@ class Build(metaclass=WithIter):
     BINARY_PPC64LE = "binary_ppc64le"
     BINARY_AMD64_COMPAT = "binary_amd64_compat"
     BINARY_AMD64_MUSL = "binary_amd64_musl"
-    BINARY_RISCV64 = "binary_riscv64"
-    BINARY_S390X = "binary_s390x"
-    BINARY_LOONGARCH64 = "binary_loongarch64"
+    # BINARY_RISCV64 = "binary_riscv64"
+    # BINARY_S390X = "binary_s390x"
+    # BINARY_LOONGARCH64 = "binary_loongarch64"
     FUZZERS = "fuzzers"
 
 
@@ -1030,24 +1030,24 @@ CI_CONFIG = CIConfig(
             static_binary_name="amd64musl",
             comment="Build with Musl",
         ),
-        Build.BINARY_RISCV64: BuildConfig(
-            name=Build.BINARY_RISCV64,
-            compiler="clang-18-riscv64",
-            package_type="binary",
-            static_binary_name="riscv64",
-        ),
-        Build.BINARY_S390X: BuildConfig(
-            name=Build.BINARY_S390X,
-            compiler="clang-18-s390x",
-            package_type="binary",
-            static_binary_name="s390x",
-        ),
-        Build.BINARY_LOONGARCH64: BuildConfig(
-            name=Build.BINARY_LOONGARCH64,
-            compiler="clang-18-loongarch64",
-            package_type="binary",
-            static_binary_name="loongarch64",
-        ),
+        # Build.BINARY_RISCV64: BuildConfig(
+        #     name=Build.BINARY_RISCV64,
+        #     compiler="clang-18-riscv64",
+        #     package_type="binary",
+        #     static_binary_name="riscv64",
+        # ),
+        # Build.BINARY_S390X: BuildConfig(
+        #     name=Build.BINARY_S390X,
+        #     compiler="clang-18-s390x",
+        #     package_type="binary",
+        #     static_binary_name="s390x",
+        # ),
+        # Build.BINARY_LOONGARCH64: BuildConfig(
+        #     name=Build.BINARY_LOONGARCH64,
+        #     compiler="clang-18-loongarch64",
+        #     package_type="binary",
+        #     static_binary_name="loongarch64",
+        # ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-18",
