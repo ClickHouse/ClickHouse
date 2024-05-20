@@ -13,9 +13,6 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <base/sort.h>
 
 
@@ -733,30 +730,6 @@ ColumnPtr ColumnTuple::compress() const
                 column = column->decompress();
             return ColumnTuple::create(my_compressed);
         });
-}
-
-double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
-{
-    if (columns.empty())
-        return 1.0;
-
-    return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
-}
-
-UInt64 ColumnTuple::getNumberOfDefaultRows() const
-{
-    if (columns.empty())
-        return column_length;
-
-    return getNumberOfDefaultRowsImpl<ColumnTuple>();
-}
-
-void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    if (columns.empty())
-        return;
-
-    return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
 }
 
 void ColumnTuple::finalize()
