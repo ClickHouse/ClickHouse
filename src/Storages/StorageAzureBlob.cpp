@@ -303,7 +303,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
 
         return std::make_shared<StorageAzureBlob>(
             configuration,
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container, configuration.getConnectionURLWithContainer()),
+            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container, configuration.getConnectionURL().toString()),
             args.getContext(),
             args.table_id,
             args.columns,
@@ -489,12 +489,6 @@ Poco::URI StorageAzureBlob::Configuration::getConnectionURL() const
 
     auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(connection_url);
     return Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
-}
-
-std::string StorageAzureBlob::Configuration::getConnectionURLWithContainer() const
-{
-    auto url = getConnectionURL();
-    return fs::path(url.toString()) / container;
 }
 
 bool StorageAzureBlob::Configuration::withGlobsIgnorePartitionWildcard() const
