@@ -554,7 +554,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         {
             if (!fs::exists(file_path))
             {
-                LOG_WARNING(log, "File {} does not exists, likely due to current_batch.txt processing", file_path);
+                LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);
                 continue;
             }
 
