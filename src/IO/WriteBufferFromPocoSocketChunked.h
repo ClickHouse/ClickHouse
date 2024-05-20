@@ -54,6 +54,16 @@ protected:
 
         WriteBufferFromPocoSocket::nextImpl();
     }
+
+    Poco::Net::SocketAddress peerAddress()
+    {
+        return peer_address;
+    }
+
+    Poco::Net::SocketAddress ourAddress()
+    {
+        return our_address;
+    }
 private:
     LoggerPtr log;
     bool chunked = false;

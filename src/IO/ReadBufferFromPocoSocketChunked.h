@@ -18,6 +18,9 @@ public:
 
     bool hasBufferedData() const { return hasPendingData() || buffer_socket.hasPendingData(); }
 
+    Poco::Net::SocketAddress peerAddress() { return peer_address; }
+    Poco::Net::SocketAddress ourAddress() { return our_address; }
+
 protected:
     bool startChunk();
     bool nextChunk();
@@ -25,6 +28,8 @@ protected:
 
 private:
     LoggerPtr log;
+    Poco::Net::SocketAddress peer_address;
+    Poco::Net::SocketAddress our_address;
     ReadBufferFromPocoSocket buffer_socket;
     bool chunked = false;
     UInt32 chunk_left = 0; // chunk left to read from socket

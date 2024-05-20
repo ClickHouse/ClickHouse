@@ -16,7 +16,7 @@ ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Sock
 {}
 
 ReadBufferFromPocoSocketChunked::ReadBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size)
-    : ReadBuffer(nullptr, 0), log(getLogger("Protocol")), buffer_socket(socket_, read_event_, buf_size)
+    : ReadBuffer(nullptr, 0), log(getLogger("Protocol")), peer_address(socket_.peerAddress()), our_address(socket_.address()), buffer_socket(socket_, read_event_, buf_size)
 {
     chassert(buf_size <= std::numeric_limits<decltype(chunk_left)>::max());
 
@@ -28,6 +28,7 @@ void ReadBufferFromPocoSocketChunked::enableChunked()
 {
     chunked = true;
     buffer_socket.position() = pos;
+    working_buffer.resize(offset());
 }
 
 bool ReadBufferFromPocoSocketChunked::poll(size_t timeout_microseconds)
