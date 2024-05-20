@@ -63,7 +63,9 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
 
     # Sanitizers are too heavy. Some architectures too.
     if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
-       set (RLIMIT_DATA 10000000000) # 10G
+        # Twice as large
+        set (RLIMIT_DATA 10000000000)
+        set (RLIMIT_AS 20000000000)
     endif()
 
     # For some files currently building RISCV64 might be too slow. TODO: Improve compilation times per file
