@@ -1390,9 +1390,9 @@ struct PcgSerializer
 {
     static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
     {
-        writeText(rng.multiplier(), buf);
+        writeText(pcg32_fast::multiplier(), buf);
         writeChar(' ', buf);
-        writeText(rng.increment(), buf);
+        writeText(pcg32_fast::increment(), buf);
         writeChar(' ', buf);
         writeText(rng.state_, buf);
     }

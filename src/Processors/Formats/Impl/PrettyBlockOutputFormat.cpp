@@ -7,6 +7,8 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -16,7 +18,14 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
 {
-    readable_number_tip = header_.getColumns().size() == 1 && WhichDataType(header_.getDataTypes()[0]->getTypeId()).isNumber();
+    /// Decide whether we should print a tip near the single number value in the result.
+    if (header_.getColumns().size() == 1)
+    {
+        /// Check if it is a numeric type, possible wrapped by Nullable or LowCardinality.
+        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_.getDataTypes().at(0)));
+        if (isNumber(type))
+            readable_number_tip = true;
+    }
 }
 
 
@@ -291,11 +300,14 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             // Write row number;
             auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
+
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
-            {
-                writeCString(" ", out);
-            }
+                writeChar(' ', out);
+            if (color)
+                writeCString("\033[90m", out);
             writeString(row_num_string, out);
+            if (color)
+                writeCString("\033[0m", out);
         }
 
         writeCString(grid_symbols.bar, out);
@@ -492,6 +504,9 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
     auto columns = chunk.getColumns();
     auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
     if (!is_single_number)
+        return;
+
+    if (columns[0]->isNullAt(0))
         return;
 
     auto value = columns[0]->getFloat64(0);

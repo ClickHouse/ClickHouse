@@ -46,12 +46,12 @@ INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
   *
   * The following steps are performed:
   *
-  * - copying the binary to binary directory (/usr/bin).
+  * - copying the binary to binary directory (/usr/bin/)
   * - creation of symlinks for tools.
   * - creation of clickhouse user and group.
-  * - creation of config directory (/etc/clickhouse-server).
+  * - creation of config directory (/etc/clickhouse-server/).
   * - creation of default configuration files.
-  * - creation of a directory for logs (/var/log/clickhouse-server).
+  * - creation of a directory for logs (/var/log/clickhouse-server/).
   * - creation of a data directory if not exists.
   * - setting a password for default user.
   * - choose an option to listen connections.
@@ -226,7 +226,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "where to install binaries")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "where to install binaries")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "where to install configs")
             ("log-path", po::value<std::string>()->default_value("var/log/clickhouse-server"), "where to create log directory")
             ("data-path", po::value<std::string>()->default_value("var/lib/clickhouse"), "directory for data")
@@ -318,7 +323,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     {
                         fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
                                    main_bin_path.string(), points_to.string(), binary_self_canonical_path.string());
-                        fs::remove(main_bin_path);
+                        (void)fs::remove(main_bin_path);
                     }
                 }
             }
@@ -484,7 +489,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                         {
                             fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
                                        symlink_path.string(), points_to.string(), main_bin_path.string());
-                            fs::remove(symlink_path);
+                            (void)fs::remove(symlink_path);
                         }
                     }
                 }
@@ -662,7 +667,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "        <server>\n"
                     "            <certificateFile>" << (config_dir / "server.crt").string() << "</certificateFile>\n"
                     "            <privateKeyFile>" << (config_dir / "server.key").string() << "</privateKeyFile>\n"
-                    "            <dhParamsFile>" << (config_dir / "dhparam.pem").string() << "</dhParamsFile>\n"
                     "        </server>\n"
                     "    </openSSL>\n"
                     "</clickhouse>\n";
@@ -724,6 +728,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 has_password_for_default_user = true;
             }
         }
+
+        /// Don't allow relative paths because install script may cd to / when installing
+        /// And having path=./ may break the system
+        if (log_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log path is relative: {}", log_path.string());
+        if (data_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data path is relative: {}", data_path.string());
+        if (pid_path.is_relative())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pid path is relative: {}", pid_path.string());
 
         /// Create directories for data and log.
 
@@ -993,7 +1006,7 @@ namespace
             else
             {
                 fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                fs::remove(pid_file);
+                (void)fs::remove(pid_file);
             }
         }
         else
@@ -1001,7 +1014,7 @@ namespace
             /// Create a directory for pid file.
             /// It's created by "install" but we also support cases when ClickHouse is already installed different way.
             fs::path pid_path = pid_file;
-            pid_path.remove_filename();
+            pid_path = pid_path.remove_filename();
             fs::create_directories(pid_path);
             /// All users are allowed to read pid file (for clickhouse status command).
             fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
@@ -1085,7 +1098,7 @@ namespace
                 else
                 {
                     fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                    fs::remove(pid_file);
+                    (void)fs::remove(pid_file);
                 }
             }
             catch (const Exception & e)
@@ -1217,7 +1230,12 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
@@ -1333,7 +1351,12 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
+#if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
+            ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
+#else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
+#endif
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")

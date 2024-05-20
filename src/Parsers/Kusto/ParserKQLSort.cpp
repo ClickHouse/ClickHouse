@@ -18,7 +18,7 @@ bool ParserKQLSort::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto expr = getExprFromToken(pos);
 
-    Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true, /* greedy_errors= */ true);
+    Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
     IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
 
     auto pos_backup = new_pos;

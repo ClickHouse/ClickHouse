@@ -96,7 +96,6 @@ Checks: [
   '-modernize-use-default-member-init',
   '-modernize-use-emplace',
   '-modernize-use-nodiscard',
-  '-modernize-use-override',
   '-modernize-use-trailing-return-type',
 
   '-performance-inefficient-string-concatenation',
@@ -120,12 +119,27 @@ Checks: [
   '-readability-named-parameter',
   '-readability-redundant-declaration',
   '-readability-simplify-boolean-expr',
-  '-readability-static-accessed-through-instance',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
 
-  '-zircon-*'
+  '-zircon-*',
+
+  # These are new in clang-18, and we have to sort them out:
+  '-readability-avoid-nested-conditional-operator',
+  '-modernize-use-designated-initializers',
+  '-performance-enum-size',
+  '-readability-redundant-inline-specifier',
+  '-readability-redundant-member-init',
+  '-bugprone-crtp-constructor-accessibility',
+  '-bugprone-suspicious-stringview-data-usage',
+  '-bugprone-multi-level-implicit-pointer-conversion',
+  '-cert-err33-c',
+
+  # This is a good check, but clang-tidy crashes, see https://github.com/llvm/llvm-project/issues/91872
+  '-modernize-use-constraints',
+  # https://github.com/abseil/abseil-cpp/issues/1667
+  '-clang-analyzer-optin.core.EnumCastOutOfRange'
 ]
 
 WarningsAsErrors: '*'

@@ -298,7 +298,7 @@ bool ParserKQLMVExpand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     const String setting_str = "enable_unaligned_array_join = 1";
-    Tokens token_settings(setting_str.data(), setting_str.data() + setting_str.size(), 0, true, /* greedy_errors= */ true);
+    Tokens token_settings(setting_str.data(), setting_str.data() + setting_str.size(), 0, true);
     IParser::Pos pos_settings(token_settings, pos.max_depth, pos.max_backtracks);
 
     if (!ParserSetQuery(true).parse(pos_settings, setting, expected))

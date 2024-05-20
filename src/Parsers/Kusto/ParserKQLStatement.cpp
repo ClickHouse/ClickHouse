@@ -99,7 +99,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ++pos;
     }
 
-    Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true, /* greedy_errors= */ true);
+    Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
     IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
 
     if (!ParserKQLWithUnionQuery().parse(pos_kql, node, expected))

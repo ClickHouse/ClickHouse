@@ -57,6 +57,7 @@ URLPathHierarchy
 UUIDNumToString
 UUIDStringToNum
 _CAST
+__actionName
 __bitBoolMaskAnd
 __bitBoolMaskOr
 __bitSwapLastTwo
@@ -200,6 +201,7 @@ cbrt
 ceil
 char
 cityHash64
+clamp
 coalesce
 concat
 concatAssumeInjective

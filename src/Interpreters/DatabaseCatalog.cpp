@@ -27,6 +27,8 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 #include "config.h"
 
 #if USE_MYSQL
@@ -986,7 +988,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = getContext()->getPath() + "metadata_dropped/";
+    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
 
     if (!std::filesystem::exists(path))
     {
@@ -1041,10 +1043,11 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return getContext()->getPath() + "metadata_dropped/" +
-           escapeForFileName(table_id.getDatabaseName()) + "." +
-           escapeForFileName(table_id.getTableName()) + "." +
-           toString(table_id.uuid) + ".sql";
+    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
+        fmt::format("{}.{}.{}.sql",
+            escapeForFileName(table_id.getDatabaseName()),
+            escapeForFileName(table_id.getTableName()),
+            toString(table_id.uuid));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1143,7 +1146,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
     TableMarkedAsDropped dropped_table;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        time_t latest_drop_time = std::numeric_limits<time_t>::min();
+        auto latest_drop_time = std::numeric_limits<time_t>::min();
         auto it_dropped_table = tables_marked_dropped.end();
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
@@ -1168,7 +1171,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         }
         if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "The drop task of table {} is in progress, has been dropped or the database engine doesn't support it",
+                "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
@@ -1435,7 +1438,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
@@ -1602,6 +1605,9 @@ void DatabaseCatalog::reloadDisksTask()
 
     for (auto & database : getDatabases())
     {
+        // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
+        // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
+        // TODO: We can split this task by table or by database to make loaded table operate as usual.
         auto it = database.second->getTablesIterator(getContext());
         while (it->isValid())
         {
@@ -1739,10 +1745,9 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
-    Names result;
     if (database)
-        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-            result.emplace_back(table_it->name());
-    return result;
+        return database->getAllTableNames(context);
+    return {};
 }
+
 }

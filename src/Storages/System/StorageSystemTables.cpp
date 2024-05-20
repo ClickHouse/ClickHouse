@@ -25,6 +25,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeUUID.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace DB
 {
@@ -222,7 +224,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         const auto access = context->getAccess();
-        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+        const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -346,7 +348,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
-            const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
+            const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
@@ -359,7 +361,7 @@ protected:
                 if (!tables.contains(table_name))
                     continue;
 
-                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
                 StoragePtr table = nullptr;

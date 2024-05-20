@@ -41,25 +41,40 @@ At a minimum, the following information should be added (but add more as needed)
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
 
----
-### Modify your CI run:
+<details>
+    <summary>Modify your CI run</summary>
+
 **NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
-**NOTE:** Set desired options before CI starts or re-push after updates
+**NOTE:** Checked options will be applied if set before CI RunConfig/PrepareRunConfig step
 
-#### Run only:
-- [ ] <!---ci_set_integration--> Integration tests
-- [ ] <!---ci_set_arm--> Integration tests (arm64)
-- [ ] <!---ci_set_stateless--> Stateless tests (release)
-- [ ] <!---ci_set_stateless_asan--> Stateless tests (asan)
-- [ ] <!---ci_set_stateful--> Stateful tests (release)
-- [ ] <!---ci_set_stateful_asan--> Stateful tests (asan)
-- [ ] <!---ci_set_reduced--> No sanitizers
-- [ ] <!---ci_set_analyzer--> Tests with analyzer
-- [ ] <!---ci_set_fast--> Fast tests
-- [ ] <!---job_package_debug--> Only package_debug build
-- [ ] <!---PLACE_YOUR_TAG_CONFIGURED_IN_ci_config.py_FILE_HERE--> Add your CI variant description here
+#### Include tests (required builds will be added automatically):
+- [ ] <!---ci_include_fast--> Fast test
+- [ ] <!---ci_include_integration--> Integration Tests
+- [ ] <!---ci_include_stateless--> Stateless tests
+- [ ] <!---ci_include_stateful--> Stateful tests
+- [ ] <!---ci_include_unit--> Unit tests
+- [ ] <!---ci_include_performance--> Performance tests
+- [ ] <!---ci_include_asan--> All with ASAN
+- [ ] <!---ci_include_tsan--> All with TSAN
+- [ ] <!---ci_include_analyzer--> All with Analyzer
+- [ ] <!---ci_include_azure --> All with Azure
+- [ ] <!---ci_include_KEYWORD--> Add your option here
 
-#### CI options:
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [ ] <!---ci_exclude_tsan--> All with TSAN
+- [ ] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [ ] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_aarch64--> All with Aarch64
+- [ ] <!---ci_exclude_KEYWORD--> Add your option here
+
+#### Extra options:
 - [ ] <!---do_not_test--> do not test (only style check)
 - [ ] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
 - [ ] <!---no_ci_cache--> disable CI cache (job reuse)
@@ -69,3 +84,5 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---batch_1--> 2
 - [ ] <!---batch_2--> 3
 - [ ] <!---batch_3--> 4
+
+</details>

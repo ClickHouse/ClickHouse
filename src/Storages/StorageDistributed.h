@@ -241,6 +241,7 @@ private:
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
+    StorageID remote_storage;
 
     LoggerPtr log;
 
@@ -275,7 +276,7 @@ private:
     struct ClusterNodeData
     {
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
-        ConnectionPoolPtr connection_pool;
+        ConnectionPoolWithFailoverPtr connection_pool;
         Cluster::Addresses addresses;
         size_t clusters_version;
     };

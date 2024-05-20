@@ -4,8 +4,8 @@
 
 #include "StdIStreamFromMemory.h"
 #include "WriteBufferFromS3.h"
-#include "WriteBufferFromS3TaskTracker.h"
 
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
@@ -72,6 +72,19 @@ struct WriteBufferFromS3::PartData
     }
 };
 
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings)
+{
+    BufferAllocationPolicy::Settings allocation_settings;
+    allocation_settings.strict_size = settings.strict_upload_part_size;
+    allocation_settings.min_size = settings.min_upload_part_size;
+    allocation_settings.max_size = settings.max_upload_part_size;
+    allocation_settings.multiply_factor = settings.upload_part_size_multiply_factor;
+    allocation_settings.multiply_parts_count_threshold = settings.upload_part_size_multiply_parts_count_threshold;
+    allocation_settings.max_single_size = settings.max_single_part_upload_size;
+
+    return BufferAllocationPolicy::create(allocation_settings);
+}
+
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
@@ -81,7 +94,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const S3Settings::RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
     std::optional<std::map<String, String>> object_metadata_,
-    ThreadPoolCallbackRunner<void> schedule_,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , bucket(bucket_)
@@ -91,9 +104,9 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
+    , buffer_allocation_policy(createBufferAllocationPolicy(upload_settings))
     , task_tracker(
-          std::make_unique<WriteBufferFromS3::TaskTracker>(
+          std::make_unique<TaskTracker>(
               std::move(schedule_),
               upload_settings.max_inflight_parts_for_one_file,
               limitedLog))
@@ -201,9 +214,9 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (request_settings.check_objects_after_upload)
     {
-        S3::checkObjectExists(*client_ptr, bucket, key, {}, request_settings, /* for_disk_s3= */ write_settings.for_object_storage, "Immediately after upload");
+        S3::checkObjectExists(*client_ptr, bucket, key, {}, request_settings, "Immediately after upload");
 
-        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {}, request_settings, /* for_disk_s3= */ write_settings.for_object_storage);
+        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {}, request_settings);
         if (actual_size != total_size)
             throw Exception(
                     ErrorCodes::S3_ERROR,
@@ -320,23 +333,26 @@ void WriteBufferFromS3::detachBuffer()
     detached_part_data.push_back({std::move(buf), data_size});
 }
 
-void WriteBufferFromS3::allocateFirstBuffer()
-{
-    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
-    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
-    memory = Memory(size);
-    WriteBuffer::set(memory.data(), memory.size());
-}
-
 void WriteBufferFromS3::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
     if (buffer_allocation_policy->getBufferNumber() == 1)
-        return allocateFirstBuffer();
+    {
+        allocateFirstBuffer();
+        return;
+    }
 
     memory = Memory(buffer_allocation_policy->getBufferSize());
+    WriteBuffer::set(memory.data(), memory.size());
+}
+
+void WriteBufferFromS3::allocateFirstBuffer()
+{
+    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
+    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
+    memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 
@@ -377,7 +393,7 @@ void WriteBufferFromS3::createMultipartUpload()
     client_ptr->setKMSHeaders(req);
 
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
-    if (write_settings.for_object_storage)
+    if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
     Stopwatch watch;
@@ -416,7 +432,7 @@ void WriteBufferFromS3::abortMultipartUpload()
     req.SetUploadId(multipart_upload_id);
 
     ProfileEvents::increment(ProfileEvents::S3AbortMultipartUpload);
-    if (write_settings.for_object_storage)
+    if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3AbortMultipartUpload);
 
     Stopwatch watch;
@@ -517,7 +533,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
                  getShortLogDetails(), data_size, part_number);
 
         ProfileEvents::increment(ProfileEvents::S3UploadPart);
-        if (write_settings.for_object_storage)
+        if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
         auto & request = std::get<0>(*worker_data);
@@ -593,7 +609,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < max_retry; ++i)
     {
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
-        if (write_settings.for_object_storage)
+        if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
         Stopwatch watch;
@@ -676,7 +692,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
         for (size_t i = 0; i < max_retry; ++i)
         {
             ProfileEvents::increment(ProfileEvents::S3PutObject);
-            if (write_settings.for_object_storage)
+            if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
             ResourceCost cost = request.GetContentLength();

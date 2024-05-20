@@ -59,6 +59,7 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+    bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
     bool inOrder() const { return !sort_description_for_merging.empty(); }
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }

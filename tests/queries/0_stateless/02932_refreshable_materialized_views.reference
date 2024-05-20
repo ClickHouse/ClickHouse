@@ -4,7 +4,7 @@ CREATE MATERIALIZED VIEW default.a\nREFRESH AFTER 2 SECOND\n(\n    `x` UInt64\n)
 <3: time difference at least>	1000
 <4: next refresh in>	2
 <4.5: altered>	Scheduled	Finished	2052-01-01 00:00:00
-CREATE MATERIALIZED VIEW default.a\nREFRESH EVERY 2 YEAR\n(\n    `x` Int16\n)\nENGINE = Memory\nAS SELECT x * 2 AS x\nFROM default.src
+CREATE MATERIALIZED VIEW default.a\nREFRESH EVERY 2 YEAR\n(\n    `x` UInt64\n)\nENGINE = Memory\nAS SELECT x * 2 AS x\nFROM default.src
 <5: no refresh>	3
 <6: refreshed>	2
 <7: refreshed>	Scheduled	Finished	2054-01-01 00:00:00

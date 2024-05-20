@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// Join method.
-enum class JoinKind
+enum class JoinKind : uint8_t
 {
     Inner, /// Leave only rows that was JOINed.
     Left, /// If in "right" table there is no corresponding rows, use default values instead.
@@ -31,7 +31,7 @@ inline constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::I
 inline constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
 
 /// Allows more optimal JOIN for typical cases.
-enum class JoinStrictness
+enum class JoinStrictness : uint8_t
 {
     Unspecified,
     RightAny, /// Old ANY JOIN. If there are many suitable rows in right table, use any from them to join.
@@ -45,7 +45,7 @@ enum class JoinStrictness
 const char * toString(JoinStrictness strictness);
 
 /// Algorithm for distributed query processing.
-enum class JoinLocality
+enum class JoinLocality : uint8_t
 {
     Unspecified,
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
@@ -55,7 +55,7 @@ enum class JoinLocality
 const char * toString(JoinLocality locality);
 
 /// ASOF JOIN inequality type
-enum class ASOFJoinInequality
+enum class ASOFJoinInequality : uint8_t
 {
     None,
     Less,
@@ -96,7 +96,7 @@ inline constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality
     return ASOFJoinInequality::None;
 }
 
-enum class JoinAlgorithm
+enum class JoinAlgorithm : uint8_t
 {
     DEFAULT = 0,
     AUTO,
@@ -111,7 +111,7 @@ enum class JoinAlgorithm
 
 const char * toString(JoinAlgorithm join_algorithm);
 
-enum class JoinTableSide
+enum class JoinTableSide : uint8_t
 {
     Left,
     Right

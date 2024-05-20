@@ -7,6 +7,8 @@ toc_max_heading_level: 2
 
 # Core Settings
 
+All below settings are also available in table [system.settings](/docs/en/operations/system-tables/settings).
+
 ## additional_table_filters
 
 An additional filter expression that is applied after reading
@@ -1689,6 +1691,18 @@ Possible values:
 
 Default value: `throw`.
 
+## query_cache_system_table_handling {#query-cache-system-table-handling}
+
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
+
+Possible values:
+
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
+
+Default value: `throw`.
+
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
 Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
@@ -1776,7 +1790,7 @@ Default value: 0 (no restriction).
 ## insert_quorum {#insert_quorum}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables the quorum writes.
@@ -1819,7 +1833,7 @@ See also:
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1840,7 +1854,7 @@ See also:
 ## select_sequential_consistency {#select_sequential_consistency}
 
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree. 
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -1911,7 +1925,9 @@ Default value: `16`.
 
 ### wait_for_async_insert {#wait-for-async-insert}
 
-Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` as soon it has received the data, but it might still fail to parse or insert it later (You can check in system.asynchronous_insert_log)
+
+If you want to use asynchronous inserts, we need to also enable [`async_insert`](#async-insert).
 
 Possible values:
 
@@ -2816,6 +2832,17 @@ Possible values:
 - 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
 Default value: 0.
+
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
+
+Enables skipping read-only replicas for INSERT queries into Distributed.
+
+Possible values:
+
+- 0 — INSERT was as usual, if it will go to read-only replica it will fail
+- 1 — Initiator will skip read-only replicas before sending data to shards.
+
+Default value: `0`
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
@@ -3907,19 +3934,6 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 :::note
 Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
 :::
-
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
-Cloud default value: `1`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
@@ -5291,7 +5305,7 @@ SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ## storage_metadata_write_full_object_key {#storage_metadata_write_full_object_key}
 
 When set to `true` the metadata files are written with `VERSION_FULL_OBJECT_KEY` format version. With that format full object storage key names are written to the metadata files.
-When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
+When set to `false` the metadata files are written with the previous format version, `VERSION_INLINE_DATA`. With that format only suffixes of object storage key names are written to the metadata files. The prefix for all of object storage key names is set in configurations files at `storage_configuration.disks` section.
 
 Default value: `false`.
 
@@ -5442,3 +5456,15 @@ Enabling this setting can lead to incorrect result as in case of evolved schema 
 :::
 
 Default value: 'false'.
+
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
+
+Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
+
+## mysql_datatypes_support_level
+
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+- `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
+- `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
+- `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
+- `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.

@@ -1,9 +1,10 @@
-#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {

@@ -2219,7 +2219,7 @@ uint64_t Changelog::getStartIndex() const
 LogEntryPtr Changelog::getLastEntry() const
 {
     /// This entry treaded in special way by NuRaft
-    static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(uint64_t)));
+    static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(0));
 
     auto entry = entry_storage.getEntry(max_log_id);
     if (entry == nullptr)
@@ -2262,7 +2262,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 
     nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + size_total);
     buf_out->pos(0);
-    buf_out->put(static_cast<int32_t>(count));
+    buf_out->put(count);
 
     for (auto & entry : returned_logs)
     {

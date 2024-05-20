@@ -543,11 +543,63 @@ You can get similar result by using the [ternary operator](../../sql-reference/f
 
 Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
 
-## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
+## hasColumnInTable
 
-Given the database name, the table name, and the column name as constant strings, returns 1 if the given column exists, otherwise 0. If parameter `hostname` is given, the check is performed on a remote server.
-If the table does not exist, an exception is thrown.
+Given the database name, the table name, and the column name as constant strings, returns 1 if the given column exists, otherwise 0.
+
+**Syntax**
+
+```sql
+hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
+```
+
+**Parameters**
+
+- `database` : name of the database. [String literal](../syntax#syntax-string-literal)
+- `table` : name of the table. [String literal](../syntax#syntax-string-literal)
+- `column` : name of the column. [String literal](../syntax#syntax-string-literal)
+- `hostname` : remote server name to perform the check on. [String literal](../syntax#syntax-string-literal)
+- `username` : username for remote server. [String literal](../syntax#syntax-string-literal)
+- `password` : password for remote server. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- `1` if the given column exists.
+- `0`, otherwise.
+
+**Implementation details**
+
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
+
+**Example**
+
+Query:
+
+```sql
+SELECT hasColumnInTable('system','metrics','metric')
+```
+
+```response
+1
+```
+
+```sql
+SELECT hasColumnInTable('system','metrics','non-existing_column')
+```
+
+```response
+0
+```
+
+## hasThreadFuzzer
+
+Returns whether Thread Fuzzer is effective. It can be used in tests to prevent runs from being too long.
+
+**Syntax**
+
+```sql
+hasThreadFuzzer();
+```
 
 ## bar
 
@@ -623,7 +675,7 @@ There are two variations of this function:
 
 Signature:
 
-For `x` equal to one of the elements in `array_from`, the function returns the corresponding element in `array_to`, i.e. the one at the same array index. Otherwise, it returns `default`. If multiple matching elements exist `array_from`, an arbitrary corresponding element from `array_to` is returned.
+For `x` equal to one of the elements in `array_from`, the function returns the corresponding element in `array_to`, i.e. the one at the same array index. Otherwise, it returns `default`. If multiple matching elements exist `array_from`, it returns the element corresponding to the first of them.
 
 `transform(T, Array(T), Array(U), U) -> U`
 
@@ -864,6 +916,34 @@ Returns the larger value of a and b.
 Returns the server’s uptime in seconds.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
+**Syntax**
+
+``` sql
+uptime()
+```
+
+**Returned value**
+
+- Time value of seconds.
+
+Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT uptime() as Uptime;
+```
+
+Result:
+
+``` response
+┌─Uptime─┐
+│  55867 │
+└────────┘
+```
+
 ## version()
 
 Returns the current version of ClickHouse as a string in the form of:
@@ -944,6 +1024,7 @@ The result of the function depends on the affected data blocks and the order of 
 
 :::note
 Only returns neighbor inside the currently processed data block.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The order of rows during calculation of `neighbor()` can differ from the order of rows returned to the user.
@@ -1054,6 +1135,7 @@ Returns 0 for the first row, and for subsequent rows the difference to the previ
 
 :::note
 Only returns differences inside the currently processed data block.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 The result of the function depends on the affected data blocks and the order of data in the block.
@@ -1126,6 +1208,10 @@ WHERE diff != 1
 ```
 
 ## runningDifferenceStartingWithFirstValue
+
+:::note
+This function is DEPRECATED (see the note for `runningDifference`).
+:::
 
 Same as [runningDifference](./other-functions.md#other_functions-runningdifference), but returns the value of the first row as the value on the first row.
 
@@ -1850,6 +1936,7 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 :::note
 The state is reset for each new block of data.
+Because of this error-prone behavior the function is DEPRECATED, please use proper window functions instead.
 :::
 
 **Syntax**
@@ -2364,7 +2451,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultRoles
 
-Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
+Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
 
 **Syntax**
 
@@ -3131,4 +3218,114 @@ Result:
 ┌─sample_size───────────────────────────┐
 │ (616.2931945826209,108.8825,115.6175) │
 └───────────────────────────────────────┘
+```
+
+## connectionId
+
+Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
+
+**Syntax**
+
+```sql
+connectionId()
+```
+
+**Parameters**
+
+None.
+
+**Returned value**
+
+Returns an integer of type UInt64.
+
+**Implementation details**
+
+This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
+
+**Example**
+
+Query:
+
+```sql
+SELECT connectionId();
+```
+
+```response
+0
+```
+
+## connection_id
+
+An alias of `connectionId`. Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
+
+**Syntax**
+
+```sql
+connection_id()
+```
+
+**Parameters**
+
+None.
+
+**Returned value**
+
+Returns an integer of type UInt64.
+
+**Implementation details**
+
+This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
+
+**Example**
+
+Query:
+
+```sql
+SELECT connection_id();
+```
+
+```response
+0
+```
+
+## getClientHTTPHeader
+
+Get the value of an HTTP header.
+
+If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
+Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
+
+The function requires the setting `allow_get_client_http_header` to be enabled.
+The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
+
+HTTP headers are case sensitive for this function.
+
+If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
+
+## showCertificate
+
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](https://clickhouse.com/docs/en/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+
+**Syntax**
+
+```sql
+showCertificate()
+```
+
+**Returned value**
+
+- Map of key-value pairs relating to the configured SSL certificate. [Map](../../sql-reference/data-types/map.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+Query:
+
+```sql
+SELECT showCertificate() FORMAT LineAsString;
+```
+
+Result:
+
+```response
+{'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
 ```

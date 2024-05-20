@@ -862,12 +862,12 @@ class ClickHouseCluster:
 
     def get_docker_handle(self, docker_id):
         exception = None
-        for i in range(5):
+        for i in range(20):
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
                 print("Got exception getting docker handle", str(ex))
-                time.sleep(i * 2)
+                time.sleep(0.5)
                 exception = ex
         raise exception
 
@@ -1601,7 +1601,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        allow_analyzer=True,
+        use_old_analyzer=None,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -1700,7 +1700,7 @@ class ClickHouseCluster:
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
-            allow_analyzer=allow_analyzer,
+            use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -3262,7 +3262,7 @@ class ClickHouseInstance:
         with_coredns,
         with_cassandra,
         with_ldap,
-        allow_analyzer,
+        use_old_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
         library_bridge_bin_path,
@@ -3356,7 +3356,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
-        self.allow_analyzer = allow_analyzer
+        self.use_old_analyzer = use_old_analyzer
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -4294,6 +4294,9 @@ class ClickHouseInstance:
         )
         return xml_str
 
+    def get_machine_name(self):
+        return platform.machine()
+
     @property
     def odbc_drivers(self):
         if self.odbc_ini_path:
@@ -4301,12 +4304,12 @@ class ClickHouseInstance:
                 "SQLite3": {
                     "DSN": "sqlite3_odbc",
                     "Database": "/tmp/sqliteodbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
                 },
                 "MySQL": {
                     "DSN": "mysql_odbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
                     "Pwd": odbc_mysql_pass,
@@ -4323,8 +4326,8 @@ class ClickHouseInstance:
                     "ReadOnly": "No",
                     "RowVersioning": "No",
                     "ShowSystemTables": "No",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/psqlodbca.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libodbcpsqlS.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/psqlodbca.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libodbcpsqlS.so",
                     "ConnSettings": "",
                 },
             }
@@ -4405,11 +4408,18 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-        if (
-            os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
-            and self.allow_analyzer
-        ):
-            write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
+
+        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        # If specific version was used there can be no
+        # allow_experimental_analyzer setting, so do this only if it was
+        # explicitly requested.
+        if self.tag:
+            use_old_analyzer = False
+        # Prefer specified in the test option:
+        if self.use_old_analyzer is not None:
+            use_old_analyzer = self.use_old_analyzer
+        if use_old_analyzer:
+            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)

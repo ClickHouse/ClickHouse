@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <queue>
@@ -125,16 +126,28 @@ int compareValues(const Values & lhs, const Values & rhs)
 class IndexAccess
 {
 public:
-    explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_) { }
+    explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_)
+    {
+        /// Indices might be reloaded during the process and the reload might produce a different value
+        /// (change in `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). Also, some suffix of index
+        /// columns might not be loaded (same setting) so we keep a reference to the current indices and
+        /// track the minimal subset of loaded columns across all parts.
+        indices.reserve(parts.size());
+        for (const auto & part : parts)
+            indices.push_back(part.data_part->getIndex());
+
+        for (const auto & index : indices)
+            loaded_columns = std::min(loaded_columns, index->size());
+    }
 
     Values getValue(size_t part_idx, size_t mark) const
     {
-        const auto & index = parts[part_idx].data_part->getIndex();
-        size_t size = index.size();
-        Values values(size);
-        for (size_t i = 0; i < size; ++i)
+        const auto & index = indices[part_idx];
+        chassert(index->size() >= loaded_columns);
+        Values values(loaded_columns);
+        for (size_t i = 0; i < loaded_columns; ++i)
         {
-            index[i]->get(mark, values[i]);
+            index->at(i)->get(mark, values[i]);
             if (values[i].isNull())
                 values[i] = POSITIVE_INFINITY;
         }
@@ -199,6 +212,8 @@ public:
     }
 private:
     const RangesInDataParts & parts;
+    std::vector<IMergeTreeDataPart::Index> indices;
+    size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 
 class RangesInDataPartsBuilder

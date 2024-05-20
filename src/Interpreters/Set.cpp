@@ -168,7 +168,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data.init(data.chooseMethod(key_columns, key_sizes));
+    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
 }
 
 void Set::fillSetElements()

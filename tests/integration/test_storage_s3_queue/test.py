@@ -108,7 +108,7 @@ def started_cluster():
             tag="23.12",
             stay_alive=True,
             with_installed_binary=True,
-            allow_analyzer=False,
+            use_old_analyzer=True,
         )
 
         logging.info("Starting cluster...")
@@ -783,6 +783,7 @@ def test_max_set_age(started_cluster):
             "s3queue_tracked_file_ttl_sec": max_age,
             "s3queue_cleanup_interval_min_ms": 0,
             "s3queue_cleanup_interval_max_ms": 0,
+            "s3queue_loading_retries": 0,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -828,6 +829,61 @@ def test_max_set_age(started_cluster):
     assert 10 == len(paths_count)
     for path_count in paths_count:
         assert 2 == path_count
+
+    failed_count = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+
+    values = [
+        ["failed", 1, 1],
+    ]
+    values_csv = (
+        "\n".join((",".join(map(str, row)) for row in values)) + "\n"
+    ).encode()
+    put_s3_file_content(started_cluster, f"{files_path}/fff.csv", values_csv)
+
+    for _ in range(30):
+        if failed_count + 1 == int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+            )
+        ):
+            break
+        time.sleep(1)
+
+    assert failed_count + 1 == int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert "Cannot parse input" in node.query(
+        "SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv'"
+    )
+    assert 1 == int(
+        node.query(
+            "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"
+        )
+    )
+
+    time.sleep(max_age + 1)
+
+    assert failed_count + 2 == int(
+        node.query("SELECT value FROM system.events WHERE name = 'S3QueueFailedFiles'")
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert "Cannot parse input" in node.query(
+        "SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv' ORDER BY processing_end_time DESC LIMIT 1"
+    )
+    assert 2 == int(
+        node.query(
+            "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"
+        )
+    )
 
 
 def test_max_set_size(started_cluster):
@@ -902,9 +958,9 @@ def test_drop_table(started_cluster):
     node.wait_for_log_line(f"Reading from file: test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
-        f"StorageS3Queue ({table_name}): Table is being dropped"
+        f"StorageS3Queue (default.{table_name}): Table is being dropped"
     ) or node.contains_in_log(
-        f"StorageS3Queue ({table_name}): Shutdown was called, stopping sync"
+        f"StorageS3Queue (default.{table_name}): Shutdown was called, stopping sync"
     )
 
 

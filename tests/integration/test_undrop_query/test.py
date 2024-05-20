@@ -1,5 +1,6 @@
 import pytest
 import uuid
+import logging
 import time
 
 from helpers.cluster import ClickHouseCluster
@@ -20,29 +21,28 @@ def started_cluster():
 
 
 def test_undrop_drop_and_undrop_loop(started_cluster):
-    # create, drop, undrop, drop, undrop table 5 times
-    for _ in range(5):
-        table_uuid = str(uuid.uuid1())
-        table = f"test_undrop_loop"
+    uuid_list = []
+
+    for i in range(4):
+        table_uuid = uuid.uuid1().__str__()
+        uuid_list.append(table_uuid)
+        logging.info(f"table_uuid: {table_uuid}")
+
         node.query(
-            f"CREATE TABLE {table} "
-            f"UUID '{table_uuid}' (id Int32) "
-            f"Engine=MergeTree() ORDER BY id"
+            f"CREATE TABLE test_undrop_{i} UUID '{table_uuid}' (id Int32) ENGINE = MergeTree() ORDER BY id;"
         )
 
-        node.query(f"DROP TABLE {table}")
-        node.query(f"UNDROP TABLE {table} UUID '{table_uuid}'")
+        node.query(f"DROP TABLE test_undrop_{i};")
 
-        node.query(f"DROP TABLE {table}")
-        # database_atomic_delay_before_drop_table_sec=3
-        time.sleep(6)
-
-        """
-        Expect two things:
-        1. Table is dropped - UNKNOWN_TABLE in error
-        2. Table in process of dropping - Return code: 60.
-            The drop task of table ... (uuid) is in progress,
-            has been dropped or the database engine doesn't support it
-        """
-        error = node.query_and_get_error(f"UNDROP TABLE {table} UUID '{table_uuid}'")
-        assert "UNKNOWN_TABLE" in error or "The drop task of table" in error
+    for i in range(4):
+        if (
+            i >= 3
+        ):  # First 3 tables are undropped after 0, 5 and 10 seconds. Fourth is undropped after 21 seconds
+            time.sleep(6)
+            error = node.query_and_get_error(
+                f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
+            )
+            assert "UNKNOWN_TABLE" in error
+        else:
+            node.query(f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';")
+            time.sleep(5)

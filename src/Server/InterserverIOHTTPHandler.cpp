@@ -8,8 +8,9 @@
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Common/setThreadName.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
