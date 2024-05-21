@@ -10,6 +10,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
+#include "Common/CurrentMetrics.h"
 #include <Common/escapeForFileName.h>
 
 #include <Common/logger_useful.h>
@@ -24,6 +25,8 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric AttachedTable;
+    extern const Metric AttachedView;
+    extern const Metric AttachedDictionary;
 }
 
 
@@ -184,7 +187,16 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
-    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
+    CurrentMetrics::Metric metric;
+    if (table->isView()) {
+        metric = CurrentMetrics::AttachedView;
+    } else if (table->isDictionary()) {
+        metric = CurrentMetrics::AttachedDictionary;
+    } else {
+        metric = CurrentMetrics::AttachedTable;
+    }
+    CurrentMetrics::add(metric, 1);
+    
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -200,7 +212,15 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
-        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
+        CurrentMetrics::Metric metric;
+        if (res->isView()) {
+            metric = CurrentMetrics::AttachedView;
+        } else if (res->isDictionary()) {
+            metric = CurrentMetrics::AttachedDictionary;
+        } else {
+            metric = CurrentMetrics::AttachedTable;
+        }
+        CurrentMetrics::sub(metric, 1);
     }
     return res;
 }
