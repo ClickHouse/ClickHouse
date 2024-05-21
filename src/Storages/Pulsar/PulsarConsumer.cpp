@@ -21,7 +21,7 @@ ReadBufferPtr PulsarConsumer::getNextMessage()
 
     {
         auto msg = next_message->getDataAsString();
-        LOG_TRACE(log, "Message recieved: {}", msg);
+        LOG_TRACE(log, "Message received: {}", msg);
     }
 
     ++next_message;
