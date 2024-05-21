@@ -255,12 +255,18 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, con
 }
 
 
-static CurrentMetrics::Metric get_attached_count_metric_for_storage(const StoragePtr & storage) {
-    if (storage->isView()) {
+static CurrentMetrics::Metric get_attached_count_metric_for_storage(const StoragePtr & storage)
+{
+    if (storage->isView())
+    {
         return CurrentMetrics::AttachedView;
-    } else if (storage->isDictionary()) {
+    }
+    else if (storage->isDictionary())
+    {
         return CurrentMetrics::AttachedDictionary;
-    } else {
+    }
+    else
+    {
         return CurrentMetrics::AttachedTable;
     }
 }
