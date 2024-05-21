@@ -1000,7 +1000,8 @@ If executed in the context of a distributed table, this function generates a nor
 
 ## blockNumber
 
-Returns the sequence number of the [data block](https://clickhouse.com/docs/en/integrations/python#data-blocks) where the row is located.
+Returns a monotonically increasing sequence number of the [block](../../development/architecture.md#block) containing the row.
+The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate
 
 **Syntax**
 
@@ -1017,26 +1018,43 @@ blockNumber()
 Query:
 
 ```sql
-SELECT groupUniqArray(blockNumber())
-FROM
-(
+SELECT blockNumber()
+FROM (
     SELECT *
-    FROM system.numbers_mt
-    LIMIT 100000
-)
+    FROM system.numbers
+    LIMIT 10
+) SETTINGS max_block_size = 2
 ```
 
 Result:
 
 ```response
-┌─groupUniqArray(blockNumber())─┐
-│ [6,7]                         │
-└───────────────────────────────┘
+┌─blockNumber()─┐
+│             7 │
+│             7 │
+└───────────────┘
+┌─blockNumber()─┐
+│             8 │
+│             8 │
+└───────────────┘
+┌─blockNumber()─┐
+│             9 │
+│             9 │
+└───────────────┘
+┌─blockNumber()─┐
+│            10 │
+│            10 │
+└───────────────┘
+┌─blockNumber()─┐
+│            11 │
+│            11 │
+└───────────────┘
 ```
 
 ## rowNumberInBlock {#rowNumberInBlock}
 
-Returns the ordinal number of the row in the [data block](https://clickhouse.com/docs/en/integrations/python#data-blocks). Different data blocks are always recalculated.
+Returns for each [block](../../development/architecture.md#block) processed by `rowNumberInBlock` the number of the current row.
+The returned number starts for each block at 0.
 
 **Syntax**
 
@@ -1053,23 +1071,42 @@ rowNumberInBlock()
 Query:
 
 ```sql
-SELECT
-    min(rowNumberInBlock()),
-    max(rowNumberInBlock())
-FROM (SELECT * FROM system.numbers_mt LIMIT 100000);
+SELECT rowNumberInBlock()
+FROM (
+    SELECT *
+    FROM system.numbers_mt
+    LIMIT 10
+) SETTINGS max_block_size = 2
 ```
 
 Result:
 
 ```response
-┌─min(rowNumberInBlock())─┬─max(rowNumberInBlock())─┐
-│                       0 │                   65408 │
-└─────────────────────────┴─────────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
+┌─rowNumberInBlock()─┐
+│                  0 │
+│                  1 │
+└────────────────────┘
 ```
 
 ## rowNumberInAllBlocks
 
-Returns the ordinal number of the row in the [data block](https://clickhouse.com/docs/en/integrations/python#data-blocks). This function only considers the affected data blocks.
+Returns a unique row number for each row processed by `rowNumberInAllBlocks`. The returned numbers start at 0.
 
 **Syntax**
 
@@ -1086,18 +1123,39 @@ rowNumberInAllBlocks()
 Query:
 
 ```sql
-SELECT
-    min(rowNumberInAllBlocks()),
-    max(rowNumberInAllBlocks())
-FROM (SELECT * FROM system.numbers_mt LIMIT 100000);
+SELECT rowNumberInAllBlocks()
+FROM
+(
+    SELECT *
+    FROM system.numbers_mt
+    LIMIT 10
+)
+SETTINGS max_block_size = 2
 ```
 
 Result:
 
 ```response
-┌─min(rowNumberInAllBlocks())─┬─max(rowNumberInAllBlocks())─┐
-│                           0 │                       99999 │
-└─────────────────────────────┴─────────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      0 │
+│                      1 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      4 │
+│                      5 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      2 │
+│                      3 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      6 │
+│                      7 │
+└────────────────────────┘
+┌─rowNumberInAllBlocks()─┐
+│                      8 │
+│                      9 │
+└────────────────────────┘
 ```
 
 
