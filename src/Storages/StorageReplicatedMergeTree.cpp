@@ -6027,6 +6027,7 @@ void StorageReplicatedMergeTree::alter(
     assertNotReadonly();
 
     auto table_id = getStorageID();
+    const auto & query_settings = query_context->getSettingsRef();
 
     if (commands.isSettingsAlter())
     {
@@ -6054,6 +6055,13 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
+    if (!query_settings.allow_suspicious_primary_key)
+    {
+        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+        commands.apply(future_metadata, query_context);
+
+        MergeTreeData::verifySortingKey(future_metadata.sorting_key);
+    }
 
     auto ast_to_str = [](ASTPtr query) -> String
     {
@@ -6186,7 +6194,7 @@ void StorageReplicatedMergeTree::alter(
 
         auto maybe_mutation_commands = commands.getMutationCommands(
             *current_metadata,
-            query_context->getSettingsRef().materialize_ttl_after_modify,
+            query_settings.materialize_ttl_after_modify,
             query_context);
 
         bool have_mutation = !maybe_mutation_commands.empty();
@@ -6309,7 +6317,7 @@ void StorageReplicatedMergeTree::alter(
     {
         LOG_DEBUG(log, "Metadata changes applied. Will wait for data changes.");
         merge_selecting_task->schedule();
-        waitMutation(*mutation_znode, query_context->getSettingsRef().alter_sync);
+        waitMutation(*mutation_znode, query_settings.alter_sync);
         LOG_DEBUG(log, "Data changes applied.");
     }
 }
