@@ -563,7 +563,7 @@ Default value: 5000
 
 ## max\_view\_num\_to\_warn {#max-view-num-to-warn}
 If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 5000
+Default value: 10000
 
 **Example**
 
@@ -573,7 +573,7 @@ Default value: 5000
 
 ## max\_dictionary\_num\_to\_warn {#max-dictionary-num-to-warn}
 If the number of attached dictionaries exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 5000
+Default value: 1000
 
 **Example**
 
