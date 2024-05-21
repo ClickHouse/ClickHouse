@@ -38,7 +38,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     size_t num_rows = std::min(chunk.getNumRows(), format_settings.pretty.max_rows);
 
     /// len(num_rows + total_rows) + len(". ")
-    row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
+    row_number_width = static_cast<size_t>(std::floor(std::log10(last_rows_offset ? chunk.getNumRows() : num_rows + total_rows))) + 3;
 
     size_t num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
@@ -50,6 +50,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     /// Calculate widths of all values.
     String serialized_value;
     size_t prefix = 2; // Tab character adjustment
+    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : 0;
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & elem = header.getByPosition(i);
@@ -59,10 +60,13 @@ void PrettyBlockOutputFormat::calculateWidths(
 
         for (size_t j = 0; j < num_rows; ++j)
         {
+            size_t row_num = j;
+            if (j >= num_rows_before_compression)
+                row_num = j + last_rows_offset - num_rows_before_compression;
             {
                 WriteBufferFromString out_serialize(serialized_value);
                 auto serialization = elem.type->getDefaultSerialization();
-                serialization->serializeText(*column, j, out_serialize, format_settings);
+                serialization->serializeText(*column, row_num, out_serialize, format_settings);
             }
 
             /// Avoid calculating width of too long strings by limiting the size in bytes.
@@ -284,9 +288,24 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
     writeString(middle_names_separator_s, out);
 
+    size_t num_rows_before_compression = last_rows_offset ? format_settings.pretty.max_rows - (chunk.getNumRows() - last_rows_offset) : 0;
+
     for (size_t i = 0; i < num_rows && total_rows + i < format_settings.pretty.max_rows; ++i)
     {
-        if (i != 0)
+        size_t row_num = i;
+        if (i >= num_rows_before_compression)
+        {
+            row_num = i + last_rows_offset - num_rows_before_compression;
+            if (i == num_rows_before_compression)
+            {
+                writeChar('\n', out);
+                if (format_settings.pretty.output_format_pretty_row_numbers)
+                    writeString(String(row_number_width, ' '), out);
+                writeString("⋮\n\n", out);
+            }
+        }
+
+        if (i != 0 && i != num_rows_before_compression)
         {
             if (format_settings.pretty.output_format_pretty_row_numbers)
             {
@@ -299,7 +318,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         if (format_settings.pretty.output_format_pretty_row_numbers)
         {
             // Write row number;
-            auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
+            auto row_num_string = std::to_string(row_num + 1 + total_rows) + ". ";
 
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
                 writeChar(' ', out);
@@ -317,7 +336,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             if (j != 0)
                 writeCString(grid_symbols.bar, out);
             const auto & type = *header.getByPosition(j).type;
-            writeValueWithPadding(*columns[j], *serializations[j], i,
+            writeValueWithPadding(*columns[j], *serializations[j], row_num,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
                 max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
@@ -482,6 +501,12 @@ void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
 {
     if (mono_chunk)
     {
+        if (mono_chunk.getNumRows() > format_settings.pretty.max_rows)
+        {
+            if (mono_chunk.getNumRows() > 10)
+                last_rows_offset = mono_chunk.getNumRows() - 10;
+            last_rows_offset = std::max(last_rows_offset, mono_chunk.getNumRows() - format_settings.pretty.max_rows / 2);
+        }
         writeChunk(mono_chunk, PortKind::Main);
         mono_chunk.clear();
     }
@@ -493,7 +518,10 @@ void PrettyBlockOutputFormat::writeSuffix()
 
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("  Showed first ", out);
+        if (last_rows_offset)
+            writeCString("  Showed ", out);
+        else
+            writeCString("  Showed first ", out);
         writeIntText(format_settings.pretty.max_rows, out);
         writeCString(".\n", out);
     }

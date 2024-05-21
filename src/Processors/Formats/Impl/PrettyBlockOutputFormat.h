@@ -60,6 +60,7 @@ protected:
 private:
     bool readable_number_tip = false;
     bool mono_block;
+    size_t last_rows_offset = 0;
     /// For mono_block == true only
     Chunk mono_chunk;
 };
