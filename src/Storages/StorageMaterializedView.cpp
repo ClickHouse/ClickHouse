@@ -91,12 +91,6 @@ StorageMaterializedView::StorageMaterializedView(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    auto * storage_def = query.storage;
-    if (storage_def && storage_def->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(storage_def->primary_key->ptr(),
-                                                                     storage_metadata.columns,
-                                                                     local_context->getGlobalContext());
-
     if (query.sql_security)
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
@@ -602,7 +596,7 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     if (hasInnerTable())
-        getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+        return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
 bool StorageMaterializedView::supportsBackupPartition() const

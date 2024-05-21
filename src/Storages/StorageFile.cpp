@@ -224,7 +224,7 @@ void checkCreationIsAllowed(
     {
         auto table_path_stat = fs::status(table_path);
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File must not be a directory");
     }
 }
 
@@ -1392,7 +1392,7 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            const auto max_parsing_threads = std::max<size_t>(settings.max_parsing_threads / file_num, 1UL);
+            const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
@@ -1741,7 +1741,7 @@ public:
 
     void initialize()
     {
-        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
+        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (use_table_fd)
         {
             naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
@@ -1968,22 +1968,22 @@ SinkToStoragePtr StorageFile::write(
                                 "Table '{}' is in readonly mode because of globs in filepath",
                                 getStorageID().getNameForLogs());
 
-            path = paths.front();
+            path = paths.back();
             fs::create_directories(fs::path(path).parent_path());
 
             std::error_code error_code;
             if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
                 && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
-                && fs::file_size(path, error_code) != 0 && !error_code)
+                && fs::file_size(paths.back(), error_code) != 0 && !error_code)
             {
                 if (context->getSettingsRef().engine_file_allow_create_multiple_files)
                 {
-                    auto pos = path.find_first_of('.', path.find_last_of('/'));
+                    auto pos = paths[0].find_first_of('.', paths[0].find_last_of('/'));
                     size_t index = paths.size();
                     String new_path;
                     do
                     {
-                        new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
+                        new_path = paths[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : paths[0].substr(pos));
                         ++index;
                     }
                     while (fs::exists(new_path));

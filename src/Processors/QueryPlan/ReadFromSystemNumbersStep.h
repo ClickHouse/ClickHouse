@@ -8,7 +8,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 
-
 namespace DB
 {
 
@@ -44,5 +43,4 @@ private:
     UInt64 limit;
     std::shared_ptr<const StorageLimitsList> storage_limits;
 };
-
 }

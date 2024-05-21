@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/data-types/nullable
-sidebar_position: 44
-sidebar_label: Nullable(T)
+sidebar_position: 55
+sidebar_label: Nullable
 ---
 
 # Nullable(T)

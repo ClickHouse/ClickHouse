@@ -5,9 +5,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-#include <istream>
-#include <ostream>
-
 
 namespace DB
 {
@@ -109,9 +106,8 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     if (istr.buffer().end() - istr.position() >= 10)
-        varint_impl::readVarUInt<false>(x, istr);
-    else
-        varint_impl::readVarUInt<true>(x, istr);
+        return varint_impl::readVarUInt<false>(x, istr);
+    return varint_impl::readVarUInt<true>(x, istr);
 }
 
 inline void readVarUInt(UInt64 & x, std::istream & istr)

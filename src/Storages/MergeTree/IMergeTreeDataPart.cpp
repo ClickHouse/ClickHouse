@@ -79,8 +79,8 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
     size_t minmax_idx_size = minmax_column_types.size();
 
     hyperrectangle.reserve(minmax_idx_size);
@@ -112,8 +112,8 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
 
     return store(minmax_column_names, minmax_column_types, part_storage, out_checksums);
 }
@@ -204,7 +204,7 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
     size_t minmax_idx_size = minmax_column_names.size();
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
@@ -326,7 +326,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
-    index = std::make_shared<Columns>();
     minmax_idx = std::make_shared<MinMaxIndex>();
 
     initializeIndexGranularityInfo();
@@ -340,7 +339,7 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
 }
 
 
-IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
+const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
     if (!index_loaded)
@@ -350,21 +349,15 @@ IMergeTreeDataPart::Index IMergeTreeDataPart::getIndex() const
 }
 
 
-void IMergeTreeDataPart::setIndex(Index index_)
+void IMergeTreeDataPart::setIndex(Columns index_)
 {
     std::scoped_lock lock(index_mutex);
-    if (!index->empty())
+    if (!index.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
-    index = index_;
+    index = std::move(index_);
     index_loaded = true;
 }
 
-void IMergeTreeDataPart::unloadIndex()
-{
-    std::scoped_lock lock(index_mutex);
-    index = std::make_shared<Columns>();
-    index_loaded = false;
-}
 
 void IMergeTreeDataPart::setName(const String & new_name)
 {
@@ -574,7 +567,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : *index)
+    for (const ColumnPtr & column : index)
         res += column->byteSize();
     return res;
 }
@@ -583,7 +576,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     std::scoped_lock lock(index_mutex);
     UInt64 res = 0;
-    for (const ColumnPtr & column : *index)
+    for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
     return res;
 }
@@ -812,8 +805,8 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
                         throw;
 
                     auto message = getCurrentExceptionMessage(true);
-                    LOG_WARNING(storage.log, "Cannot load projection {}, "
-                                "will consider it broken. Reason: {}", projection.name, message);
+                    LOG_ERROR(&Poco::Logger::get("IMergeTreeDataPart"),
+                              "Cannot load projection {}, will consider it broken. Reason: {}", projection.name, message);
 
                     has_broken_projection = true;
                     part->setBrokenReason(message, getCurrentExceptionCode());
@@ -849,6 +842,10 @@ void IMergeTreeDataPart::loadIndex() const
 {
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    /// It can be empty in case of mutations
+    if (!index_granularity.isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not loaded before index loading");
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
@@ -913,7 +910,7 @@ void IMergeTreeDataPart::loadIndex() const
         if (!index_file->eof())
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
-        index->assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+        index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 }
 
@@ -1216,7 +1213,7 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
         return;
 
     if (!parent_part)
-        MergeTreePartition::appendFiles(storage, files);
+        partition.appendFiles(storage, files);
 
     if (!parent_part)
         minmax_idx->appendFiles(storage, files);
@@ -1847,7 +1844,7 @@ try
 }
 catch (...)
 {
-    if (startsWith(new_relative_path, fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""))
+    if (startsWith(new_relative_path, "detached/"))
     {
         // Don't throw when the destination is to the detached folder. It might be able to
         // recover in some cases, such as fetching parts into multi-disks while some of the
@@ -1938,6 +1935,7 @@ void IMergeTreeDataPart::remove()
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
+    String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
         *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
@@ -1959,7 +1957,7 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
                                        DetachedPartInfo::DETACH_REASONS.end(),
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
-        return fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path;
+        return "detached/" + *path;
     return {};
 }
 
@@ -2063,7 +2061,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!isEmpty() && !parent_part)
             {
-                for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
+                for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                 {
                     if (!checksums.files.contains("minmax_" + escapeForFileName(col_name) + ".idx"))
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
@@ -2103,7 +2101,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!parent_part)
             {
-                for (const String & col_name : MergeTreeData::getMinMaxColumnsNames(partition_key))
+                for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                     check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");
             }
         }

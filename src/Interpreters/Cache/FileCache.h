@@ -18,7 +18,6 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 
@@ -47,14 +46,14 @@ struct FileCacheReserveStat
         }
     };
 
-    Stat total_stat;
+    Stat stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     void update(size_t size, FileSegmentKind kind, bool releasable);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
-        total_stat += other.total_stat;
+        stat += other.stat;
         for (const auto & [name, stat_] : other.stat_by_kind)
             stat_by_kind[name] += stat_;
         return *this;
@@ -79,8 +78,6 @@ public:
     ~FileCache();
 
     void initialize();
-
-    bool isInitialized() const;
 
     const String & getBasePath() const;
 
@@ -189,8 +186,6 @@ public:
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
-    void freeSpaceRatioKeepingThreadFunc();
-
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -199,11 +194,6 @@ private:
     const size_t boundary_alignment;
     size_t load_metadata_threads;
     const bool write_cache_per_user_directory;
-
-    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
-    const double keep_current_size_to_max_ratio;
-    const double keep_current_elements_to_max_ratio;
-    const size_t keep_up_free_space_remove_batch;
 
     LoggerPtr log;
 

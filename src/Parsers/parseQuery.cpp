@@ -92,7 +92,9 @@ void writeQueryWithHighlightedErrorPositions(
         }
         else
         {
-            ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
+            ssize_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+            if (bytes_to_hilite > end - current_position_to_hilite)
+                bytes_to_hilite = end - current_position_to_hilite;
 
             /// Bright on red background.
             out << "\033[41;1m";
@@ -224,32 +226,6 @@ std::string getUnmatchedParenthesesErrorMessage(
 }
 
 
-static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
-{
-    /// Either it is INSERT or EXPLAIN INSERT.
-    if (auto * explain = ast->as<ASTExplainQuery>())
-    {
-        if (auto explained_query = explain->getExplainedQuery())
-        {
-            return explained_query->as<ASTInsertQuery>();
-        }
-    }
-    else
-    {
-        return ast->as<ASTInsertQuery>();
-    }
-
-    return nullptr;
-}
-
-const char * getInsertData(const ASTPtr & ast)
-{
-    if (const ASTInsertQuery * insert = getInsertAST(ast))
-        return insert->data;
-    return nullptr;
-}
-
-
 ASTPtr tryParseQuery(
     IParser & parser,
     const char * & _out_query_end, /* also query begin as input parameter */
@@ -294,11 +270,29 @@ ASTPtr tryParseQuery(
     if (res && max_parser_depth)
         res->checkDepth(max_parser_depth);
 
-    /// If parsed query ends at data for insertion. Data for insertion could be
-    /// in any format and not necessary be lexical correct, so we can't perform
-    /// most of the checks.
-    if (res && getInsertData(res))
+    ASTInsertQuery * insert = nullptr;
+    if (parse_res)
+    {
+        if (auto * explain = res->as<ASTExplainQuery>())
+        {
+            if (auto explained_query = explain->getExplainedQuery())
+            {
+                insert = explained_query->as<ASTInsertQuery>();
+            }
+        }
+        else
+        {
+            insert = res->as<ASTInsertQuery>();
+        }
+    }
+
+    // If parsed query ends at data for insertion. Data for insertion could be
+    // in any format and not necessary be lexical correct, so we can't perform
+    // most of the checks.
+    if (insert && insert->data)
+    {
         return res;
+    }
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error
@@ -440,9 +434,11 @@ std::pair<const char *, bool> splitMultipartQuery(
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
-        if (ASTInsertQuery * insert = getInsertAST(ast))
+        auto * insert = ast->as<ASTInsertQuery>();
+
+        if (insert && insert->data)
         {
-            /// Data for INSERT is broken on the new line
+            /// Data for INSERT is broken on new line
             pos = insert->data;
             while (*pos && *pos != '\n')
                 ++pos;

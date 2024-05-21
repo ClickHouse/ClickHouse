@@ -27,8 +27,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include <boost/range/adaptor/map.hpp>
-
 #include "config.h"
 
 #if USE_MYSQL
@@ -988,7 +986,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
+    String path = getContext()->getPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -1043,11 +1041,10 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
-        fmt::format("{}.{}.{}.sql",
-            escapeForFileName(table_id.getDatabaseName()),
-            escapeForFileName(table_id.getTableName()),
-            toString(table_id.uuid));
+    return getContext()->getPath() + "metadata_dropped/" +
+           escapeForFileName(table_id.getDatabaseName()) + "." +
+           escapeForFileName(table_id.getTableName()) + "." +
+           toString(table_id.uuid) + ".sql";
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1438,7 +1435,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     if (!check_referential_dependencies && !check_loading_dependencies)
         return;
     std::lock_guard lock{databases_mutex};
-    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    return checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
@@ -1605,9 +1602,6 @@ void DatabaseCatalog::reloadDisksTask()
 
     for (auto & database : getDatabases())
     {
-        // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
-        // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
-        // TODO: We can split this task by table or by database to make loaded table operate as usual.
         auto it = database.second->getTablesIterator(getContext());
         while (it->isValid())
         {
@@ -1745,9 +1739,10 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
+    Names result;
     if (database)
-        return database->getAllTableNames(context);
-    return {};
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            result.emplace_back(table_it->name());
+    return result;
 }
-
 }

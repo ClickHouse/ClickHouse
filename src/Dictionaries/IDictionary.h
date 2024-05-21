@@ -37,7 +37,7 @@ using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHi
   *
   * Complex is for dictionaries that support any combination of key columns.
   */
-enum class DictionaryKeyType : uint8_t
+enum class DictionaryKeyType
 {
     Simple,
     Complex
@@ -46,7 +46,7 @@ enum class DictionaryKeyType : uint8_t
 /** DictionarySpecialKeyType provides IDictionary client information about
   * which special key type is supported by dictionary.
   */
-enum class DictionarySpecialKeyType : uint8_t
+enum class DictionarySpecialKeyType
 {
     None,
     Range

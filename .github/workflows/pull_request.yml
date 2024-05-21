@@ -6,6 +6,7 @@ env:
   PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
+  merge_group:
   pull_request:
     types:
       - synchronize
@@ -13,11 +14,6 @@ on:  # yamllint disable-line rule:truthy
       - opened
     branches:
       - master
-
-# Cancel the previous wf run in PRs.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   RunConfig:
@@ -34,6 +30,7 @@ jobs:
           fetch-depth: 0 # to get version
           filter: tree:0
       - name: Labels check
+        if: ${{ github.event_name != 'merge_group' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
@@ -61,6 +58,7 @@ jobs:
               echo 'EOF'
             } >> "$GITHUB_OUTPUT"
       - name: Re-create GH statuses for skipped jobs if any
+        if: ${{ github.event_name != 'merge_group' }}
         run: |
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --update-gh-statuses
   BuildDockers:
@@ -85,7 +83,7 @@ jobs:
         ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         RCSK
   FastTest:
-    needs: [RunConfig, BuildDockers, StyleCheck]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -99,7 +97,7 @@ jobs:
   # for main CI chain
   #
   Builds_1:
-    needs: [RunConfig, StyleCheck, FastTest]
+    needs: [RunConfig, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
     # using callable wf (reusable_stage.yml) allows to group all nested jobs under a tab
     uses: ./.github/workflows/reusable_build_stage.yml
@@ -160,7 +158,7 @@ jobs:
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_1_Report, Builds_2_Report, Tests_1, Tests_2]
+    needs: [Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
@@ -169,12 +167,7 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
-      # FIXME: merge on approval does not work with MQ. Could be fixed by using defaul GH's automerge after some corrections in Mergeable Check status
-      # - name: Auto merge if approved
-      #   if: ${{ github.event_name != 'merge_group' }}
-      #   run: |
-      #     cd "$GITHUB_WORKSPACE/tests/ci"
-      #     python3 merge_pr.py --check-approved
+          python3 merge_pr.py --check-approved
 
 
 #############################################################################################

@@ -138,12 +138,6 @@ inline bool isPrintableASCII(char c)
     return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
 }
 
-inline bool isCSIFinalByte(char c)
-{
-    uint8_t uc = c;
-    return uc >= 0x40 && uc <= 0x7E; /// ASCII @A–Z[\]^_`a–z{|}~
-}
-
 inline bool isPunctuationASCII(char c)
 {
     uint8_t uc = c;
@@ -151,6 +145,16 @@ inline bool isPunctuationASCII(char c)
         || (uc >= 58 && uc <= 64)
         || (uc >= 91 && uc <= 96)
         || (uc >= 123 && uc <= 125);
+}
+
+
+inline bool isValidIdentifier(std::string_view str)
+{
+    return !str.empty()
+        && isValidIdentifierBegin(str[0])
+        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
+        /// NULL is not a valid identifier in SQL, any case.
+        && !(str.size() == strlen("null") && 0 == strncasecmp(str.data(), "null", strlen("null")));
 }
 
 
@@ -318,17 +322,4 @@ inline void trim(std::string & str, char c = ' ')
 constexpr bool containsGlobs(const std::string & str)
 {
     return str.find_first_of("*?{") != std::string::npos;
-}
-
-inline bool isValidIdentifier(std::string_view str)
-{
-    return !str.empty()
-        && isValidIdentifierBegin(str[0])
-        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
-        /// NULL is not a valid identifier in SQL, any case.
-        && !(str.size() == strlen("null")
-            && toLowerIfAlphaASCII(str[0]) == 'n'
-            && toLowerIfAlphaASCII(str[1]) == 'u'
-            && toLowerIfAlphaASCII(str[2]) == 'l'
-            && toLowerIfAlphaASCII(str[3]) == 'l');
 }

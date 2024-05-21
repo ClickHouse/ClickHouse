@@ -66,13 +66,13 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (!open.ignore(pos, expected))
+    if (!open.ignore(pos))
         return false;
 
     if (!columns_p.parse(pos, columns, expected))
         return false;
 
-    if (!close.ignore(pos, expected))
+    if (!close.ignore(pos))
         return false;
 
     auto func = std::make_shared<ASTFunction>();
@@ -168,7 +168,7 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserNameList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserCompoundIdentifier>(true, true), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
@@ -205,16 +205,18 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
+    auto index = std::make_shared<ASTIndexDeclaration>();
+    index->name = name->as<ASTIdentifier &>().name();
+    index->set(index->expr, expr);
+    index->set(index->type, type);
 
     if (granularity)
         index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     else
     {
-        auto index_type = index->getType();
-        if (index_type->name == "annoy")
+        if (index->type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type->name == "usearch")
+        else if (index->type->name == "usearch")
             index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;

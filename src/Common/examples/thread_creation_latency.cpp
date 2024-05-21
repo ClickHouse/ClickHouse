@@ -49,7 +49,8 @@ void test(size_t n, const char * name, F && kernel)
         kernel();
 
         watch_one.stop();
-        max_seconds = std::max(watch_one.elapsedSeconds(), max_seconds);
+        if (watch_one.elapsedSeconds() > max_seconds)
+            max_seconds = watch_one.elapsedSeconds();
     }
 
     watch.stop();

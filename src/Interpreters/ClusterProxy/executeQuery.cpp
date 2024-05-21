@@ -245,15 +245,11 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             auto query_for_shard = query_info.query_tree->clone();
-            if (sharding_key_expr &&
-                query_info.optimized_cluster &&
-                settings.optimize_skip_unused_shards_rewrite_in &&
-                shards > 1 &&
-                /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+            if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
+                    sharding_key_expr->getSampleBlock().getByPosition(0).type,
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
@@ -286,15 +282,11 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             ASTPtr query_ast_for_shard = query_info.query->clone();
-            if (sharding_key_expr &&
-                query_info.optimized_cluster &&
-                settings.optimize_skip_unused_shards_rewrite_in &&
-                shards > 1 &&
-                /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+            if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
+                    sharding_key_expr->getSampleBlock().getByPosition(0).type,
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
@@ -372,9 +364,7 @@ void executeQuery(
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
-    const StorageID & storage_id,
-    const Block & header,
-    QueryProcessingStage::Enum processed_stage,
+    SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
@@ -463,10 +453,9 @@ void executeQueryWithParallelReplicas(
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
         new_cluster,
-        storage_id,
         std::move(coordinator),
-        header,
-        processed_stage,
+        stream_factory.header,
+        stream_factory.processed_stage,
         new_context,
         getThrottler(new_context),
         std::move(scalars),

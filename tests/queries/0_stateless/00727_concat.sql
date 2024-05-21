@@ -93,4 +93,4 @@ SELECT concat(materialize(NULL :: Nullable(UInt64)));
 
 SELECT CONCAT('Testing the ', 'alias');
 
-SELECT concat();  -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
+SELECT concat();  -- { serverError 42 }

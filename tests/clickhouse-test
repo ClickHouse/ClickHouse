@@ -69,8 +69,6 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
-TEST_MAX_RUN_TIME_IN_SECONDS = 120
-
 
 class SharedEngineReplacer:
     ENGINES_NON_REPLICATED_REGEXP = r"[ =]((Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|)MergeTree\(?\)?)"
@@ -453,7 +451,8 @@ def get_processlist_size(args):
                 """
                 SELECT
                     count()
-                FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
+                FROM
+                    FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
                 """,
             ).strip()
@@ -683,9 +682,7 @@ class FailureReason(enum.Enum):
     STDERR = "having stderror: "
     EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
-    TOO_LONG = (
-        f"Test runs too long (> {TEST_MAX_RUN_TIME_IN_SECONDS}s). Make it faster."
-    )
+    TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
@@ -734,9 +731,9 @@ def get_localzone():
 
 class SettingsRandomizer:
     settings = {
-        "max_insert_threads": lambda: (
-            0 if random.random() < 0.5 else random.randint(1, 16)
-        ),
+        "max_insert_threads": lambda: 0
+        if random.random() < 0.5
+        else random.randint(1, 16),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -751,7 +748,6 @@ class SettingsRandomizer:
         "max_read_buffer_size": lambda: random.randint(500000, 1048576),
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
-        "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
         "optimize_append_index": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
@@ -908,8 +904,6 @@ class MergeTreeSettingsRandomizer:
             1, 32 * 1024 * 1024
         ),
         "cache_populated_by_fetch": lambda: random.randint(0, 1),
-        "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
-        "old_parts_lifetime": threshold_generator(0.2, 0.3, 10, 8 * 60),
     }
 
     @staticmethod
@@ -1427,7 +1421,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
+            and total_time > 120
             and "long" not in self.tags
         ):
             if debug_log:
@@ -1471,14 +1465,11 @@ class TestCase:
             args.collect_per_test_coverage
             and BuildFlags.SANITIZE_COVERAGE in args.build_flags
         ):
-            try:
-                clickhouse_execute(
-                    args,
-                    f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
-                    retry_error_codes=True,
-                )
-            except Exception as e:
-                print("Cannot insert coverage data: ", str(e))
+            clickhouse_execute(
+                args,
+                f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
+                retry_error_codes=True,
+            )
 
             # Check for dumped coverage files
             file_pattern = "coverage.*"
@@ -1488,9 +1479,7 @@ class TestCase:
                     body = read_file_as_binary_string(file_path)
                     clickhouse_execute(
                         args,
-                        "INSERT INTO system.coverage_log "
-                        "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
-                        f"SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
                         body=body,
                         retry_error_codes=True,
                     )
@@ -1498,8 +1487,6 @@ class TestCase:
                     print("Cannot insert coverage data: ", str(e))
                 # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
                 os.remove(file_path)
-
-            _ = clickhouse_execute(args, "SYSTEM FLUSH ASYNC INSERT QUEUE")
 
             coverage = clickhouse_execute(
                 args,
@@ -1654,8 +1641,8 @@ class TestCase:
 
             client_options = self.add_random_settings(client_options)
 
-            if not is_valid_utf_8(self.case_file) or (
-                self.reference_file and not is_valid_utf_8(self.reference_file)
+            if not is_valid_utf_8(self.case_file) or not is_valid_utf_8(
+                self.reference_file
             ):
                 proc, stdout, stderr, debug_log, total_time = self.run_single_test(
                     server_logs_level, client_options
@@ -2582,7 +2569,7 @@ def reportLogStats(args):
             count() AS count,
             substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
             substr(any(message), 1, 256) as runtime_message,
-            any((extract(source_file, '/[a-zA-Z0-9_]+\\.[a-z]+'), source_line)) as line
+            any((extract(source_file, '\/[a-zA-Z0-9_]+\.[a-z]+'), source_line)) as line
         FROM system.text_log
         WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
         GROUP BY pattern
@@ -2951,7 +2938,7 @@ def parse_args():
 
     parser.add_argument("--extract_from_config", help="extract-from-config program")
     parser.add_argument(
-        "--configclient", help="Client config (if you do not use default ports)"
+        "--configclient", help="Client config (if you use not default ports)"
     )
     parser.add_argument(
         "--configserver",
@@ -2971,7 +2958,7 @@ def parse_args():
     parser.add_argument(
         "--global_time_limit",
         type=int,
-        help="Stop if executing more than specified time (after current test is finished)",
+        help="Stop if executing more than specified time (after current test finished)",
     )
     parser.add_argument("test", nargs="*", help="Optional test case name regex")
     parser.add_argument(
@@ -3185,8 +3172,6 @@ def parse_args():
         help="Do not run shard related tests",
     )
 
-    # TODO: Remove upgrade-check option after release 24.3 and use
-    #       ignore_drop_queries_probability option in stress.py as in stress tests
     group.add_argument(
         "--upgrade-check",
         action="store_true",
@@ -3376,7 +3361,6 @@ if __name__ == "__main__":
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
-        os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "

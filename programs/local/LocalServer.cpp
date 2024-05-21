@@ -3,7 +3,6 @@
 #include <sys/resource.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-#include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
@@ -36,6 +35,7 @@
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -48,6 +48,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
@@ -121,7 +122,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+        config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -210,7 +211,7 @@ void LocalServer::tryInitPath()
     else
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
-        // (or in the current dir if a temporary doesn't exist)
+        // (or in the current dir if temporary don't exist)
         LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
@@ -236,30 +237,39 @@ void LocalServer::tryInitPath()
         /// as we can't accurately distinguish those situations we don't touch any existent folders
         /// we just try to pick some free name for our working folder
 
-        default_path = parent_folder / fmt::format("clickhouse-local-{}", UUIDHelpers::generateV4());
+        default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
-        if (fs::exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to set up the working directory: {} already exists.", default_path.string());
+        if (exists(default_path))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} already exists.", default_path.string());
 
-        /// The directory can be created lazily during the runtime.
+        create_directory(default_path);
         temporary_directory_to_delete = default_path;
 
         path = default_path.string();
         LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    global_context->setPath(fs::path(path) / "");
+    if (path.back() != '/')
+        path += '/';
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
-    global_context->setFlagsPath(fs::path(path) / "flags" / "");
+    fs::create_directories(fs::path(path) / "user_defined/");
+    fs::create_directories(fs::path(path) / "data/");
+    fs::create_directories(fs::path(path) / "metadata/");
+    fs::create_directories(fs::path(path) / "metadata_dropped/");
 
-    global_context->setUserFilesPath(""); /// user's files are everywhere
+    global_context->setPath(path);
+
+    global_context->setTemporaryStoragePath(path + "tmp/", 0);
+    global_context->setFlagsPath(path + "flags");
+
+    global_context->setUserFilesPath(""); // user's files are everywhere
 
     std::string user_scripts_path = config().getString("user_scripts_path", fs::path(path) / "user_scripts/");
     global_context->setUserScriptsPath(user_scripts_path);
+    fs::create_directories(user_scripts_path);
 
     /// top_level_domains_lists
-    const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
+    const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
     if (!top_level_domains_path.empty())
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
 }
@@ -289,9 +299,10 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
-            LOG_DEBUG(&logger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
-            fs::remove_all(*temporary_directory_to_delete);
+            const auto dir = *temporary_directory_to_delete;
             temporary_directory_to_delete.reset();
+            LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
+            remove_all(dir);
         }
     }
     catch (...)
@@ -402,20 +413,8 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config(), "localhost");
-
-    ReadBuffer * in;
-    auto table_file = config().getString("table-file", "-");
-    if (table_file == "-" || table_file == "stdin")
-    {
-        in = &std_in;
-    }
-    else
-    {
-        input = std::make_unique<ReadBufferFromFile>(table_file);
-        in = input.get();
-    }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -470,9 +469,7 @@ try
     registerFormats();
 
     processConfig();
-
-    SCOPE_EXIT({ cleanup(); });
-
+    adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
@@ -522,12 +519,16 @@ try
 }
 catch (const DB::Exception & e)
 {
+    cleanup();
+
     bool need_print_stack_trace = config().getBool("stacktrace", false);
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
     return e.code() ? e.code() : -1;
 }
 catch (...)
 {
+    cleanup();
+
     std::cerr << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
 }
@@ -559,7 +560,6 @@ void LocalServer::processConfig()
     const std::string clickhouse_dialect{"clickhouse"};
     load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
         && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
-    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -676,7 +676,6 @@ void LocalServer::processConfig()
     /// NOTE: it is important to apply any overrides before
     /// setDefaultProfiles() calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
-    adjustSettings();
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 
@@ -693,7 +692,6 @@ void LocalServer::processConfig()
     if (config().has("path"))
     {
         String path = global_context->getPath();
-        fs::create_directories(fs::path(path));
 
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
@@ -763,12 +761,10 @@ void LocalServer::processConfig()
 }
 
 
-void LocalServer::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
 {
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
@@ -839,8 +835,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
-    if (options.count("wait_for_suggestions_to_load"))
-        config().setBool("wait_for_suggestions_to_load", true);
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
