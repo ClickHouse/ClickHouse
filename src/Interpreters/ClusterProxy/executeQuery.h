@@ -66,7 +66,6 @@ void executeQuery(
     AdditionalShardFilterGenerator shard_filter_generator,
     bool is_remote_function);
 
-/// move to cpp this one
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
