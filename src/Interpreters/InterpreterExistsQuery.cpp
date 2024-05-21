@@ -5,8 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>
@@ -83,12 +81,4 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         "result" }}));
 }
 
-void registerInterpreterExistsQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterExistsQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterExistsQuery", create_fn);
-}
 }

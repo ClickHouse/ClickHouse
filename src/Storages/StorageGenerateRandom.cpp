@@ -3,7 +3,6 @@
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
@@ -31,8 +30,11 @@
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
 #include <Interpreters/Context.h>
+#include <base/unaligned.h>
 
 #include <Functions/FunctionFactory.h>
+
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -350,7 +352,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt256::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt256), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt256), rng);
             return column;
         }
         case TypeIndex::UUID:
@@ -509,7 +511,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnIPv4::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv4), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv4), rng);
             return column;
         }
         case TypeIndex::IPv6:
@@ -637,7 +639,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -680,14 +682,7 @@ Pipe StorageGenerateRandom::read(
     pcg64 generate(random_seed);
 
     for (UInt64 i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context);
-
-        if (i == 0 && query_info.limit)
-            source->addTotalRowsApprox(query_info.limit);
-
-        pipes.emplace_back(std::move(source));
-    }
+        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context));
 
     return Pipe::unitePipes(std::move(pipes));
 }

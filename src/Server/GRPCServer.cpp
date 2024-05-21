@@ -1,7 +1,6 @@
 #include "GRPCServer.h"
 #include <limits>
 #include <memory>
-#include <Poco/Net/SocketAddress.h>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -14,7 +13,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -78,7 +76,7 @@ namespace
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static LoggerRawPtr logger = getRawLogger("grpc");
+            static Poco::Logger * logger = &Poco::Logger::get("grpc");
             gpr_set_log_function([](gpr_log_func_args* args)
             {
                 if (args->severity == GPR_LOG_SEVERITY_DEBUG)
@@ -163,7 +161,7 @@ namespace
                     case GRPCObsoleteTransportCompression::NO_COMPRESSION: res.algorithm = GRPC_COMPRESS_NONE; break;
                     case GRPCObsoleteTransportCompression::DEFLATE: res.algorithm = GRPC_COMPRESS_DEFLATE; break;
                     case GRPCObsoleteTransportCompression::GZIP: res.algorithm = GRPC_COMPRESS_GZIP; break;
-                    case GRPCObsoleteTransportCompression::STREAM_GZIP: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                    case GRPCObsoleteTransportCompression::STREAM_GZIP: res.algorithm = GRPC_COMPRESS_STREAM_GZIP; break;
                     default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression algorithm: {}", GRPCObsoleteTransportCompression::CompressionAlgorithm_Name(query_info.obsolete_result_compression().algorithm()));
                 }
 
@@ -208,7 +206,7 @@ namespace
             else if (str == "gzip")
                 algorithm = GRPC_COMPRESS_GZIP;
             else if (str == "stream_gzip")
-                throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                algorithm = GRPC_COMPRESS_STREAM_GZIP;
             else
                 throw Exception(error_code, "Unknown compression algorithm: '{}'", str);
         }
@@ -321,27 +319,8 @@ namespace
 
         Poco::Net::SocketAddress getClientAddress() const
         {
-            /// Returns a string like ipv4:127.0.0.1:55930 or ipv6:%5B::1%5D:55930
-            String uri_encoded_peer = grpc_context.peer();
-
-            constexpr const std::string_view ipv4_prefix = "ipv4:";
-            constexpr const std::string_view ipv6_prefix = "ipv6:";
-
-            bool ipv4 = uri_encoded_peer.starts_with(ipv4_prefix);
-            bool ipv6 = uri_encoded_peer.starts_with(ipv6_prefix);
-
-            if (!ipv4 && !ipv6)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ipv4 or ipv6 protocol in peer address, got {}", uri_encoded_peer);
-
-            auto prefix = ipv4 ? ipv4_prefix : ipv6_prefix;
-            auto family = ipv4 ? Poco::Net::AddressFamily::Family::IPv4 : Poco::Net::AddressFamily::Family::IPv6;
-
-            uri_encoded_peer= uri_encoded_peer.substr(prefix.length());
-
-            String peer;
-            Poco::URI::decode(uri_encoded_peer, peer);
-
-            return Poco::Net::SocketAddress{family, peer};
+            String peer = grpc_context.peer();
+            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
         }
 
         std::optional<String> getClientHeader(const String & key) const
@@ -440,11 +419,7 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
-            {
                 callback(false);
-                return;
-            }
-
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -511,11 +486,7 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
-            {
                 callback(false);
-                return;
-            }
-
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -642,7 +613,7 @@ namespace
     class Call
     {
     public:
-        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
+        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_);
         ~Call();
 
         void start(const std::function<void(void)> & on_finish_call_callback);
@@ -684,7 +655,7 @@ namespace
         const CallType call_type;
         std::unique_ptr<BaseResponder> responder;
         IServer & iserver;
-        LoggerRawPtr log = nullptr;
+        Poco::Logger * log = nullptr;
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
@@ -745,7 +716,7 @@ namespace
         ThreadFromGlobalPool call_thread;
     };
 
-    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
+    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
     }
@@ -904,7 +875,7 @@ namespace
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
         ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
         /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();
@@ -976,7 +947,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context).second;
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()
@@ -1367,7 +1338,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
             }
         }
@@ -1870,7 +1841,7 @@ private:
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
     : iserver(iserver_)
     , address_to_listen(address_to_listen_)
-    , log(getRawLogger("GRPCServer"))
+    , log(&Poco::Logger::get("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
 {}
 

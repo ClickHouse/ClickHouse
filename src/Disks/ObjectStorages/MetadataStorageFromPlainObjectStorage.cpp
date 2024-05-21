@@ -1,48 +1,43 @@
 #include "MetadataStorageFromPlainObjectStorage.h"
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
-
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <IO/WriteHelpers.h>
 
-#include <filesystem>
-#include <tuple>
 
 namespace DB
 {
 
-namespace
-{
-
-std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
-{
-    return path / "";
-}
-
-}
-
-MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
+MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
+    ObjectStoragePtr object_storage_,
+    const std::string & object_storage_root_path_)
     : object_storage(object_storage_)
-    , storage_path_prefix(std::move(storage_path_prefix_))
+    , object_storage_root_path(object_storage_root_path_)
 {
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
 {
-    return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this, object_storage);
+    return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this);
 }
 
 const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
 {
-    return storage_path_prefix;
+    return object_storage_root_path;
+}
+std::filesystem::path MetadataStorageFromPlainObjectStorage::getAbsolutePath(const std::string & path) const
+{
+    return fs::path(object_storage_root_path) / path;
 }
 
 bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) const
 {
     /// NOTE: exists() cannot be used here since it works only for existing
     /// key, and does not work for some intermediate path.
-    auto object_key = object_storage->generateObjectKeyForPath(path);
-    return object_storage->existsOrHasAnyChild(object_key.serialize());
+    std::string abs_path = getAbsolutePath(path);
+    return object_storage->existsOrHasAnyChild(abs_path);
 }
 
 bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
@@ -53,16 +48,19 @@ bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) con
 
 bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path) const
 {
-    auto key_prefix = object_storage->generateObjectKeyForPath(path).serialize();
-    auto directory = std::filesystem::path(std::move(key_prefix)) / "";
+    std::string directory = getAbsolutePath(path);
+    if (!directory.ends_with('/'))
+        directory += '/';
 
-    return object_storage->existsOrHasAnyChild(directory);
+    RelativePathsWithMetadata files;
+    object_storage->listObjects(directory, files, 1);
+    return !files.empty();
 }
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
-    auto object_key = object_storage->generateObjectKeyForPath(path);
-    auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
+    RelativePathsWithMetadata children;
+    auto metadata = object_storage->tryGetObjectMetadata(getAbsolutePath(path));
     if (metadata)
         return metadata->size_bytes;
     return 0;
@@ -70,52 +68,47 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
-    auto key_prefix = object_storage->generateObjectKeyForPath(path).serialize();
-
     RelativePathsWithMetadata files;
-    std::string abs_key = key_prefix;
-    if (!abs_key.ends_with('/'))
-        abs_key += '/';
+    std::string abs_path = getAbsolutePath(path);
+    if (!abs_path.ends_with('/'))
+        abs_path += '/';
 
-    object_storage->listObjects(abs_key, files, 0);
+    object_storage->listObjects(abs_path, files, 0);
 
-    return getDirectChildrenOnDisk(abs_key, files, path);
+    std::vector<std::string> result;
+    for (const auto & path_size : files)
+    {
+        result.push_back(path_size.relative_path);
+    }
+
+    std::unordered_set<std::string> duplicates_filter;
+    for (auto & row : result)
+    {
+        chassert(row.starts_with(abs_path));
+        row.erase(0, abs_path.size());
+        auto slash_pos = row.find_first_of('/');
+        if (slash_pos != std::string::npos)
+            row.erase(slash_pos, row.size() - slash_pos);
+        duplicates_filter.insert(row);
+    }
+
+    return std::vector<std::string>(duplicates_filter.begin(), duplicates_filter.end());
 }
 
 DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(const std::string & path) const
 {
     /// Required for MergeTree
     auto paths = listDirectory(path);
-    // Prepend path, since iterateDirectory() includes path, unlike listDirectory()
-    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
     std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
     return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
 }
 
 StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std::string & path) const
 {
-    size_t object_size = getFileSize(path);
-    auto object_key = object_storage->generateObjectKeyForPath(path);
-    return {StoredObject(object_key.serialize(), path, object_size)};
-}
-
-std::vector<std::string> MetadataStorageFromPlainObjectStorage::getDirectChildrenOnDisk(
-    const std::string & storage_key, const RelativePathsWithMetadata & remote_paths, const std::string & /* local_path */) const
-{
-    std::unordered_set<std::string> duplicates_filter;
-    for (const auto & elem : remote_paths)
-    {
-        const auto & path = elem.relative_path;
-        chassert(path.find(storage_key) == 0);
-        const auto child_pos = storage_key.size();
-        /// string::npos is ok.
-        const auto slash_pos = path.find('/', child_pos);
-        if (slash_pos == std::string::npos)
-            duplicates_filter.emplace(path.substr(child_pos));
-        else
-            duplicates_filter.emplace(path.substr(child_pos, slash_pos - child_pos));
-    }
-    return std::vector<std::string>(std::make_move_iterator(duplicates_filter.begin()), std::make_move_iterator(duplicates_filter.end()));
+    std::string blob_name = object_storage->generateBlobNameForPath(path);
+    size_t object_size = getFileSize(blob_name);
+    auto object = StoredObject(getAbsolutePath(blob_name), object_size, path);
+    return {std::move(object)};
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
@@ -125,53 +118,20 @@ const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getSt
 
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
-    auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path);
-    auto object = StoredObject(object_key.serialize());
+    auto object = StoredObject(metadata_storage.getAbsolutePath(path));
     metadata_storage.object_storage->removeObject(object);
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
+void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string &)
 {
-    if (metadata_storage.object_storage->isWriteOnce())
-    {
-        for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-            metadata_storage.object_storage->removeObject(StoredObject(it->path()));
-    }
-    else
-    {
-        addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
-            normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage));
-    }
+    /// Noop. It is an Object Storage not a filesystem.
 }
-
-void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
+void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string &)
 {
-    if (metadata_storage.object_storage->isWriteOnce())
-        return;
-
-    auto normalized_path = normalizeDirectoryPath(path);
-    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(normalized_path).serialize();
-    auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
-        std::move(normalized_path), std::move(key_prefix), *metadata_storage.getPathMap(), object_storage);
-    addOperation(std::move(op));
+    /// Noop. It is an Object Storage not a filesystem.
 }
-
-void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
-{
-    return createDirectory(path);
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
-{
-    if (metadata_storage.object_storage->isWriteOnce())
-        throwNotImplemented();
-
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
-        normalizeDirectoryPath(path_from), normalizeDirectoryPath(path_to), *metadata_storage.getPathMap(), object_storage));
-}
-
 void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
-    const std::string &, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */)
+    const std::string &, const std::string & /* blob_name */, uint64_t /* size_in_bytes */)
 {
     /// Noop, local metadata files is only one file, it is the metadata file itself.
 }
@@ -182,8 +142,4 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
     return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::commit()
-{
-    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
-}
 }

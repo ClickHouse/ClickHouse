@@ -1,6 +1,5 @@
 #pragma once
 
-#include <bit>
 #include <cstring>
 #include <algorithm>
 #include <type_traits>

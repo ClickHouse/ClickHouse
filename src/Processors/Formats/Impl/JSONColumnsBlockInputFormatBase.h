@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -17,7 +16,7 @@ class ReadBuffer;
 class JSONColumnsReaderBase
 {
 public:
-    explicit JSONColumnsReaderBase(ReadBuffer & in_);
+    JSONColumnsReaderBase(ReadBuffer & in_);
 
     virtual ~JSONColumnsReaderBase() = default;
 
@@ -57,7 +56,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
-    Chunk read() override;
+    Chunk generate() override;
 
     size_t readColumn(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name);
 
@@ -81,11 +80,10 @@ class JSONColumnsSchemaReaderBase : public ISchemaReader
 public:
     JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(const ContextPtr & ctx) override;
+    void setContext(ContextPtr & ctx) override;
 
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
     {

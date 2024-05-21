@@ -1,7 +1,6 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/StorageDistributed.h>
@@ -104,12 +103,12 @@ private:
                     /// Already processed.
                 }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function name {}", concrete->name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected function name {}", concrete->name);
             }
             else if (table_join)
                 table_join->locality = JoinLocality::Global;
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST node");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected AST node");
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {

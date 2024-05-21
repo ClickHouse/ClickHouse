@@ -3,7 +3,7 @@ import time
 import os
 
 import pytest
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
@@ -14,10 +14,6 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(
     SCRIPT_DIR, "./_instances/node/configs/config.d/storage_conf.xml"
 )
-
-
-if is_arm():
-    pytestmark = pytest.mark.skip
 
 
 def create_table(cluster, table_name, additional_settings=None):

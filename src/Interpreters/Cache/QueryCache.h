@@ -3,7 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
@@ -16,9 +16,6 @@ namespace DB
 
 /// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
-
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -44,10 +41,8 @@ public:
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
 
-
-        /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
-        IAST::Hash ast_hash;
+        const ASTPtr ast;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
@@ -161,7 +156,6 @@ public:
         Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<Entry>();
         std::atomic<bool> skip_insert = false;
         bool was_finalized = false;
-        LoggerPtr logger = getLogger("QueryCache");
 
         Writer(Cache & cache_, const Key & key_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
@@ -188,7 +182,6 @@ public:
         std::unique_ptr<SourceFromChunks> source_from_chunks;
         std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
         std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
-        LoggerPtr logger = getLogger("QueryCache");
         friend class QueryCache; /// for createReader()
     };
 

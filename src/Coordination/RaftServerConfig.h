@@ -4,8 +4,6 @@
 #include <fmt/core.h>
 #include <libnuraft/srv_config.hxx>
 
-#include <optional>
-
 namespace DB
 {
 // default- and copy-constructible version of nuraft::srv_config

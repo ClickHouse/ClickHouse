@@ -20,11 +20,11 @@ public:
         const RabbitMQConfiguration & configuration_,
         const Names & routing_keys_,
         const String & exchange_name_,
-        AMQP::ExchangeType exchange_type_,
-        size_t channel_id_base_,
-        bool persistent_,
+        const AMQP::ExchangeType exchange_type_,
+        const size_t channel_id_base_,
+        const bool persistent_,
         std::atomic<bool> & shutdown_called_,
-        LoggerPtr log_);
+        Poco::Logger * log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 

@@ -1837,8 +1837,7 @@ def _insert_merge_execute(
             SETTINGS storage_policy='{policy}'
         """.format(
                 name=name, policy=policy
-            ),
-            settings={"allow_suspicious_ttl_expressions": 1},
+            )
         )
 
         for i in range(parts):

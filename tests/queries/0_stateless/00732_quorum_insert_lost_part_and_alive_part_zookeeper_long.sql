@@ -11,6 +11,7 @@ CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/t
 
 SET insert_quorum=2, insert_quorum_parallel=0;
 SET select_sequential_consistency=1;
+SET insert_keeper_fault_injection_probability=0;
 
 INSERT INTO quorum1 VALUES (1, '2018-11-15');
 INSERT INTO quorum1 VALUES (2, '2018-11-15');

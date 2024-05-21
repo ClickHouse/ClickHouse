@@ -66,7 +66,7 @@ uint8_t CompressionCodecFPC::getMethodByte() const
 
 void CompressionCodecFPC::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 CompressionCodecFPC::CompressionCodecFPC(UInt8 float_size, UInt8 compression_level)
@@ -483,19 +483,19 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
         default:
             break;
     }
-    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with FPC codec. File has incorrect float width");
+    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress. File has incorrect float width");
 }
 
 void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < HEADER_SIZE)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
 
     auto compressed_data = std::as_bytes(std::span(source, source_size));
     auto compressed_float_width = std::to_integer<UInt8>(compressed_data[0]);
     auto compressed_level = std::to_integer<UInt8>(compressed_data[1]);
     if (compressed_level == 0 || compressed_level > MAX_COMPRESSION_LEVEL)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has incorrect level");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect level");
 
     auto destination = std::as_writable_bytes(std::span(dest, uncompressed_size));
     auto src = compressed_data.subspan(HEADER_SIZE);
@@ -508,7 +508,7 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
             FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         default:
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has incorrect float width");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect float width");
     }
 }
 

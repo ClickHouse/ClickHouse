@@ -1,4 +1,3 @@
-SET allow_deprecated_functions = 1;
 -- no arguments
 select neighbor(); -- { serverError 42 }
 -- single argument

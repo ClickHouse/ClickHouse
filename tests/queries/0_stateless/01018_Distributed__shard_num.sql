@@ -4,7 +4,7 @@
 SET max_threads = 1;
 
 -- data should be inserted into Distributed table synchronously
-SET distributed_foreground_insert = 1;
+SET insert_distributed_sync = 1;
 
 DROP TABLE IF EXISTS mem1;
 DROP TABLE IF EXISTS mem2;
