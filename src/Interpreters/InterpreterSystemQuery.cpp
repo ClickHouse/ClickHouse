@@ -970,10 +970,9 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
-
-	auto check_before_drop = getContext()->getSettingsRef().check_before_drop;
-	if (check_before_drop)
-	{
+        auto check_before_drop = getContext()->getSettingsRef().check_before_drop;
+        if (check_before_drop)
+        {
             for (auto & elem : databases)
             {
                 DatabasePtr & database = elem.second;
@@ -982,12 +981,12 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                     if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first, iterator->name()))
                     {
                         LOG_INFO(log, "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
-			throw Exception(ErrorCodes::REPLICA_WAS_NOT_DROPPED,
+                        throw Exception(ErrorCodes::REPLICA_WAS_NOT_DROPPED,
                                         "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
                     }
                 }
-	    }
-	}
+            }
+        }
 
         for (auto & elem : databases)
         {
@@ -1122,7 +1121,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                     throw Exception(ErrorCodes::REPLICA_WAS_NOT_DROPPED,
                                     "Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
                 }
-	    }
+            }
         }
 
         for (auto & elem : databases)
