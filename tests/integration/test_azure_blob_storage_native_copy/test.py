@@ -110,6 +110,11 @@ def cluster():
             main_configs=[path],
             with_azurite=True,
         )
+        cluster.add_instance(
+            "node3",
+            main_configs=[path],
+            with_azurite=True,
+        )
         cluster.start()
 
         yield cluster
@@ -182,7 +187,6 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
     azure_query(node1, f"DROP TABLE test_simple_merge_tree_restored")
 
 
-
 def test_backup_restore_on_merge_tree_different_container(cluster):
     node2 = cluster.instances["node2"]
     azure_query(
@@ -217,3 +221,36 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
 
     azure_query(node2, f"DROP TABLE test_simple_merge_tree_different_bucket")
     azure_query(node2, f"DROP TABLE test_simple_merge_tree_different_bucket_restored")
+
+
+def test_backup_restore_on_merge_tree_native_copy_async(cluster):
+    node3 = cluster.instances["node3"]
+    azure_query(
+        node3,
+        f"CREATE TABLE test_simple_merge_tree_async(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
+    )
+    azure_query(node3, f"INSERT INTO test_simple_merge_tree_async VALUES (1, 'a')")
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_async_backup')"
+    print("BACKUP DEST", backup_destination)
+    azure_query(
+        node3,
+        f"BACKUP TABLE test_simple_merge_tree_async TO {backup_destination}",
+        settings={"azure_max_single_part_copy_size": 0}
+    )
+
+    assert node3.contains_in_log("using native copy")
+
+    azure_query(
+        node3,
+        f"RESTORE TABLE test_simple_merge_tree_async AS test_simple_merge_tree_async_restored FROM {backup_destination};",
+        settings={"azure_max_single_part_copy_size": 0}
+    )
+    assert (
+        azure_query(node3, f"SELECT * from test_simple_merge_tree_async_restored") == "1\ta\n"
+    )
+
+    assert node3.contains_in_log("using native copy")
+
+    azure_query(node3, f"DROP TABLE test_simple_merge_tree_async")
+    azure_query(node3, f"DROP TABLE test_simple_merge_tree_async_restored")
