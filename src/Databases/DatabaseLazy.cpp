@@ -10,7 +10,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
-#include "Common/CurrentMetrics.h"
+#include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 
 #include <Common/logger_useful.h>
