@@ -281,7 +281,10 @@ def test_backup_restore_on_merge_tree(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'",
+        f"""
+        DROP TABLE IF EXISTS test_simple_merge_tree;
+        CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'
+        """,
     )
     azure_query(node, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
@@ -306,6 +309,7 @@ def test_backup_restore_correct_block_ids(cluster):
     azure_query(
         node,
         f"""
+        DROP TABLE IF EXISTS test_simple_merge_tree;
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
