@@ -1224,7 +1224,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
             if (has_column)
             {
-                auto column_from_table = columns.get(command.column_name);
+                const auto & column_from_table = columns.get(command.column_name);
                 if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;
@@ -1566,7 +1566,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
-                auto column_in_table = all_columns.get(column_name);
+                const auto & column_in_table = all_columns.get(column_name);
                 /// Column doesn't have a default, nothing to check
                 if (!column_in_table.default_desc.expression)
                     continue;

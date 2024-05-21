@@ -251,7 +251,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t max_part_count_for_partition = 0;
 
         size_t number_of_databases = 0;
-        for (auto [db_name, _] : databases)
+        for (const auto & [db_name, _] : databases)
             if (db_name != DatabaseCatalog::TEMPORARY_DATABASE)
                 ++number_of_databases; /// filter out the internal database for temporary tables, system table "system.databases" behaves the same way
 

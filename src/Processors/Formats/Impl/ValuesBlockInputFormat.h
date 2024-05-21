@@ -49,7 +49,7 @@ private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
 
-    enum class ParserType
+    enum class ParserType : uint8_t
     {
         Streaming,
         BatchTemplate,
