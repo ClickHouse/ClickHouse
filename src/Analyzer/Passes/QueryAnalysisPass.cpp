@@ -637,6 +637,10 @@ struct ScopeAliases
         const std::string * key = &getKey(lookup.identifier, find_option);
 
         auto it = alias_map.find(*key);
+
+        if (it == alias_map.end() && lookup.lookup_context == IdentifierLookupContext::TABLE_EXPRESSION)
+            return {};
+
         while (it == alias_map.end())
         {
             auto jt = transitive_aliases.find(*key);
@@ -4191,7 +4195,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
              * In the example, identifier `id` should be resolved into one from USING (id) column.
              */
 
-            auto alias_it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME);
+            auto * alias_it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME);
             //auto alias_it = scope.alias_name_to_expression_node->find(identifier_lookup.identifier.getFullName());
             if (alias_it && (*alias_it)->getNodeType() == QueryTreeNodeType::COLUMN)
             {
