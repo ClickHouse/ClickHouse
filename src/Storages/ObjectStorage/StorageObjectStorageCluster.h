@@ -1,10 +1,7 @@
 #pragma once
-
-// #include <Interpreters/Cluster.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-// #include <TableFunctions/TableFunctionObjectStorageCluster.h>
 
 namespace DB
 {
