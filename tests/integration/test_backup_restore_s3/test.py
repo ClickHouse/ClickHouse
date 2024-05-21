@@ -134,6 +134,7 @@ def setup_minio_users():
     )
     node.start_clickhouse()
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
