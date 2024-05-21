@@ -99,6 +99,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int REPLICA_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -969,6 +970,25 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
+
+	auto check_before_drop = getContext()->getSettingsRef().check_before_drop;
+	if (check_before_drop)
+	{
+            for (auto & elem : databases)
+            {
+                DatabasePtr & database = elem.second;
+                for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+                {
+                    if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first, iterator->name()))
+                    {
+                        LOG_INFO(log, "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
+			throw Exception(ErrorCodes::REPLICA_WAS_NOT_DROPPED,
+                                        "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
+                    }
+                }
+	    }
+	}
+
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
@@ -1087,6 +1107,23 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         auto databases = DatabaseCatalog::instance().getDatabases();
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
+
+        auto check_before_drop = getContext()->getSettingsRef().check_before_drop;
+        if (check_before_drop)
+        {
+            for (auto & elem : databases)
+            {
+                DatabasePtr & database = elem.second;
+                auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get());
+                if (!replicated)
+                    continue;
+                if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
+                {
+                    throw Exception(ErrorCodes::REPLICA_WAS_NOT_DROPPED,
+                                    "Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
+                }
+	    }
+        }
 
         for (auto & elem : databases)
         {
