@@ -242,6 +242,13 @@ SinkToStoragePtr StorageObjectStorage::write(
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
+    if (configuration->isArchive())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Path '{}' contains archive. Write into archive is not supported",
+                        configuration->getPath());
+    }
+
     if (configuration->withGlobsIgnorePartitionWildcard())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
@@ -289,6 +296,13 @@ void StorageObjectStorage::truncate(
     ContextPtr /* context */,
     TableExclusiveLockHolder & /* table_holder */)
 {
+    if (configuration->isArchive())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Path '{}' contains archive. Table cannot be truncated",
+                        configuration->getPath());
+    }
+
     if (configuration->withGlobs())
     {
         throw Exception(
