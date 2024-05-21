@@ -34,14 +34,14 @@ def check_stat_file_on_disk(node, table, part_name, column_name, exist):
         [
             "bash",
             "-c",
-            "find {p} -type f -name statistic_{col}.stat".format(
+            "find {p} -type f -name statistics_{col}.stats".format(
                 p=part_path, col=column_name
             ),
         ],
         privileged=True,
     )
     logging.debug(
-        f"Checking stat file in {part_path} for column {column_name}, got {output}"
+        f"Checking stats file in {part_path} for column {column_name}, got {output}"
     )
     if exist:
         assert len(output) != 0
