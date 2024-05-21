@@ -56,17 +56,17 @@ DB::TLSHandler::TLSHandler(
         std::string disabled_protocols_list = config.getString(prefix + SSLManager::CFG_DISABLE_PROTOCOLS, "");
         Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
         disabled_protocols = 0;
-        for (Poco::StringTokenizer::Iterator it = dp_tok.begin(); it != dp_tok.end(); ++it)
+        for (const auto & token : dp_tok)
         {
-            if (*it == "sslv2")
+            if (token == "sslv2")
                 disabled_protocols |= Context::PROTO_SSLV2;
-            else if (*it == "sslv3")
+            else if (token == "sslv3")
                 disabled_protocols |= Context::PROTO_SSLV3;
-            else if (*it == "tlsv1")
+            else if (token == "tlsv1")
                 disabled_protocols |= Context::PROTO_TLSV1;
-            else if (*it == "tlsv1_1")
+            else if (token == "tlsv1_1")
                 disabled_protocols |= Context::PROTO_TLSV1_1;
-            else if (*it == "tlsv1_2")
+            else if (token == "tlsv1_2")
                 disabled_protocols |= Context::PROTO_TLSV1_2;
         }
 
