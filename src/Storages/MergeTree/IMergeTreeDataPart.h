@@ -79,7 +79,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = std::shared_ptr<Columns>;
+    using Index = std::shared_ptr<const Columns>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -182,6 +182,8 @@ public:
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
+
+    void loadRowsCountFileForUnexpectedPart();
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -368,7 +370,8 @@ public:
     int32_t metadata_version;
 
     Index getIndex() const;
-    void setIndex(Index index_);
+    void setIndex(const Columns & cols_);
+    void setIndex(Columns && cols_);
     void unloadIndex();
 
     /// For data in RAM ('index')
@@ -442,7 +445,15 @@ public:
     bool hasBrokenProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
-    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
+    void loadProjections(
+        bool require_columns_checksums,
+        bool check_consistency,
+        bool & has_broken_projection,
+        bool if_not_loaded = false,
+        bool only_metadata = false);
+
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    void loadChecksums(bool require);
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -667,9 +678,6 @@ private:
     void loadColumns(bool require);
 
     static void appendFilesOfColumns(Strings & files);
-
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
-    void loadChecksums(bool require);
 
     static void appendFilesOfChecksums(Strings & files);
 
