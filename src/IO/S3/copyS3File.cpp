@@ -739,16 +739,20 @@ namespace
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
                     outcome.GetError().GetExceptionName() == "InvalidRequest" ||
                     outcome.GetError().GetExceptionName() == "InvalidArgument" ||
+                    outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     (outcome.GetError().GetExceptionName() == "InternalError" &&
                         outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT &&
                         outcome.GetError().GetMessage().contains("use the Rewrite method in the JSON API")))
                 {
-                    if (!supports_multipart_copy)
+                    if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
-                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: {}",
-                                dest_bucket,
-                                dest_key,
-                                size);
+                        LOG_INFO(
+                            log,
+                            "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: "
+                            "{}",
+                            dest_bucket,
+                            dest_key,
+                            size);
                         fallback_method();
                         break;
                     }
