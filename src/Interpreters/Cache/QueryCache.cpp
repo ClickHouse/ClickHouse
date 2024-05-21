@@ -143,7 +143,7 @@ String queryStringFromAST(ASTPtr ast)
 
 QueryCache::Key::Key(
     ASTPtr ast_,
-    String current_database,
+    const String & current_database,
     Block header_,
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
@@ -160,7 +160,7 @@ QueryCache::Key::Key(
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, String current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+QueryCache::Key::Key(ASTPtr ast_, const String & current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
     : QueryCache::Key(ast_, current_database, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
 {
 }
