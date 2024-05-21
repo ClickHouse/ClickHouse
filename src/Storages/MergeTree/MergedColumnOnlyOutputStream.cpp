@@ -38,6 +38,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         header.getNamesAndTypesList(),
+        data_part->getColumnPositions(),
         metadata_snapshot_,
         data_part->storage.getVirtualsPtr(),
         indices_to_recalc,

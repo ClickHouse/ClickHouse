@@ -69,6 +69,7 @@ protected:
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
+using ColumnPositions = std::unordered_map<std::string, size_t>;
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,
@@ -79,6 +80,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
+        const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,

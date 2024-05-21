@@ -44,8 +44,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     if (data_part->isStoredOnDisk())
         data_part_storage->createDirectories();
 
-//    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-//    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
     data_part->version.setCreationTID(tid, nullptr);
@@ -55,7 +53,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
             data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
             data_part_storage, data_part->index_granularity_info,
             storage_settings,
-            columns_list, metadata_snapshot, data_part->storage.getVirtualsPtr(),
+            columns_list, data_part->getColumnPositions(), metadata_snapshot, data_part->storage.getVirtualsPtr(),
             skip_indices, statistics, data_part->getMarksFileExtension(), default_codec, writer_settings, computed_index_granularity);
 }
 
@@ -243,9 +241,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
         if (new_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (auto file = new_part->partition.store(//storage,
+            if (auto file = new_part->partition.store(
                 new_part->storage.getInMemoryMetadataPtr(), new_part->storage.getContext(),
-             new_part->getDataPartStorage(), checksums))
+                new_part->getDataPartStorage(), checksums))
                 written_files.emplace_back(std::move(file));
 
             if (new_part->minmax_idx->initialized)
