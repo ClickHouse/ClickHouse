@@ -210,6 +210,7 @@ public:
                 vec1[i] = shrink(std::get<1>(res), 1);
             }
             tuple_columns[0] = std::move(col0);
+            tuple_columns[1] = std::move(col1);
             return ColumnTuple::create(tuple_columns);
         }
 
