@@ -222,11 +222,6 @@ std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for LocalObjectStorage");
 }
 
-void LocalObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
-{
-}
-
 ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     constexpr size_t key_name_total_size = 32;

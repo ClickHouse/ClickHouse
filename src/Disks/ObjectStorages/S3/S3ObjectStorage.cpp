@@ -572,7 +572,8 @@ void S3ObjectStorage::startup()
 void S3ObjectStorage::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    ContextPtr context)
+    ContextPtr context,
+    const ApplyNewSettingsOptions & options)
 {
     auto new_s3_settings = getSettings(config, config_prefix, context);
     if (!static_headers.empty())
@@ -586,7 +587,7 @@ void S3ObjectStorage::applyNewSettings(
         new_s3_settings->auth_settings.updateFrom(endpoint_settings->auth_settings);
 
     auto current_s3_settings = s3_settings.get();
-    if (current_s3_settings->auth_settings.hasUpdates(new_s3_settings->auth_settings) || for_disk_s3)
+    if (options.allow_client_change && (current_s3_settings->auth_settings.hasUpdates(new_s3_settings->auth_settings) || for_disk_s3))
     {
         auto new_client = getClient(config, config_prefix, context, *new_s3_settings, for_disk_s3, &uri);
         client.set(std::move(new_client));

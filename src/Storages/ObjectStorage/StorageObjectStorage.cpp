@@ -87,9 +87,8 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
 
 void StorageObjectStorage::updateConfiguration(ContextPtr context)
 {
-    /// FIXME: we should be able to update everything apart from client if static_configuration == true.
-    if (!configuration->isStaticConfiguration())
-        object_storage->applyNewSettings(context->getConfigRef(), configuration->getTypeName() + ".", context);
+    IObjectStorage::ApplyNewSettingsOptions options{ .allow_client_change = !configuration->isStaticConfiguration() };
+    object_storage->applyNewSettings(context->getConfigRef(), configuration->getTypeName() + ".", context, options);
 }
 
 namespace

@@ -199,10 +199,15 @@ public:
     virtual void startup() = 0;
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
+    struct ApplyNewSettingsOptions
+    {
+        bool allow_client_change = true;
+    };
     virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration &,
+        const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /*config_prefix*/,
-        ContextPtr) {}
+        ContextPtr /* context */,
+        const ApplyNewSettingsOptions & /* options */) {}
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.

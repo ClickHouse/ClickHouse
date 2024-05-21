@@ -143,7 +143,8 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
 
     String getObjectsNamespace() const override { return object_namespace ; }
 

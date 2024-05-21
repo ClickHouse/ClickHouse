@@ -192,9 +192,10 @@ void CachedObjectStorage::shutdown()
 }
 
 void CachedObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+    ContextPtr context, const ApplyNewSettingsOptions & options)
 {
-    object_storage->applyNewSettings(config, config_prefix, context);
+    object_storage->applyNewSettings(config, config_prefix, context, options);
 }
 
 String CachedObjectStorage::getObjectsNamespace() const
