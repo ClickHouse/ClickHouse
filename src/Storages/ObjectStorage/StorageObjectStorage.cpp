@@ -141,14 +141,28 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
         createIterator(nullptr);
+
         Pipes pipes;
         auto context = getContext();
+        const size_t max_threads = context->getSettingsRef().max_threads;
+        size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
+
+        if (estimated_keys_count > 1)
+            num_streams = std::min(num_streams, estimated_keys_count);
+        else
+        {
+            /// The amount of keys (zero) was probably underestimated.
+            /// We will keep one stream for this particular case.
+            num_streams = 1;
+        }
+
+        const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
 
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
                 getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, need_only_count);
+                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
 
             source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));
@@ -175,7 +189,7 @@ private:
     const String name;
     const bool need_only_count;
     const size_t max_block_size;
-    const size_t num_streams;
+    size_t num_streams;
     const bool distributed_processing;
 
     void createIterator(const ActionsDAG::Node * predicate)

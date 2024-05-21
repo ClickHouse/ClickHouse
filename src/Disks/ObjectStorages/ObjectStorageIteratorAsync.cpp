@@ -93,7 +93,6 @@ std::future<IObjectStorageIteratorAsync::BatchAndHasNext> IObjectStorageIterator
     }, Priority{});
 }
 
-
 bool IObjectStorageIteratorAsync::isValid()
 {
     if (!is_initialized)

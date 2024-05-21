@@ -48,6 +48,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
+    size_t max_parsing_threads_,
     bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
@@ -57,6 +58,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -277,8 +279,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     else
     {
         CompressionMethod compression_method;
-        const auto max_parsing_threads = need_only_count ? std::optional<size_t>(1) : std::nullopt;
-
         if (auto object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
@@ -292,9 +292,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         auto input_format = FormatFactory::instance().getInput(
-            configuration->format, *read_buf, read_from_format_info.format_header,
-            getContext(), max_block_size, format_settings, max_parsing_threads,
-            std::nullopt, /* is_remote_fs */ true, compression_method);
+            configuration->format,
+            *read_buf,
+            read_from_format_info.format_header,
+            getContext(),
+            max_block_size,
+            format_settings,
+            need_only_count ? 1 : max_parsing_threads,
+            std::nullopt,
+            true/* is_remote_fs */,
+            compression_method,
+            need_only_count);
 
         if (key_condition)
             input_format->setKeyCondition(key_condition);
@@ -438,6 +446,19 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                         "Using glob iterator with path without globs is not allowed (used path: {})",
                         configuration->getPath());
     }
+}
+
+size_t StorageObjectStorageSource::GlobIterator::estimatedKeysCount()
+{
+    if (object_infos.empty() && !is_finished && object_storage_iterator->isValid())
+    {
+        /// 1000 files were listed, and we cannot make any estimation of _how many more_ there are (because we list bucket lazily);
+        /// If there are more objects in the bucket, limiting the number of streams is the last thing we may want to do
+        /// as it would lead to serious slow down of the execution, since objects are going
+        /// to be fetched sequentially rather than in-parallel with up to <max_threads> times.
+        return std::numeric_limits<size_t>::max();
+    }
+    return object_infos.size();
 }
 
 StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t processor)

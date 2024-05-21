@@ -37,6 +37,7 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
+        size_t max_parsing_threads_,
         bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
@@ -64,6 +65,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
+    const size_t max_parsing_threads;
     const ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -165,12 +167,13 @@ public:
 
     ~GlobIterator() override = default;
 
-    size_t estimatedKeysCount() override { return object_infos.size(); }
+    size_t estimatedKeysCount() override;
 
 private:
     ObjectInfoPtr nextImpl(size_t processor) override;
     ObjectInfoPtr nextImplUnlocked(size_t processor);
     void createFilterAST(const String & any_key);
+    void fillBufferForKey(const std::string & uri_key);
 
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
@@ -184,6 +187,8 @@ private:
     ActionsDAGPtr filter_dag;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
+    std::vector<String> expanded_keys;
+    std::vector<String>::iterator expanded_keys_iter;
 
     std::unique_ptr<re2::RE2> matcher;
 

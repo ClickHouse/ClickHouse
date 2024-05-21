@@ -359,6 +359,7 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         local_context,
         max_block_size,
         file_iterator,
+        local_context->getSettingsRef().max_download_threads,
         false);
 
     auto file_deleter = [=, this](const std::string & path) mutable
