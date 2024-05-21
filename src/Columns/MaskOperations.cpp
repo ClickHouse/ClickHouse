@@ -77,7 +77,7 @@ INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
-template <bool inverted, bool column_is_short, typename Container>
+template <bool inverted, typename Container>
 static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
@@ -85,42 +85,27 @@ static size_t extractMaskNumericImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    if constexpr (!column_is_short)
-    {
-        if (data.size() != mask.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
-    }
+    if (data.size() != mask.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
 
     size_t ones_count = 0;
-    size_t data_index = 0;
-
     size_t mask_size = mask.size();
-    size_t data_size = data.size();
 
-    for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask_size; ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
             continue;
 
         UInt8 value;
-        size_t index;
-        if constexpr (column_is_short)
-        {
-            index = data_index;
-            ++data_index;
-        }
-        else
-            index = i;
-
-        if (null_bytemap && (*null_bytemap)[index])
+        if (null_bytemap && (*null_bytemap)[i])
         {
             value = null_value;
             if (nulls)
                 (*nulls)[i] = 1;
         }
         else
-            value = static_cast<bool>(data[index]);
+            value = static_cast<bool>(data[i]);
 
         if constexpr (inverted)
             value = !value;
@@ -129,12 +114,6 @@ static size_t extractMaskNumericImpl(
             ++ones_count;
 
         mask[i] = value;
-    }
-
-    if constexpr (column_is_short)
-    {
-        if (data_index != data_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
     }
 
     return ones_count;
@@ -155,10 +134,7 @@ static bool extractMaskNumeric(
 
     const auto & data = numeric_column->getData();
     size_t ones_count;
-    if (column->size() < mask.size())
-        ones_count = extractMaskNumericImpl<inverted, true>(mask, data, null_value, null_bytemap, nulls);
-    else
-        ones_count = extractMaskNumericImpl<inverted, false>(mask, data, null_value, null_bytemap, nulls);
+    ones_count = extractMaskNumericImpl<inverted>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
