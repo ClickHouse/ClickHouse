@@ -27,6 +27,7 @@ limitations under the License. */
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include "Processors/Transforms/NumberBlocksTransform.h"
 #include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
@@ -330,7 +331,7 @@ Pipe StorageLiveView::watch(
     return reader;
 }
 
-void StorageLiveView::writeBlock(const Block & header, Chunk & chunk, ContextPtr local_context)
+void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr local_context)
 {
     auto output = std::make_shared<LiveViewSink>(*this);
 
@@ -363,7 +364,7 @@ void StorageLiveView::writeBlock(const Block & header, Chunk & chunk, ContextPtr
     if (!is_block_processed)
     {
         Pipes pipes;
-        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(header, chunk.clone()));
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block));
 
         auto creator = [&](const StorageID & blocks_id_global)
         {
@@ -406,6 +407,21 @@ void StorageLiveView::writeBlock(const Block & header, Chunk & chunk, ContextPtr
                 QueryProcessingStage::WithMergeableState);
             builder = interpreter.buildQueryPipeline();
         }
+
+        builder.addSimpleTransform([&](const Block & cur_header)
+        {
+            return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), cur_header);
+        });
+
+        String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
+        });
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+        });
 
         builder.addSimpleTransform([&](const Block & cur_header)
         {

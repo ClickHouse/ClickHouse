@@ -620,8 +620,8 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     if (!disable_deduplication_for_children)
     {
         String materialize_view_id = view.table_id.hasUUID() ? toString(view.table_id.uuid) : view.table_id.getFullNameNotQuoted();
-        pipeline.addTransform(std::make_shared<DeduplicationToken::SetMaterializeViewIDTransform>(std::move(materialize_view_id), pipeline.getHeader()));
-        pipeline.addTransform(std::make_shared<DeduplicationToken::SetMaterializeViewBlockNumberTransform>(pipeline.getHeader()));
+        pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewIDTransform>(std::move(materialize_view_id), pipeline.getHeader()));
+        pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(pipeline.getHeader()));
     }
     else
     {
@@ -766,7 +766,7 @@ PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveVi
 void PushingToLiveViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    live_view.writeBlock(getHeader(), chunk, context);
+    live_view.writeBlock(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), std::move(chunk.getChunkInfos()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
@@ -790,7 +790,7 @@ void PushingToWindowViewSink::consume(Chunk & chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
-        window_view, getHeader(), chunk, context);
+        window_view, getHeader().cloneWithColumns(chunk.detachColumns()), std::move(chunk.getChunkInfos()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);

@@ -23,7 +23,7 @@ namespace DeduplicationToken
 
 String DB::DeduplicationToken::TokenInfo::getToken(bool enable_assert) const
 {
-    chassert(stage == MATERIALIZE_VIEW_ID || !enable_assert);
+    chassert(stage == VIEW_ID || !enable_assert);
 
     String result;
     result.reserve(getTotalSize());
@@ -38,7 +38,7 @@ void DB::DeduplicationToken::TokenInfo::setInitialToken(String part)
 {
     chassert(stage == INITIAL);
     addTokenPart(std::move(part));
-    stage = MATERIALIZE_VIEW_ID;
+    stage = VIEW_ID;
 }
 
 void TokenInfo::setUserToken(const String & token)
@@ -52,21 +52,21 @@ void TokenInfo::setSourceBlockNumber(size_t sbn)
 {
     chassert(stage == SOURCE_BLOCK_NUMBER);
     addTokenPart(fmt::format(":source-number-{}", sbn));
-    stage = MATERIALIZE_VIEW_ID;
+    stage = VIEW_ID;
 }
 
-void TokenInfo::setMaterializeViewID(const String & id)
+void TokenInfo::setViewID(const String & id)
 {
-    chassert(stage == MATERIALIZE_VIEW_ID);
-    addTokenPart(fmt::format(":mv-{}", id));
-    stage = MATERIALIZE_VIEW_BLOCK_NUMBER;
+    chassert(stage == VIEW_ID);
+    addTokenPart(fmt::format(":view-id-{}", id));
+    stage = VIEW_BLOCK_NUMBER;
 }
 
-void TokenInfo::setMaterializeViewBlockNumber(size_t mvbn)
+void TokenInfo::setViewBlockNumber(size_t mvbn)
 {
-    chassert(stage == MATERIALIZE_VIEW_BLOCK_NUMBER);
-    addTokenPart(fmt::format(":mv-bn-{}", mvbn));
-    stage = MATERIALIZE_VIEW_ID;
+    chassert(stage == VIEW_BLOCK_NUMBER);
+    addTokenPart(fmt::format(":view-block-{}", mvbn));
+    stage = VIEW_ID;
 }
 
 void TokenInfo::reset()
@@ -116,8 +116,7 @@ void SetInitialTokenTransform::transform(Chunk & chunk)
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in SetInitialTokenTransform");
 
-    chassert(token_info);
-    if (!token_info || token_info->tokenInitialized())
+    if (token_info->tokenInitialized())
         return;
 
     SipHash hash;
@@ -131,39 +130,52 @@ void SetInitialTokenTransform::transform(Chunk & chunk)
 void SetUserTokenTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    chassert(token_info);
-    chassert(!token_info->tokenInitialized());
+    if (!token_info)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in SetUserTokenTransform");
     token_info->setUserToken(user_token);
 }
 
 void SetSourceBlockNumberTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    chassert(token_info);
-    chassert(!token_info->tokenInitialized());
+    if (!token_info)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in SetSourceBlockNumberTransform");
     token_info->setSourceBlockNumber(block_number++);
 }
 
-void SetMaterializeViewIDTransform::transform(Chunk & chunk)
+void SetViewIDTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    chassert(token_info);
-    chassert(token_info->tokenInitialized());
-    token_info->setMaterializeViewID(mv_id);
+    if (!token_info)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in SetViewIDTransform");
+    token_info->setViewID(view_id);
 }
 
-void SetMaterializeViewBlockNumberTransform::transform(Chunk & chunk)
+void SetViewBlockNumberTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    chassert(token_info);
-    chassert(token_info->tokenInitialized());
-    token_info->setMaterializeViewBlockNumber(block_number++);
+    if (!token_info)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in SetViewBlockNumberTransform");
+    token_info->setViewBlockNumber(block_number++);
 }
 
 void ResetTokenTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    chassert(token_info);
+    if (!token_info)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "TokenInfo is expected for consumed chunk in ResetTokenTransform");
+
+    LOG_DEBUG(getLogger("ResetTokenTransform"), "token_info was {}", token_info->getToken(false));
     token_info->reset();
 }
 

@@ -13,14 +13,21 @@ namespace DB
     public:
         RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, const Block & header_)
                 : ISimpleTransform(header_, header_, true)
-                , chunk_infos(chunk_infos_)
+                , chunk_infos(std::move(chunk_infos_))
         {
+            LOG_TRACE(getLogger("RestoreChunkInfosTransform"), "create RestoreChunkInfosTransform to append {}:{}",
+                chunk_infos.size(), chunk_infos.debug());
         }
 
         String getName() const override { return "RestoreChunkInfosTransform"; }
 
         void transform(Chunk & chunk) override
         {
+            LOG_TRACE(getLogger("RestoreChunkInfosTransform"), "chunk infos before: {}:{}, append: {}:{}, chunk has rows {}",
+                chunk.getChunkInfos().size(), chunk.getChunkInfos().debug(),
+                chunk_infos.size(), chunk_infos.debug(),
+                chunk.getNumRows());
+
             chunk.getChunkInfos().append(chunk_infos.clone());
         }
 
@@ -45,8 +52,8 @@ namespace DeduplicationToken
         void setInitialToken(String part);
         void setUserToken(const String & token);
         void setSourceBlockNumber(size_t sbn);
-        void setMaterializeViewID(const String & id);
-        void setMaterializeViewBlockNumber(size_t mvbn);
+        void setViewID(const String & id);
+        void setViewBlockNumber(size_t mvbn);
         void reset();
 
     private:
@@ -57,8 +64,8 @@ namespace DeduplicationToken
         {
             INITIAL,
             SOURCE_BLOCK_NUMBER,
-            MATERIALIZE_VIEW_ID,
-            MATERIALIZE_VIEW_BLOCK_NUMBER,
+            VIEW_ID,
+            VIEW_BLOCK_NUMBER,
         };
 
         BuildingStage stage = INITIAL;
@@ -71,7 +78,7 @@ namespace DeduplicationToken
     public:
         CheckTokenTransform(String debug_, bool must_be_present_, const Block & header_)
             : ISimpleTransform(header_, header_, true)
-            , debug(debug_)
+            , debug(std::move(debug_))
             , must_be_present(must_be_present_)
         {
         }
@@ -165,38 +172,38 @@ namespace DeduplicationToken
     };
 
 
-    class SetMaterializeViewIDTransform : public ISimpleTransform
+    class SetViewIDTransform : public ISimpleTransform
     {
     public:
-        SetMaterializeViewIDTransform(String mv_id_, const Block & header_)
+        SetViewIDTransform(String view_id_, const Block & header_)
             : ISimpleTransform(header_, header_, true)
-            , mv_id(std::move(mv_id_))
+            , view_id(std::move(view_id_))
         {
         }
 
-        String getName() const override { return "DeduplicationToken::SetMaterializeViewIDTransform"; }
+        String getName() const override { return "DeduplicationToken::SetViewIDTransform"; }
 
         void transform(Chunk & chunk) override;
 
     private:
-        String mv_id;
+        String view_id;
     };
 
 
-    class SetMaterializeViewBlockNumberTransform : public ISimpleTransform
+    class SetViewBlockNumberTransform : public ISimpleTransform
     {
     public:
-        explicit SetMaterializeViewBlockNumberTransform(const Block & header_)
+        explicit SetViewBlockNumberTransform(const Block & header_)
             : ISimpleTransform(header_, header_, true)
         {
         }
 
-        String getName() const override { return "DeduplicationToken::SetMaterializeViewBlockNumberTransform"; }
+        String getName() const override { return "DeduplicationToken::SetViewBlockNumberTransform"; }
 
         void transform(Chunk & chunk) override;
 
     private:
-        size_t block_number;
+        size_t block_number = 0;
     };
 
 }

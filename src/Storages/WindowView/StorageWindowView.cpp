@@ -1416,25 +1416,27 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
 }
 
 void StorageWindowView::writeIntoWindowView(
-    StorageWindowView & window_view, const Block & header, Chunk & chunk, ContextPtr local_context)
+    StorageWindowView & window_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr local_context)
 {
+    LOG_TRACE(getLogger("StorageWindowView"), "writeIntoWindowView: rows {}, infos {} with {}, window column {}",
+            block.rows(),
+            chunk_infos.size(), chunk_infos.debug(),
+            window_view.timestamp_column_name);
+
     window_view.throwIfWindowViewIsDisabled(local_context);
     while (window_view.modifying_query)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    if (!window_view.is_proctime && window_view.max_watermark == 0 && chunk.getNumRows() > 0)
+    if (!window_view.is_proctime && window_view.max_watermark == 0 && block.rows() > 0)
     {
         std::lock_guard lock(window_view.fire_signal_mutex);
-        const auto & window_column = header.getByName(window_view.timestamp_column_name);
+        const auto & window_column = block.getByName(window_view.timestamp_column_name);
         const ColumnUInt32::Container & window_end_data = static_cast<const ColumnUInt32 &>(*window_column.column).getData();
         UInt32 first_record_timestamp = window_end_data[0];
         window_view.max_watermark = window_view.getWindowUpperBound(first_record_timestamp);
     }
 
-    auto chunk_infos = chunk.getChunkInfos();
-    chunk.setChunkInfos({});
-
-    Pipe pipe(std::make_shared<SourceFromSingleChunk>(header.cloneEmpty(), std::move(chunk)));
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(block));
 
     UInt32 lateness_bound = 0;
     UInt32 t_max_watermark = 0;
@@ -1464,6 +1466,9 @@ void StorageWindowView::writeIntoWindowView(
     {
         lateness_bound = t_max_fired_watermark;
     }
+
+    LOG_TRACE(getLogger("StorageWindowView"), "writeIntoWindowView: lateness_bound {}, window_view.is_proctime {}",
+            lateness_bound, window_view.is_proctime);
 
     if (lateness_bound > 0) /// Add filter, which leaves rows with timestamp >= lateness_bound
     {
@@ -1540,13 +1545,25 @@ void StorageWindowView::writeIntoWindowView(
 
     builder.addSimpleTransform([&](const Block & stream_header)
     {
-        return std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), stream_header);
+        // Can't move chunk_infos here, that function could be called several times
+        return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
+    });
+
+    String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
+    });
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
     });
 
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squasing", true, stream_header);
     });
+
 
     builder.addSimpleTransform([&](const Block & current_header)
     {
@@ -1561,7 +1578,7 @@ void StorageWindowView::writeIntoWindowView(
         UInt32 block_max_timestamp = 0;
         if (window_view.is_watermark_bounded || window_view.allowed_lateness)
         {
-            const auto & timestamp_column = *header.getByName(window_view.timestamp_column_name).column;
+            const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
             const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
             for (const auto & timestamp : timestamp_data)
                 block_max_timestamp = std::max(timestamp, block_max_timestamp);
@@ -1569,6 +1586,9 @@ void StorageWindowView::writeIntoWindowView(
 
         if (block_max_timestamp)
             window_view.updateMaxTimestamp(block_max_timestamp);
+
+        LOG_TRACE(getLogger("StorageWindowView"), "writeIntoWindowView: block_max_timestamp {}",
+            block_max_timestamp);
     }
 
     UInt32 lateness_upper_bound = 0;
