@@ -46,6 +46,7 @@ public:
         const ClusterPtr & cluster_,
         bool insert_sync_,
         UInt64 insert_timeout_,
+        StorageID main_table_,
         const Names & columns_to_send_);
 
     String getName() const override { return "DistributedSink"; }
@@ -107,6 +108,7 @@ private:
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
+    StorageID main_table;
     NameSet columns_to_send;
     Stopwatch watch;
     Stopwatch watch_current_block;

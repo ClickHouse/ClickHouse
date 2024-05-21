@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>

@@ -112,17 +112,19 @@ DistributedSink::DistributedSink(
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
+    StorageID main_table_,
     const Names & columns_to_send_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
+    , query_ast(createInsertToRemoteTableQuery(main_table_.database_name, main_table_.table_name, columns_to_send_))
     , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
+    , main_table(main_table_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
     , log(getLogger("DistributedSink"))
 {
@@ -370,9 +372,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
-                    /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
-                    auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+                    auto results = shard_info.pool->getManyChecked(timeouts, settings, PoolMode::GET_ONE, main_table.getQualifiedName());
+                    if (results.empty() || results.front().entry.isNull())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}", toString(job.shard_index));
+
                     job.connection_entry = std::move(results.front().entry);
                 }
                 else
@@ -613,7 +616,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(cluster, key_column);
+    return storage.createSelector(cluster, key_column);
 }
 
 

@@ -72,7 +72,8 @@ StorageHDFSCluster::StorageHDFSCluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageHDFSCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const DB::StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
@@ -88,9 +89,16 @@ void StorageHDFSCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const DB:
 
 RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(uri, predicate, getVirtualsList(), context);
+    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(uri, predicate, virtual_columns, context);
     auto callback = std::make_shared<std::function<String()>>([iter = std::move(iterator)]() mutable -> String { return iter->next().path; });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
+}
+
+NamesAndTypesList StorageHDFSCluster::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 }

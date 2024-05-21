@@ -69,6 +69,9 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
+
     bool supportsPartitionBy() const override { return true; }
 
     /// Check if the format is column-oriented.
@@ -92,7 +95,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     friend class HDFSSource;
@@ -111,6 +114,7 @@ private:
     const bool distributed_processing;
     ASTPtr partition_by;
     bool is_path_with_globs;
+    NamesAndTypesList virtual_columns;
 
     LoggerPtr log = getLogger("StorageHDFS");
 };
@@ -152,8 +156,6 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         bool need_only_count_);
-
-    ~HDFSSource() override;
 
     String getName() const override;
 

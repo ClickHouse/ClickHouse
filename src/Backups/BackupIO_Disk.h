@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Backups/BackupIO_Default.h>
-#include <Common/Logger.h>
 #include <Disks/DiskType.h>
-
 #include <filesystem>
 
 

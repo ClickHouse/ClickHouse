@@ -2,13 +2,9 @@ import time
 import logging
 import pytest
 
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
 from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
 from kafka.admin import NewTopic
-
-if is_arm():
-    pytestmark = pytest.mark.skip
-
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

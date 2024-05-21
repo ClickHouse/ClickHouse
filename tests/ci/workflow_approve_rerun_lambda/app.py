@@ -6,7 +6,7 @@ import time
 from collections import namedtuple
 from urllib.parse import quote
 
-import requests
+import requests  # type: ignore
 from lambda_shared.pr import TRUSTED_CONTRIBUTORS
 from lambda_shared.token import get_cached_access_token
 
@@ -90,29 +90,26 @@ def is_trusted_contributor(pr_user_login, pr_user_orgs):
 
 def _exec_get_with_retry(url, token):
     headers = {"Authorization": f"token {token}"}
-    e = Exception()
     for i in range(MAX_RETRY):
         try:
-            response = requests.get(url, headers=headers, timeout=30)
+            response = requests.get(url, headers=headers)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
             print("Got exception executing request", ex)
-            e = ex
             time.sleep(i + 1)
 
-    raise requests.HTTPError("Cannot execute GET request with retries") from e
+    raise Exception("Cannot execute GET request with retries")
 
 
 def _exec_post_with_retry(url, token, data=None):
     headers = {"Authorization": f"token {token}"}
-    e = Exception()
     for i in range(MAX_RETRY):
         try:
             if data:
-                response = requests.post(url, headers=headers, json=data, timeout=30)
+                response = requests.post(url, headers=headers, json=data)
             else:
-                response = requests.post(url, headers=headers, timeout=30)
+                response = requests.post(url, headers=headers)
             if response.status_code == 403:
                 data = response.json()
                 if (
@@ -126,10 +123,9 @@ def _exec_post_with_retry(url, token, data=None):
             return response.json()
         except Exception as ex:
             print("Got exception executing request", ex)
-            e = ex
             time.sleep(i + 1)
 
-    raise requests.HTTPError("Cannot execute POST request with retry") from e
+    raise Exception("Cannot execute POST request with retry")
 
 
 def _get_pull_requests_from(repo_url, owner, branch, token):

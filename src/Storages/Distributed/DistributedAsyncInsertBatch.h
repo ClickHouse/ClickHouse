@@ -9,7 +9,6 @@ namespace DB
 class DistributedAsyncInsertDirectoryQueue;
 class WriteBuffer;
 class ReadBuffer;
-class SettingsChanges;
 
 class DistributedAsyncInsertBatch
 {
@@ -17,7 +16,7 @@ public:
     explicit DistributedAsyncInsertBatch(DistributedAsyncInsertDirectoryQueue & parent_);
 
     bool isEnoughSize() const;
-    void send(const SettingsChanges & settings_changes);
+    void send();
 
     /// Write batch to current_batch.txt
     void serialize();
@@ -36,8 +35,8 @@ public:
 private:
     void writeText(WriteBuffer & out);
     void readText(ReadBuffer & in);
-    void sendBatch(const SettingsChanges & settings_changes);
-    void sendSeparateFiles(const SettingsChanges & settings_changes);
+    void sendBatch();
+    void sendSeparateFiles();
 
     DistributedAsyncInsertDirectoryQueue & parent;
 

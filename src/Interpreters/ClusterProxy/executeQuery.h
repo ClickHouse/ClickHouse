@@ -58,19 +58,19 @@ void executeQuery(
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
     LoggerPtr log,
+    const ASTPtr & query_ast,
     ContextPtr context,
     const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
+    const ClusterPtr & not_optimized_cluster,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator);
 
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
-    const StorageID & storage_id,
-    const Block & header,
-    QueryProcessingStage::Enum processed_stage,
+    SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);

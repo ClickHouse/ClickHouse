@@ -31,7 +31,7 @@ ColumnsDescription SystemMergeTreeSettings<replicated>::getColumnsDescription()
 }
 
 template <bool replicated>
-void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto & settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();

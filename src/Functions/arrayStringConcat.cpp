@@ -151,12 +151,12 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args
         {
-            {"arr", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"arr", &isArray<IDataType>, nullptr, "Array"},
         };
 
         FunctionArgumentDescriptors optional_args
         {
-            {"separator", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+            {"separator", &isString<IDataType>, isColumnConst, "const String"},
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);

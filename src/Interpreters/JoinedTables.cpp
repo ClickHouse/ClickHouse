@@ -2,7 +2,6 @@
 
 #include <Core/SettingsEnums.h>
 
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -273,7 +272,7 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & 
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(storage->getVirtualsList());
+        table.addHiddenColumns(storage->getVirtuals());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());

@@ -4,7 +4,10 @@
 
 #if USE_AWS_S3
 
-#include <Client/Connection.h>
+#include <memory>
+#include <optional>
+
+#include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
 #include <Storages/IStorageCluster.h>
@@ -28,11 +31,13 @@ public:
 
     std::string getName() const override { return "S3Cluster"; }
 
+    NamesAndTypesList getVirtuals() const override;
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     void updateConfigurationIfChanged(ContextPtr local_context);
@@ -43,6 +48,7 @@ private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     StorageS3::Configuration s3_configuration;
+    NamesAndTypesList virtual_columns;
 };
 
 

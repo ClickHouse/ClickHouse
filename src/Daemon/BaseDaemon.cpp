@@ -1,11 +1,9 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include <base/defines.h>
-#include <base/errnoToString.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -80,7 +78,6 @@ namespace DB
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
         extern const int SYSTEM_ERROR;
-        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -278,10 +275,7 @@ public:
                 }
 
                 readPODBinary(stack_trace, in);
-
-                if (sig != SanitizerTrap)
-                    readVectorBinary(thread_frame_pointers, in);
-
+                readVectorBinary(thread_frame_pointers, in);
                 readBinary(thread_num, in);
                 readPODBinary(thread_ptr, in);
 
@@ -333,7 +327,6 @@ private:
         const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         ThreadStatus * thread_ptr) const
-    try
     {
         ThreadStatus thread_status;
 
@@ -498,8 +491,7 @@ private:
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
-            if (auto * sentry = SentryWriter::getInstance())
-                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+            SentryWriter::onFault(sig, error_message, stack_trace);
 
             /// Advice the user to send it manually.
             if (std::string_view(VERSION_OFFICIAL).contains("official build"))
@@ -522,7 +514,7 @@ private:
             }
         }
 
-        /// ClickHouse Keeper does not link to some parts of Settings.
+        /// ClickHouse Keeper does not link to some part of Settings.
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
         /// List changed settings.
         if (!query_id.empty())
@@ -540,32 +532,16 @@ private:
         }
 #endif
 
-        /// When everything is done, we will try to send these error messages to the client.
+        /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
             thread_ptr->onFatalError();
 
         fatal_error_printed.test_and_set();
     }
-    catch (...)
-    {
-        /// onFault is called from the std::thread, and it should catch all exceptions; otherwise, you can get unrelated fatal errors.
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-        LOG_FATAL(getLogger(__PRETTY_FUNCTION__), message);
-    }
 };
 
 
 #if defined(SANITIZER)
-
-template <typename T>
-struct ValueHolder
-{
-    ValueHolder(T value_) : value(value_)
-    {}
-
-    T value;
-};
-
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
 /// Sanitizers may not expect some function calls from death callback.
@@ -583,13 +559,10 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     const StackTrace stack_trace;
 
-    writeBinary(SignalListener::SanitizerTrap, out);
+    int sig = SignalListener::SanitizerTrap;
+    writeBinary(sig, out);
     writePODBinary(stack_trace, out);
-    /// We create a dummy struct with a constructor so DISABLE_SANITIZER_INSTRUMENTATION is not applied to it
-    /// otherwise, Memory sanitizer can't know that values initiialized inside this function are actually initialized
-    /// because instrumentations are disabled leading to false positives later on
-    ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
-    writeBinary(thread_id.value, out);
+    writeBinary(UInt32(getThreadId()), out);
     writePODBinary(current_thread, out);
 
     out.next();
@@ -674,7 +647,7 @@ void BaseDaemon::reloadConfiguration()
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
-    ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -1016,25 +989,7 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    SentryWriter::initializeInstance(config());
-    if (config().getBool("send_crash_reports.send_logical_errors", false))
-    {
-        /// In release builds send it to sentry (if it is configured)
-        if (auto * sentry = SentryWriter::getInstance())
-        {
-            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
-            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
-            {
-                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
-                {
-                    SentryWriter::FramePointers frame_pointers;
-                    for (size_t i = 0; i < trace.size(); ++i)
-                        frame_pointers[i] = trace[i];
-                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
-                }
-            };
-        }
-    }
+    SentryWriter::initialize(config());
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.

@@ -157,10 +157,6 @@ struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
-        : TestKeeperMultiRequest(std::span(generic_requests))
-    {}
-
-    explicit TestKeeperMultiRequest(std::span<const RequestPtr> generic_requests)
     {
         requests.reserve(generic_requests.size());
 
@@ -886,13 +882,6 @@ void TestKeeper::reconfig(
 
 void TestKeeper::multi(
         const Requests & requests,
-        MultiCallback callback)
-{
-    return multi(std::span(requests), std::move(callback));
-}
-
-void TestKeeper::multi(
-        std::span<const RequestPtr> requests,
         MultiCallback callback)
 {
     TestKeeperMultiRequest request(requests);

@@ -4,8 +4,6 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_helper_functions.h>
 
-#include <Poco/Util/MapConfiguration.h>
-
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 class ProxyConfigurationResolverProviderTests : public ::testing::Test

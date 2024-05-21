@@ -47,12 +47,8 @@ protected:
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
 
     void writeValueWithPadding(
-        String & value, size_t value_width, size_t pad_to_width, size_t cut_to_width,
-        bool align_right, bool is_number, bool has_break_line, bool is_transferred_value);
-
-    void writeTransferredRow(const Widths & max_widths, const Block & header, std::vector<String> & transferred_row, size_t cut_to_width, bool space_block);
-
-    void splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width);
+        const IColumn & column, const ISerialization & serialization, size_t row_num,
+        size_t value_width, size_t pad_to_width, bool align_right);
 
     void resetFormatterImpl() override
     {

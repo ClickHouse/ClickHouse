@@ -40,6 +40,9 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 
+/// Update mutable context for subquery execution
+void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
+
 /// Build limits for storage
 StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptions & options);
 
@@ -73,15 +76,15 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
+/// Build subquery to read specified columns from table expression
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context);
+
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
 /// Build filter for specific table_expression
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
-
-FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});

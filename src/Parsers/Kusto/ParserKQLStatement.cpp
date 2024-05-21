@@ -95,7 +95,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
         ++pos;
         Tokens token_kql(kql_statement.c_str(), kql_statement.c_str() + kql_statement.size());
-        IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
+        IParser::Pos pos_kql(token_kql, pos.max_depth);
 
         if (kql_p.parse(pos_kql, select, expected))
         {
