@@ -652,7 +652,8 @@ namespace
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             bool for_disk_s3_,
-            BlobStorageLogWriterPtr blob_storage_log_)
+            BlobStorageLogWriterPtr blob_storage_log_,
+            std::function<void()> fallback_method_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
@@ -660,6 +661,7 @@ namespace
             , size(src_size_)
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , read_settings(read_settings_)
+            , fallback_method(std::move(fallback_method_))
         {
         }
 
@@ -682,14 +684,7 @@ namespace
         size_t size;
         bool supports_multipart_copy;
         const ReadSettings read_settings;
-
-        CreateReadBuffer getSourceObjectReadBuffer()
-        {
-            return [&]
-            {
-                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, read_settings);
-            };
-        }
+        std::function<void()> fallback_method;
 
         void performSingleOperationCopy()
         {
@@ -754,18 +749,7 @@ namespace
                                 dest_bucket,
                                 dest_key,
                                 size);
-                        copyDataToS3File(
-                            getSourceObjectReadBuffer(),
-                            offset,
-                            size,
-                            client_ptr,
-                            dest_bucket,
-                            dest_key,
-                            request_settings,
-                            blob_storage_log,
-                            object_metadata,
-                            schedule,
-                            for_disk_s3);
+                        fallback_method();
                         break;
                     }
                     else
@@ -859,13 +843,24 @@ void copyDataToS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     bool for_disk_s3)
 {
-    CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
+    CopyDataToFileHelper helper{
+        create_read_buffer,
+        offset,
+        size,
+        dest_s3_client,
+        dest_bucket,
+        dest_key,
+        settings,
+        object_metadata,
+        schedule,
+        for_disk_s3,
+        blob_storage_log};
     helper.performCopy();
 }
 
 
 void copyS3File(
-    const std::shared_ptr<const S3::Client> & s3_client,
+    const std::shared_ptr<const S3::Client> & src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
@@ -877,21 +872,53 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    bool for_disk_s3)
+    bool for_disk_s3,
+    std::shared_ptr<const S3::Client> dest_s3_client)
 {
-    if (settings.allow_native_copy)
+    if (!dest_s3_client)
+        dest_s3_client = src_s3_client;
+
+    std::function<void()> fallback_method = [&]
     {
-        CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, read_settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
-        helper.performCopy();
-    }
-    else
+        auto create_read_buffer
+            = [&] { return std::make_unique<ReadBufferFromS3>(src_s3_client, src_bucket, src_key, "", settings, read_settings); };
+
+        copyDataToS3File(
+            create_read_buffer,
+            src_offset,
+            src_size,
+            dest_s3_client,
+            dest_bucket,
+            dest_key,
+            settings,
+            blob_storage_log,
+            object_metadata,
+            schedule,
+            for_disk_s3);
+    };
+
+    if (!settings.allow_native_copy)
     {
-        auto create_read_buffer = [&]
-        {
-            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, read_settings);
-        };
-        copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, blob_storage_log, object_metadata, schedule, for_disk_s3);
+        fallback_method();
+        return;
     }
+
+    CopyFileHelper helper{
+        src_s3_client,
+        src_bucket,
+        src_key,
+        src_offset,
+        src_size,
+        dest_bucket,
+        dest_key,
+        settings,
+        read_settings,
+        object_metadata,
+        schedule,
+        for_disk_s3,
+        blob_storage_log,
+        std::move(fallback_method)};
+    helper.performCopy();
 }
 
 }

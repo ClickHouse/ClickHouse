@@ -195,7 +195,8 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 blob_storage_log,
                 object_attributes,
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
-                /* for_disk_s3= */ true);
+                /* for_disk_s3= */ true,
+                destination_disk->getObjectStorage()->getS3StorageClient());
 
             return file_size;
         };
@@ -252,7 +253,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             copyS3File(
-                client,
+                src_disk->getObjectStorage()->getS3StorageClient(),
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
@@ -263,7 +264,9 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 read_settings,
                 blob_storage_log,
                 {},
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
+                /*for_disk_s3=*/false,
+                client);
             return; /// copied!
         }
     }
