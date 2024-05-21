@@ -1621,7 +1621,7 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     first.projected_output = second.projected_output;
 }
 
-void ActionsDAG::mergeNodes(ActionsDAG && second)
+void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
 {
     std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;
     for (auto & node : nodes)
@@ -1675,6 +1675,12 @@ void ActionsDAG::mergeNodes(ActionsDAG && second)
         nodes_to_move_from_second_dag.insert(node);
 
         nodes_to_process.pop_back();
+    }
+
+    if (out_outputs)
+    {
+        for (auto & node : second.getOutputs())
+            out_outputs->push_back(node_name_to_node.at(node->result_name));
     }
 
     if (nodes_to_move_from_second_dag.empty())

@@ -321,8 +321,7 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
     /// Import the DAG and map argument pointers.
     ActionsDAGPtr actions_clone = index_hint.getActions()->clone();
     chassert(storage);
-    *storage = actions_clone->getOutputs();
-    result_dag_or_null->mergeNodes(std::move(*actions_clone));
+    result_dag_or_null->mergeNodes(std::move(*actions_clone), storage);
     return *storage;
 }
 
