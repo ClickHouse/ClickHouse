@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 import magic
+
 from docker_images_helper import get_docker_image, pull_image
 from env_helper import CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
@@ -121,12 +122,12 @@ def _check_mime(file: Union[Path, str], mime: str) -> bool:
 
 def is_python(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is python script"""
-    return _check_mime(file, "text/x-script.python")
+    return _check_mime(file, "text/x-script.python") or str(file).endswith(".py")
 
 
 def is_shell(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is shell script"""
-    return _check_mime(file, "text/x-shellscript")
+    return _check_mime(file, "text/x-shellscript") or str(file).endswith(".sh")
 
 
 def main():
