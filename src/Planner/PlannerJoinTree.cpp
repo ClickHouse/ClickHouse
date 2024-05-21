@@ -1082,7 +1082,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         planner.buildQueryPlanIfNeeded();
 
         auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "expected_header:\n{}", expected_header.dumpStructure());
 
         if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, expected_header))
         {

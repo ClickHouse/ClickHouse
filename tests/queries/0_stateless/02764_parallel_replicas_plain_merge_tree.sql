@@ -14,4 +14,4 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SELECT x FROM parallel_replicas_plain LIMIT 1 FORMAT Null;
 SELECT max(length(x)) FROM parallel_replicas_plain FORMAT Null;
 
--- DROP TABLE parallel_replicas_plain;
+DROP TABLE parallel_replicas_plain;

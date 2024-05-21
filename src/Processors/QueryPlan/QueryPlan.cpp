@@ -496,8 +496,6 @@ static void updateDataStreams(QueryPlan::Node & root)
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
-
     /// optimization need to be applied before "mergeExpressions" optimization
     /// it removes redundant sorting steps, but keep underlying expressions,
     /// so "mergeExpressions" optimization handles them afterwards
