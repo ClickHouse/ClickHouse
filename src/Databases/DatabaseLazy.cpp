@@ -1,3 +1,10 @@
+#include <base/sort.h>
+#include <iomanip>
+#include <filesystem>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
@@ -10,14 +17,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/escapeForFileName.h>
 
-#include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
-#include <base/sort.h>
-#include <iomanip>
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
