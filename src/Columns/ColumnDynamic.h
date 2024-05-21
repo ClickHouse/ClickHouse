@@ -96,13 +96,13 @@ public:
 
     MutableColumnPtr cloneEmpty() const override
     {
-        /// Keep current dynamic structure.
-        return Base::create(variant_column->cloneEmpty(), variant_info, max_dynamic_types, statistics);
+        /// Keep current dynamic structure but not statistics.
+        return Base::create(variant_column->cloneEmpty(), variant_info, max_dynamic_types);
     }
 
     MutableColumnPtr cloneResized(size_t size) const override
     {
-        return Base::create(variant_column->cloneResized(size), variant_info, max_dynamic_types, statistics);
+        return Base::create(variant_column->cloneResized(size), variant_info, max_dynamic_types);
     }
 
     size_t size() const override

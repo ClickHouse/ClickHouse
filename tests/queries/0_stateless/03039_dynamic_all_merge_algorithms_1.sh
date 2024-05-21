@@ -7,7 +7,7 @@ CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_merge_tree_settings --allow_experimental_dynamic_type=1 --optimize_aggregation_in_order 0"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_merge_tree_settings --allow_experimental_dynamic_type=1 --optimize_aggregation_in_order 0 --index_granularity_bytes 10485760 --index_granularity 8128 --merge_max_block_size 8128"
 
 
 function test()
