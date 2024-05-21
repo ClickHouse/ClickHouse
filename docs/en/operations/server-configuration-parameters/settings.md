@@ -561,6 +561,25 @@ Default value: 5000
 <max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
+## max\_view\_num\_to\_warn {#max-view-num-to-warn}
+If the number of attached views exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 5000
+
+**Example**
+
+``` xml
+<max_view_num_to_warn>400</max_view_num_to_warn>
+```
+
+## max\_dictionary\_num\_to\_warn {#max-dictionary-num-to-warn}
+If the number of attached dictionaries exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 5000
+
+**Example**
+
+``` xml
+<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
+```
 
 ## max\_part\_num\_to\_warn {#max-part-num-to-warn}
 If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
