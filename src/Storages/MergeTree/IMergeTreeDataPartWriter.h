@@ -50,19 +50,19 @@ protected:
 
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
-    /// Serializations for every columns and subcolumns by their names.
     const String data_part_name;
+    /// Serializations for every columns and subcolumns by their names.
     const SerializationByName serializations;
-    MutableDataPartStoragePtr data_part_storage;
     const MergeTreeIndexGranularityInfo index_granularity_info;
     const MergeTreeSettingsPtr storage_settings;
     const StorageMetadataPtr metadata_snapshot;
     const NamesAndTypesList columns_list;
     const MergeTreeWriterSettings settings;
-    MergeTreeIndexGranularity index_granularity;
     const bool with_final_mark;
 
+    MutableDataPartStoragePtr data_part_storage;
     MutableColumns index_columns;
+    MergeTreeIndexGranularity index_granularity;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

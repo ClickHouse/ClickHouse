@@ -56,14 +56,14 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeIndexGranularity & index_granularity_)
     : data_part_name(data_part_name_)
     , serializations(serializations_)
-    , data_part_storage(data_part_storage_)
     , index_granularity_info(index_granularity_info_)
     , storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
     , columns_list(columns_list_)
     , settings(settings_)
-    , index_granularity(index_granularity_)
     , with_final_mark(settings.can_use_adaptive_granularity)
+    , data_part_storage(data_part_storage_)
+    , index_granularity(index_granularity_)
 {
 }
 
