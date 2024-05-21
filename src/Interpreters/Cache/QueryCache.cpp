@@ -182,15 +182,14 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database)
     ast = removeQueryCacheSettings(ast);
 
     /// Hash the AST, it must consider aliases (issue #56258)
-    constexpr bool ignore_aliases = false;
-    IAST::Hash ast_hash = ast->getTreeHash(ignore_aliases);
+    SipHash hash;
+    ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
 
-    /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different tables (issue #64136)
-    IAST::Hash cur_database_hash = CityHash_v1_0_2::CityHash128(current_database.data(), current_database.size());
-    UInt64 low_combined = ast_hash.low64 ^ cur_database_hash.low64;
-    UInt64 high_combined = ast_hash.high64 ^ cur_database_hash.high64;
+    /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
+    /// tables (issue #64136)
+    hash.update(current_database);
 
-    return {low_combined, high_combined};
+    return getSipHash128AsPair(hash);
 }
 
 String queryStringFromAST(ASTPtr ast)
