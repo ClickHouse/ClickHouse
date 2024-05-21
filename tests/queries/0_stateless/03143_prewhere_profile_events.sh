@@ -18,9 +18,11 @@ ${CLICKHOUSE_CLIENT} -nq "
 query_id_1=$RANDOM$RANDOM
 query_id_2=$RANDOM$RANDOM
 query_id_3=$RANDOM$RANDOM
+query_id_4=$RANDOM$RANDOM
 
 client_opts=(
   --max_block_size 65409
+  --max_threads    8
 )
 
 ${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_1" -nq "
@@ -49,6 +51,14 @@ PREWHERE (b % 8192) = 42 AND (c % 16384) = 42
 settings enable_multiple_prewhere_read_steps=0;
 "
 
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_4" -nq "
+  SELECT b, c
+    FROM t
+PREWHERE (b % 8192) = 42 AND (c % 8192) = 42
+  FORMAT Null
+settings enable_multiple_prewhere_read_steps=1;
+"
+
 ${CLICKHOUSE_CLIENT} -nq "
   SYSTEM FLUSH LOGS;
 
@@ -66,4 +76,9 @@ ${CLICKHOUSE_CLIENT} -nq "
   SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
     FROM system.query_log
    WHERE current_database=currentDatabase() AND query_id = '$query_id_3' and type = 'QueryFinish';
+
+  -- 0, 10052503
+  SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']
+    FROM system.query_log
+   WHERE current_database=currentDatabase() AND query_id = '$query_id_4' and type = 'QueryFinish';
 "
