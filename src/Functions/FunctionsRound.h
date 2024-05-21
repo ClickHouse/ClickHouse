@@ -60,14 +60,14 @@ namespace ErrorCodes
 
 /** This parameter controls the behavior of the rounding functions.
   */
-enum class ScaleMode
+enum class ScaleMode : uint8_t
 {
     Positive,   // round to a number with N decimal places after the decimal point
     Negative,   // round to an integer with N zero characters
     Zero,       // round to an integer
 };
 
-enum class RoundingMode
+enum class RoundingMode : uint8_t
 {
 #ifdef __SSE4_1__
     Round   = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC,
@@ -82,7 +82,7 @@ enum class RoundingMode
 #endif
 };
 
-enum class TieBreakingMode
+enum class TieBreakingMode : uint8_t
 {
     Auto, // use banker's rounding for floating point numbers, round up otherwise
     Bankers, // use banker's rounding

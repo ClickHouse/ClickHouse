@@ -15,7 +15,7 @@
 
 #include "config_tools.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
@@ -119,7 +119,7 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 };
 
 
-enum class InstructionFail
+enum class InstructionFail : uint8_t
 {
     NONE = 0,
     SSE3 = 1,

@@ -194,7 +194,7 @@ select 'exceptions shorter than 30',
     (uniqExact(message_format_string) as c) <= max_messages,
     c <= max_messages ? [] : groupUniqArray(message_format_string)
     from logs
-    where message ilike '%DB::Exception%' and if(length(extract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
+    where message ilike '%DB::Exception%' and if(length(extract(toValidUTF8(message), '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(toValidUTF8(message))) < 30 + 26 and message_format_string not in known_short_messages;
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
 WITH 0.30 as threshold
@@ -207,7 +207,7 @@ select
 with 0.16 as threshold
 select
     'noisy Trace messages',
-    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}', 'Query {} to stage {}{}', 'Query {} from stage {} to stage {}{}')
+    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}', 'Query to stage {}{}', 'Query from stage {} to stage {}{}')
                         group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
     r <= threshold ? '' : top_message.1;
 
@@ -252,7 +252,7 @@ select 'number of noisy messages',
 -- Each message matches its pattern (returns 0 rows)
 -- Note: maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
 select 'incorrect patterns', greatest(uniqExact(message_format_string), 15) from (
-    select message_format_string, any(message) as any_message from logs
+    select message_format_string, any(toValidUTF8(message)) as any_message from logs
     where ((rand() % 8) = 0)
     and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
     and message not like (s || ' (skipped % similar messages)')

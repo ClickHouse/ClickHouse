@@ -58,8 +58,14 @@ echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/sys
 # Install previous release packages
 install_packages previous_release_package_folder
 
-# Save old settings from system table for settings changes check
-clickhouse-local -q "select * from system.settings format Native" > old_settings.native
+# NOTE: we need to run clickhouse-local under script to get settings without any adjustments, like clickhouse-local does in case of stdout is not a tty
+function save_settings_clean()
+{
+  local out=$1 && shift
+  script -q -c "clickhouse-local -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
+}
+
+save_settings_clean 'old_settings.native'
 
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
@@ -183,7 +189,7 @@ configure
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
-  clickhouse-local -q "select * from system.settings format Native" > new_settings.native
+  save_settings_clean 'new_settings.native'
   clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE new_settings AS file('new_settings.native');

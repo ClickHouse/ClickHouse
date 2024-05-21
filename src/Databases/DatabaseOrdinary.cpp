@@ -76,6 +76,20 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     String replica_path = server_settings.default_replica_path;
     String replica_name = server_settings.default_replica_name;
 
+    /// Check that replica path doesn't exist
+    Macros::MacroExpansionInfo info;
+    StorageID table_id = StorageID(create_query->getDatabase(), create_query->getTable(), create_query->uuid);
+    info.table_id = table_id;
+    info.expand_special_macros_only = false;
+
+    String zookeeper_path = context->getMacros()->expand(replica_path, info);
+    if (context->getZooKeeper()->exists(zookeeper_path))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
+            zookeeper_path, backQuote(table_id.getFullTableName())
+        );
+
     auto args = std::make_shared<ASTExpressionList>();
     args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
     args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
@@ -304,7 +318,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
 
-    fs::remove(convert_to_replicated_flag_path);
+    (void)fs::remove(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
@@ -540,7 +554,7 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        (void)fs::remove(table_metadata_tmp_path);
         throw;
     }
 }

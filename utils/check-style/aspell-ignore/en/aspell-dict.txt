@@ -53,6 +53,8 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+analysisOfVariance
+ANOVA
 BIGINT
 BIGSERIAL
 BORO
@@ -475,7 +477,9 @@ LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
+LOONGARCH
 LONGLONG
+LoongArch
 Levenshtein
 Liao
 LibFuzzer
@@ -1910,6 +1914,7 @@ logTrace
 logagent
 loghouse
 london
+loongarch
 lookups
 lowcardinality
 lowerUTF
@@ -2398,6 +2403,7 @@ sharded
 sharding
 shortcircuit
 shortkeys
+showCertificate
 shoutout
 simdjson
 simpleJSON
