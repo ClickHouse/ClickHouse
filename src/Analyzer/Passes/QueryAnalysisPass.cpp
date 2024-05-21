@@ -614,8 +614,6 @@ struct ScopeAliases
             case IdentifierLookupContext::FUNCTION: return alias_name_to_lambda_node;
             case IdentifierLookupContext::TABLE_EXPRESSION: return alias_name_to_table_expression_node;
         }
-
-        UNREACHABLE();
     }
 
     enum class FindOption
@@ -631,8 +629,6 @@ struct ScopeAliases
             case FindOption::FIRST_NAME: return identifier.front();
             case FindOption::FULL_NAME: return identifier.getFullName();
         }
-
-        UNREACHABLE();
     }
 
     QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option)
