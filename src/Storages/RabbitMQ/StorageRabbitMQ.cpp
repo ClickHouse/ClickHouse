@@ -8,7 +8,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -64,7 +63,6 @@ namespace ExchangeType
     static const String HEADERS = "headers";
 }
 
-static const auto deadletter_exchange_setting = "x-dead-letter-exchange";
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
@@ -85,20 +83,15 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base))
         , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list)))
         , max_rows_per_message(rabbitmq_settings->rabbitmq_max_rows_per_message)
-        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
+        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
 {
-    reject_unhandled_messages = rabbitmq_settings->reject_unhandled_messages
-        || queue_settings_list.end() !=
-        std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
-                     [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
-
     const auto & config = getContext()->getConfigRef();
 
     std::pair<String, UInt16> parsed_address;
@@ -140,13 +133,9 @@ StorageRabbitMQ::StorageRabbitMQ(
     if (configuration.secure)
         SSL_library_init();
 
-    if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
-        context_->addWarningMessage("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values");
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals(rabbitmq_settings->rabbitmq_handle_error_mode));
 
     rabbitmq_context = addSettings(getContext());
     rabbitmq_context->makeQueryContext();
@@ -202,26 +191,6 @@ StorageRabbitMQ::StorageRabbitMQ(
     init_task->deactivate();
 }
 
-VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMode handle_error_mode)
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_exchange_name", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_channel_id", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_delivery_tag", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_redelivered", std::make_shared<DataTypeUInt8>(), "");
-    desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "");
-
-
-    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-    }
-
-    return desc;
-}
 
 Names StorageRabbitMQ::parseSettings(String settings_list)
 {
@@ -408,7 +377,9 @@ void StorageRabbitMQ::initRabbitMQ()
 
         /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
 
+        initExchange(*rabbit_channel);
         bindExchange(*rabbit_channel);
+
         for (const auto i : collections::range(0, num_queues))
             bindQueue(i + 1, *rabbit_channel);
 
@@ -440,7 +411,7 @@ void StorageRabbitMQ::initRabbitMQ()
 }
 
 
-void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
+void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
 {
     /// Exchange hierarchy:
     /// 1. Main exchange (defined with table settings - rabbitmq_exchange_name, rabbitmq_exchange_type).
@@ -453,78 +424,68 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     /// 1. `durable` (survive RabbitMQ server restart)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
-    std::string error;
-    int error_code;
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {
-        connection->getHandler().stopLoop();
         /// This error can be a result of attempt to declare exchange if it was already declared but
         /// 1) with different exchange type.
         /// 2) with different exchange settings.
-        error = "Unable to declare exchange. "
-            "Make sure specified exchange is not already declared. Error: " + std::string(message);
-        error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+        throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+                "Unable to declare exchange. Make sure specified exchange is not already declared. Error: {}",
+                std::string(message));
     });
 
     rabbit_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
     .onError([&](const char * message)
     {
-        connection->getHandler().stopLoop();
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
-        if (error.empty())
-        {
-            error = fmt::format("Unable to declare bridge exchange ({}). Reason: {}",
-                                bridge_exchange, std::string(message));
-            error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-        }
+        throw Exception(
+                        ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+                        "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
     });
 
-    if (hash_exchange)
-    {
-        AMQP::Table binding_arguments;
-
-        /// Default routing key property in case of hash exchange is a routing key, which is required to be an integer.
-        /// Support for arbitrary exchange type (i.e. arbitrary pattern of routing keys) requires to eliminate this dependency.
-        /// This settings changes hash property to message_id.
-        binding_arguments["hash-property"] = "message_id";
-
-        /// Declare hash exchange for sharding.
-        rabbit_channel.declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable | AMQP::autodelete, binding_arguments)
-        .onError([&](const char * message)
-        {
-            connection->getHandler().stopLoop();
-            /// This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
-            /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
-            /// is bad.
-            if (error.empty())
-            {
-                error = fmt::format("Unable to declare sharding exchange ({}). Reason: {}",
-                                    sharding_exchange, std::string(message));
-                error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-            }
-        });
-
-        rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
-        .onError([&](const char * message)
-        {
-            connection->getHandler().stopLoop();
-            if (error.empty())
-            {
-                error = fmt::format(
-                    "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}",
-                    bridge_exchange, sharding_exchange, std::string(message));
-                error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-            }
-        });
-
-        consumer_exchange = sharding_exchange;
-    }
-    else
+    if (!hash_exchange)
     {
         consumer_exchange = bridge_exchange;
+        return;
     }
 
+    AMQP::Table binding_arguments;
+
+    /// Default routing key property in case of hash exchange is a routing key, which is required to be an integer.
+    /// Support for arbitrary exchange type (i.e. arbitrary pattern of routing keys) requires to eliminate this dependency.
+    /// This settings changes hash property to message_id.
+    binding_arguments["hash-property"] = "message_id";
+
+    /// Declare hash exchange for sharding.
+    rabbit_channel.declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable | AMQP::autodelete, binding_arguments)
+    .onError([&](const char * message)
+    {
+        /// This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
+        /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
+        /// is bad.
+        throw Exception(
+           ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+           "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
+    });
+
+    rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
+    .onError([&](const char * message)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+            "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}",
+            bridge_exchange,
+            sharding_exchange,
+            std::string(message));
+    });
+
+    consumer_exchange = sharding_exchange;
+}
+
+
+void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
+{
     size_t bound_keys = 0;
 
     if (exchange_type == AMQP::ExchangeType::headers)
@@ -541,10 +502,10 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         .onSuccess([&]() { connection->getHandler().stopLoop(); })
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
-            error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                                exchange_name, bridge_exchange, std::string(message));
-            error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
+            throw Exception(
+                ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+                "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                exchange_name, bridge_exchange, std::string(message));
         });
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
@@ -553,13 +514,10 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         .onSuccess([&]() { connection->getHandler().stopLoop(); })
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
-            if (error.empty())
-            {
-                error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                                    exchange_name, bridge_exchange, std::string(message));
-                error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
-            }
+            throw Exception(
+                ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+                "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                exchange_name, bridge_exchange, std::string(message));
         });
     }
     else
@@ -575,26 +533,20 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
             })
             .onError([&](const char * message)
             {
-                connection->getHandler().stopLoop();
-                if (error.empty())
-                {
-                    error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                                        exchange_name, bridge_exchange, std::string(message));
-                    error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
-                }
+                throw Exception(
+                    ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+                    "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                    exchange_name, bridge_exchange, std::string(message));
             });
         }
     }
 
     connection->getHandler().startBlockingLoop();
-    if (!error.empty())
-        throw Exception(error_code, "{}", error);
 }
 
 
 void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel)
 {
-    std::string error;
     auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
     {
         queues.emplace_back(queue_name);
@@ -611,26 +563,23 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
         .onSuccess([&] { connection->getHandler().stopLoop(); })
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
-            error = fmt::format("Failed to create queue binding for exchange {}. Reason: {}",
-                                exchange_name, std::string(message));
+            throw Exception(
+                ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
+                "Failed to create queue binding for exchange {}. Reason: {}", exchange_name, std::string(message));
         });
     };
 
     auto error_callback([&](const char * message)
     {
-        connection->getHandler().stopLoop();
         /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
          * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
          * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
          * declared queues via any of the various cli tools.
          */
-         if (error.empty())
-             error = fmt::format(
-                 "Failed to declare queue. Probably queue settings are conflicting: "
-                 "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
-                 "or use a different queue_base or manually delete previously declared queues, "
-                 "which  were declared with the same names. ERROR reason: {}", std::string(message));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to declare queue. Probably queue settings are conflicting: "
+                        "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
+                        "or use a different queue_base or manually delete previously declared queues, "
+                        "which  were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;
@@ -668,8 +617,6 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
     /// and deleting queues should not take place.
     rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
     connection->getHandler().startBlockingLoop();
-    if (!error.empty())
-        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "{}", error);
 }
 
 
@@ -693,7 +640,6 @@ void StorageRabbitMQ::unbindExchange()
 
             stopLoop();
             looping_task->deactivate();
-            std::string error;
 
             auto rabbit_channel = connection->createChannel();
             rabbit_channel->removeExchange(bridge_exchange)
@@ -703,14 +649,11 @@ void StorageRabbitMQ::unbindExchange()
             })
             .onError([&](const char * message)
             {
-                connection->getHandler().stopLoop();
-                error = fmt::format("Unable to remove exchange. Reason: {}", std::string(message));
+                throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "Unable to remove exchange. Reason: {}", std::string(message));
             });
 
             connection->getHandler().startBlockingLoop();
             rabbit_channel->close();
-            if (!error.empty())
-                throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "{}", error);
         }
         catch (...)
         {
@@ -771,9 +714,8 @@ void StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, modified_context, column_names, /* max_block_size */1,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, reject_unhandled_messages,
-            /* ack_in_suffix */rabbitmq_settings->rabbitmq_commit_on_select, log);
+            *this, storage_snapshot, modified_context, column_names, 1,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -1008,7 +950,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
     }
     catch (...)
     {
-        LOG_ERROR(log, "Error while streaming to views: {}", getCurrentExceptionMessage(true));
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     mv_attached.store(false);
@@ -1092,7 +1034,18 @@ bool StorageRabbitMQ::tryStreamToViews()
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
+    // Create an INSERT query for streaming data
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = table_id;
+
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
+    auto block_io = interpreter.execute();
+
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto column_names = block_io.pipeline.getHeader().getNames();
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+
     auto block_size = getMaxBlockSize();
 
     // Create a stream for each consumer and join them in a union stream
@@ -1108,29 +1061,12 @@ bool StorageRabbitMQ::tryStreamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, Names{}, block_size,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode,
-            reject_unhandled_messages, /* ack_in_suffix */false, log);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
     }
-
-    // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
-    insert->table_id = table_id;
-    if (!sources.empty())
-    {
-        auto column_list = std::make_shared<ASTExpressionList>();
-        const auto & header = sources[0]->getPort().getHeader();
-        for (const auto & column : header)
-            column_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
-        insert->columns = std::move(column_list);
-    }
-
-    // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, rabbitmq_context, /* allow_materialized_ */ false, /* no_squash_ */ true, /* no_destination_ */ true);
-    auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
@@ -1163,10 +1099,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     if (!connection->isConnected())
     {
         if (shutdown_called)
-        {
-            LOG_DEBUG(log, "Shutdown called, quitting");
             return false;
-        }
 
         if (connection->reconnect())
         {
@@ -1182,8 +1115,6 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
-        LOG_TEST(log, "Will {} messages for {} channels", write_failed ? "nack" : "ack", sources.size());
-
         /// Commit
         for (auto & source : sources)
         {
@@ -1191,41 +1122,36 @@ bool StorageRabbitMQ::tryStreamToViews()
                 ++queue_empty;
 
             if (source->needChannelUpdate())
-            {
-                LOG_TEST(log, "Channel {} is in error state, will update", source->getChannelID());
                 source->updateChannel(*connection);
-            }
-            else
-            {
-                /* false is returned by the sendAck function in only two cases:
-                * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
-                *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
-                *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
-                *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
-                *    consumers. So in this case duplicates are inevitable.
-                * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
-                *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
-                *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
-                *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
-                *    will ever happen.
-                */
-                if (write_failed ? source->sendNack() : source->sendAck())
-                {
-                    /// Iterate loop to activate error callbacks if they happened
-                    connection->getHandler().iterateLoop();
-                    if (!connection->isConnected())
-                        break;
-                }
 
+            /* false is returned by the sendAck function in only two cases:
+             * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
+             *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
+             *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
+             *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
+             *    consumers. So in this case duplicates are inevitable.
+             * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
+             *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
+             *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
+             *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
+             *    will ever happen.
+             */
+            if (write_failed ? source->sendNack() : source->sendAck())
+            {
+                /// Iterate loop to activate error callbacks if they happened
                 connection->getHandler().iterateLoop();
+                if (!connection->isConnected())
+                    break;
             }
+
+            connection->getHandler().iterateLoop();
         }
     }
 
     if (write_failed)
     {
         LOG_TRACE(log, "Write failed, reschedule");
-        return true;
+        return false;
     }
 
     if (!hasDependencies(getStorageID()))
@@ -1244,11 +1170,10 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
-        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
         startLoop();
     }
 
-    /// Reschedule.
+    /// Do not reschedule, do not stop event loop.
     return true;
 }
 
@@ -1286,6 +1211,27 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+}
+
+
+NamesAndTypesList StorageRabbitMQ::getVirtuals() const
+{
+    auto virtuals = NamesAndTypesList{
+            {"_exchange_name", std::make_shared<DataTypeString>()},
+            {"_channel_id", std::make_shared<DataTypeString>()},
+            {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
+            {"_redelivered", std::make_shared<DataTypeUInt8>()},
+            {"_message_id", std::make_shared<DataTypeString>()},
+            {"_timestamp", std::make_shared<DataTypeUInt64>()}
+    };
+
+    if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+    }
+
+    return virtuals;
 }
 
 }

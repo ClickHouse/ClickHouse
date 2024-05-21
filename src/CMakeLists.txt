@@ -85,6 +85,7 @@ add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
+add_headers_and_sources(clickhouse_common_io Common/SSH)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/S3)
@@ -98,6 +99,7 @@ add_headers_and_sources(clickhouse_compression Core)
 #Included these specific files to avoid linking grpc
 add_glob(clickhouse_compression_headers Server/ServerType.h)
 add_glob(clickhouse_compression_sources Server/ServerType.cpp)
+add_headers_and_sources(clickhouse_compression Common/SSH)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 
@@ -171,8 +173,6 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
-
-set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
@@ -368,7 +368,8 @@ if (TARGET ch_contrib::crc32-vpmsum)
  endif()
 
 if (TARGET ch_contrib::ssh)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
+ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
+ target_link_libraries(clickhouse_compression PUBLIC ch_contrib::ssh)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)

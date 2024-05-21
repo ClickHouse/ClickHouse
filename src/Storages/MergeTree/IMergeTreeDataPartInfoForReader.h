@@ -15,7 +15,6 @@ struct MergeTreeDataPartChecksums;
 struct MergeTreeIndexGranularityInfo;
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-class SerializationInfoByName;
 
 /**
  * A class which contains all information about a data part that is required
@@ -34,6 +33,8 @@ public:
     virtual bool isCompactPart() const = 0;
 
     virtual bool isWidePart() const = 0;
+
+    virtual bool isInMemoryPart() const = 0;
 
     virtual bool isProjectionPart() const = 0;
 

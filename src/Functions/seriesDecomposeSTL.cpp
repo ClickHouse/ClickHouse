@@ -1,9 +1,15 @@
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #pragma clang diagnostic ignored "-Wshadow"
 #pragma clang diagnostic ignored "-Wimplicit-float-conversion"
+#endif
+
 #include <Functions/stl.hpp>
+
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -42,8 +48,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-            {"period", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Unsigned Integer"},
+            {"time_series", &isArray<IDataType>, nullptr, "Array"},
+            {"period", &isNativeUInt<IDataType>, nullptr, "Unsigned Integer"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 

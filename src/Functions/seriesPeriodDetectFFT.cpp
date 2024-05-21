@@ -1,14 +1,18 @@
 #include "config.h"
 
 #if USE_POCKETFFT
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wshadow"
-#    pragma clang diagnostic ignored "-Wextra-semi-stmt"
-#    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#    ifdef __clang__
+#        pragma clang diagnostic push
+#        pragma clang diagnostic ignored "-Wshadow"
+#        pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#        pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#    endif
 
 #    include <pocketfft_hdronly.h>
 
-#    pragma clang diagnostic pop
+#    ifdef __clang__
+#        pragma clang diagnostic pop
+#    endif
 
 #    include <cmath>
 #    include <Columns/ColumnArray.h>
@@ -52,7 +56,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
+        FunctionArgumentDescriptors args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
         validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeFloat64>();
@@ -61,10 +65,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
-        const ColumnArray & array = checkAndGetColumn<ColumnArray>(*array_ptr);
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
-        const IColumn & src_data = array.getData();
-        const ColumnArray::Offsets & offsets = array.getOffsets();
+        const IColumn & src_data = array->getData();
+        const ColumnArray::Offsets & offsets = array->getOffsets();
 
         auto res = ColumnFloat64::create(input_rows_count);
         auto & res_data = res->getData();

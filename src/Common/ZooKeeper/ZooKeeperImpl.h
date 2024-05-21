@@ -195,10 +195,6 @@ public:
         ReconfigCallback callback) final;
 
     void multi(
-        std::span<const RequestPtr> requests,
-        MultiCallback callback) override;
-
-    void multi(
         const Requests & requests,
         MultiCallback callback) override;
 
@@ -291,7 +287,7 @@ private:
     class ThreadReference
     {
     public:
-        ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
         {
             std::lock_guard<std::mutex> l(lock);
             thread = std::move(thread_);
@@ -343,7 +339,7 @@ private:
     void flushWriteBuffer();
     ReadBuffer & getReadBuffer();
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
     void initFeatureFlags();
 

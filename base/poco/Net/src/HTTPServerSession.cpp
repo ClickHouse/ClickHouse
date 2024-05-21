@@ -33,12 +33,6 @@ HTTPServerSession::~HTTPServerSession()
 {
 }
 
-void HTTPServerSession::setKeepAliveTimeout(Poco::Timespan keepAliveTimeout)
-{
-    _keepAliveTimeout = keepAliveTimeout;
-}
-
-
 
 bool HTTPServerSession::hasMoreRequests()
 {

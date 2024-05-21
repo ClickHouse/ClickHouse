@@ -142,16 +142,13 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
         || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
         || nulls_action != rhs_typed.nulls_action)
         return false;
-
-    if (!compare_options.compare_types)
-        return true;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -171,7 +168,7 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
     return true;
 }
 
-void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
@@ -179,9 +176,6 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
-
-    if (!compare_options.compare_types)
-        return;
 
     if (!isResolved())
         return;

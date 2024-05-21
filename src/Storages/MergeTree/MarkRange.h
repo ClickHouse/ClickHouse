@@ -33,10 +33,9 @@ struct MarkRange
 
 struct MarkRanges : public std::deque<MarkRange>
 {
-    using std::deque<MarkRange>::deque; /// NOLINT(modernize-type-traits)
+    using std::deque<MarkRange>::deque;
 
     size_t getNumberOfMarks() const;
-    bool isOneRangeForWholePart(size_t num_marks_in_part) const;
 
     void serialize(WriteBuffer & out) const;
     String describe() const;

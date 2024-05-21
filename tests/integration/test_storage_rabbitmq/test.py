@@ -53,13 +53,13 @@ instance3 = cluster.add_instance(
 # Helpers
 
 
-def rabbitmq_check_result(result, check=False, reference=None):
-    if reference is None:
-        reference = "\n".join([f"{i}\t{i}" for i in range(50)])
-    if check:
-        assert TSV(result) == TSV(reference)
-    else:
-        return TSV(result) == TSV(reference)
+def rabbitmq_check_result(result, check=False, ref_file="test_rabbitmq_json.reference"):
+    fpath = p.join(p.dirname(__file__), ref_file)
+    with open(fpath) as reference:
+        if check:
+            assert TSV(result) == TSV(reference)
+        else:
+            return TSV(result) == TSV(reference)
 
 
 def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
@@ -133,10 +133,9 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
     if secure:
         port = cluster.rabbitmq_secure_port
 
-    # MATERIALIZED and ALIAS columns are not supported in RabbitMQ engine, but we can test that it does not fail
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:{}',
                      rabbitmq_exchange_name = 'select',
@@ -147,11 +146,6 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
         """.format(
             rabbitmq_cluster.rabbitmq_host, port, secure
         )
-    )
-
-    assert (
-        "RabbitMQ table engine doesn\\'t support ALIAS, DEFAULT or MATERIALIZED columns"
-        in instance.query("SELECT * FROM system.warnings")
     )
 
     credentials = pika.PlainCredentials("root", "clickhouse")
@@ -385,7 +379,7 @@ def test_rabbitmq_macros(rabbitmq_cluster):
 def test_rabbitmq_materialized_view(rabbitmq_cluster):
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, dt1 DateTime MATERIALIZED now(), value2 ALIAS value + 1)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
@@ -490,11 +484,9 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         """
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
-        DROP TABLE IF EXISTS test.view3;
         DROP TABLE IF EXISTS test.consumer1;
         DROP TABLE IF EXISTS test.consumer2;
-        DROP TABLE IF EXISTS test.consumer3;
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1, value4 DEFAULT 1)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mmv',
@@ -505,17 +497,12 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         CREATE TABLE test.view1 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
-        CREATE TABLE test.view2 (key UInt64, value UInt64, value2 UInt64, value3 UInt64, value4 UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
-        CREATE TABLE test.view3 (key UInt64)
+        CREATE TABLE test.view2 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
             SELECT * FROM test.rabbitmq;
         CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
-            SELECT * FROM test.rabbitmq;
-        CREATE MATERIALIZED VIEW test.consumer3 TO test.view3 AS
             SELECT * FROM test.rabbitmq;
     """
     )
@@ -527,7 +514,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    instance.wait_for_log_line("Started streaming to 3 attached views")
+    instance.wait_for_log_line("Started streaming to 2 attached views")
 
     messages = []
     for i in range(50):
@@ -535,43 +522,24 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange="mmv", routing_key="", body=message)
 
-    is_check_passed = False
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
+    while True:
         result1 = instance.query("SELECT * FROM test.view1 ORDER BY key")
         result2 = instance.query("SELECT * FROM test.view2 ORDER BY key")
-        result3 = instance.query("SELECT * FROM test.view3 ORDER BY key")
-        # Note that for view2 result is `i i 0 0 0`, but not `i i i+1 i+1 1` as expected, ALIAS/MATERIALIZED/DEFAULT columns are not supported in RabbitMQ engine
-        # We onlt check that at least it do not fail
-        if (
-            rabbitmq_check_result(result1)
-            and rabbitmq_check_result(
-                result2, reference="\n".join([f"{i}\t{i}\t0\t0\t0" for i in range(50)])
-            )
-            and rabbitmq_check_result(
-                result3, reference="\n".join([str(i) for i in range(50)])
-            )
-        ):
-            is_check_passed = True
+        if rabbitmq_check_result(result1) and rabbitmq_check_result(result2):
             break
-        time.sleep(0.1)
-
-    assert (
-        is_check_passed
-    ), f"References are not equal to results, result1: {result1}, result2: {result2}, result3: {result3}"
 
     instance.query(
         """
         DROP TABLE test.consumer1;
         DROP TABLE test.consumer2;
-        DROP TABLE test.consumer3;
         DROP TABLE test.view1;
         DROP TABLE test.view2;
-        DROP TABLE test.view3;
     """
     )
 
     connection.close()
+    rabbitmq_check_result(result1, True)
+    rabbitmq_check_result(result2, True)
 
 
 def test_rabbitmq_big_message(rabbitmq_cluster):
@@ -2606,7 +2574,7 @@ def test_rabbitmq_bad_args(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.exchange_declare(exchange="f", exchange_type="fanout")
-    assert "Unable to declare exchange" in instance.query_and_get_error(
+    instance.query_and_get_error(
         """
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -3202,7 +3170,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     )
 
     instance.query(
-        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1, output_format_pretty_row_numbers=0;"
+        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;"
     )
     insert_messages = []
 
@@ -3679,100 +3647,4 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         DROP TABLE test.{table_name};
     """
     )
-    connection.close()
-
-
-def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
-    credentials = pika.PlainCredentials("root", "clickhouse")
-    parameters = pika.ConnectionParameters(
-        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
-    )
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
-    deadletter_exchange = "deadletter_exchange_handle_error_mode_stream"
-    deadletter_queue = "deadletter_queue_handle_error_mode_stream"
-    channel.exchange_declare(exchange=deadletter_exchange)
-
-    result = channel.queue_declare(queue=deadletter_queue)
-    channel.queue_bind(
-        exchange=deadletter_exchange, routing_key="", queue=deadletter_queue
-    )
-
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS test.rabbitmq;
-        DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.data;
-        DROP TABLE IF EXISTS test.errors;
-        DROP TABLE IF EXISTS test.errors_view;
-
-        CREATE TABLE test.rabbit (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
-                     rabbitmq_exchange_name = 'select',
-                     rabbitmq_commit_on_select = 1,
-                     rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_row_delimiter = '\\n',
-                     rabbitmq_handle_error_mode = 'stream',
-                     rabbitmq_queue_settings_list='x-dead-letter-exchange={deadletter_exchange}';
-
-
-        CREATE TABLE test.errors (error Nullable(String), broken_message Nullable(String))
-             ENGINE = MergeTree()
-             ORDER BY tuple();
-
-        CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS
-                SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error);
-
-        CREATE TABLE test.data (key UInt64, value UInt64)
-             ENGINE = MergeTree()
-             ORDER BY key;
-
-        CREATE MATERIALIZED VIEW test.view TO test.data AS
-                SELECT key, value FROM test.rabbit;
-        """
-    )
-
-    messages = []
-    num_rows = 50
-    for i in range(num_rows):
-        if i % 2 == 0:
-            messages.append(json.dumps({"key": i, "value": i}))
-        else:
-            messages.append("Broken message " + str(i))
-
-    for message in messages:
-        channel.basic_publish(exchange="select", routing_key="", body=message)
-
-    time.sleep(1)
-
-    attempt = 0
-    rows = 0
-    while attempt < 500:
-        rows = int(instance.query("SELECT count() FROM test.data"))
-        if rows == num_rows:
-            break
-        attempt += 1
-        time.sleep(1)
-
-    assert rows == num_rows
-
-    dead_letters = []
-
-    def on_dead_letter(channel, method, properties, body):
-        dead_letters.append(body)
-        if len(dead_letters) == num_rows / 2:
-            channel.stop_consuming()
-
-    channel.basic_consume(deadletter_queue, on_dead_letter)
-    channel.start_consuming()
-
-    assert len(dead_letters) == num_rows / 2
-
-    i = 1
-    for letter in dead_letters:
-        assert f"Broken message {i}" in str(letter)
-        i += 2
-
     connection.close()

@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class StorageSystemSchemaInferenceCache final : public IStorageSystemOneBlock
+class StorageSystemSchemaInferenceCache final : public IStorageSystemOneBlock<StorageSystemSchemaInferenceCache>
 {
 public:
     std::string getName() const override { return "SystemSettingsChanges"; }
@@ -16,7 +16,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

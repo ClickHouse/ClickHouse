@@ -47,9 +47,11 @@ private:
 
         std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk() = default;
+        MemoryChunk()
+        {
+        }
 
-        void swap(MemoryChunk & other) noexcept
+        void swap(MemoryChunk & other)
         {
             std::swap(begin, other.begin);
             std::swap(pos, other.pos);
@@ -57,18 +59,18 @@ private:
             prev.swap(other.prev);
         }
 
-        MemoryChunk(MemoryChunk && other) noexcept
+        MemoryChunk(MemoryChunk && other)
         {
             *this = std::move(other);
         }
 
-        MemoryChunk & operator=(MemoryChunk && other) noexcept
+        MemoryChunk & operator=(MemoryChunk && other)
         {
             swap(other);
             return *this;
         }
 
-        explicit MemoryChunk(size_t size_)
+        MemoryChunk(size_t size_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);

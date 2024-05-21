@@ -1,12 +1,10 @@
 #include <Storages/System/StorageSystemZeros.h>
-#include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-
 
 namespace DB
 {
@@ -95,7 +93,7 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 Pipe StorageSystemZeros::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo &,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -125,13 +123,8 @@ Pipe StorageSystemZeros::read(
     {
         auto source = std::make_shared<ZerosSource>(max_block_size, limit ? *limit : 0, state);
 
-        if (i == 0)
-        {
-            if (limit)
-                source->addTotalRowsApprox(*limit);
-            else if (query_info.limit)
-                source->addTotalRowsApprox(query_info.limit);
-        }
+        if (limit && i == 0)
+            source->addTotalRowsApprox(*limit);
 
         res.addSource(std::move(source));
     }

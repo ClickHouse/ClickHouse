@@ -5,7 +5,6 @@
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Formats/FormatFactory.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -25,8 +24,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -106,8 +105,7 @@ StorageS3Queue::StorageS3Queue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args,
-    LoadingStrictnessLevel mode)
+    ASTStorage * engine_args)
     : IStorage(table_id_)
     , WithContext(context_)
     , s3queue_settings(std::move(s3queue_settings_))
@@ -129,14 +127,6 @@ StorageS3Queue::StorageS3Queue(
     else if (!containsGlobs(configuration.url))
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
-    }
-
-    if (mode == LoadingStrictnessLevel::CREATE
-        && !context_->getSettingsRef().s3queue_allow_experimental_sharded_mode
-        && s3queue_settings->mode == S3QueueMode::ORDERED
-        && (s3queue_settings->s3queue_total_shards_num > 1 || s3queue_settings->s3queue_processing_threads_num > 1))
-    {
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue sharded mode is not allowed. To enable use `s3queue_allow_experimental_sharded_mode`");
     }
 
     checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef());
@@ -165,7 +155,8 @@ StorageS3Queue::StorageS3Queue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
@@ -324,7 +315,7 @@ void StorageS3Queue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageS3Queue>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     auto reading = std::make_unique<ReadFromS3Queue>(
         column_names,
@@ -502,7 +493,7 @@ bool StorageS3Queue::streamToViews()
     auto block_io = interpreter.execute();
     auto file_iterator = createFileIterator(s3queue_context, nullptr);
 
-    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context));
+    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context), getVirtuals());
 
     Pipes pipes;
     pipes.reserve(s3queue_settings->s3queue_processing_threads_num);
@@ -611,9 +602,8 @@ void StorageS3Queue::checkTableStructure(const String & zookeeper_prefix, const 
 std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto glob_iterator = std::make_unique<StorageS3QueueSource::GlobIterator>(
-        *configuration.client, configuration.url, predicate, getVirtualsList(), local_context,
+        *configuration.client, configuration.url, predicate, virtual_columns, local_context,
         /* read_keys */nullptr, configuration.request_settings);
-
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
 }
 
@@ -673,8 +663,7 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                 args.comment,
                 args.getContext(),
                 format_settings,
-                args.storage_def,
-                args.mode);
+                args.storage_def);
         },
         {
             .supports_settings = true,

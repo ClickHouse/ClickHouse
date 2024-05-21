@@ -1,11 +1,8 @@
-#include <Core/BaseSettings.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB

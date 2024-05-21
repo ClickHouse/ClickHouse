@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
-#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
@@ -24,11 +23,6 @@ namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
-
-namespace FailPoints
-{
-    extern const char finish_clean_quorum_failed_parts[];
-};
 
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
@@ -247,7 +241,6 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
             storage.queue.removeFailedQuorumPart(part->info);
         }
     }
-    FailPointInjection::disableFailPoint(FailPoints::finish_clean_quorum_failed_parts);
 }
 
 

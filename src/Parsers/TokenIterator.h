@@ -62,6 +62,18 @@ public:
         return *this;
     }
 
+    ALWAYS_INLINE TokenIterator & operator-=(int value)
+    {
+        index -= value;
+        return *this;
+    }
+
+    ALWAYS_INLINE TokenIterator & operator+=(int value)
+    {
+        index += value;
+        return *this;
+    }
+
     ALWAYS_INLINE bool operator<(const TokenIterator & rhs) const { return index < rhs.index; }
     ALWAYS_INLINE bool operator<=(const TokenIterator & rhs) const { return index <= rhs.index; }
     ALWAYS_INLINE bool operator==(const TokenIterator & rhs) const { return index == rhs.index; }

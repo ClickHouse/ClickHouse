@@ -11,20 +11,10 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot, const Names & column_names)
+static std::pair<Block, Block> getHeaders(StorageRabbitMQ & storage_, const StorageSnapshotPtr & storage_snapshot)
 {
-    auto all_columns_header = storage_snapshot->metadata->getSampleBlock();
-
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
-
-    for (const auto & column_name : column_names)
-    {
-        if (non_virtual_header.has(column_name) || virtual_header.has(column_name))
-            continue;
-        const auto & column = all_columns_header.getByName(column_name);
-        non_virtual_header.insert(column);
-    }
+    auto virtual_header = storage_snapshot->getSampleBlockForColumns(storage_.getVirtuals().getNames());
 
     return {non_virtual_header, virtual_header};
 }
@@ -46,21 +36,17 @@ RabbitMQSource::RabbitMQSource(
     size_t max_block_size_,
     UInt64 max_execution_time_,
     StreamingHandleErrorMode handle_error_mode_,
-    bool nack_broken_messages_,
-    bool ack_in_suffix_,
-    LoggerPtr log_)
+    bool ack_in_suffix_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
-        getHeaders(storage_snapshot_, columns),
+        getHeaders(storage_, storage_snapshot_),
         context_,
         columns,
         max_block_size_,
         max_execution_time_,
         handle_error_mode_,
-        nack_broken_messages_,
-        ack_in_suffix_,
-        log_)
+        ack_in_suffix_)
 {
 }
 
@@ -73,9 +59,7 @@ RabbitMQSource::RabbitMQSource(
     size_t max_block_size_,
     UInt64 max_execution_time_,
     StreamingHandleErrorMode handle_error_mode_,
-    bool nack_broken_messages_,
-    bool ack_in_suffix_,
-    LoggerPtr log_)
+    bool ack_in_suffix_)
     : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -84,10 +68,9 @@ RabbitMQSource::RabbitMQSource(
     , max_block_size(max_block_size_)
     , handle_error_mode(handle_error_mode_)
     , ack_in_suffix(ack_in_suffix_)
-    , nack_broken_messages(nack_broken_messages_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , log(log_)
+    , log(getLogger("RabbitMQSource"))
     , max_execution_time_ms(max_execution_time_)
 {
     storage.incrementReader();
@@ -126,10 +109,7 @@ Chunk RabbitMQSource::generate()
 {
     auto chunk = generateImpl();
     if (!chunk && ack_in_suffix)
-    {
-        LOG_TEST(log, "Will send ack on select");
         sendAck();
-    }
 
     return chunk;
 }
@@ -188,7 +168,7 @@ Chunk RabbitMQSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    /// Channel id will not change during read.
+    RabbitMQConsumer::CommitInfo current_commit_info;
     while (true)
     {
         exception_message.reset();
@@ -196,35 +176,14 @@ Chunk RabbitMQSource::generateImpl()
 
         if (consumer->hasPendingMessages())
         {
-            /// A buffer containing a single RabbitMQ message.
             if (auto buf = consumer->consume())
-            {
                 new_rows = executor.execute(*buf);
-            }
         }
 
         if (new_rows)
         {
             const auto exchange_name = storage.getExchange();
             const auto & message = consumer->currentMessage();
-
-            LOG_TEST(log, "Pulled {} rows, message delivery tag: {}, "
-                     "previous delivery tag: {}, redelivered: {}, failed delivery tags by this moment: {}, exception message: {}",
-                     new_rows, message.delivery_tag, commit_info.delivery_tag, message.redelivered,
-                     commit_info.failed_delivery_tags.size(),
-                     exception_message.has_value() ? exception_message.value() : "None");
-
-            commit_info.channel_id = message.channel_id;
-
-            if (exception_message.has_value() && nack_broken_messages)
-            {
-                commit_info.failed_delivery_tags.push_back(message.delivery_tag);
-            }
-            else
-            {
-                chassert(!commit_info.delivery_tag || message.redelivered || commit_info.delivery_tag < message.delivery_tag);
-                commit_info.delivery_tag = std::max(commit_info.delivery_tag, message.delivery_tag);
-            }
 
             for (size_t i = 0; i < new_rows; ++i)
             {
@@ -250,6 +209,7 @@ Chunk RabbitMQSource::generateImpl()
             }
 
             total_rows += new_rows;
+            current_commit_info = {message.delivery_tag, message.channel_id};
         }
         else if (total_rows == 0)
         {
@@ -291,6 +251,7 @@ Chunk RabbitMQSource::generateImpl()
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 
+    commit_info = current_commit_info;
     return Chunk(std::move(result_columns), total_rows);
 }
 

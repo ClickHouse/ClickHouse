@@ -25,7 +25,7 @@
   */
 template <typename T, typename U>
 constexpr bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
-    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U)); /// NOLINT(misc-redundant-expression)
+    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U));
 
 namespace DB
 {
@@ -301,8 +301,6 @@ public:
     }
 };
 
-/// NOLINTBEGIN(bugprone-sizeof-expression)
-
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
@@ -560,7 +558,7 @@ public:
     }
 
     template <typename... TAllocatorParams>
-    void swap(PODArray & rhs, TAllocatorParams &&... allocator_params) /// NOLINT(performance-noexcept-swap)
+    void swap(PODArray & rhs, TAllocatorParams &&... allocator_params)
     {
 #ifndef NDEBUG
         this->unprotect();
@@ -757,10 +755,8 @@ public:
     }
 };
 
-/// NOLINTEND(bugprone-sizeof-expression)
-
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
-void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs) /// NOLINT
+void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs)
 {
     lhs.swap(rhs);
 }

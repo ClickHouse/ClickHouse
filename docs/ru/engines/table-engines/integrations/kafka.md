@@ -166,43 +166,17 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать: глобальный (`kafka`) и по топикам (`kafka_topic_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
 
 ``` xml
-<kafka>
-    <!-- Global configuration options for all tables of Kafka engine type -->
+  <!-- Global configuration options for all tables of Kafka engine type -->
+  <kafka>
     <debug>cgrp</debug>
-    <statistics_interval_ms>3000</statistics_interval_ms>
+    <auto_offset_reset>smallest</auto_offset_reset>
+  </kafka>
 
-    <kafka_topic>
-        <name>logs</name>
-        <statistics_interval_ms>4000</statistics_interval_ms>
-    </kafka_topic>
-
-    <!-- Settings for consumer -->
-    <consumer>
-        <auto_offset_reset>smallest</auto_offset_reset>
-        <kafka_topic>
-            <name>logs</name>
-            <fetch_min_bytes>100000</fetch_min_bytes>
-        </kafka_topic>
-
-        <kafka_topic>
-            <name>stats</name>
-            <fetch_min_bytes>50000</fetch_min_bytes>
-        </kafka_topic>
-    </consumer>
-
-    <!-- Settings for producer -->
-    <producer>
-        <kafka_topic>
-            <name>logs</name>
-            <retry_backoff_ms>250</retry_backoff_ms>
-        </kafka_topic>
-
-        <kafka_topic>
-            <name>stats</name>
-            <retry_backoff_ms>400</retry_backoff_ms>
-        </kafka_topic>
-    </producer>
-</kafka>
+  <!-- Configuration specific for topic "logs" -->
+  <kafka_logs>
+    <retry_backoff_ms>250</retry_backoff_ms>
+    <fetch_min_bytes>100000</fetch_min_bytes>
+  </kafka_logs>
 ```
 
 В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчеркивание (`_`) вместо точки в конфигурации ClickHouse. Например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.

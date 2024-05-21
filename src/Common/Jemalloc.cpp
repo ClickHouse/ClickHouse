@@ -2,7 +2,6 @@
 
 #if USE_JEMALLOC
 
-#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>

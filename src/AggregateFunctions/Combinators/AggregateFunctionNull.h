@@ -43,8 +43,8 @@ template <bool result_is_nullable, bool serialize_flag, typename Derived>
 class AggregateFunctionNullBase : public IAggregateFunctionHelper<Derived>
 {
 protected:
-    const AggregateFunctionPtr nested_function;
-    const size_t prefix_size;
+    AggregateFunctionPtr nested_function;
+    size_t prefix_size;
 
     /** In addition to data for nested aggregate function, we keep a flag
       *  indicating - was there at least one non-NULL value accumulated.
@@ -55,18 +55,12 @@ protected:
 
     AggregateDataPtr nestedPlace(AggregateDataPtr __restrict place) const noexcept
     {
-        if constexpr (result_is_nullable)
-            return place + prefix_size;
-        else
-            return place;
+        return place + prefix_size;
     }
 
     ConstAggregateDataPtr nestedPlace(ConstAggregateDataPtr __restrict place) const noexcept
     {
-        if constexpr (result_is_nullable)
-            return place + prefix_size;
-        else
-            return place;
+        return place + prefix_size;
     }
 
     static void initFlag(AggregateDataPtr __restrict place) noexcept
@@ -93,8 +87,11 @@ public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<Derived>(arguments, params, createResultType(nested_function_))
         , nested_function{nested_function_}
-        , prefix_size(result_is_nullable ? nested_function->alignOfData() : 0)
     {
+        if constexpr (result_is_nullable)
+            prefix_size = nested_function->alignOfData();
+        else
+            prefix_size = 0;
     }
 
     String getName() const override
@@ -154,18 +151,9 @@ public:
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
     {
-        AggregateDataPtrs nested_places(places.begin(), places.end());
-        for (auto & nested_place : nested_places)
-            nested_place = nestedPlace(nested_place);
-
-        nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
+        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -491,7 +479,7 @@ public:
         std::vector<const UInt8 *> nullable_filters;
         const IColumn * nested_columns[number_of_arguments];
 
-        std::unique_ptr<UInt8[]> final_flags;
+        std::unique_ptr<UInt8[]> final_flags = nullptr;
         const UInt8 * final_flags_ptr = nullptr;
 
         if (if_argument_pos >= 0)
@@ -530,7 +518,7 @@ public:
             }
         }
 
-        chassert(!nullable_filters.empty());
+        chassert(nullable_filters.size() > 0);
         bool found_one = false;
         if (nullable_filters.size() == 1)
         {

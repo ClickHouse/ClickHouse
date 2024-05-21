@@ -14,8 +14,8 @@ namespace DB
 
 bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_id(Keyword::ID);
-    ParserKeyword s_all(Keyword::ALL);
+    ParserKeyword s_id("ID");
+    ParserKeyword s_all("ALL");
     ParserStringLiteral parser_string_literal;
     ParserSubstitution parser_substitution;
     ParserExpression parser_expr;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Backups/BackupIO.h>
-#include <Common/Logger.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
