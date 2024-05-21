@@ -321,7 +321,7 @@ public:
     const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        return const_iterator(this, lastPopulatedCell());
+        return const_iterator(this, buf ? lastPopulatedCell() : buf);
     }
 
     const_iterator cend() const
@@ -331,7 +331,7 @@ public:
 
     iterator end()
     {
-        return iterator(this, lastPopulatedCell());
+        return iterator(this, buf ? lastPopulatedCell() : buf);
     }
 
 
