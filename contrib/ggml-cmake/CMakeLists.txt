@@ -47,7 +47,7 @@ elseif (ARCH_AMD64)
             execute_process(COMMAND grep "${intrin} " /proc/cpuinfo OUTPUT_VARIABLE GGML_${intrin})
         endif()
 
-        if ((OS_DARWIN AND "GGML_${intrin}" MATCHES "${darwin_intrin}") OR (OS_LINUX AND "GGML_${intrin}" MATCHES "${intrin}"))
+        if ((OS_DARWIN AND "${GGML_${intrin}}" MATCHES "${darwin_intrin}") OR (OS_LINUX AND "${GGML_${intrin}}" MATCHES "${intrin}"))
             list(APPEND GGML_ARCH_FLAGS "-m${intrin}")
         endif()
     endmacro()
