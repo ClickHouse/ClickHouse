@@ -15,12 +15,12 @@ struct ConnectionTimeouts;
 struct RemoteProxyHostFetcher
 {
     virtual ~RemoteProxyHostFetcher() = default;
-    virtual std::string fetch(const Poco::URI & uri, const ConnectionTimeouts & timeouts) const = 0;
+    virtual std::string fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) const = 0;
 };
 
 struct RemoteProxyHostFetcherImpl : public RemoteProxyHostFetcher
 {
-    std::string fetch(const Poco::URI & uri, const ConnectionTimeouts & timeouts) const override;
+    std::string fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) const override;
 };
 
 /*

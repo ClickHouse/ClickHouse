@@ -14,19 +14,16 @@ namespace DB
 
 std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts) const
 {
-    auto rw_settings = ReadSettings {};
-    rw_settings.http_max_tries = 1;
-    auto credentials = Poco::Net::HTTPBasicCredentials {};
+    auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
+    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
 
-    auto rw_http_buffer = BuilderRWBufferFromHTTP(endpoint)
-                            .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-                            .withTimeouts(timeouts)
-                            .withSettings(rw_settings)
-                            .create(credentials);
+    session->sendRequest(request);
 
-    String proxy_host;
+    Poco::Net::HTTPResponse response;
+    auto & response_body_stream = session->receiveResponse(response);
 
-    readStringUntilEOF(proxy_host, *rw_http_buffer);
+    std::string proxy_host;
+    Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
 
     return proxy_host;
 }
