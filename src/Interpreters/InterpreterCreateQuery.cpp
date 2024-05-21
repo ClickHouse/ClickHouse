@@ -6,7 +6,7 @@
 #include <Access/User.h>
 
 #include "Common/Exception.h"
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
