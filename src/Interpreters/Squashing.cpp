@@ -1,8 +1,6 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
-#include "Core/Block.h"
-#include "Core/ColumnsWithTypeAndName.h"
 
 
 namespace DB

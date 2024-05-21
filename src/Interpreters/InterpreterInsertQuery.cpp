@@ -620,29 +620,16 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            if (settings.allow_insert_threads_reduction_optimizaion)
-            {
-                pipeline.addTransform(std::make_shared<PlanSquashingTransform>(
-                        header,
-                        table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                        table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                        presink_chains.size()));
+            pipeline.addTransform(std::make_shared<PlanSquashingTransform>(
+                    header,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
+                    presink_chains.size()));
 
-                pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-                {
-                    return std::make_shared<ApplySquashingTransform>(in_header);
-                });
-            }
-            else
+            pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
             {
-                pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-                {
-                    return std::make_shared<SimpleSquashingTransform>(
-                        in_header,
-                        table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                        table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
-                });
-            }
+                return std::make_shared<ApplySquashingTransform>(in_header);
+            });
         }
 
         size_t num_select_threads = pipeline.getNumThreads();
@@ -694,30 +681,17 @@ BlockIO InterpreterInsertQuery::execute()
         {
             bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-            if (settings.allow_insert_threads_reduction_optimizaion)
-            {
-                auto squashing = std::make_shared<ApplySquashingTransform>(chain.getInputHeader());
+            auto squashing = std::make_shared<ApplySquashingTransform>(chain.getInputHeader());
 
-                chain.addSource(std::move(squashing));
+            chain.addSource(std::move(squashing));
 
-                auto balancing = std::make_shared<PlanSquashingTransform>(
-                        chain.getInputHeader(),
-                        table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                        table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
-                        presink_chains.size());
-
-                chain.addSource(std::move(balancing));
-            }
-            else
-            {
-                auto squashing = std::make_shared<SimpleSquashingTransform>(
+            auto balancing = std::make_shared<PlanSquashingTransform>(
                     chain.getInputHeader(),
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL);
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL,
+                    presink_chains.size());
 
-                chain.addSource(std::move(squashing));
-            }
-
+            chain.addSource(std::move(balancing));
         }
 
         auto context_ptr = getContext();

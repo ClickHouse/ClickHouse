@@ -311,15 +311,9 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     builder.resize(1);
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    if (mut_context->getSettings().allow_insert_threads_reduction_optimizaion)
-    {
-        builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0, 1));
-        builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader()));
-    }
-    else
-    {
-        builder.addTransform(std::make_shared<SquashingTransform>(builder.getHeader(), block.rows(), 0));
-    }
+
+    builder.addTransform(std::make_shared<PlanSquashingTransform>(builder.getHeader(), block.rows(), 0, 1));
+    builder.addTransform(std::make_shared<ApplySquashingTransform>(builder.getHeader()));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
