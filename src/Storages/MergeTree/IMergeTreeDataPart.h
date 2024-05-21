@@ -104,7 +104,6 @@ public:
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
-// TODO: remove?
     virtual bool isStoredOnDisk() const = 0;
 
     virtual bool isStoredOnRemoteDisk() const = 0;

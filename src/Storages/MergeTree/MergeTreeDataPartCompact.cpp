@@ -74,9 +74,10 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
 ////        { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 ////
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-            data_part_name_, logger_name_, serializations_, data_part_storage_,
-            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, indices_to_recalc, stats_to_recalc_,
-            marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
+        data_part_name_, logger_name_, serializations_, data_part_storage_,
+        index_granularity_info_, storage_settings_, columns_list, metadata_snapshot,
+        indices_to_recalc, stats_to_recalc_, marks_file_extension_,
+        default_codec_, writer_settings, computed_index_granularity);
 }
 
 

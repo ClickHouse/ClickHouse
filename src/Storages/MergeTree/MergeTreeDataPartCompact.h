@@ -40,7 +40,6 @@ public:
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
-// TODO: remove?
     bool isStoredOnDisk() const override { return true; }
 
     bool isStoredOnRemoteDisk() const override;

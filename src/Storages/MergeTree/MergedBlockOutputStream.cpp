@@ -40,7 +40,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
 
-// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
+    /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
     if (data_part->isStoredOnDisk())
         data_part_storage->createDirectories();
 
