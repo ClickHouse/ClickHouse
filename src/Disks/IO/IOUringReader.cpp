@@ -1,5 +1,4 @@
 #include "IOUringReader.h"
-#include <memory>
 
 #if USE_LIBURING
 
@@ -13,6 +12,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <future>
+#include <memory>
 
 namespace ProfileEvents
 {
@@ -46,7 +46,7 @@ namespace ErrorCodes
 }
 
 IOUringReader::IOUringReader(uint32_t entries_)
-    : log(&Poco::Logger::get("IOUringReader"))
+    : log(getLogger("IOUringReader"))
 {
     struct io_uring_probe * probe = io_uring_get_probe();
     if (!probe)

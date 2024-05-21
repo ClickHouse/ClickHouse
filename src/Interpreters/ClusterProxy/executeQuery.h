@@ -43,7 +43,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     const Settings & settings,
     const StorageID & main_table,
     ASTPtr additional_filter_ast = nullptr,
-    Poco::Logger * log = nullptr,
+    LoggerPtr log = nullptr,
     const DistributedSettings * distributed_settings = nullptr);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
@@ -57,21 +57,20 @@ void executeQuery(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
-    Poco::Logger * log,
-    const ASTPtr & query_ast,
+    LoggerPtr log,
     ContextPtr context,
     const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster,
     const DistributedSettings & distributed_settings,
-    AdditionalShardFilterGenerator shard_filter_generator = {});
+    AdditionalShardFilterGenerator shard_filter_generator);
 
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
-    const StorageID & main_table,
-    SelectStreamFactory & stream_factory,
+    const StorageID & storage_id,
+    const Block & header,
+    QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits);

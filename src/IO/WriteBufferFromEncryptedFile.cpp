@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
+#include <Common/logger_useful.h>
 
 #if USE_SSL
 
@@ -21,7 +22,9 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
 
 WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
 {
-    finalize();
+    /// That destructor could be call with finalized=false in case of exceptions.
+    if (!finalized)
+        LOG_INFO(log, "WriteBufferFromEncryptedFile is not finalized in destructor");
 }
 
 void WriteBufferFromEncryptedFile::finalizeBefore()

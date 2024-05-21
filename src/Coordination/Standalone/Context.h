@@ -11,10 +11,11 @@
 #include <Disks/IO/getThreadPoolReader.h>
 
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
-#include <IO/IResourceManager.h>
+#include <Common/Scheduler/IResourceManager.h>
 
 #include <Poco/Util/Application.h>
 
@@ -126,7 +127,7 @@ public:
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    enum class ApplicationType
+    enum class ApplicationType : uint8_t
     {
         KEEPER
     };
@@ -136,7 +137,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
-    IOUringReader & getIOURingReader() const;
+    IOUringReader & getIOUringReader() const;
 #endif
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
@@ -160,6 +161,10 @@ public:
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
+
+    const ServerSettings & getServerSettings() const;
+
+    bool hasTraceCollector() const;
 };
 
 }

@@ -1,8 +1,12 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Core/NamesAndTypes.h>
+
+#include <Storages/IStorage_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
+
+#include <Analyzer/IQueryTreeNode.h>
 
 namespace DB
 {
@@ -11,6 +15,9 @@ class FunctionNode;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
+
+/// Returns true if storage is used in tree, false otherwise
+bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root);
 
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
@@ -50,10 +57,13 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
 
-/// Extract table, table function, query, union from join tree
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
+/// Extract all TableNodes from the query tree.
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
-/// Extract left table expression from join tree
+/// Extract table, table function, query, union from join tree.
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
+
+/// Extract left table expression from join tree.
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
@@ -101,5 +111,45 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
+
+/// Checks that node has only one source and returns it
+QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
+
+/// Update mutable context for subquery execution
+void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
+
+/** Build query to read specified columns from table expression.
+  * Specified mutable context will be used as query context.
+  */
+QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    ContextMutablePtr & context);
+
+/** Build subquery to read specified columns from table expression.
+  * Specified mutable context will be used as query context.
+  */
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    ContextMutablePtr & context);
+
+/** Build query to read specified columns from table expression.
+  * Specified context will be copied and used as query context.
+  */
+QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context);
+
+/** Build subquery to read specified columns from table expression.
+  * Specified context will be copied and used as query context.
+  */
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context);
+
+/** Build subquery to read all columns from table expression.
+  * Specified context will be copied and used as query context.
+  */
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
+
 
 }

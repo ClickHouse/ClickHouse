@@ -14,19 +14,11 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/re2.h>
 
 #include <Poco/URI.h>
 
 #include <filesystem>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace fs = std::filesystem;
 
@@ -53,7 +45,7 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
     , source(source_url)
-    , log(&Poco::Logger::get("DatabaseHDFS(" + name_ + ")"))
+    , log(getLogger("DatabaseHDFS(" + name_ + ")"))
 {
     if (!source.empty())
     {
@@ -191,7 +183,7 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
     ParserCreateQuery parser;
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
@@ -233,7 +225,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseHDFS::getTablesForBackup(cons
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }

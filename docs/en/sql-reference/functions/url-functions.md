@@ -128,9 +128,9 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
-- `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
-- `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
-- `cutToFirstSignificantSubdomain('tr') = ''`.
+- `cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
+- `cutToFirstSignificantSubdomainWithWWW('www.tr') = 'www.tr'`.
+- `cutToFirstSignificantSubdomainWithWWW('tr') = ''`.
 
 ### cutToFirstSignificantSubdomainCustom
 
@@ -152,10 +152,10 @@ Configuration example:
 **Syntax**
 
 ``` sql
-cutToFirstSignificantSubdomain(URL, TLD)
+cutToFirstSignificantSubdomainCustom(URL, TLD)
 ```
 
-**Parameters**
+**Arguments**
 
 - `URL` — URL. [String](../../sql-reference/data-types/string.md).
 - `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
@@ -209,7 +209,7 @@ Configuration example:
 cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
 ```
 
-**Parameters**
+**Arguments**
 
 - `URL` — URL. [String](../../sql-reference/data-types/string.md).
 - `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
@@ -263,7 +263,7 @@ Configuration example:
 firstSignificantSubdomainCustom(URL, TLD)
 ```
 
-**Parameters**
+**Arguments**
 
 - `URL` — URL. [String](../../sql-reference/data-types/string.md).
 - `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).

@@ -15,7 +15,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
 
 Possible values:
 
@@ -212,6 +212,8 @@ Possible values:
 
 Default value: `'basic'`.
 
+Cloud default value: `'best_effort'`.
+
 See also:
 
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
@@ -377,6 +379,12 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
+## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+
+Allow parsing bools as strings in JSON input formats.
+
+Enabled by default.
+
 ## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
@@ -459,7 +467,7 @@ Enabled by default.
 
 Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
 In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
-by using String type for keys with unknown types. 
+by using String type for keys with unknown types.
 
 Example:
 
@@ -640,6 +648,12 @@ Enabled by default.
 
 Insert default values for missing elements in JSON object while parsing named tuple.
 This setting works only when setting `input_format_json_named_tuples_as_objects` is enabled.
+
+Enabled by default.
+
+## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
+
+Throw an exception if JSON string contains bad escape sequence in JSON input formats. If disabled, bad escape sequences will remain as is in the data.
 
 Enabled by default.
 
@@ -883,7 +897,7 @@ Default value: `,`.
 
 If it is set to true, allow strings in single quotes.
 
-Enabled by default.
+Disabled by default.
 
 ### format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
 
@@ -1263,6 +1277,28 @@ Possible values:
 
 Default value: `0`.
 
+### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
+
+Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
+- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
+
+Default value: `1`.
+
+### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
+
+Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
+- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
+
+Default value: `0`.
+
 ### output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 Use Arrow String type instead of Binary for String columns.
@@ -1337,7 +1373,7 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Disabled by default.
+Enabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 
@@ -1569,7 +1605,13 @@ Result:
 
 Use ANSI escape sequences to paint colors in Pretty formats.
 
-Enabled by default.
+possible values:
+
+-   `0` — Disabled. Pretty formats do not use ANSI escape sequences.
+-   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
+-   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
+
+Default value is `auto`.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
@@ -1600,7 +1642,7 @@ Possible values:
 - 0 — Output without row numbers.
 - 1 — Output with row numbers.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
@@ -1620,11 +1662,42 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
+### output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
+
+Print a readable number tip on the right side of the table if the block consists of a single number which exceeds
+this value (except 0).
+
+Possible values:
+
+- 0 — The readable number tip will not be printed.
+- Positive integer — The readable number tip will be printed if the single number exceeds this value.
+
+Default value: `1000000`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT 1000000000 as a;
+```
+
+Result:
+```text
+┌──────────a─┐
+│ 1000000000 │ -- 1.00 billion
+└────────────┘
+```
+
 ## Template format settings {#template-format-settings}
 
 ### format_template_resultset {#format_template_resultset}
 
 Path to file which contains format string for result set (for Template format).
+
+### format_template_resultset_format {#format_template_resultset_format}
+
+Format string for result set (for Template format)
 
 ### format_template_row {#format_template_row}
 
@@ -1633,6 +1706,10 @@ Path to file which contains format string for rows (for Template format).
 ### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 Delimiter between rows (for Template format).
+
+### format_template_row_format {#format_template_row_format}
+
+Format string for rows (for Template format)
 
 ## CustomSeparated format settings {custom-separated-format-settings}
 

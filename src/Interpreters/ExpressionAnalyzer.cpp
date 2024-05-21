@@ -47,7 +47,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/IDataType.h>
@@ -120,7 +120,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     return true;
 }
 
-Poco::Logger * getLogger() { return &Poco::Logger::get("ExpressionAnalyzer"); }
+LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }
 
 }
 
@@ -336,7 +336,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                                 /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                                 if (!aggregate_descriptions.empty() || group_size > 1)
                                 {
-                                    if (j + 1 < static_cast<ssize_t>(group_size))
+                                    if (j + 1 < group_size)
                                         group_elements_ast[j] = std::move(group_elements_ast.back());
 
                                     group_elements_ast.pop_back();
@@ -390,7 +390,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                             if (!aggregate_descriptions.empty() || size > 1)
                             {
-                                if (i + 1 < static_cast<ssize_t>(size))
+                                if (i + 1 < size)
                                     group_asts[i] = std::move(group_asts.back());
 
                                 group_asts.pop_back();
@@ -1050,7 +1050,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         join_element.table_expression,
         context,
         original_right_column_names,
-        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
+        query_options.copy().setWithAllColumns().ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {

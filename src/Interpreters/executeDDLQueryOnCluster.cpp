@@ -1,4 +1,5 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -64,7 +65,7 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
-    OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::PRODUCER);
+    OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::SpanKind::PRODUCER);
 
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
@@ -200,8 +201,6 @@ public:
     Status prepare() override;
 
 private:
-    static Strings getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path);
-
     static Block getSampleBlock(ContextPtr context_, bool hosts_to_wait);
 
     Strings getNewAndUpdate(const Strings & current_list_of_finished_hosts);
@@ -223,12 +222,13 @@ private:
     String node_path;
     ContextPtr context;
     Stopwatch watch;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     NameSet waiting_hosts;  /// hosts from task host list
     NameSet finished_hosts; /// finished hosts from host list
     NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
-    Strings current_active_hosts; /// Hosts that were in active state at the last check
+    Strings current_active_hosts; /// Hosts that are currently executing the task
+    NameSet offline_hosts;  /// Hosts that are not currently running
     size_t num_hosts_finished = 0;
 
     /// Save the first detected error and throw it at the end of execution
@@ -237,7 +237,10 @@ private:
     Int64 timeout_seconds = 120;
     bool is_replicated_database = false;
     bool throw_on_timeout = true;
+    bool only_running_hosts = false;
+
     bool timeout_exceeded = false;
+    bool stop_waiting_offline_hosts = false;
 };
 
 
@@ -250,7 +253,8 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     auto source = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait);
     io.pipeline = QueryPipeline(std::move(source));
 
-    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE ||
+        context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
         io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
 
     return io;
@@ -262,7 +266,9 @@ Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wa
 
     auto maybe_make_nullable = [&](const DataTypePtr & type) -> DataTypePtr
     {
-        if (output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE)
+        if (output_mode == DistributedDDLOutputMode::THROW ||
+            output_mode == DistributedDDLOutputMode::NONE ||
+            output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
             return type;
         return std::make_shared<DataTypeNullable>(type);
     };
@@ -307,15 +313,19 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
-    , log(&Poco::Logger::get("DDLQueryStatusSource"))
+    , log(getLogger("DDLQueryStatusSource"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
-    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
+    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE
+        || output_mode == DistributedDDLOutputMode::NONE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
 
     if (hosts_to_wait)
     {
         waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
         is_replicated_database = true;
+        only_running_hosts = output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE ||
+                             output_mode == DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE ||
+                             output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
     }
     else
     {
@@ -377,6 +387,38 @@ Chunk DDLQueryStatusSource::generateChunkWithUnfinishedHosts() const
     return Chunk(std::move(columns), unfinished_hosts.size());
 }
 
+static NameSet getOfflineHosts(const String & node_path, const NameSet & hosts_to_wait, const ZooKeeperPtr & zookeeper, LoggerPtr log)
+{
+    fs::path replicas_path;
+    if (node_path.ends_with('/'))
+        replicas_path = fs::path(node_path).parent_path().parent_path().parent_path() / "replicas";
+    else
+        replicas_path = fs::path(node_path).parent_path().parent_path() / "replicas";
+
+    Strings paths;
+    Strings hosts_array;
+    for (const auto & host : hosts_to_wait)
+    {
+        hosts_array.push_back(host);
+        paths.push_back(replicas_path / host / "active");
+    }
+
+    NameSet offline;
+    auto res = zookeeper->tryGet(paths);
+    for (size_t i = 0; i < res.size(); ++i)
+        if (res[i].error == Coordination::Error::ZNONODE)
+            offline.insert(hosts_array[i]);
+
+    if (offline.size() == hosts_to_wait.size())
+    {
+        /// Avoid reporting that all hosts are offline
+        LOG_WARNING(log, "Did not find active hosts, will wait for all {} hosts. This should not happen often", offline.size());
+        return {};
+    }
+
+    return offline;
+}
+
 Chunk DDLQueryStatusSource::generate()
 {
     bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();
@@ -398,21 +440,23 @@ Chunk DDLQueryStatusSource::generate()
         if (isCancelled())
             return {};
 
-        if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
+        if (stop_waiting_offline_hosts || (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds))
         {
             timeout_exceeded = true;
 
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();
 
-            constexpr auto msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
-                                                "There are {} unfinished hosts ({} of them are currently active), "
-                                                "they are going to execute the query in background";
+            constexpr auto msg_format = "Distributed DDL task {} is not finished on {} of {} hosts "
+                                        "({} of them are currently executing the task, {} are inactive). "
+                                        "They are going to execute the query in background. Was waiting for {} seconds{}";
+
             if (throw_on_timeout)
             {
                 if (!first_exception)
                     first_exception = std::make_unique<Exception>(Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                        msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts));
+                        msg_format, node_path, num_unfinished_hosts, waiting_hosts.size(), num_active_hosts, offline_hosts.size(),
+                        watch.elapsedSeconds(), stop_waiting_offline_hosts ? "" : ", which is longer than distributed_ddl_task_timeout"));
 
                 /// For Replicated database print a list of unfinished hosts as well. Will return empty block on next iteration.
                 if (is_replicated_database)
@@ -420,15 +464,13 @@ Chunk DDLQueryStatusSource::generate()
                 return {};
             }
 
-            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            LOG_INFO(log, msg_format, node_path, num_unfinished_hosts, waiting_hosts.size(), num_active_hosts, offline_hosts.size(),
+                     watch.elapsedSeconds(), stop_waiting_offline_hosts ? "" : "which is longer than distributed_ddl_task_timeout");
 
             return generateChunkWithUnfinishedHosts();
         }
 
-        if (num_hosts_finished != 0 || try_number != 0)
-        {
-            sleepForMilliseconds(std::min<size_t>(1000, 50 * (try_number + 1)));
-        }
+        sleepForMilliseconds(std::min<size_t>(1000, 50 * try_number));
 
         bool node_exists = false;
         Strings tmp_hosts;
@@ -436,13 +478,25 @@ Chunk DDLQueryStatusSource::generate()
 
         {
             auto retries_ctl = ZooKeeperRetriesControl(
-                "executeDDLQueryOnCluster", &Poco::Logger::get("DDLQueryStatusSource"), getRetriesInfo(), context->getProcessListElement());
+                "executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo(), context->getProcessListElement());
             retries_ctl.retryLoop([&]()
             {
                 auto zookeeper = context->getZooKeeper();
-                node_exists = zookeeper->exists(node_path);
-                tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
-                tmp_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
+                Strings paths = {String(fs::path(node_path) / node_to_wait), String(fs::path(node_path) / "active")};
+                auto res = zookeeper->tryGetChildren(paths);
+                for (size_t i = 0; i < res.size(); ++i)
+                    if (res[i].error != Coordination::Error::ZOK && res[i].error != Coordination::Error::ZNONODE)
+                        throw Coordination::Exception::fromPath(res[i].error, paths[i]);
+
+                if (res[0].error == Coordination::Error::ZNONODE)
+                    node_exists = zookeeper->exists(node_path);
+                else
+                    node_exists = true;
+                tmp_hosts = res[0].names;
+                tmp_active_hosts = res[1].names;
+
+                if (only_running_hosts)
+                    offline_hosts = getOfflineHosts(node_path, waiting_hosts, zookeeper, log);
             });
         }
 
@@ -460,6 +514,17 @@ Chunk DDLQueryStatusSource::generate()
 
         Strings new_hosts = getNewAndUpdate(tmp_hosts);
         ++try_number;
+
+        if (only_running_hosts)
+        {
+            size_t num_finished_or_offline = 0;
+            for (const auto & host : waiting_hosts)
+                num_finished_or_offline += finished_hosts.contains(host) || offline_hosts.contains(host);
+
+            if (num_finished_or_offline == waiting_hosts.size())
+                stop_waiting_offline_hosts = true;
+        }
+
         if (new_hosts.empty())
             continue;
 
@@ -470,14 +535,20 @@ Chunk DDLQueryStatusSource::generate()
         {
             ExecutionStatus status(-1, "Cannot obtain error message");
 
-            if (node_to_wait == "finished")
+            /// Replicated database retries in case of error, it should not write error status.
+#ifdef ABORT_ON_LOGICAL_ERROR
+            bool need_check_status = true;
+#else
+            bool need_check_status = !is_replicated_database;
+#endif
+            if (need_check_status)
             {
                 String status_data;
                 bool finished_exists = false;
 
                 auto retries_ctl = ZooKeeperRetriesControl(
                     "executeDDLQueryOnCluster",
-                    &Poco::Logger::get("DDLQueryStatusSource"),
+                    getLogger("DDLQueryStatusSource"),
                     getRetriesInfo(),
                     context->getProcessListElement());
                 retries_ctl.retryLoop([&]()
@@ -496,7 +567,6 @@ Chunk DDLQueryStatusSource::generate()
             if (status.code != 0 && !first_exception
                 && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
             {
-                /// Replicated database retries in case of error, it should not write error status.
                 if (is_replicated_database)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
 
@@ -553,15 +623,6 @@ IProcessor::Status DDLQueryStatusSource::prepare()
     }
     else
         return ISource::prepare();
-}
-
-Strings DDLQueryStatusSource::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
-{
-    Strings res;
-    Coordination::Error code = zookeeper->tryGetChildren(node_path, res);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw Coordination::Exception::fromPath(code, node_path);
-    return res;
 }
 
 Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_finished_hosts)

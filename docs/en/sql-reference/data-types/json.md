@@ -1,13 +1,13 @@
 ---
 slug: /en/sql-reference/data-types/json
-sidebar_position: 54
+sidebar_position: 26
 sidebar_label: JSON
 ---
 
 # JSON
 
 :::note
-This feature is experimental and is not production ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead.
+This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead.
 :::
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
@@ -15,7 +15,8 @@ Stores JavaScript Object Notation (JSON) documents in a single column.
 `JSON` is an alias for `Object('json')`.
 
 :::note
-The JSON data type is an experimental feature. To use it, set `allow_experimental_object_type = 1`.
+The JSON data type is an obsolete feature. Do not use it.
+If you want to use it, set `allow_experimental_object_type = 1`.
 :::
 
 ## Example

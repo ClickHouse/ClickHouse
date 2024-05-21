@@ -1,8 +1,9 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/registerInterpreters.h>
 #include "Processors/Executors/PullingPipelineExecutor.h"
 
-#include <Functions/registerDatabases.h>
+#include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -24,11 +25,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         auto initialize = [&]() mutable
         {
+            if (context)
+                return true;
+
             shared_context = Context::createShared();
             context = Context::createGlobal(shared_context.get());
             context->makeGlobalContext();
             context->setApplicationType(Context::ApplicationType::LOCAL);
 
+            registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();

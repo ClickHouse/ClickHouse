@@ -62,7 +62,7 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
+static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
 {
     if (blocksHaveEqualStructure(header, block))
         return block;
@@ -84,7 +84,7 @@ static Block adoptBlock(const Block & header, const Block & block, Poco::Logger 
 }
 
 
-static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, Poco::Logger * log)
+static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
@@ -112,21 +112,19 @@ DistributedSink::DistributedSink(
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
-    StorageID main_table_,
     const Names & columns_to_send_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , query_ast(createInsertToRemoteTableQuery(main_table_.database_name, main_table_.table_name, columns_to_send_))
+    , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
     , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
-    , main_table(main_table_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
-    , log(&Poco::Logger::get("DistributedSink"))
+    , log(getLogger("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
@@ -175,7 +173,10 @@ void DistributedSink::writeAsync(const Block & block)
     else
     {
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-            return writeSplitAsync(block);
+        {
+            writeSplitAsync(block);
+            return;
+        }
 
         writeAsyncImpl(block);
         ++inserted_blocks;
@@ -372,10 +373,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto results = shard_info.pool->getManyChecked(timeouts, settings, PoolMode::GET_ONE, main_table.getQualifiedName());
-                    if (results.empty() || results.front().entry.isNull())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}", toString(job.shard_index));
-
+                    /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
+                    /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
+                    auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
                     job.connection_entry = std::move(results.front().entry);
                 }
                 else
@@ -439,6 +439,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
@@ -540,6 +544,10 @@ void DistributedSink::onFinish()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
+    std::lock_guard lock(execution_mutex);
+    if (isCancelled())
+        return;
+
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
     if (insert_sync && pool && !pool->finished())
@@ -590,6 +598,7 @@ void DistributedSink::onFinish()
 
 void DistributedSink::onCancel()
 {
+    std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
     {
         try
@@ -616,7 +625,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return storage.createSelector(cluster, key_column);
+    return StorageDistributed::createSelector(cluster, key_column);
 }
 
 
@@ -740,7 +749,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     if (compression_method == "ZSTD")
         compression_level = settings.network_zstd_compression_level;
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs, settings.enable_deflate_qpl_codec);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs, settings.enable_deflate_qpl_codec, settings.enable_zstd_qat_codec);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions

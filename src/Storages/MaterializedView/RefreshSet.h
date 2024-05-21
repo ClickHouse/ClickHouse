@@ -1,9 +1,9 @@
 #pragma once
 
+#include <IO/Progress.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MaterializedView/RefreshTask_fwd.h>
-
 #include <Common/CurrentMetrics.h>
 
 namespace DB
@@ -82,7 +82,7 @@ public:
 
     RefreshSet();
 
-    Handle emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task);
+    void emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task);
 
     RefreshTaskHolder getTask(const StorageID & id) const;
 

@@ -79,7 +79,7 @@ DDLWorker::DDLWorker(
     const CurrentMetrics::Metric * max_entry_metric_,
     const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
-    , log(&Poco::Logger::get(logger_name))
+    , log(getLogger(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)
@@ -106,6 +106,9 @@ DDLWorker::DDLWorker(
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+
+        if (config->has(prefix + ".host_name"))
+            config_host_name = config->getString(prefix + ".host_name");
 
         if (config->has(prefix + ".profile"))
             context->setSetting("profile", config->getString(prefix + ".profile"));
@@ -214,7 +217,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     /// Stage 2: resolve host_id and check if we should execute query or not
     /// Multiple clusters can use single DDL queue path in ZooKeeper,
     /// So we should skip task if we cannot find current host in cluster hosts list.
-    if (!task->findCurrentHostID(context, log, zookeeper))
+    if (!task->findCurrentHostID(context, log, zookeeper, config_host_name))
     {
         out_reason = "There is no a local address in host list";
         return add_to_skip_set();
@@ -566,7 +569,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__,
         task.entry.tracing_context,
         this->context->getOpenTelemetrySpanLog());
-    tracing_ctx_holder.root_span.kind = OpenTelemetry::CONSUMER;
+    tracing_ctx_holder.root_span.kind = OpenTelemetry::SpanKind::CONSUMER;
 
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
@@ -673,7 +676,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         if (task.execution_status.code != 0)
         {
             bool status_written_by_table_or_db = task.ops.empty();
-            if (status_written_by_table_or_db)
+            bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+            if (status_written_by_table_or_db || is_replicated_database_task)
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
             }
@@ -707,6 +711,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     task.createSyncedNodeIfNeed(zookeeper);
     updateMaxDDLEntryID(task.entry_name);
     task.completely_processed = true;
+    subsequent_errors_count = 0;
 }
 
 
@@ -788,6 +793,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     bool executed_by_us = false;
     bool executed_by_other_leader = false;
 
+    bool extra_attempt_for_replicated_database = false;
+
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
     /// but DDL worker can continue processing other queries.
@@ -832,7 +839,14 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             /// Checking and incrementing counter exclusively.
             size_t counter = parse<int>(zookeeper->get(tries_to_execute_path));
             if (counter > MAX_TRIES_TO_EXECUTE)
-                break;
+            {
+                /// Replicated databases have their own retries, limiting retries here would break outer retries
+                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+                if (is_replicated_database_task)
+                    extra_attempt_for_replicated_database = true;
+                else
+                    break;
+            }
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
@@ -846,6 +860,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 executed_by_us = true;
                 break;
             }
+            else if (extra_attempt_for_replicated_database)
+                break;
         }
 
         /// Waiting for someone who will execute query and change is_executed_path node
@@ -889,7 +905,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         else /// If we exceeded amount of tries
         {
             LOG_WARNING(log, "Task {} was not executed by anyone, maximum number of retries exceeded", task.entry_name);
-            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
+            bool keep_original_error = extra_attempt_for_replicated_database && task.execution_status.code;
+            if (!keep_original_error)
+                task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
         return false;
     }
@@ -919,7 +937,6 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
         String node_path = fs::path(queue_dir) / node_name;
 
         Coordination::Stat stat;
-        String dummy;
 
         try
         {
@@ -1142,12 +1159,14 @@ void DDLWorker::runMainThread()
 
             cleanup_event->set();
             scheduleTasks(reinitialized);
+            subsequent_errors_count = 0;
 
             LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {
+            subsequent_errors_count = 0;
             if (Coordination::isHardwareError(e.code))
             {
                 initialized = false;
@@ -1165,9 +1184,32 @@ void DDLWorker::runMainThread()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Unexpected error, will try to restart main thread");
-            reset_state();
+            String message = getCurrentExceptionMessage(/*with_stacktrace*/ true);
+            if (subsequent_errors_count)
+            {
+                if (last_unexpected_error == message)
+                {
+                    ++subsequent_errors_count;
+                }
+                else
+                {
+                    subsequent_errors_count = 1;
+                    last_unexpected_error = message;
+                }
+            }
+            else
+            {
+                subsequent_errors_count = 1;
+                last_unexpected_error = message;
+            }
+
+            LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count, message);
+
+            /// Sleep before retrying
             sleepForSeconds(5);
+            /// Reset state after sleeping, so DatabaseReplicated::canExecuteReplicatedMetadataAlter()
+            /// will have a chance even when the database got stuck in infinite retries
+            reset_state();
         }
     }
 }

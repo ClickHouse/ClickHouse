@@ -3,6 +3,7 @@
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
 #include <Common/SharedMutex.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <mutex>
 #include <queue>
 #include <stack>
@@ -63,7 +64,7 @@ public:
 
     /// Status for processor.
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
-    enum class ExecStatus
+    enum class ExecStatus : uint8_t
     {
         Idle,  /// prepare returned NeedData or PortFull. Non-owning.
         Preparing,  /// some executor is preparing processor, or processor is in task_queue. Owning.
@@ -117,7 +118,11 @@ public:
         }
     };
 
-    using Queue = std::queue<Node *>;
+    /// This queue can grow a lot and lead to OOM. That is why we use non-default
+    /// allocator for container which throws exceptions in operator new
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+
     using NodePtr = std::unique_ptr<Node>;
     using Nodes = std::vector<NodePtr>;
     Nodes nodes;

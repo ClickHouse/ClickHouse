@@ -5,6 +5,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Common/SettingsChanges.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -58,7 +59,7 @@ public:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
-        bool attach_,
+        LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {});
 
@@ -73,7 +74,7 @@ public:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {});
 
     ~StorageDistributed() override;
@@ -146,17 +147,14 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery
-    void flushClusterNodesAllData(ContextPtr context);
+    void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
-    /// Used by ClusterCopier
     size_t getShardCount() const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
@@ -167,6 +165,10 @@ private:
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     const String & getRelativeDataPath() const { return relative_data_path; }
+
+    /// @param flush - if true the do flush (DistributedAsyncInsertDirectoryQueue::flushAllData()),
+    /// otherwise only shutdown (DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush())
+    void flushClusterNodesAllDataImpl(ContextPtr context, const SettingsChanges & settings_changes, bool flush);
 
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
@@ -234,11 +236,14 @@ private:
     std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
+    static VirtualColumnsDescription createVirtuals();
+
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
+    StorageID remote_storage;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
@@ -271,7 +276,7 @@ private:
     struct ClusterNodeData
     {
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
-        ConnectionPoolPtr connection_pool;
+        ConnectionPoolWithFailoverPtr connection_pool;
         Cluster::Addresses addresses;
         size_t clusters_version;
     };

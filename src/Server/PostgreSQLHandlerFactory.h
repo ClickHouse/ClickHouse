@@ -14,7 +14,9 @@ class PostgreSQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 
 #if USE_SSL
     bool ssl_enabled = true;
@@ -26,7 +28,7 @@ private:
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
 
 public:
-    explicit PostgreSQLHandlerFactory(IServer & server_);
+    explicit PostgreSQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & server) override;
 };

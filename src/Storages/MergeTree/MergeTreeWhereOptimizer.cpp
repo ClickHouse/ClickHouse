@@ -56,7 +56,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const ConditionEstimator & estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
-    Poco::Logger * log_)
+    LoggerPtr log_)
     : estimator(estimator_)
     , table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
@@ -112,7 +112,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
-std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
+MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final)
@@ -132,11 +132,19 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     if (!optimize_result)
         return {};
 
-    auto filter_actions = reconstructDAG(optimize_result->where_conditions, context);
-    auto prewhere_filter_actions = reconstructDAG(optimize_result->prewhere_conditions, context);
+    std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
+    std::list<const ActionsDAG::Node *> prewhere_conditions_list;
+    for (const auto & condition : optimize_result->prewhere_conditions)
+    {
+        const ActionsDAG::Node * condition_node = condition.node.getDAGNode();
+        if (prewhere_conditions.insert(condition_node).second)
+            prewhere_conditions_list.push_back(condition_node);
+    }
 
-    FilterActionsOptimizeResult result = { std::move(filter_actions), std::move(prewhere_filter_actions) };
-    return result;
+    return {
+        .prewhere_nodes = std::move(prewhere_conditions),
+        .prewhere_nodes_list = std::move(prewhere_conditions_list),
+        .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
 static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & columns_names, NameSet & result_set, bool & has_invalid_column)
@@ -341,20 +349,6 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
         function->arguments->children.push_back(elem.node.getASTNode()->clone());
 
     return function;
-}
-
-ActionsDAGPtr MergeTreeWhereOptimizer::reconstructDAG(const Conditions & conditions, const ContextPtr & context)
-{
-    if (conditions.empty())
-        return {};
-
-    ActionsDAG::NodeRawConstPtrs filter_nodes;
-    filter_nodes.reserve(conditions.size());
-
-    for (const auto & condition : conditions)
-        filter_nodes.push_back(condition.node.getDAGNode());
-
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes, {} /*node_name_to_input_node_column*/, context);
 }
 
 std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::optimizeImpl(const RPNBuilderTreeNode & node,

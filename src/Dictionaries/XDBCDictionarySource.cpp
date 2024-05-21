@@ -67,7 +67,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     ContextPtr context_,
     const BridgeHelperPtr bridge_)
     : WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
+    , log(getLogger(bridge_->getName() + "DictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -86,7 +86,7 @@ XDBCDictionarySource::XDBCDictionarySource(
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
     : WithContext(other.getContext())
-    , log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    , log(getLogger(other.bridge_helper->getName() + "DictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)
@@ -203,7 +203,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 }
 
 
-QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const
+QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const Block & required_sample_block, const std::string & query) const
 {
     bridge_helper->startBridgeSync();
 
@@ -214,10 +214,15 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const B
         os << "query=" << escapeForFileName(query);
     };
 
-    auto read_buf = std::make_unique<ReadWriteBufferFromHTTP>(
-        url, Poco::Net::HTTPRequest::HTTP_POST, write_body_callback, timeouts, credentials);
-    auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, required_sample_block, max_block_size);
-    format->addBuffer(std::move(read_buf));
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(timeouts)
+                   .withOutCallback(std::move(write_body_callback))
+                   .create(credentials);
+
+    auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *buf, required_sample_block, max_block_size);
+    format->addBuffer(std::move(buf));
 
     return QueryPipeline(std::move(format));
 }

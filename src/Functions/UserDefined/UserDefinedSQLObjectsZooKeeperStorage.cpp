@@ -53,7 +53,7 @@ UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>>(std::numeric_limits<size_t>::max())}
-    , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromZooKeeper")}
+    , log{getLogger("UserDefinedSQLObjectsLoaderFromZooKeeper")}
 {
     if (zookeeper_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
@@ -298,7 +298,6 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     };
 
     Coordination::Stat entity_stat;
-    String object_create_query;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
 }
 
@@ -314,7 +313,8 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                global_context->getSettingsRef().max_parser_depth);
+                global_context->getSettingsRef().max_parser_depth,
+                global_context->getSettingsRef().max_parser_backtracks);
             return ast;
         }
     }

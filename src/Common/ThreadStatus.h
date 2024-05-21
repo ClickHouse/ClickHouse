@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/LogsLevel.h>
 #include <IO/Progress.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/StringRef.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -66,7 +66,7 @@ class ThreadGroup
 public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -236,7 +236,7 @@ private:
     using Deleter = std::function<void()>;
     Deleter deleter;
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 
     bool check_current_thread_on_destruction;
 
@@ -306,6 +306,8 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+
+    void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 
 private:
     void applyGlobalSettings();

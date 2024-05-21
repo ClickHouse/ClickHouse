@@ -22,7 +22,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-GLOBAL_TEST_QUERY_A = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS memory_overcommit_ratio_denominator_for_user=1"
+GLOBAL_TEST_QUERY_A = "SELECT groupArray(number) FROM numbers(5000000) SETTINGS memory_overcommit_ratio_denominator_for_user=1"
 GLOBAL_TEST_QUERY_B = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS memory_overcommit_ratio_denominator_for_user=80000000"
 
 
@@ -42,11 +42,9 @@ def test_global_overcommit():
 
     responses_A = list()
     responses_B = list()
-    for i in range(100):
-        if i % 2 == 0:
-            responses_A.append(node.get_query_request(GLOBAL_TEST_QUERY_A, user="A"))
-        else:
-            responses_B.append(node.get_query_request(GLOBAL_TEST_QUERY_B, user="B"))
+    for i in range(50):
+        responses_A.append(node.get_query_request(GLOBAL_TEST_QUERY_A, user="A"))
+        responses_B.append(node.get_query_request(GLOBAL_TEST_QUERY_B, user="B"))
 
     overcommited_killed = False
     for response in responses_A:

@@ -60,8 +60,27 @@
         /// If it is hosted on server, assume that it is the address of ClickHouse.
         if (location.protocol != 'file:') {
             host = location.origin;
-            user = 'default';
             add_http_cors_header = false;
+        }
+
+        if (window.location.search) {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('host')) { host = params.get('host'); }
+            if (params.has('user')) { user = params.get('user'); }
+            if (params.has('password')) { password = params.get('password'); }
+        }
+
+        let url = `${host}?allow_introspection_functions=1`;
+
+        if (add_http_cors_header) {
+            url += '&add_http_cors_header=1';
+        }
+
+        if (user) {
+            url += `&user=${encodeURIComponent(user)}`;
+        }
+        if (password) {
+            url += `&password=${encodeURIComponent(password)}`;
         }
 
         let map = L.map('space', {
@@ -97,24 +116,11 @@
             const key = `${coords.z}-${coords.x}-${coords.y}`;
             let buf = cached_tiles[key];
             if (!buf) {
-                let url = `${host}?default_format=RowBinary&allow_introspection_functions=1`;
+                let request_url = `${url}&default_format=RowBinary` +
+                    `&param_z=${coords.z}&param_x=${coords.x}&param_y=${coords.y}` +
+                    `&enable_http_compression=1&network_compression_method=zstd&network_zstd_compression_level=6`;
 
-                if (add_http_cors_header) {
-                    // For debug purposes, you may set add_http_cors_header from a browser console
-                    url += '&add_http_cors_header=1';
-                }
-
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-
-                url += `&param_z=${coords.z}&param_x=${coords.x}&param_y=${coords.y}`;
-                url += `&enable_http_compression=1&network_compression_method=zstd&network_zstd_compression_level=6`;
-
-                const response = await fetch(url, { method: 'POST', body: sql });
+                const response = await fetch(request_url, { method: 'POST', body: sql });
 
                 if (!response.ok) {
                     const text = await response.text();
@@ -232,7 +238,7 @@
 
             const addr_hex = '0x' + addr_int.toString(16);
             const response = fetch(
-                `http://localhost:8123/?default_format=JSON`,
+                `${url}&default_format=JSON`,
                 {
                     method: 'POST',
                     body: `SELECT encodeXMLComponent(demangle(addressToSymbol(${addr_int}::UInt64))) AS name,

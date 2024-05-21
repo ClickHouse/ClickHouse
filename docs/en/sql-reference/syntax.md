@@ -68,18 +68,31 @@ There are numeric, string, compound, and `NULL` literals.
 
 ### Numeric
 
-Numeric literal tries to be parsed:
+Numeric literals are parsed as follows:
 
 - First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
 - If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
 - If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
 - Otherwise, it returns an error.
 
-Literal value has the smallest type that the value fits in.
+Literal values are cast to the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql-reference/data-types/index.md).
 Underscores `_` inside numeric literals are ignored and can be used for better readability.
 
-Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
+The following Numeric literals are supported:
+
+**Integers** – `1`, `10_000_000`, `18446744073709551615`, `01`
+**Decimals** – `0.1`
+**Exponential notation** - `1e100`, `-1e-100`
+**Floating point numbers** – `123.456`, `inf`, `nan`
+
+**Hex** – `0xc0fe`
+**SQL Standard compatible hex string** – `x'c0fe'`
+
+**Binary** – `0b1101`
+**SQL Standard compatible binary string** - `b'1101'`
+
+Octal literals are not supported to avoid accidental errors in interpretation.
 
 ### String
 

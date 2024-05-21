@@ -2,10 +2,16 @@
 #include "Commands.h"
 #include <queue>
 #include "KeeperClient.h"
+#include "Parsers/CommonParsers.h"
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int KEEPER_EXCEPTION;
+}
 
 bool LSCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
@@ -57,7 +63,7 @@ void CDCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
     auto new_path = client->getAbsolutePath(query->args[0].safeGet<String>());
     if (!client->zookeeper->exists(new_path))
-        std::cerr << "Path " << new_path << " does not exists\n";
+        std::cerr << "Path " << new_path << " does not exist\n";
     else
         client->cwd = new_path;
 }
@@ -106,16 +112,16 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
 
     int mode = zkutil::CreateMode::Persistent;
 
-    if (ParserKeyword{"PERSISTENT"}.ignore(pos, expected))
+    if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
         mode = zkutil::CreateMode::Persistent;
-    else if (ParserKeyword{"EPHEMERAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
         mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword{"EPHEMERAL SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::PersistentSequential;
 
-    node->args.push_back(mode);
+    node->args.push_back(std::move(mode));
 
     return true;
 }
@@ -215,6 +221,8 @@ bool FindSuperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> &
 
     node->args.push_back(threshold->as<ASTLiteral &>().value);
 
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
     String path;
     if (!parseKeeperPath(pos, expected, path))
         path = ".";
@@ -229,19 +237,23 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
     auto path = client->getAbsolutePath(query->args[1].safeGet<String>());
 
     Coordination::Stat stat;
-    client->zookeeper->get(path, &stat);
+    if (!client->zookeeper->exists(path, &stat))
+        return; /// It is ok if node was deleted meanwhile
 
     if (stat.numChildren >= static_cast<Int32>(threshold))
-    {
         std::cout << static_cast<String>(path) << "\t" << stat.numChildren << "\n";
-        return;
-    }
 
-    auto children = client->zookeeper->getChildren(path);
+    Strings children;
+    auto status = client->zookeeper->tryGetChildren(path, children);
+    if (status == Coordination::Error::ZNONODE)
+        return; /// It is ok if node was deleted meanwhile
+    else if (status != Coordination::Error::ZOK)
+        throw DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, "Error {} while getting children of {}", status, path.string());
+
     std::sort(children.begin(), children.end());
+    auto next_query = *query;
     for (const auto & child : children)
     {
-        auto next_query = *query;
         next_query.args[1] = DB::Field(path / child);
         execute(&next_query, client);
     }
@@ -309,31 +321,34 @@ bool FindBigFamily::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     return true;
 }
 
+/// DFS the subtree and return the number of nodes in the subtree
+static Int64 traverse(const fs::path & path, KeeperClient * client, std::vector<std::tuple<Int64, String>> & result)
+{
+    Int64 nodes_in_subtree = 1;
+
+    Strings children;
+    auto status = client->zookeeper->tryGetChildren(path, children);
+    if (status == Coordination::Error::ZNONODE)
+        return 0;
+    else if (status != Coordination::Error::ZOK)
+        throw DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, "Error {} while getting children of {}", status, path.string());
+
+    for (auto & child : children)
+        nodes_in_subtree += traverse(path / child, client, result);
+
+    result.emplace_back(nodes_in_subtree, path.string());
+
+    return nodes_in_subtree;
+}
+
 void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto n = query->args[1].safeGet<UInt64>();
 
-    std::vector<std::tuple<Int32, String>> result;
+    std::vector<std::tuple<Int64, String>> result;
 
-    std::queue<fs::path> queue;
-    queue.push(path);
-    while (!queue.empty())
-    {
-        auto next_path = queue.front();
-        queue.pop();
-
-        auto children = client->zookeeper->getChildren(next_path);
-        for (auto & child : children)
-            child = next_path / child;
-        auto response = client->zookeeper->get(children);
-
-        for (size_t i = 0; i < response.size(); ++i)
-        {
-            result.emplace_back(response[i].stat.numChildren, children[i]);
-            queue.push(children[i]);
-        }
-    }
+    traverse(path, client, result);
 
     std::sort(result.begin(), result.end(), std::greater());
     for (UInt64 i = 0; i < std::min(result.size(), static_cast<size_t>(n)); ++i)
@@ -382,12 +397,16 @@ void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
 {
+    ParserKeyword s_add(Keyword::ADD);
+    ParserKeyword s_remove(Keyword::REMOVE);
+    ParserKeyword s_set(Keyword::SET);
+
     ReconfigCommand::Operation operation;
-    if (ParserKeyword{"ADD"}.ignore(pos, expected))
+    if (s_add.ignore(pos, expected))
         operation = ReconfigCommand::Operation::ADD;
-    else if (ParserKeyword{"REMOVE"}.ignore(pos, expected))
+    else if (s_remove.ignore(pos, expected))
         operation = ReconfigCommand::Operation::REMOVE;
-    else if (ParserKeyword{"SET"}.ignore(pos, expected))
+    else if (s_set.ignore(pos, expected))
         operation = ReconfigCommand::Operation::SET;
     else
         return false;
@@ -413,13 +432,13 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
-            joining = query->args[1].safeGet<DB::String>();
+            joining = query->args[1].safeGet<String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::REMOVE):
-            leaving = query->args[1].safeGet<DB::String>();
+            leaving = query->args[1].safeGet<String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::SET):
-            new_members = query->args[1].safeGet<DB::String>();
+            new_members = query->args[1].safeGet<String>();
             break;
         default:
             UNREACHABLE();

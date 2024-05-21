@@ -565,7 +565,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
                 /// Re-generate column name for constant.
                 /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-                /// DAG from PK does not use it. This is breakig match by column name sometimes.
+                /// DAG from PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare manes, but DAG subtrees instead.
                 name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
             else
@@ -763,92 +763,6 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    const ASTPtr & query,
-    const ASTs & additional_filter_asts,
-    Block block_with_constants,
-    PreparedSetsPtr prepared_sets,
-    ContextPtr context,
-    const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_,
-    NameSet array_joined_column_names_,
-    bool single_point_,
-    bool strict_)
-    : key_expr(key_expr_)
-    , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , array_joined_column_names(std::move(array_joined_column_names_))
-    , single_point(single_point_)
-    , strict(strict_)
-{
-    size_t key_index = 0;
-    for (const auto & name : key_column_names)
-    {
-        if (!key_columns.contains(name))
-        {
-            key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
-
-    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
-        getAllSpaceFillingCurves();
-
-    ASTPtr filter_node;
-    if (query)
-        filter_node = buildFilterNode(query, additional_filter_asts);
-
-    if (!filter_node)
-    {
-        has_filter = false;
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
-    }
-
-    has_filter = true;
-
-    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
-      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
-      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
-      * when parsing the AST into internal RPN representation.
-      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
-      * are pushed down and applied (when possible) to leaf nodes.
-      */
-    auto inverted_filter_node = DB::cloneASTWithInversionPushDown(filter_node);
-
-    RPNBuilder<RPNElement> builder(
-        inverted_filter_node,
-        std::move(context),
-        std::move(block_with_constants),
-        std::move(prepared_sets),
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
-
-    rpn = std::move(builder).extractRPN();
-
-    findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-}
-
-KeyCondition::KeyCondition(
-    const SelectQueryInfo & query_info,
-    ContextPtr context,
-    const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_,
-    bool single_point_,
-    bool strict_)
-    : KeyCondition(
-        query_info.query,
-        query_info.filter_asts,
-        KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context),
-        query_info.prepared_sets,
-        context,
-        key_column_names,
-        key_expr_,
-        query_info.syntax_analyzer_result ? query_info.syntax_analyzer_result->getArrayJoinSourceNameSet() : NameSet{},
-        single_point_,
-        strict_)
-{
-}
-
-KeyCondition::KeyCondition(
     ActionsDAGPtr filter_dag,
     ContextPtr context,
     const Names & key_column_names,
@@ -883,6 +797,13 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
+    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+      * when parsing the AST into internal RPN representation.
+      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+      * are pushed down and applied (when possible) to leaf nodes.
+      */
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
     assert(inverted_dag->getOutputs().size() == 1);
 
@@ -1264,8 +1185,7 @@ bool KeyCondition::tryPrepareSetIndex(
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
-            if (out_key_column_num < index_mapping.key_index)
-                out_key_column_num = index_mapping.key_index;
+            out_key_column_num = std::max(out_key_column_num, index_mapping.key_index);
         }
     };
 
@@ -2024,7 +1944,7 @@ KeyCondition::Description KeyCondition::getDescription() const
     /// Build and optimize it simultaneously.
     struct Node
     {
-        enum class Type
+        enum class Type : uint8_t
         {
             /// Leaf, which is RPNElement.
             Leaf,
@@ -2329,9 +2249,11 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size]
+                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
         return callback(hyperrectangle);
     }
@@ -2341,13 +2263,15 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
     else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, data_types[prefix_size]->isNullable());
+        hyperrectangle[prefix_size]
+            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             hyperrectangle[i] = Range::createWholeUniverse();
         else
             hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
@@ -2403,7 +2327,7 @@ BoolMask KeyCondition::checkInRange(
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
     {
-        if (data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
             key_ranges.push_back(Range::createWholeUniverse());
         else
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
@@ -2939,9 +2863,9 @@ bool KeyCondition::mayBeTrueInRange(
 String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
-        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), true);
     else
-        return toString(fmt::format("column {}", key_column), false);
+        return toString(fmt::format("column {}", key_column), true);
 }
 
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const

@@ -4,6 +4,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/re2.h>
 #include <Storages/IStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -13,15 +14,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/SelectQueryInfo.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -39,17 +31,17 @@ public:
 
         String getPath() const { return blob_path; }
 
-        bool update(ContextPtr context);
-
-        void connect(ContextPtr context);
+        bool update(const ContextPtr & context);
 
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
-        bool withWildcard() const
+        bool withPartitionWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return blobs_paths.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
+
+        bool withGlobsIgnorePartitionWildcard() const;
 
         Poco::URI getConnectionURL() const;
 
@@ -67,7 +59,7 @@ public:
     StorageAzureBlob(
         const Configuration & configuration_,
         std::unique_ptr<AzureObjectStorage> && object_storage_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -76,10 +68,10 @@ public:
         bool distributed_processing_,
         ASTPtr partition_by_);
 
-    static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
+    static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container = true);
 
-    static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
+    static AzureObjectStorage::SettingsPtr createSettings(const ContextPtr & local_context);
 
     static void processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection);
 
@@ -88,7 +80,8 @@ public:
         return name;
     }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names &,
         const StorageSnapshotPtr &,
         SelectQueryInfo &,
@@ -101,16 +94,13 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
-    NamesAndTypesList getVirtuals() const override;
-    static Names getVirtualColumnNames();
-
     bool supportsPartitionBy() const override;
 
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -122,14 +112,27 @@ public:
         AzureObjectStorage * object_storage,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx,
-        bool distributed_processing = false);
+        const ContextPtr & ctx);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
+        AzureObjectStorage * object_storage,
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
 
 private:
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
+        std::optional<String> format,
+        AzureObjectStorage * object_storage,
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
+
+    friend class ReadFromAzureBlob;
+
     std::string name;
     Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    NamesAndTypesList virtual_columns;
 
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
@@ -142,7 +145,7 @@ public:
     class IIterator : public WithContext
     {
     public:
-        IIterator(ContextPtr context_):WithContext(context_) {}
+        explicit IIterator(const ContextPtr & context_):WithContext(context_) {}
         virtual ~IIterator() = default;
         virtual RelativePathWithMetadata next() = 0;
 
@@ -156,9 +159,9 @@ public:
             AzureObjectStorage * object_storage_,
             const std::string & container_,
             String blob_path_with_globs_,
-            ASTPtr query_,
+            const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns_,
-            ContextPtr context_,
+            const ContextPtr & context_,
             RelativePathsWithMetadata * outer_blobs_,
             std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -169,8 +172,7 @@ public:
         AzureObjectStorage * object_storage;
         std::string container;
         String blob_path_with_globs;
-        ASTPtr query;
-        ASTPtr filter_ast;
+        ActionsDAGPtr filter_dag;
         NamesAndTypesList virtual_columns;
 
         size_t index = 0;
@@ -184,7 +186,6 @@ public:
 
         void createFilterAST(const String & any_key);
         bool is_finished = false;
-        bool is_initialized = false;
         std::mutex next_mutex;
 
         std::function<void(FileProgress)> file_progress_callback;
@@ -193,7 +194,7 @@ public:
     class ReadIterator : public IIterator
     {
     public:
-        explicit ReadIterator(ContextPtr context_,
+        explicit ReadIterator(const ContextPtr & context_,
                               const ReadTaskCallback & callback_)
             : IIterator(context_), callback(callback_) { }
         RelativePathWithMetadata next() override
@@ -212,9 +213,9 @@ public:
             AzureObjectStorage * object_storage_,
             const std::string & container_,
             const Strings & keys_,
-            ASTPtr query_,
+            const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns_,
-            ContextPtr context_,
+            const ContextPtr & context_,
             RelativePathsWithMetadata * outer_blobs,
             std::function<void(FileProgress)> file_progress_callback = {});
 
@@ -226,7 +227,7 @@ public:
         std::string container;
         RelativePathsWithMetadata keys;
 
-        ASTPtr query;
+        ActionsDAGPtr filter_dag;
         NamesAndTypesList virtual_columns;
 
         std::atomic<size_t> index = 0;
@@ -236,7 +237,7 @@ public:
         const ReadFromFormatInfo & info,
         const String & format_,
         String name_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         std::optional<FormatSettings> format_settings_,
         UInt64 max_block_size_,
         String compression_hint_,
@@ -244,8 +245,7 @@ public:
         const String & container_,
         const String & connection_url_,
         std::shared_ptr<IIterator> file_iterator_,
-        bool need_only_count_,
-        const SelectQueryInfo & query_info_);
+        bool need_only_count_);
     ~StorageAzureBlobSource() override;
 
     Chunk generate() override;
@@ -271,7 +271,6 @@ private:
     std::shared_ptr<IIterator> file_iterator;
     bool need_only_count;
     size_t total_rows_in_file = 0;
-    SelectQueryInfo query_info;
 
     struct ReaderHolder
     {
@@ -328,10 +327,10 @@ private:
 
     ReaderHolder reader;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageAzureBlobSource");
+    LoggerPtr log = getLogger("StorageAzureBlobSource");
 
     ThreadPool create_reader_pool;
-    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.

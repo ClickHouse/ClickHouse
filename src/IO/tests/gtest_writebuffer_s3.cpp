@@ -205,16 +205,17 @@ struct Client : DB::S3::Client
 {
     explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store)
         : DB::S3::Client(
-               100,
-               DB::S3::ServerSideEncryptionKMSConfig(),
-               std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-               GetClientConfiguration(),
-               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-               DB::S3::ClientSettings{
-                   .use_virtual_addressing = true,
-                   .disable_checksum= false,
-                   .gcs_issue_compose_request = false,
-               })
+            100,
+            DB::S3::ServerSideEncryptionKMSConfig(),
+            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
+            GetClientConfiguration(),
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            DB::S3::ClientSettings{
+                .use_virtual_addressing = true,
+                .disable_checksum = false,
+                .gcs_issue_compose_request = false,
+                .is_s3express_bucket = false,
+            })
         , store(mock_s3_store)
     {}
 
@@ -451,7 +452,7 @@ struct UploadPartFailIngection: InjectionModel
 struct BaseSyncPolicy
 {
     virtual ~BaseSyncPolicy() = default;
-    virtual DB::ThreadPoolCallbackRunner<void> getScheduler() { return {}; }
+    virtual DB::ThreadPoolCallbackRunnerUnsafe<void> getScheduler() { return {}; }
     virtual void execute(size_t) {}
     virtual void setAutoExecute(bool) {}
 
@@ -464,7 +465,7 @@ struct SimpleAsyncTasks : BaseSyncPolicy
     bool auto_execute = false;
     std::deque<std::packaged_task<void()>> queue;
 
-    DB::ThreadPoolCallbackRunner<void> getScheduler() override
+    DB::ThreadPoolCallbackRunnerUnsafe<void> getScheduler() override
     {
         return [this] (std::function<void()> && operation, size_t /*priority*/)
         {
@@ -1183,100 +1184,6 @@ String fillStringWithPattern(String pattern, int n)
         data += pattern;
     }
     return data;
-}
-
-TEST_F(WBS3Test, ReadBeyondLastOffset) {
-    const String remote_file = "ReadBeyondLastOffset";
-
-    const String key = "1234567812345678";
-    const String data = fillStringWithPattern("0123456789", 10);
-
-    ReadSettings disk_read_settings;
-    disk_read_settings.enable_filesystem_cache = false;
-    disk_read_settings.local_fs_buffer_size = 70;
-    disk_read_settings.remote_fs_buffer_size = FileEncryption::Header::kSize + 60;
-
-    {
-        /// write encrypted file
-
-        FileEncryption::Header header;
-        header.algorithm = FileEncryption::Algorithm::AES_128_CTR;
-        header.key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
-        header.init_vector = FileEncryption::InitVector::random();
-
-        auto wbs3 = getWriteBuffer(remote_file);
-        getAsyncPolicy().setAutoExecute(true);
-
-        WriteBufferFromEncryptedFile wb(10, std::move(wbs3), key, header);
-        wb.write(data.data(), data.size());
-        wb.finalize();
-    }
-
-    auto reader = std::make_unique<ThreadPoolRemoteFSReader>(1, 1);
-    std::unique_ptr<ReadBufferFromEncryptedFile> encrypted_read_buffer;
-
-    {
-        /// create encrypted file reader
-
-        auto cache_log = std::shared_ptr<FilesystemCacheLog>();
-        const StoredObjects objects = { StoredObject(remote_file, /* local_path */ "", data.size() + FileEncryption::Header::kSize) };
-        auto async_read_counters = std::make_shared<AsyncReadCounters>();
-        auto prefetch_log = std::shared_ptr<FilesystemReadPrefetchesLog>();
-
-        auto rb_creator = [this, disk_read_settings] (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
-        {
-            S3Settings::RequestSettings request_settings;
-            return std::make_unique<ReadBufferFromS3>(
-                client,
-                bucket,
-                path,
-                "Latest",
-                request_settings,
-                disk_read_settings,
-                /* use_external_buffer */true,
-                /* offset */0,
-                read_until_position,
-                /* restricted_seek */true);
-        };
-
-        auto rb_remote_fs = std::make_unique<ReadBufferFromRemoteFSGather>(
-            std::move(rb_creator),
-            objects,
-            disk_read_settings,
-            cache_log,
-            true);
-
-        auto rb_async = std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(rb_remote_fs), *reader, disk_read_settings, async_read_counters, prefetch_log);
-
-        /// read the header from the buffer
-        /// as a result AsynchronousBoundedReadBuffer consists some data from the file inside working buffer
-        FileEncryption::Header header;
-        header.read(*rb_async);
-
-        ASSERT_EQ(rb_async->available(), disk_read_settings.remote_fs_buffer_size - FileEncryption::Header::kSize);
-        ASSERT_EQ(rb_async->getPosition(), FileEncryption::Header::kSize);
-        ASSERT_EQ(rb_async->getFileOffsetOfBufferEnd(), disk_read_settings.remote_fs_buffer_size);
-
-        /// ReadBufferFromEncryptedFile is constructed over a ReadBuffer which was already in use.
-        /// The 'FileEncryption::Header' has been read from `rb_async`.
-        /// 'rb_async' will read the data from `rb_async` working buffer
-        encrypted_read_buffer = std::make_unique<ReadBufferFromEncryptedFile>(
-            disk_read_settings.local_fs_buffer_size, std::move(rb_async), key, header);
-    }
-
-    /// When header is read, file is read into working buffer till some position. Tn the test the file is read until remote_fs_buffer_size (124) position.
-    /// Set the right border before that position and make sure that encrypted_read_buffer does not have access to it
-    ASSERT_GT(disk_read_settings.remote_fs_buffer_size, 50);
-    encrypted_read_buffer->setReadUntilPosition(50);
-
-    /// encrypted_read_buffer reads the data with buffer size `local_fs_buffer_size`
-    /// If the impl file has read the data beyond the ReadUntilPosition, encrypted_read_buffer does not read it
-    /// getFileOffsetOfBufferEnd should read data till `ReadUntilPosition`
-    String res;
-    readStringUntilEOF(res, *encrypted_read_buffer);
-    ASSERT_EQ(res, data.substr(0, 50));
-    ASSERT_TRUE(encrypted_read_buffer->eof());
 }
 
 #endif

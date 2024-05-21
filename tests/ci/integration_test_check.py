@@ -5,32 +5,28 @@ import csv
 import json
 import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import (
-    RerunHelper,
-    get_commit,
-    override_status,
-    post_commit_status,
-    post_commit_status_to_file,
-)
-from docker_images_helper import DockerImage, get_docker_image, pull_image
+from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
-from get_robot_token import get_best_robot_token
-from github_helper import GitHub
 from integration_test_images import IMAGES
 from pr_info import PRInfo
-from report import ERROR, TestResult, TestResults, read_test_results
-from s3_helper import S3Helper
+from report import (
+    ERROR,
+    SUCCESS,
+    StatusType,
+    JobReport,
+    TestResult,
+    TestResults,
+    read_test_results,
+)
 from stopwatch import Stopwatch
-from tee_popen import TeePopen
-from upload_result_helper import upload_results
+
+import integration_tests_runner as runner
 
 
 def get_json_params_dict(
@@ -78,14 +74,14 @@ def get_env_for_runner(
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
 
     if "analyzer" in check_name.lower():
-        my_env["CLICKHOUSE_USE_NEW_ANALYZER"] = "1"
+        my_env["CLICKHOUSE_USE_OLD_ANALYZER"] = "1"
 
     return my_env
 
 
 def process_results(
     result_directory: Path,
-) -> Tuple[str, str, TestResults, List[Path]]:
+) -> Tuple[StatusType, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_directory.
@@ -103,38 +99,41 @@ def process_results(
 
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, False)
         if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results, additional_files
+            return ERROR, "Empty test_results.tsv", test_results, additional_files
     except Exception as e:
         return (
-            "error",
+            ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
         )
 
-    return state, description, test_results, additional_files
+    return state, description, test_results, additional_files  # type: ignore
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
     parser.add_argument(
+        "--run-tests", nargs="*", help="List of tests to run", default=None
+    )
+    parser.add_argument(
         "--validate-bugfix",
         action="store_true",
         help="Check that added tests failed on latest stable",
     )
     parser.add_argument(
-        "--post-commit-status",
-        default="commit_status",
-        choices=["commit_status", "file"],
-        help="Where to public post commit status",
+        "--report-to-file",
+        type=str,
+        default="",
+        help="Path to write script report to (for --validate-bugfix)",
     )
     return parser.parse_args()
 
@@ -148,7 +147,6 @@ def main():
     reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    post_commit_path = temp_path / "integration_commit_status.tsv"
     repo_path = Path(REPO_COPY)
 
     args = parse_args()
@@ -161,43 +159,22 @@ def main():
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
         run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-        check_name_with_group = (
-            check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
-        )
     else:
         run_by_hash_num = 0
         run_by_hash_total = 0
-        check_name_with_group = check_name
 
     is_flaky_check = "flaky" in check_name
 
+    assert (
+        not validate_bugfix_check or args.report_to_file
+    ), "--report-to-file must be provided for --validate-bugfix"
+
     # For validate_bugfix_check we need up to date information about labels, so
     # pr_event_from_api is used
-    pr_info = PRInfo(
-        need_changed_files=is_flaky_check or validate_bugfix_check,
-        pr_event_from_api=validate_bugfix_check,
-    )
+    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugfix_check)
 
-    if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
-        if args.post_commit_status == "file":
-            post_commit_status_to_file(
-                post_commit_path,
-                f"Skipped (no pr-bugfix in {pr_info.labels})",
-                "success",
-                "null",
-            )
-        logging.info("Skipping '%s' (no pr-bugfix in '%s')", check_name, pr_info.labels)
-        sys.exit(0)
+    images = [get_docker_image(image_) for image_ in IMAGES]
 
-    gh = GitHub(get_best_robot_token())
-    commit = get_commit(gh, pr_info.sha)
-
-    rerun_helper = RerunHelper(commit, check_name_with_group)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
-
-    images = [pull_image(get_docker_image(i)) for i in IMAGES]
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -230,11 +207,8 @@ def main():
         json_params.write(params_text)
         logging.info("Parameters file %s is written: %s", json_path, params_text)
 
-    output_path_log = result_path / "main_script_log.txt"
-
-    runner_path = repo_path / "tests" / "integration" / "ci-runner.py"
-    run_command = f"sudo -E {runner_path}"
-    logging.info("Going to run command: `%s`", run_command)
+    for k, v in my_env.items():
+        os.environ[k] = v
     logging.info(
         "ENV parameters for runner:\n%s",
         "\n".join(
@@ -242,84 +216,24 @@ def main():
         ),
     )
 
-    ch_helper = ClickHouseHelper()
-    with TeePopen(run_command, output_path_log, my_env) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run tests successfully")
-        elif retcode == 13:
-            logging.warning(
-                "There were issues with infrastructure. Not writing status report to restart job."
-            )
-            prepared_events = prepare_tests_results_for_clickhouse(
-                pr_info,
-                [
-                    TestResult(
-                        "integration_infrastructure_fail",
-                        "ERROR",
-                        stopwatch.duration_seconds,
-                    )
-                ],
-                ERROR,
-                stopwatch.duration_seconds,
-                stopwatch.start_time_str,
-                "",
-                check_name_with_group,
-            )
-
-            ch_helper.insert_events_into(
-                db="default", table="checks", events=prepared_events
-            )
-            sys.exit(1)
-        else:
-            logging.info("Some tests failed")
-
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-
-    state, description, test_results, additional_logs = process_results(result_path)
-    state = override_status(state, check_name, invert=validate_bugfix_check)
-
-    s3_helper = S3Helper()
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        [output_path_log] + additional_logs,
-        check_name_with_group,
-    )
-
-    print(f"::notice:: {check_name} Report url: {report_url}")
-    if args.post_commit_status == "commit_status":
-        post_commit_status(
-            commit,
-            state,
-            report_url,
-            description,
-            check_name_with_group,
-            pr_info,
-            dump_to_file=True,
-        )
-    elif args.post_commit_status == "file":
-        post_commit_status_to_file(post_commit_path, description, state, report_url)
+    try:
+        runner.run()
+    except Exception as e:
+        logging.error("Exception: %s", e)
+        state, description, test_results, additional_logs = ERROR, "infrastructure error", [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)], []  # type: ignore
     else:
-        raise Exception(
-            f'Unknown post_commit_status option "{args.post_commit_status}"'
-        )
+        state, description, test_results, additional_logs = process_results(result_path)
 
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        state,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name_with_group,
-    )
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=additional_logs,
+    ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "failure":
+    if state != SUCCESS:
         sys.exit(1)
 
 

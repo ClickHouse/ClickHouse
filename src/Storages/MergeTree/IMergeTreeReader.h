@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class IDataType;
-
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
 /// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).
@@ -18,11 +16,13 @@ class IMergeTreeReader : private boost::noncopyable
 {
 public:
     using ValueSizeMap = std::map<std::string, double>;
+    using VirtualFields = std::unordered_map<String, Field>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
+        const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
@@ -42,10 +42,13 @@ public:
 
     const ValueSizeMap & getAvgValueSizeHints() const;
 
+    /// Add virtual columns that are not present in the block.
+    void fillVirtualColumns(Columns & columns, size_t rows) const;
+
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number = 0) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -65,14 +68,14 @@ public:
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
-
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
+    /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
+    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
-
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
@@ -97,7 +100,7 @@ protected:
     /// Position and level (of nesting).
     using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
 
-    /// In case of part of the nested column does not exists, offsets should be
+    /// In case of part of the nested column does not exist, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
     ColumnNameLevel findColumnForOffsets(const NameAndTypePair & column) const;
@@ -113,6 +116,9 @@ private:
 
     /// Actual columns description in part.
     const ColumnsDescription & part_columns;
+
+    /// Fields of virtual columns that were filled in previous stages.
+    VirtualFields virtual_fields;
 };
 
 }

@@ -14,12 +14,10 @@ namespace DB
 
 bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_id("ID");
-    ParserKeyword s_all("ALL");
+    ParserKeyword s_id(Keyword::ID);
+    ParserKeyword s_all(Keyword::ALL);
     ParserStringLiteral parser_string_literal;
     ParserSubstitution parser_substitution;
-    ParserLiteral literal_parser;
-    ParserTupleOfLiterals tuple_of_literals;
     ParserExpression parser_expr;
 
     auto partition = std::make_shared<ASTPartition>();
@@ -45,33 +43,34 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ASTPtr value;
         std::optional<size_t> fields_count;
-        if (literal_parser.parse(pos, value, expected) || tuple_of_literals.parse(pos, value, expected))
-        {
-            auto * literal = value->as<ASTLiteral>();
-            if (literal->value.getType() == Field::Types::Tuple)
-            {
-                fields_count = literal->value.get<const Tuple &>().size();
-            }
-            else
-            {
-                fields_count = 1;
-            }
-        }
-        else if (parser_substitution.parse(pos, value, expected))
+        if (parser_substitution.parse(pos, value, expected))
         {
             /// It can be tuple substitution
             fields_count = std::nullopt;
         }
         else if (parser_expr.parse(pos, value, expected))
         {
-            const auto * tuple_ast = value->as<ASTFunction>();
-            if (tuple_ast && tuple_ast->name == "tuple")
+            if (const auto * tuple_ast = value->as<ASTFunction>(); tuple_ast)
             {
+                if (tuple_ast->name != "tuple")
+                    return false;
+
                 const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
                 if (arguments_ast)
                     fields_count = arguments_ast->children.size();
                 else
                     fields_count = 0;
+            }
+            else if (const auto* literal_ast = value->as<ASTLiteral>(); literal_ast)
+            {
+                if (literal_ast->value.getType() == Field::Types::Tuple)
+                {
+                    fields_count = literal_ast->value.get<const Tuple &>().size();
+                }
+                else
+                {
+                    fields_count = 1;
+                }
             }
             else
                 return false;

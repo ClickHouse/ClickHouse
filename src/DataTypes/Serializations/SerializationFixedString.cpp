@@ -150,10 +150,47 @@ static inline void read(const SerializationFixedString & self, IColumn & column,
     }
 }
 
+bool SerializationFixedString::tryAlignStringLength(size_t n, PaddedPODArray<UInt8> & data, size_t string_start)
+{
+    size_t length = data.size() - string_start;
+    if (length < n)
+    {
+        data.resize_fill(string_start + n);
+    }
+    else if (length > n)
+    {
+        data.resize_assume_reserved(string_start);
+        return false;
+    }
+
+    return true;
+}
+
+template <typename Reader>
+static inline bool tryRead(const SerializationFixedString & self, IColumn & column, Reader && reader)
+{
+    ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
+    size_t prev_size = data.size();
+    try
+    {
+        return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
+    }
+    catch (...)
+    {
+        data.resize_assume_reserved(prev_size);
+        return false;
+    }
+}
+
 
 void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
+}
+
+bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); return true; });
 }
 
 
@@ -169,10 +206,20 @@ void SerializationFixedString::deserializeTextQuoted(IColumn & column, ReadBuffe
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readQuotedStringInto<true>(data, istr); });
 }
 
+bool SerializationFixedString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { return tryReadQuotedStringInto<true>(data, istr); });
+}
+
 
 void SerializationFixedString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringUntilEOFInto(data, istr); });
+}
+
+bool SerializationFixedString::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringUntilEOFInto(data, istr); return true; });
 }
 
 
@@ -183,11 +230,15 @@ void SerializationFixedString::serializeTextJSON(const IColumn & column, size_t 
 }
 
 
-void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr); });
+    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
 }
 
+bool SerializationFixedString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return tryRead(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
+}
 
 void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -206,6 +257,11 @@ void SerializationFixedString::serializeTextCSV(const IColumn & column, size_t r
 void SerializationFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
+}
+
+bool SerializationFixedString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return tryRead(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto<ColumnFixedString::Chars, false, false>(data, istr, csv); return true; });
 }
 
 void SerializationFixedString::serializeTextMarkdown(

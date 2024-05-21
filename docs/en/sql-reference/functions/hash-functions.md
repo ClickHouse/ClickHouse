@@ -594,6 +594,45 @@ Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
+## kostikConsistentHash
+
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
+
+**Syntax**
+
+```sql
+kostikConsistentHash(input, n)
+```
+
+Alias: `yandexConsistentHash` (left for backwards compatibility sake).
+
+**Parameters**
+
+- `input`: A UInt64-type key [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- `n`: Number of buckets. [UInt16](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+- A [UInt16](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+
+**Implementation details**
+
+It is efficient only if n <= 32768. 
+
+**Example**
+
+Query:
+
+```sql
+SELECT kostikConsistentHash(16045690984833335023, 2);
+```
+
+```response
+┌─kostikConsistentHash(16045690984833335023, 2)─┐
+│                                             1 │
+└───────────────────────────────────────────────┘
+```
+
 ## murmurHash2_32, murmurHash2_64
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
@@ -1151,6 +1190,42 @@ Result:
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
+```
+
+## wyHash64
+
+Produces a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.
+
+**Syntax**
+
+```sql
+wyHash64(string)
+```
+
+**Arguments**
+
+- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Hash value.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT wyHash64('ClickHouse') AS Hash;
+```
+
+Result:
+
+```response
+┌─────────────────Hash─┐
+│ 12336419557878201794 │
+└──────────────────────┘
 ```
 
 ## ngramMinHash
@@ -1777,15 +1852,19 @@ Result:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## sqid
+## sqidEncode
 
-Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
+Encodes numbers as a [Sqid](https://sqids.org/) which is a YouTube-like ID string.
+The output alphabet is `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
+Do not use this function for hashing - the generated IDs can be decoded back into the original numbers.
 
 **Syntax**
 
 ```sql
-sqid(number1, ...)
+sqidEncode(number1, ...)
 ```
+
+Alias: `sqid`
 
 **Arguments**
 
@@ -1793,16 +1872,47 @@ sqid(number1, ...)
 
 **Returned Value**
 
-A hash id [String](/docs/en/sql-reference/data-types/string.md).
+A sqid [String](/docs/en/sql-reference/data-types/string.md).
 
 **Example**
 
 ```sql
-SELECT sqid(1, 2, 3, 4, 5);
+SELECT sqidEncode(1, 2, 3, 4, 5);
 ```
 
 ```response
-┌─sqid(1, 2, 3, 4, 5)─┐
-│ gXHfJ1C6dN          │
-└─────────────────────┘
+┌─sqidEncode(1, 2, 3, 4, 5)─┐
+│ gXHfJ1C6dN                │
+└───────────────────────────┘
+```
+
+## sqidDecode
+
+Decodes a [Sqid](https://sqids.org/) back into its original numbers.
+Returns an empty array in case the input string is not a valid sqid.
+
+**Syntax**
+
+```sql
+sqidDecode(sqid)
+```
+
+**Arguments**
+
+- A sqid - [String](/docs/en/sql-reference/data-types/string.md)
+
+**Returned Value**
+
+The sqid transformed to numbers [Array(UInt64)](/docs/en/sql-reference/data-types/array.md).
+
+**Example**
+
+```sql
+SELECT sqidDecode('gXHfJ1C6dN');
+```
+
+```response
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```

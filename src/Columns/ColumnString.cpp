@@ -4,7 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
@@ -27,7 +26,7 @@ namespace ErrorCodes
 
 
 ColumnString::ColumnString(const ColumnString & src)
-    : COWHelper<IColumn, ColumnString>(src),
+    : COWHelper<IColumnHelper<ColumnString>, ColumnString>(src),
     offsets(src.offsets.begin(), src.offsets.end()),
     chars(src.chars.begin(), src.chars.end())
 {
@@ -37,6 +36,27 @@ ColumnString::ColumnString(const ColumnString & src)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "String offsets has data inconsistent with chars array. Last offset: {}, array length: {}",
             last_offset, chars.size());
+}
+
+void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+{
+    const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
+    const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
+    const size_t src_buf_size
+        = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + src_buf_size * length;
+    chars.resize(new_size);
+
+    const size_t old_rows = offsets.size();
+    offsets.resize(old_rows + length);
+
+    for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
+        memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
+
+    for (size_t i = 0, current_offset = old_size + src_buf_size; i < length; ++i, current_offset += src_buf_size)
+        offsets[old_rows + i] = current_offset;
 }
 
 
@@ -71,8 +91,8 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
         /// Empty strings are just zero terminating bytes.
 
         res->chars.resize_fill(res->chars.size() + to_size - from_size);
+        res->offsets.resize_exact(to_size);
 
-        res->offsets.resize(to_size);
         for (size_t i = from_size; i < to_size; ++i)
         {
             ++offset;
@@ -213,32 +233,67 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 }
 
 
-StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
+void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
+    if (empty())
+        return;
+
+    size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    if (is_null)
     {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(string_size) + string_size;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (is_null[i])
+            {
+                ++sizes[i];
+            }
+            else
+            {
+                size_t string_size = sizeAt(i);
+                sizes[i] += sizeof(string_size) + string_size + 1 /* null byte */;
+            }
+        }
     }
     else
     {
-        res.size = sizeof(string_size) + string_size;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            size_t string_size = sizeAt(i);
+            sizes[i] += sizeof(string_size) + string_size;
+        }
     }
+}
+
+
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+    res.data = pos;
 
     return res;
+}
+
+char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    memcpy(memory, &string_size, sizeof(string_size));
+    memory += sizeof(string_size);
+    memcpy(memory, &chars[offset], string_size);
+    return memory + string_size;
 }
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
@@ -301,20 +356,6 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     }
 
     return res;
-}
-
-void ColumnString::compareColumn(
-    const IColumn & rhs, size_t rhs_row_num,
-    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-    int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, row_indexes,
-                                         compare_results, direction, nan_direction_hint);
-}
-
-bool ColumnString::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnString>();
 }
 
 struct ColumnString::ComparatorBase
@@ -440,6 +481,7 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
+
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
@@ -451,49 +493,50 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return res;
 
-    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
-    res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
-    res_offsets.reserve(replicate_offsets.back());
+    res_offsets.resize_exact(replicate_offsets.back());
 
-    Offset prev_replicate_offset = 0;
-    Offset prev_string_offset = 0;
-    Offset current_new_offset = 0;
-
+    Chars & res_chars = res->chars;
+    size_t res_chars_size = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-        size_t string_size = offsets[i] - prev_string_offset;
+        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        size_t string_size = offsets[i] - offsets[i - 1];
+        res_chars_size += size_to_replicate * string_size;
+    }
+    res_chars.resize_exact(res_chars_size);
 
+    size_t curr_row = 0;
+    size_t curr_offset = 0;
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        const size_t string_size = offsets[i] - offsets[i-1];
+        const UInt8 * src = &chars[offsets[i - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
-            current_new_offset += string_size;
-            res_offsets.push_back(current_new_offset);
-
-            res_chars.resize(res_chars.size() + string_size);
             memcpySmallAllowReadWriteOverflow15(
-                &res_chars[res_chars.size() - string_size], &chars[prev_string_offset], string_size);
-        }
+                &res_chars[curr_offset], src, string_size);
 
-        prev_replicate_offset = replicate_offsets[i];
-        prev_string_offset = offsets[i];
+            curr_offset += string_size;
+            res_offsets[curr_row] = curr_offset;
+            ++curr_row;
+        }
     }
 
     return res;
 }
 
-
-void ColumnString::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
-
 void ColumnString::reserve(size_t n)
 {
-    offsets.reserve(n);
+    offsets.reserve_exact(n);
 }
 
+void ColumnString::shrinkToFit()
+{
+    chars.shrink_to_fit();
+    offsets.shrink_to_fit();
+}
 
 void ColumnString::getExtremes(Field & min, Field & max) const
 {
