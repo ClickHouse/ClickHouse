@@ -445,7 +445,15 @@ public:
     bool hasBrokenProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
-    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
+    void loadProjections(
+        bool require_columns_checksums,
+        bool check_consistency,
+        bool & has_broken_projection,
+        bool if_not_loaded = false,
+        bool only_metadata = false);
+
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    void loadChecksums(bool require);
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -670,9 +678,6 @@ private:
     void loadColumns(bool require);
 
     static void appendFilesOfColumns(Strings & files);
-
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
-    void loadChecksums(bool require);
 
     static void appendFilesOfChecksums(Strings & files);
 
