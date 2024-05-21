@@ -1001,7 +1001,7 @@ If executed in the context of a distributed table, this function generates a nor
 ## blockNumber
 
 Returns a monotonically increasing sequence number of the [block](../../development/architecture.md#block) containing the row.
-The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate
+The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate.
 
 **Syntax**
 
@@ -1019,7 +1019,8 @@ Query:
 
 ```sql
 SELECT blockNumber()
-FROM (
+FROM
+(
     SELECT *
     FROM system.numbers
     LIMIT 10
@@ -1072,7 +1073,8 @@ Query:
 
 ```sql
 SELECT rowNumberInBlock()
-FROM (
+FROM
+(
     SELECT *
     FROM system.numbers_mt
     LIMIT 10
