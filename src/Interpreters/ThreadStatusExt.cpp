@@ -462,8 +462,8 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
 {
 #if !defined(SANITIZER) && !defined(__APPLE__)
     /// profilers are useless without trace collector
-    auto global_context_ptr = global_context.lock();
-    if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
+    auto context = Context::getGlobalContextInstance();
+    if (!context->hasTraceCollector())
         return;
 
     try
