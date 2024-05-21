@@ -10,6 +10,7 @@ create table hilbert_numbers_03131(
 SELECT '----- CONST -----';
 select hilbertEncode(133);
 select hilbertEncode(3, 4);
+select hilbertDecode(2, 31);
 
 SELECT '----- 4294967296, 2 -----';
 insert into hilbert_numbers_03131
