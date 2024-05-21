@@ -19,6 +19,7 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
+        const VirtualsDescriptionPtr virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const Statistics & stats_to_recalc,
         const String & marks_file_extension,

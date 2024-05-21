@@ -39,6 +39,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         storage_settings,
         header.getNamesAndTypesList(),
         metadata_snapshot_,
+        data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
         stats_to_recalc_,
         data_part->getMarksFileExtension(),

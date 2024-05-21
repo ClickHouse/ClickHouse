@@ -52,6 +52,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
+    const VirtualsDescriptionPtr virtual_columns_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : data_part_name(data_part_name_)
@@ -59,6 +60,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , index_granularity_info(index_granularity_info_)
     , storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
+    , virtual_columns(virtual_columns_)
     , columns_list(columns_list_)
     , settings(settings_)
     , with_final_mark(settings.can_use_adaptive_granularity)
@@ -95,10 +97,9 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-///// TODO: is this needed?
-//    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-//        return get_codec_or_default(*virtual_desc);
-//
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
+        return get_codec_or_default(*virtual_desc);
+
     return default_codec->getFullCodecDesc();
 }
 
@@ -115,6 +116,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const Statistics & stats_to_recalc_,
         const String & marks_file_extension_,
@@ -131,6 +133,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const Statistics & stats_to_recalc_,
         const String & marks_file_extension_,
@@ -149,6 +152,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const Statistics & stats_to_recalc_,
         const String & marks_file_extension_,
@@ -158,11 +162,11 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
 {
     if (part_type == MergeTreeDataPartType::Compact)
         return createMergeTreeDataPartCompactWriter(data_part_name_, logger_name_, serializations_, data_part_storage_,
-            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, indices_to_recalc, stats_to_recalc_,
+            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
             marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
     else if (part_type == MergeTreeDataPartType::Wide)
         return createMergeTreeDataPartWideWriter(data_part_name_, logger_name_, serializations_, data_part_storage_,
-            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, indices_to_recalc, stats_to_recalc_,
+            index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
             marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());

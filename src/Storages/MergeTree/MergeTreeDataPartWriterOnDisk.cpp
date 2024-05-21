@@ -148,6 +148,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
+    const VirtualsDescriptionPtr virtual_columns_,
     const MergeTreeIndices & indices_to_recalc_,
     const Statistics & stats_to_recalc_,
     const String & marks_file_extension_,
@@ -156,7 +157,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
-        storage_settings_, columns_list_, metadata_snapshot_, settings_, index_granularity_)
+        storage_settings_, columns_list_, metadata_snapshot_, virtual_columns_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
     , stats(stats_to_recalc_)
     , marks_file_extension(marks_file_extension_)

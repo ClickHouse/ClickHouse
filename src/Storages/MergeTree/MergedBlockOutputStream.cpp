@@ -55,7 +55,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
             data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
             data_part_storage, data_part->index_granularity_info,
             storage_settings,
-            columns_list, metadata_snapshot, skip_indices, statistics, data_part->getMarksFileExtension(), default_codec, writer_settings, computed_index_granularity);
+            columns_list, metadata_snapshot, data_part->storage.getVirtualsPtr(),
+            skip_indices, statistics, data_part->getMarksFileExtension(), default_codec, writer_settings, computed_index_granularity);
 }
 
 /// If data is pre-sorted.

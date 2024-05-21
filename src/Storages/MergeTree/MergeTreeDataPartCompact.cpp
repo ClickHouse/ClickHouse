@@ -56,6 +56,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsDescriptionPtr virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const Statistics & stats_to_recalc_,
     const String & marks_file_extension_,
@@ -75,7 +76,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
 ////
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
-        index_granularity_info_, storage_settings_, columns_list, metadata_snapshot,
+        index_granularity_info_, storage_settings_, columns_list, metadata_snapshot, virtual_columns,
         indices_to_recalc, stats_to_recalc_, marks_file_extension_,
         default_codec_, writer_settings, computed_index_granularity);
 }
