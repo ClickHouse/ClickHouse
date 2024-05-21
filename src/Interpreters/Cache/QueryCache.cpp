@@ -177,6 +177,22 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database)
+{
+    ast = removeQueryCacheSettings(ast);
+
+    /// Hash the AST, it must consider aliases (issue #56258)
+    constexpr bool ignore_aliases = false;
+    IAST::Hash ast_hash = ast->getTreeHash(ignore_aliases);
+
+    /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different tables (issue #64136)
+    IAST::Hash cur_database_hash = CityHash_v1_0_2::CityHash128(current_database.data(), current_database.size());
+    UInt64 low_combined = ast_hash.low64 ^ cur_database_hash.low64;
+    UInt64 high_combined = ast_hash.high64 ^ cur_database_hash.high64;
+
+    return {low_combined, high_combined};
+}
+
 String queryStringFromAST(ASTPtr ast)
 {
     WriteBufferFromOwnString buf;
@@ -186,17 +202,15 @@ String queryStringFromAST(ASTPtr ast)
 
 }
 
-/// Hashing of ASTs must consider aliases (issue #56258)
-static constexpr bool ignore_aliases = false;
-
 QueryCache::Key::Key(
     ASTPtr ast_,
+    String current_database,
     Block header_,
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast_hash(removeQueryCacheSettings(ast_)->getTreeHash(ignore_aliases))
+    : ast_hash(calculateAstHash(ast_, current_database))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -207,8 +221,8 @@ QueryCache::Key::Key(
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+QueryCache::Key::Key(ASTPtr ast_, String current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, current_database, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
 {
 }
 
