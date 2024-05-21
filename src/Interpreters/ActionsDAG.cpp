@@ -21,6 +21,9 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/inlined_vector.h>
+
 
 namespace DB
 {
@@ -589,7 +592,7 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
         }
     }
 
-    nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
+    std::erase_if(nodes, [&](const Node & node) { return !visited_nodes.contains(&node); });
     std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
 }
 
@@ -708,16 +711,18 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
     return res_column;
 }
 
-Block ActionsDAG::updateHeader(Block header) const
+Block ActionsDAG::updateHeader(const Block & header) const
 {
     IntermediateExecutionResult node_to_column;
     std::set<size_t> pos_to_remove;
 
     {
-        std::unordered_map<std::string_view, std::list<size_t>> input_positions;
+        using inline_vector = absl::InlinedVector<size_t, 7>; // 64B, holding max 7 size_t elements inlined
+        absl::flat_hash_map<std::string_view, inline_vector> input_positions;
 
-        for (size_t pos = 0; pos < inputs.size(); ++pos)
-            input_positions[inputs[pos]->result_name].emplace_back(pos);
+        /// We insert from last to first in the inlinedVector so it's easier to pop_back matches later
+        for (size_t pos = inputs.size(); pos != 0; pos--)
+            input_positions[inputs[pos - 1]->result_name].emplace_back(pos - 1);
 
         for (size_t pos = 0; pos < header.columns(); ++pos)
         {
@@ -725,10 +730,11 @@ Block ActionsDAG::updateHeader(Block header) const
             auto it = input_positions.find(col.name);
             if (it != input_positions.end() && !it->second.empty())
             {
-                auto & list = it->second;
                 pos_to_remove.insert(pos);
-                node_to_column[inputs[list.front()]] = col;
-                list.pop_front();
+
+                auto & v = it->second;
+                node_to_column[inputs[v.back()]] = col;
+                v.pop_back();
             }
         }
     }
@@ -746,18 +752,21 @@ Block ActionsDAG::updateHeader(Block header) const
         throw;
     }
 
-    if (isInputProjected())
-        header.clear();
-    else
-        header.erase(pos_to_remove);
 
     Block res;
-
+    res.reserve(result_columns.size());
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    for (auto && item : header)
-        res.insert(std::move(item));
+    if (isInputProjected())
+        return res;
+
+    res.reserve(header.columns() - pos_to_remove.size());
+    for (size_t i = 0; i < header.columns(); i++)
+    {
+        if (!pos_to_remove.contains(i))
+            res.insert(header.data[i]);
+    }
 
     return res;
 }

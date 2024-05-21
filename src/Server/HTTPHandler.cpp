@@ -26,7 +26,7 @@
 #include <Server/IServer.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -1108,7 +1108,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");

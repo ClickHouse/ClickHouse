@@ -37,6 +37,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -1044,29 +1045,30 @@ try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    fs::create_directories(path);
-
-    /// Clearing old temporary files.
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    if (fs::exists(path))
     {
-        if (it->is_regular_file())
+        /// Clearing old temporary files.
+        fs::directory_iterator dir_end;
+        for (fs::directory_iterator it(path); it != dir_end; ++it)
         {
-            if (startsWith(it->path().filename(), "tmp"))
+            if (it->is_regular_file())
             {
-                LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-                fs::remove(it->path());
+                if (startsWith(it->path().filename(), "tmp"))
+                {
+                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                    fs::remove(it->path());
+                }
+                else
+                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
             }
-            else
-                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+            /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
-        /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
     }
 }
 catch (...)
 {
     DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setup temporary path: {}. "
+        "Caught exception while setting up temporary path: {}. "
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
@@ -1091,9 +1093,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
 
     for (const auto & disk : volume->getDisks())
-    {
         setupTmpPath(shared->log, disk->getPath());
-    }
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
@@ -1395,18 +1395,18 @@ void Context::checkAccessImpl(const Args &... args) const
     return getAccess()->checkAccess(args...);
 }
 
-void Context::checkAccess(const AccessFlags & flags) const { return checkAccessImpl(flags); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database) const { return checkAccessImpl(flags, database); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const { return checkAccessImpl(flags, database, table); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { return checkAccessImpl(flags, database, table, column); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(flags, database, table, columns); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags) const { checkAccessImpl(flags); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database) const { checkAccessImpl(flags, database); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const { checkAccessImpl(flags, database, table); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { checkAccessImpl(flags, database, table, column); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { checkAccessImpl(flags, database, table, columns); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName()); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), column); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
-void Context::checkAccess(const AccessRightsElement & element) const { return checkAccessImpl(element); }
-void Context::checkAccess(const AccessRightsElements & elements) const { return checkAccessImpl(elements); }
+void Context::checkAccess(const AccessRightsElement & element) const { checkAccessImpl(element); }
+void Context::checkAccess(const AccessRightsElements & elements) const { checkAccessImpl(elements); }
 
 std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
@@ -1609,40 +1609,53 @@ Tables Context::getExternalTables() const
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
+    addExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+}
+
+void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+{
+    updateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+}
+
+void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+{
+    addOrUpdateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+}
+
+void Context::addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
+{
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
 
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
-    external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+
+    external_tables_mapping.emplace(table_name, std::move(temporary_table));
 }
 
-void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+void Context::updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
 
     std::lock_guard lock(mutex);
     auto it = external_tables_mapping.find(table_name);
     if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exists", backQuoteIfNeed(table_name));
-    it->second = std::move(temporary_table_ptr);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exist", backQuoteIfNeed(table_name));
+
+    it->second = std::move(temporary_table);
 }
 
-void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
+void Context::addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
 
-    auto temporary_table_ptr = std::make_shared<TemporaryTableHolder>(std::move(temporary_table));
-
     std::lock_guard lock(mutex);
-    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table_ptr);
+    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table);
     if (!inserted)
-        it->second = std::move(temporary_table_ptr);
+        it->second = std::move(temporary_table);
 }
 
 std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
@@ -2499,7 +2512,7 @@ AsyncLoader & Context::getAsyncLoader() const
         shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
                 // IMPORTANT: Pool declaration order should match the order in `PoolId.h` to get the indices right.
                 { // TablesLoaderForegroundPoolId
-                    "FgLoad",
+                    "ForegroundLoad",
                     CurrentMetrics::TablesLoaderForegroundThreads,
                     CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
@@ -2507,7 +2520,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderForegroundPriority
                 },
                 { // TablesLoaderBackgroundLoadPoolId
-                    "BgLoad",
+                    "BackgroundLoad",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
@@ -2515,7 +2528,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderBackgroundLoadPriority
                 },
                 { // TablesLoaderBackgroundStartupPoolId
-                    "BgStartup",
+                    "BackgrndStartup",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
@@ -4468,7 +4481,7 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
+    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 
     if (type == ApplicationType::SERVER)
@@ -5176,10 +5189,10 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
 }
 
 #if USE_LIBURING
-IOUringReader & Context::getIOURingReader() const
+IOUringReader & Context::getIOUringReader() const
 {
     callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
+        shared->io_uring_reader = createIOUringReader();
     });
 
     return *shared->io_uring_reader;

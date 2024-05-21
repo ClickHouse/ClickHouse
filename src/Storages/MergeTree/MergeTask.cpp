@@ -543,7 +543,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     }
     /// Move ownership from std::unique_ptr<ReadBuffer> to std::unique_ptr<ReadBufferFromFile> for CompressedReadBufferFromFile.
     /// First, release ownership from unique_ptr to base type.
-    reread_buf.release(); /// NOLINT(bugprone-unused-return-value): we already have the pointer value in `reread_buffer_raw`
+    reread_buf.release(); /// NOLINT(bugprone-unused-return-value,hicpp-ignored-remove-result): we already have the pointer value in `reread_buffer_raw`
     /// Then, move ownership to unique_ptr to concrete type.
     std::unique_ptr<ReadBufferFromFile> reread_buffer_from_file(reread_buffer_raw);
     /// CompressedReadBufferFromFile expects std::unique_ptr<ReadBufferFromFile> as argument.

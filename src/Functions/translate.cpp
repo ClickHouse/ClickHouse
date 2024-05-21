@@ -6,7 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 
