@@ -2157,6 +2157,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             {
                 this_query_end = insert_ast->data + pos;
             }
+            this_query_end = all_queries_end;
         }
         insert_ast->end = this_query_end;
         query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
