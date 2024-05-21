@@ -1,5 +1,6 @@
 #include <Interpreters/SquashingTransform.h>
 
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -16,23 +17,6 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_b
 }
 
 SquashingTransform::SquashResult SquashingTransform::add(Block && input_block)
-{
-    return addImpl<Block &&>(std::move(input_block));
-}
-
-SquashingTransform::SquashResult SquashingTransform::add(const Block & input_block)
-{
-    return addImpl<const Block &>(input_block);
-}
-
-/*
- * To minimize copying, accept two types of argument: const reference for output
- * stream, and rvalue reference for input stream, and decide whether to copy
- * inside this function. This allows us not to copy Block unless we absolutely
- * have to.
- */
-template <typename ReferenceType>
-SquashingTransform::SquashResult SquashingTransform::addImpl(ReferenceType input_block)
 {
     /// End of input stream.
     if (!input_block)
@@ -66,7 +50,7 @@ SquashingTransform::SquashResult SquashingTransform::addImpl(ReferenceType input
         return SquashResult{std::move(to_return), true};
     }
 
-    append<ReferenceType>(std::move(input_block));
+    append(std::move(input_block));
     if (isEnoughSize(accumulated_block))
     {
         Block to_return;
@@ -79,14 +63,18 @@ SquashingTransform::SquashResult SquashingTransform::addImpl(ReferenceType input
 }
 
 
-template <typename ReferenceType>
-void SquashingTransform::append(ReferenceType input_block)
+void SquashingTransform::append(Block && input_block)
 {
     if (!accumulated_block)
     {
         accumulated_block = std::move(input_block);
         return;
     }
+
+    LOG_DEBUG(getLogger("SquashingTransform"),
+              "input_block rows {}, size {}, columns {}, accumulated_block rows {}, size {}, columns {}, ",
+              input_block.rows(), input_block.bytes(), input_block.columns(),
+              accumulated_block.rows(), accumulated_block.bytes(), accumulated_block.columns());
 
     assert(blocksHaveEqualStructure(input_block, accumulated_block));
 
@@ -95,6 +83,15 @@ void SquashingTransform::append(ReferenceType input_block)
         for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
         {
             const auto source_column = input_block.getByPosition(i).column;
+
+            const auto acc_column = accumulated_block.getByPosition(i).column;
+
+            LOG_DEBUG(getLogger("SquashingTransform"),
+              "column {} {}, acc rows {}, size {}, allocated {}, input rows {} size {} allocated {}",
+                i, source_column->getName(),
+                acc_column->size(), acc_column->byteSize(), acc_column->allocatedBytes(),
+                source_column->size(), source_column->byteSize(), source_column->allocatedBytes());
+
 
             auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
             mutable_column->insertRangeFrom(*source_column, 0, source_column->size());

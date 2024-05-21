@@ -34,7 +34,6 @@ public:
       * At end, you need to pass empty block. As the result for last (empty) block, you will get last Result with ready = true.
       */
     SquashResult add(Block && block);
-    SquashResult add(const Block & block);
 
 private:
     size_t min_block_size_rows;
@@ -42,11 +41,7 @@ private:
 
     Block accumulated_block;
 
-    template <typename ReferenceType>
-    SquashResult addImpl(ReferenceType block);
-
-    template <typename ReferenceType>
-    void append(ReferenceType block);
+    void append(Block && block);
 
     bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;

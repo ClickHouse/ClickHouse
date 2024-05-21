@@ -545,6 +545,34 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         }
     }
 
+    auto actions_dag = ActionsDAG::makeConvertingActions(
+            pipeline.getHeader().getColumnsWithTypeAndName(),
+            query_sample_block.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+    auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+
+    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    {
+        return std::make_shared<ExpressionTransform>(in_header, actions);
+    });
+
+    /// We need to convert Sparse columns to full, because it's destination storage
+    /// may not support it or may have different settings for applying Sparse serialization.
+    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    {
+        return std::make_shared<MaterializingTransform>(in_header);
+    });
+
+    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    {
+        auto context_ptr = getContext();
+        auto counting = std::make_shared<CountingTransform>(in_header, nullptr, context_ptr->getQuota());
+        counting->setProcessListElement(context_ptr->getProcessListElement());
+        counting->setProgressCallback(context_ptr->getProgressCallback());
+
+        return counting;
+    });
+
     pipeline.resize(1);
 
     if (shouldAddSquashingFroStorage(table))
@@ -594,34 +622,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         table, metadata_snapshot, query_sample_block);
 
     pipeline.resize(presink_chains.size());
-
-    auto actions_dag = ActionsDAG::makeConvertingActions(
-            pipeline.getHeader().getColumnsWithTypeAndName(),
-            query_sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
-    auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
-
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        return std::make_shared<ExpressionTransform>(in_header, actions);
-    });
-
-    /// We need to convert Sparse columns to full, because it's destination storage
-    /// may not support it or may have different settings for applying Sparse serialization.
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        return std::make_shared<MaterializingTransform>(in_header);
-    });
-
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-    {
-        auto context_ptr = getContext();
-        auto counting = std::make_shared<CountingTransform>(in_header, nullptr, context_ptr->getQuota());
-        counting->setProcessListElement(context_ptr->getProcessListElement());
-        counting->setProgressCallback(context_ptr->getProgressCallback());
-
-        return counting;
-    });
 
     for (auto & chain : presink_chains)
         pipeline.addResources(chain.detachResources());

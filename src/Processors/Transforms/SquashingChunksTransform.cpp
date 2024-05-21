@@ -21,7 +21,7 @@ void SquashingChunksTransform::onConsume(Chunk chunk)
               "onConsume {}", chunk.getNumRows());
 
     if (cur_chunkinfos.empty())
-        cur_chunkinfos = chunk.getChunkInfos();
+        cur_chunkinfos = chunk.getChunkInfos().clone();
 
     auto result = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     if (result.block)
@@ -33,7 +33,7 @@ void SquashingChunksTransform::onConsume(Chunk chunk)
 
     if (cur_chunkinfos.empty() && result.input_block_delayed)
     {
-        cur_chunkinfos = chunk.getChunkInfos();
+        cur_chunkinfos = chunk.getChunkInfos().clone();
     }
 }
 
@@ -79,12 +79,15 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 void SimpleSquashingChunksTransform::transform(Chunk & chunk)
 {
     LOG_DEBUG(getLogger("SimpleSquashingChunksTransform"),
-              "transform {}, finished {}", chunk.getNumRows(), finished);
+              "transform rows {}, size {}, columns {}, infos: {}/{}, finished {}",
+              chunk.getNumRows(), chunk.bytes(), chunk.getNumColumns(),
+              chunk.getChunkInfos().size(), chunk.getChunkInfos().debug(),
+              finished);
 
     if (!finished)
     {
         if (cur_chunkinfos.empty())
-            cur_chunkinfos = chunk.getChunkInfos();
+            cur_chunkinfos = chunk.getChunkInfos().clone();
 
         auto result = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
         if (result.block)
@@ -96,7 +99,7 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
 
         if (cur_chunkinfos.empty() && result.input_block_delayed)
         {
-            cur_chunkinfos = chunk.getChunkInfos();
+            cur_chunkinfos = chunk.getChunkInfos().clone();
         }
     }
     else
