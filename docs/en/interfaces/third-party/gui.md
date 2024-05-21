@@ -8,6 +8,17 @@ sidebar_label: Visual Interfaces
 
 ## Open-Source {#open-source}
 
+### ch-ui {#ch-ui}
+
+[ch-ui](https://github.com/caioricciuti/ch-ui) is a simple React.js app interface for ClickHouse databases, designed for executing queries and visualizing data. Built with React and the ClickHouse client for web, it offers a sleek and user-friendly UI for easy database interactions.
+
+Features:
+
+- ClickHouse Integration: Easily manage connections and execute queries.
+- Responsive Tab Management: Dynamically handle multiple tabs, such as query and table tabs.
+- Performance Optimizations: Utilizes Indexed DB for efficient caching and state management.
+- Local Data Storage: All data is stored locally in the browser, ensuring no data is sent anywhere else.
+
 ### Tabix {#tabix}
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.

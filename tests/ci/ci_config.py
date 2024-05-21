@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -79,6 +80,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
     BINARY_S390X = "binary_s390x"
+    BINARY_LOONGARCH64 = "binary_loongarch64"
     FUZZERS = "fuzzers"
 
 
@@ -1040,6 +1042,12 @@ CI_CONFIG = CIConfig(
             package_type="binary",
             static_binary_name="s390x",
         ),
+        Build.BINARY_LOONGARCH64: BuildConfig(
+            name=Build.BINARY_LOONGARCH64,
+            compiler="clang-18-loongarch64",
+            package_type="binary",
+            static_binary_name="loongarch64",
+        ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-18",
@@ -1070,6 +1078,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
                 Build.BINARY_S390X,
+                Build.BINARY_LOONGARCH64,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
@@ -1384,6 +1393,17 @@ REQUIRED_CHECKS = [
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
 ]
+
+BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
+
+
+def is_required(check_name: str) -> bool:
+    """Checks if a check_name is in REQUIRED_CHECKS, including batched jobs"""
+    if check_name in REQUIRED_CHECKS:
+        return True
+    if batch := BATCH_REGEXP.search(check_name):
+        return check_name[: batch.start()] in REQUIRED_CHECKS
+    return False
 
 
 @dataclass

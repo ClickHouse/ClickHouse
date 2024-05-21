@@ -17,7 +17,7 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription, StatusNames
+from ci_config import CHECK_DESCRIPTIONS, CheckDescription, StatusNames, is_required
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
@@ -453,7 +453,7 @@ def update_mergeable_check(
     "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
         pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
-        or check_name not in REQUIRED_CHECKS
+        or not is_required(check_name)
         or pr_info.release_pr
         or pr_info.number == 0
     )
@@ -472,9 +472,7 @@ def trigger_mergeable_check(
     commit: Commit, statuses: CommitStatuses, hide_url: bool = False
 ) -> CommitStatus:
     """calculate and update StatusNames.MERGEABLE"""
-    required_checks = [
-        status for status in statuses if status.context in REQUIRED_CHECKS
-    ]
+    required_checks = [status for status in statuses if is_required(status.context)]
 
     mergeable_status = None
     for status in statuses:
