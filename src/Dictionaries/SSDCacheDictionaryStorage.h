@@ -470,7 +470,7 @@ public:
         auto path = std::filesystem::path{file_path};
         auto parent_path_directory = path.parent_path();
 
-        /// If cache file is in directory that does not exists create it
+        /// If cache file is in directory that does not exist create it
         if (!std::filesystem::exists(parent_path_directory))
             if (!std::filesystem::create_directories(parent_path_directory))
                 throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
