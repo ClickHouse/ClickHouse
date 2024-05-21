@@ -2,7 +2,7 @@
 
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/find_symbols.h>
 #include <Common/re2.h>
 
