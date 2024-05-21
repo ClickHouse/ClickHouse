@@ -236,7 +236,7 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
     azure_query(
         node3,
         f"BACKUP TABLE test_simple_merge_tree_async TO {backup_destination}",
-        settings={"azure_max_single_part_copy_size": 0}
+        settings={"azure_max_single_part_copy_size": 0},
     )
 
     assert node3.contains_in_log("using native copy")
@@ -244,10 +244,11 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
     azure_query(
         node3,
         f"RESTORE TABLE test_simple_merge_tree_async AS test_simple_merge_tree_async_restored FROM {backup_destination};",
-        settings={"azure_max_single_part_copy_size": 0}
+        settings={"azure_max_single_part_copy_size": 0},
     )
     assert (
-        azure_query(node3, f"SELECT * from test_simple_merge_tree_async_restored") == "1\ta\n"
+        azure_query(node3, f"SELECT * from test_simple_merge_tree_async_restored")
+        == "1\ta\n"
     )
 
     assert node3.contains_in_log("using native copy")
