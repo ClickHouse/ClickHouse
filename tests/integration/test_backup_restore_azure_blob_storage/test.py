@@ -330,7 +330,7 @@ def test_backup_restore_correct_block_ids(cluster):
             SET azure_min_upload_part_size = {min_upload_size};
             SET azure_max_upload_part_size = {max_upload_size};
             SET azure_max_blocks_in_multipart_upload = {max_blocks};
-            BACKUP TABLE test_simple_merge_tree TO {backup_destination};
+            BACKUP TABLE test_simple_merge_tree TO {backup_destination} SETTINGS allow_azure_native_copy = 0;
             """,
         )
 
