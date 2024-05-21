@@ -324,7 +324,7 @@ void copyAzureBlobStorageFile(
                     throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
                                     src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
                 else
-                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} didn't complete with sucess status (operation is done {})", src_blob, dest_blob, operation.IsDone());
+                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} didn't complete with success status (operation is done {})", src_blob, dest_blob, operation.IsDone());
             }
         }
     }
