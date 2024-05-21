@@ -46,30 +46,49 @@ bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other
 }
 
 
+MergeTreePrefetchedReadPool::PrefetchedReaders::~PrefetchedReaders()
+{
+    for (auto & prefetch_future : prefetch_futures)
+        if (prefetch_future.valid())
+            prefetch_future.wait();
+}
+
 MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
-    ThreadPool & pool,
     MergeTreeReadTask::Readers readers_,
     Priority priority_,
-    MergeTreePrefetchedReadPool & read_prefetch)
+    MergeTreePrefetchedReadPool & pool_)
     : is_valid(true)
     , readers(std::move(readers_))
-    , prefetch_runner(pool, "ReadPrepare")
 {
-    prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
-
-    for (const auto & reader : readers.prewhere)
-        prefetch_runner(read_prefetch.createPrefetchedTask(reader.get(), priority_));
-
-    fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
+    try
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefetched reader enabled");
-    });
+        prefetch_futures.reserve(1 + readers.prewhere.size());
+
+        prefetch_futures.push_back(pool_.createPrefetchedFuture(readers.main.get(), priority_));
+
+        for (const auto & reader : readers.prewhere)
+            prefetch_futures.push_back(pool_.createPrefetchedFuture(reader.get(), priority_));
+
+        fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefetched reader enabled");
+        });
+    }
+    catch (...) /// in case of memory exceptions we have to wait
+    {
+        for (auto & prefetch_future : prefetch_futures)
+            if (prefetch_future.valid())
+                prefetch_future.wait();
+
+        throw;
+    }
 }
 
 void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
-    prefetch_runner.waitForAllToFinish();
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.wait();
 }
 
 MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
@@ -77,7 +96,13 @@ MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
 
-    prefetch_runner.waitForAllToFinishAndRethrowFirstError();
+    /// First wait for completion of all futures.
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.wait();
+
+    /// Then rethrow first exception if any.
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.get();
 
     return std::move(readers);
 }
@@ -114,7 +139,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     fillPerThreadTasks(pool_settings.threads, pool_settings.sum_marks);
 }
 
-std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTreeReader * reader, Priority priority)
+std::future<void> MergeTreePrefetchedReadPool::createPrefetchedFuture(IMergeTreeReader * reader, Priority priority)
 {
     /// In order to make a prefetch we need to wait for marks to be loaded. But we just created
     /// a reader (which starts loading marks in its constructor), then if we do prefetch right
@@ -122,12 +147,14 @@ std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTr
     /// only inside this MergeTreePrefetchedReadPool, where read tasks are created and distributed,
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the thread task. When a thread calls getTask(), it will wait for it is not ready yet.
-    return [=, context = getContext()]() mutable
+    auto task = [=, context = getContext()]() mutable
     {
         /// For async read metrics in system.query_log.
         PrefetchIncrement watch(context->getAsyncReadCounters());
         reader->prefetchBeginOfRange(priority);
     };
+
+    return scheduleFromThreadPool<void>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);
 }
 
 void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & task)
@@ -137,7 +164,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges);
-    task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
+    task.readers_future = std::make_unique<PrefetchedReaders>(std::move(readers), task.priority, *this);
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches()
