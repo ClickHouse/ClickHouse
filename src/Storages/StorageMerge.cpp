@@ -1622,7 +1622,7 @@ void ReadFromMerge::applyFilters(const QueryPlan & plan, const ActionDAGNodes & 
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(added_filter_nodes);
 
     filterTablesAndCreateChildrenPlans();
 

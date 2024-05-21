@@ -273,7 +273,8 @@ void ReadFromS3Queue::createIterator(const ActionsDAG::Node * predicate)
 
 void ReadFromS3Queue::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);

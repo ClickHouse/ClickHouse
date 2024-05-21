@@ -26,7 +26,7 @@
 #include <Server/IServer.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>

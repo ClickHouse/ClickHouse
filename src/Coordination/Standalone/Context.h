@@ -138,7 +138,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
-    IOUringReader & getIOURingReader() const;
+    IOUringReader & getIOUringReader() const;
 #endif
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
@@ -168,6 +168,8 @@ public:
     const String & getUserName() const { static std::string user; return user; }
 
     const ServerSettings & getServerSettings() const;
+
+    bool hasTraceCollector() const;
 };
 
 }

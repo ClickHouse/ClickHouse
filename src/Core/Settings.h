@@ -369,7 +369,6 @@ class IColumn;
     M(UInt64, http_max_fields, 1000000, "Maximum number of fields in HTTP header", 0) \
     M(UInt64, http_max_field_name_size, 128 * 1024, "Maximum length of field name in HTTP header", 0) \
     M(UInt64, http_max_field_value_size, 128 * 1024, "Maximum length of field value in HTTP header", 0) \
-    M(UInt64, http_max_chunk_size, 100_GiB, "Maximum value of a chunk size in HTTP chunked transfer encoding", 0) \
     M(Bool, http_skip_not_found_url_for_globs, true, "Skip url's for globs with HTTP_NOT_FOUND error", 0) \
     M(Bool, http_make_head_request, true, "Allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size", 0) \
     M(Bool, optimize_throw_if_noop, false, "If setting is enabled and OPTIMIZE query didn't actually assign a merge then an explanatory exception is thrown", 0) \
@@ -992,6 +991,7 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
+    MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
@@ -1121,7 +1121,6 @@ class IColumn;
     \
     M(String, format_json_object_each_row_column_for_object_name, "", "The name of column that will be used as object names in JSONObjectEachRow format. Column type should be String", 0) \
     \
-    M(Bool, output_format_pretty_preserve_border_for_multiline_string, true, "Applies better rendering for multiline strings.", 0) \
     M(UInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.", 0) \
     M(UInt64, output_format_pretty_max_column_pad_width, 250, "Maximum width to pad all values in a column in Pretty formats.", 0) \
     M(UInt64, output_format_pretty_max_value_width, 10000, "Maximum width of value to display in Pretty formats. If greater - it will be cut.", 0) \

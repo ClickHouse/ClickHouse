@@ -18,6 +18,7 @@ class BackupReaderAzureBlobStorage : public BackupReaderDefault
 public:
     BackupReaderAzureBlobStorage(
         const StorageAzureConfiguration & configuration_,
+        bool allow_azure_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_);
@@ -49,6 +50,7 @@ class BackupWriterAzureBlobStorage : public BackupWriterDefault
 public:
     BackupWriterAzureBlobStorage(
         const StorageAzureConfiguration & configuration_,
+        bool allow_azure_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,

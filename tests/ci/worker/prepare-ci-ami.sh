@@ -91,6 +91,8 @@ apt-get install --yes --no-install-recommends azure-cli
 
 # Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
 echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
+# Workarond for sanitizers uncompatibility with some kernels, see https://github.com/google/sanitizers/issues/856
+echo "vm.mmap_rnd_bits=28" > /etc/sysctl.d/02-vm-mmap_rnd_bits.conf
 
 systemctl restart docker
 
@@ -183,7 +185,7 @@ setup_tailscale() {
     # Clean possible garbage from the runner type
     RUNNER_TYPE=${RUNNER_TYPE//[^0-9a-z]/-}
     TS_AUTHKEY=$(TS_API_CLIENT_ID="$TS_API_CLIENT_ID" TS_API_CLIENT_SECRET="$TS_API_CLIENT_SECRET" \
-                 get-authkey -tags tag:svc-core-ci-github -reusable -ephemeral)
+                 get-authkey -tags tag:svc-core-ci-github -ephemeral)
     tailscale up --ssh --auth-key="$TS_AUTHKEY" --hostname="ci-runner-$RUNNER_TYPE-$INSTANCE_ID"
 }
 

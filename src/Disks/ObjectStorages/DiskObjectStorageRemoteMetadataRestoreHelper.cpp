@@ -129,6 +129,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecu
     {
         pool.scheduleOrThrowOnError([this, path]
         {
+            setThreadName("BackupWorker");
             for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
                 migrateFileToRestorableSchema(it->path());
         });

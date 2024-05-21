@@ -309,7 +309,6 @@ endif()
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
-            string_utils
             widechar_width
             ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
@@ -322,7 +321,6 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (clickhouse_compression
         PUBLIC
-            string_utils
             pcg_random
             clickhouse_parsers
         PRIVATE
@@ -412,7 +410,6 @@ dbms_target_link_libraries (
         clickhouse_parsers
         ch_contrib::lz4
         Poco::JSON
-        string_utils
     PUBLIC
         boost::system
         clickhouse_common_io
@@ -647,7 +644,6 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        string_utils
         hilite_comparator)
 
     if (TARGET ch_contrib::simdjson)

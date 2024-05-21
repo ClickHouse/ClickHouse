@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ class CIStages(metaclass=WithIter):
     BUILDS_2 = "Builds_2"
     TESTS_1 = "Tests_1"
     TESTS_2 = "Tests_2"
+    TESTS_3 = "Tests_3"
 
 
 class Runners(metaclass=WithIter):
@@ -79,6 +81,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
     BINARY_S390X = "binary_s390x"
+    BINARY_LOONGARCH64 = "binary_loongarch64"
     FUZZERS = "fuzzers"
 
 
@@ -579,7 +582,6 @@ class CIConfig:
         elif job_name == JobNames.BUILD_CHECK_SPECIAL:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
-            stage_type = CIStages.TESTS_1
             if job_name in CI_CONFIG.test_configs:
                 required_build = CI_CONFIG.test_configs[job_name].required_build
                 assert required_build
@@ -591,6 +593,8 @@ class CIConfig:
                     stage_type = CIStages.TESTS_2
             else:
                 stage_type = CIStages.TESTS_1
+            if job_name not in REQUIRED_CHECKS:
+                stage_type = CIStages.TESTS_3
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -1040,6 +1044,12 @@ CI_CONFIG = CIConfig(
             package_type="binary",
             static_binary_name="s390x",
         ),
+        Build.BINARY_LOONGARCH64: BuildConfig(
+            name=Build.BINARY_LOONGARCH64,
+            compiler="clang-18-loongarch64",
+            package_type="binary",
+            static_binary_name="loongarch64",
+        ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-18",
@@ -1070,6 +1080,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
                 Build.BINARY_S390X,
+                Build.BINARY_LOONGARCH64,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
@@ -1385,6 +1396,17 @@ REQUIRED_CHECKS = [
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
 ]
+
+BATCH_REGEXP = re.compile(r"\s+\[[0-9/]+\]$")
+
+
+def is_required(check_name: str) -> bool:
+    """Checks if a check_name is in REQUIRED_CHECKS, including batched jobs"""
+    if check_name in REQUIRED_CHECKS:
+        return True
+    if batch := BATCH_REGEXP.search(check_name):
+        return check_name[: batch.start()] in REQUIRED_CHECKS
+    return False
 
 
 @dataclass

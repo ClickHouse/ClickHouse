@@ -66,18 +66,18 @@ namespace
     }
 }
 
+Poco::URI StorageAzureConfiguration::getConnectionURL() const
+{
+    if (!is_connection_string)
+        return Poco::URI(connection_url);
+
+    auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(connection_url);
+    return Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
+}
+
 void StorageAzureConfiguration::check(ContextPtr context) const
 {
-    Poco::URI url_to_check;
-    if (is_connection_string)
-    {
-        auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(connection_url);
-        url_to_check = Poco::URI(parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl());
-    }
-    else
-        url_to_check = Poco::URI(connection_url);
-
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(url_to_check);
+    context->getGlobalContext()->getRemoteHostFilter().checkURL(getConnectionURL());
     Configuration::check(context);
 }
 
@@ -123,7 +123,8 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
     assertInitialized();
     auto client = createClient(is_readonly, /* attempt_to_create_container */true);
     auto settings = createSettings(context);
-    return std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), container);
+    return std::make_unique<AzureObjectStorage>(
+        "AzureBlobStorage", std::move(client), std::move(settings), container, getConnectionURL().toString());
 }
 
 AzureClientPtr StorageAzureConfiguration::createClient(bool is_read_only, bool attempt_to_create_container)

@@ -69,6 +69,7 @@ protected:
 
     AzureClientPtr createClient(bool is_read_only, bool attempt_to_create_container);
     AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
+    Poco::URI getConnectionURL() const;
 };
 
 }
