@@ -23,7 +23,7 @@ SELECT a, sum(c) FROM t_optimize_equal_ranges GROUP BY a ORDER BY a SETTINGS max
 SYSTEM FLUSH LOGS;
 
 SELECT
-    used_aggregate_functions AS func,
+    used_aggregate_functions[1] AS func,
     Settings['max_threads'] AS threads,
     ProfileEvents['AggregationOptimizedEqualRangesOfKeys'] > 0
 FROM system.query_log

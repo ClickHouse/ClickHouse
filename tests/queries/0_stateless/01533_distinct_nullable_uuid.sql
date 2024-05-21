@@ -1,6 +1,3 @@
--- Tags: no-random-detach
--- Tag no-random-detach: it's a bug, will be fixed in https://github.com/ClickHouse/ClickHouse/pull/41145
-
 DROP TABLE IF EXISTS bug_14144;
 
 CREATE TABLE bug_14144

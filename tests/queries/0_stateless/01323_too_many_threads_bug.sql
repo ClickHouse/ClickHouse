@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: one more thread is used
+
 drop table if exists table_01323_many_parts;
 
 set remote_filesystem_read_method = 'read';
