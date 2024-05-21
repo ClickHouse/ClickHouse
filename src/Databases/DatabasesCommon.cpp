@@ -254,6 +254,17 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, con
     return detachTableUnlocked(table_name);
 }
 
+
+static CurrentMetrics::Metric get_attached_count_metric_for_storage(const StoragePtr & storage) {
+    if (storage->isView()) {
+        return CurrentMetrics::AttachedView;
+    } else if (storage->isDictionary()) {
+        return CurrentMetrics::AttachedDictionary;
+    } else {
+        return CurrentMetrics::AttachedTable;
+    }
+}
+
 StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
     StoragePtr res;
@@ -265,15 +276,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     res = it->second;
     tables.erase(it);
     res->is_detached = true;
-    CurrentMetrics::Metric metric;
-    if (res->isView()) {
-        metric = CurrentMetrics::AttachedView;
-    } else if (res->isDictionary()) {
-        metric = CurrentMetrics::AttachedDictionary;
-    } else {
-        metric = CurrentMetrics::AttachedTable;
-    }
-    CurrentMetrics::sub(metric, 1);
+    CurrentMetrics::sub(get_attached_count_metric_for_storage(res), 1);
 
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
@@ -314,15 +317,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
-    CurrentMetrics::Metric metric;
-    if (table->isView()) {
-        metric = CurrentMetrics::AttachedView;
-    } else if (table->isDictionary()) {
-        metric = CurrentMetrics::AttachedDictionary;
-    } else {
-        metric = CurrentMetrics::AttachedTable;
-    }
-    CurrentMetrics::add(metric, 1);
+    CurrentMetrics::add(get_attached_count_metric_for_storage(table), 1);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
