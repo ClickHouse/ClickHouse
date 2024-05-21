@@ -34,7 +34,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -793,7 +793,8 @@ void IMergeTreeDataPart::addProjectionPart(
     projection_parts[projection_name] = std::move(projection_part);
 }
 
-void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded)
+void IMergeTreeDataPart::loadProjections(
+    bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded, bool only_metadata)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     for (const auto & projection : metadata_snapshot->projections)
@@ -813,7 +814,10 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
 
                 try
                 {
-                    part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+                    if (only_metadata)
+                        part->loadChecksums(require_columns_checksums);
+                    else
+                        part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
                 }
                 catch (...)
                 {

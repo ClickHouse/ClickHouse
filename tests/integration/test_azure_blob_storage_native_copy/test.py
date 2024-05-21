@@ -33,7 +33,7 @@ def generate_config(port):
                         <metadata_type>local</metadata_type>
                         <type>object_storage</type>
                         <object_storage_type>azure_blob_storage</object_storage_type>
-                        <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
+                        <storage_account_url>http://azurite1:{port}/devstoreaccount1/</storage_account_url>
                         <container_name>cont</container_name>
                         <skip_access_check>false</skip_access_check>
                         <account_name>devstoreaccount1</account_name>
@@ -45,7 +45,7 @@ def generate_config(port):
                         <type>object_storage</type>
                         <object_storage_type>azure_blob_storage</object_storage_type>
                         <use_native_copy>true</use_native_copy>
-                        <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
+                        <storage_account_url>http://azurite1:{port}/devstoreaccount1/</storage_account_url>
                         <container_name>othercontainer</container_name>
                         <skip_access_check>false</skip_access_check>
                         <account_name>devstoreaccount1</account_name>
@@ -175,6 +175,9 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
     assert (
         azure_query(node1, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
     )
+
+    assert node1.contains_in_log("using native copy")
+
     azure_query(node1, f"DROP TABLE test_simple_merge_tree")
     azure_query(node1, f"DROP TABLE test_simple_merge_tree_restored")
 
@@ -196,7 +199,7 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
         f"BACKUP TABLE test_simple_merge_tree_different_bucket TO {backup_destination}",
     )
 
-    assert not node2.contains_in_log("using native copy")
+    assert node2.contains_in_log("using native copy")
 
     azure_query(
         node2,
@@ -209,7 +212,7 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
         == "1\ta\n"
     )
 
-    assert not node2.contains_in_log("using native copy")
+    assert node2.contains_in_log("using native copy")
 
     azure_query(node2, f"DROP TABLE test_simple_merge_tree_different_bucket")
     azure_query(node2, f"DROP TABLE test_simple_merge_tree_different_bucket_restored")
