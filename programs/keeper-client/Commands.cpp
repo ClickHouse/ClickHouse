@@ -63,7 +63,7 @@ void CDCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
     auto new_path = client->getAbsolutePath(query->args[0].safeGet<String>());
     if (!client->zookeeper->exists(new_path))
-        std::cerr << "Path " << new_path << " does not exists\n";
+        std::cerr << "Path " << new_path << " does not exist\n";
     else
         client->cwd = new_path;
 }

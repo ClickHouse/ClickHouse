@@ -288,7 +288,10 @@
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
     \
     M(AddressesActive, "Total count of addresses which are used for creation connections with connection pools") \
-
+    M(AddressesBanned, "Total count of addresses which are banned as faulty for creation connections with connection pools")   \
+    \
+    M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
+    M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
