@@ -14,7 +14,11 @@ const auto PULSAR_MAX_THREAD_WORK_DURATION_MS = 60'000;
 #define PULSAR_RELATED_SETTINGS(M, ALIAS) \
     M(String, pulsar_service_url, "", "A broker url for Pulsar engine.", 0) \
     M(String, pulsar_topic_list, "", "A list of Pulsar topics.", 0) \
-    M(String, pulsar_group_name, "", "Client group id string. All Pulsar consumers sharing the same group.id belong to the same group.", 0) \
+    M(String, \
+      pulsar_group_name, \
+      "", \
+      "Client group id string. All Pulsar consumers sharing the same group.id belong to the same group.", \
+      0) \
     M(String, pulsar_format, "", "The message format for Pulsar engine.", 0) \
     M(String, pulsar_schema, "", "Schema identifier (used by schema-based formats) for Pulsar engine", 0) \
     M(UInt64, pulsar_num_consumers, 1, "The number of consumers per table for Pulsar engine.", 0) \

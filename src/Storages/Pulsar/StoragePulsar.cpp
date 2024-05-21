@@ -430,9 +430,7 @@ bool StoragePulsar::streamToViews()
 
     bool some_stream_is_stalled = false;
     for (auto & source : sources)
-    {
         some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
-    }
 
     return some_stream_is_stalled;
 }

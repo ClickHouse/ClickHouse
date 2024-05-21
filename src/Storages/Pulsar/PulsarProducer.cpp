@@ -11,14 +11,8 @@ namespace DB
 {
 
 PulsarProducer::PulsarProducer(
-    ProducerPtr producer_,
-    const std::string & topic_,
-    std::atomic<bool> & shutdown_called_,
-    const Block & header)
-    : IMessageProducer(getLogger("PulsarProducer"))
-    , producer(producer_)
-    , topic(topic_)
-    , shutdown_called(shutdown_called_)
+    ProducerPtr producer_, const std::string & topic_, std::atomic<bool> & shutdown_called_, const Block & header)
+    : IMessageProducer(getLogger("PulsarProducer")), producer(producer_), topic(topic_), shutdown_called(shutdown_called_)
 {
     if (header.has("_ordering_key"))
     {

@@ -14,11 +14,7 @@ using ProducerPtr = std::shared_ptr<pulsar::Producer>;
 class PulsarProducer : public IMessageProducer
 {
 public:
-    PulsarProducer(
-        ProducerPtr producer_,
-        const std::string & topic_,
-        std::atomic<bool> & shutdown_called_,
-        const Block & header);
+    PulsarProducer(ProducerPtr producer_, const std::string & topic_, std::atomic<bool> & shutdown_called_, const Block & header);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
