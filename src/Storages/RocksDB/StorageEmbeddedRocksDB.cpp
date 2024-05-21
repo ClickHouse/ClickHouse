@@ -316,6 +316,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
 void StorageEmbeddedRocksDB::drop()
 {
+    std::lock_guard lock(rocksdb_ptr_mx);
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 }
@@ -463,18 +464,13 @@ void StorageEmbeddedRocksDB::initDB()
     {
         rocksdb::DB * db;
         if (read_only)
-        {
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
-        }
         else
-        {
             status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
-        }
+
         if (!status.ok())
-        {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
-                rocksdb_dir, status.ToString());
-        }
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}", rocksdb_dir, status.ToString());
+
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
     }
 }
@@ -589,8 +585,12 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr  query_context, bool /*async_insert*/)
 {
     if (getSettings().optimize_for_bulk_insert)
+    {
+        LOG_DEBUG(getLogger("StorageEmbeddedRocksDB"), "Using bulk insert");
         return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
+    }
 
+    LOG_DEBUG(getLogger("StorageEmbeddedRocksDB"), "Using regular insert");
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
