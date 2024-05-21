@@ -162,7 +162,7 @@ void StorageMergeTree::startup()
             background_streaming_assignee->start();
 
         startBackgroundMovesIfNeeded();
-        startOutdatedDataPartsLoadingTask();
+        startOutdatedAndUnexpectedDataPartsLoadingTask();
     }
     catch (...)
     {
@@ -188,7 +188,7 @@ void StorageMergeTree::shutdown(bool)
     if (shutdown_called.exchange(true))
         return;
 
-    stopOutdatedDataPartsLoadingTask();
+    stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     /// Unlock all waiting mutations
     {

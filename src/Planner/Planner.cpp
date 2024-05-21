@@ -1248,8 +1248,9 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    LOG_TRACE(getLogger("Planner"), "Query {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query to stage {}{}",
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
@@ -1525,8 +1526,9 @@ void Planner::buildPlanForQueryNode()
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
-    LOG_TRACE(getLogger("Planner"), "Query {} from stage {} to stage {}{}",
-        query_tree->formatConvertedASTForErrorMessage(),
+    LOG_TRACE(
+        getLogger("Planner"),
+        "Query from stage {} to stage {}{}",
         QueryProcessingStage::toString(from_stage),
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");

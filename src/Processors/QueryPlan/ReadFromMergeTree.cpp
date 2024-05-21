@@ -1377,11 +1377,27 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead() const
+{
+    return selectRangesToReadImpl(
+        prepared_parts,
+        alter_conversions_for_parts,
+        metadata_for_reading,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        all_column_names,
+        log,
+        indexes);
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions) const
 {
-    return selectRangesToRead(
+    return selectRangesToReadImpl(
         std::move(parts),
         std::move(alter_conversions),
         metadata_for_reading,
@@ -1531,25 +1547,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     if (!indexes)
     {
-        /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
-        /// while key analysis still requires unqualified column names.
-        std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-        if (query_info.planner_context)
-        {
-            const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
-            const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
-            for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
-            {
-                /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,
-                /// so they should not be added to the input nodes.
-                if (alias_column_expressions.contains(column_name))
-                    continue;
-                const auto & column = table_expression_data.getColumnOrThrow(column_name);
-                node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
-            }
-        }
-
-        filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input_node_column);
+        filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
 
         /// NOTE: Currently we store two DAGs for analysis:
         /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure there are consistent.
@@ -1868,10 +1866,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
-    auto result_ptr = analyzed_result_ptr
-        ? analyzed_result_ptr
-        : selectRangesToRead(prepared_parts, alter_conversions_for_parts);
-
+    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
     return *result_ptr;
 }
 
