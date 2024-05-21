@@ -163,8 +163,6 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     const ServerSettings & getServerSettings() const;
-
-    bool hasTraceCollector() const;
 };
 
 }
