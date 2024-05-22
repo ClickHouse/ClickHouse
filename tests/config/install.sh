@@ -181,8 +181,7 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
 fi
 
-if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
-    echo "$OS"
+if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then\
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         echo "Azure configuration will not be added"
     else
