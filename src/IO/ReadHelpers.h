@@ -30,7 +30,7 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
