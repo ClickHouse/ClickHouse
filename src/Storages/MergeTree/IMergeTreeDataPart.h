@@ -442,6 +442,8 @@ public:
 
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
+    bool hasProjection() const { return !projection_parts.empty(); }
+
     bool hasBrokenProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
