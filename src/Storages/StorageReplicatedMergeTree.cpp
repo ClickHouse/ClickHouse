@@ -590,6 +590,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
         zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
 
+        constexpr size_t MAX_RETRIES_ON_FAILED_MUTATION = 30;
+        size_t retries_on_failed_mutation = 0;
+
         while (!partial_shutdown_called)
         {
             /// Mutation maybe killed or whole replica was deleted.
@@ -637,17 +640,31 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                 }
             }
 
-            /// If mutation status is empty, than local replica may just not loaded it into memory.
-            if (mutation_status && !mutation_status->latest_fail_reason.empty())
-            {
-                LOG_DEBUG(log, "Mutation {} is done {} or failed {} (status: '{}')", mutation_id, mutation_status->is_done, !mutation_status->latest_fail_reason.empty(), mutation_status->latest_fail_reason);
-                break;
-            }
-
             /// Replica can become inactive, so wait with timeout, if nothing happened -> recheck it
             if (!wait_event->tryWait(1000))
             {
                 LOG_TRACE(log, "Failed to wait for mutation '{}', will recheck", mutation_id);
+            }
+
+            /// If mutation status is empty, than local replica may just not loaded it into memory.
+            if (mutation_status && !mutation_status->latest_fail_reason.empty())
+            {
+                LOG_DEBUG(log, "Mutation {} is done {} or failed {} (status: '{}')", mutation_id, mutation_status->is_done, !mutation_status->latest_fail_reason.empty(), mutation_status->latest_fail_reason);
+
+                /// In some cases latest_fail_reason may be retryable and there's a chance it will be cleared after the next attempt
+                if (++retries_on_failed_mutation <= MAX_RETRIES_ON_FAILED_MUTATION)
+                    continue;
+
+                if (mutation_status->is_done)
+                {
+                    LOG_DEBUG(log, "Looks like mutation {} is done, rechecking", mutation_id);
+                    continue;
+                }
+
+                /// It's still possible that latest_fail_reason will be cleared just before queue.getIncompleteMutationsStatus(...) below,
+                /// but it's unlikely. Anyway, rethrow the exception here to avoid exiting with is_done=false
+                checkMutationStatus(mutation_status, {mutation_id});
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "checkMutationStatus didn't throw when checking status of {}: {}", mutation_id, mutation_status->latest_fail_reason);
             }
         }
 
