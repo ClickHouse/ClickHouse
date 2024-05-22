@@ -1,10 +1,46 @@
 #include "DiskBackup.h"
 
 #include <Disks/DiskFactory.h>
+#include "Disks/IDisk.h"
+#include <Disks/ObjectStorages/MetadataStorageFactory.h>
 
 
 namespace DB
 {
+
+DiskBackup::DiskBackup(const String & name_, DiskPtr delegate_, MetadataStoragePtr metadata_) : IDisk(name_), delegate(delegate_), metadata(metadata_)
+{
+
+}
+
+DiskBackup::DiskBackup(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_) : IDisk(name_)
+{
+    String disk_delegate_name = config_.getString(config_prefix_ + ".disk_delegate");
+    String metadata_name = config_.getString(config_prefix_ + ".metadata");
+
+    delegate = map_.at(disk_delegate_name);
+    metadata = MetadataStorageFactory::instance().create(metadata_name, config_, config_prefix_, nullptr, "");
+}
+
+bool DiskBackup::exists(const String & path) const
+{
+    return metadata->exists(fs::path(getPath()) / path);
+}
+
+bool DiskBackup::isFile(const String & path) const
+{
+    return metadata->isFile(fs::path(getPath()) / path);
+}
+
+bool DiskBackup::isDirectory(const String & path) const
+{
+    return metadata->isDirectory(fs::path(getPath()) / path);
+}
+
+size_t DiskBackup::getFileSize(const String & path) const
+{
+    return metadata->getFileSize(fs::path(getPath()) / path);
+}
 
 void registerDiskBackup(DiskFactory & factory, bool global_skip_access_check)
 {

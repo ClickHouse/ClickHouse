@@ -53,25 +53,13 @@ public:
         throwNotAllowed();
     }
 
-    bool exists(const String & path) const override
-    {
-        return metadata->exists(path);
-    }
+    bool exists(const String & path) const override;
 
-    bool isFile(const String & path) const override
-    {
-        return metadata->isFile(path);
-    }
+    bool isFile(const String & path) const override;
 
-    bool isDirectory(const String & path) const override
-    {
-        return metadata->isDirectory(path);
-    }
+    bool isDirectory(const String & path) const override;
 
-    size_t getFileSize(const String & path) const override
-    {
-        return metadata->getFileSize(path);
-    }
+    size_t getFileSize(const String & path) const override;
 
     void createDirectory(const String & /* path */) override
     {

@@ -29,6 +29,7 @@ enum class MetadataStorageType
     Local,
     Plain,
     StaticWeb,
+    Backup,
 };
 
 MetadataStorageType metadataTypeFromString(const String & type);

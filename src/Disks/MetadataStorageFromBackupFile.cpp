@@ -4,38 +4,15 @@
 #include <Common/XMLUtils.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
 #include "Disks/DiskType.h"
-#include "Disks/ObjectStorages/IMetadataStorage.h"
-#include <IO/WriteHelpers.h>
+#include "IO/ReadBufferFromFile.h"
+#include "IO/ReadHelpers.h"
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/DOM/Node.h>
 #include <fstream>
 #include <string>
 #include <sstream>
 
-#include <Backups/BackupImpl.h>
-#include <Backups/BackupFactory.h>
-#include <Backups/BackupFileInfo.h>
-#include <Backups/BackupIO.h>
-#include <Backups/IBackupEntry.h>
-#include <Common/ProfileEvents.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <base/hex.h>
-#include <Common/quoteString.h>
-#include <Interpreters/Context.h>
-#include <IO/Archives/IArchiveReader.h>
-#include <IO/Archives/IArchiveWriter.h>
-#include <IO/Archives/createArchiveReader.h>
-#include <IO/Archives/createArchiveWriter.h>
-#include <IO/ConcatSeekableReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <IO/Operators.h>
-#include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include "MetadataStorageFromBackupFile.h"
@@ -49,14 +26,14 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-MetadataStorageFromBackupFile::MetadataStorageFromBackupFile(const std::string & path_to_backup_file)
+MetadataStorageFromBackupFile::MetadataStorageFromBackupFile(const String & path_to_backup_file)
 {
     using namespace XMLUtils;
 
-    std::ifstream f(path_to_backup_file);
-    std::stringstream buffer;
-    buffer << f.rdbuf();
-    std::string str = buffer.str();
+    ReadBufferFromFile buf(path_to_backup_file);
+    String str;
+
+    readStringUntilEOF(str, buf);
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
     const Poco::XML::Node * config_root = getRootNode(config);
@@ -82,11 +59,10 @@ MetadataStorageFromBackupFile::MetadataStorageFromBackupFile(const std::string &
                 true,
                 false,
             };
-            
-            fs::path parent_path;
 
             while (file_path.has_relative_path())
             {
+                fs::path parent_path = file_path.parent_path();
                 auto current_node = nodes.at(file_path);
                 if (!nodes.contains(parent_path))
                 {
@@ -105,7 +81,7 @@ MetadataStorageFromBackupFile::MetadataStorageFromBackupFile(const std::string &
                     nodes[parent_path].children.push_back(file_path.string());
                 }
 
-                file_path = file_path.parent_path();
+                file_path = parent_path;
             }
         }
     }
@@ -116,9 +92,9 @@ MetadataTransactionPtr MetadataStorageFromBackupFile::createTransaction()
     return std::make_shared<MetadataStorageFromBackupFileTransaction>(*this);
 }
 
-const std::string & MetadataStorageFromBackupFile::getPath() const
+const String & MetadataStorageFromBackupFile::getPath() const
 {
-    static const std::string no_root;
+    static const String no_root;
     return no_root;
 }
 
@@ -127,28 +103,27 @@ MetadataStorageType MetadataStorageFromBackupFile::getType() const
     return MetadataStorageType::Backup;
 }
 
-bool MetadataStorageFromBackupFile::exists(const std::string & path) const
+bool MetadataStorageFromBackupFile::exists(const String & path) const
 {
     return nodes.contains(path);
 }
 
-bool MetadataStorageFromBackupFile::isFile(const std::string & path) const
+bool MetadataStorageFromBackupFile::isFile(const String & path) const
 {
     return exists(path) && nodes.at(path).is_file;
 }
 
-
-bool MetadataStorageFromBackupFile::isDirectory(const std::string & path) const
+bool MetadataStorageFromBackupFile::isDirectory(const String & path) const
 {
     return exists(path) && nodes.at(path).is_directory;
 }
 
-uint64_t MetadataStorageFromBackupFile::getFileSize(const std::string & path) const
+uint64_t MetadataStorageFromBackupFile::getFileSize(const String & path) const
 {
     return nodes.at(path).file_size;
 }
 
-std::vector<std::string> MetadataStorageFromBackupFile::listDirectory(const std::string & path) const {
+std::vector<String> MetadataStorageFromBackupFile::listDirectory(const String & path) const {
     if (!isDirectory(path)) {
         return {};
     }
@@ -156,7 +131,7 @@ std::vector<std::string> MetadataStorageFromBackupFile::listDirectory(const std:
     return nodes.at(path).children;
 }
 
-DirectoryIteratorPtr MetadataStorageFromBackupFile::iterateDirectory(const std::string & path) const
+DirectoryIteratorPtr MetadataStorageFromBackupFile::iterateDirectory(const String & path) const
 {
     std::vector<fs::path> dir_file_paths;
 
@@ -173,7 +148,7 @@ DirectoryIteratorPtr MetadataStorageFromBackupFile::iterateDirectory(const std::
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 }
 
-StoredObjects MetadataStorageFromBackupFile::getStorageObjects(const std::string & path) const
+StoredObjects MetadataStorageFromBackupFile::getStorageObjects(const String & path) const
 {
     if (!exists(path))
     {
@@ -192,4 +167,3 @@ const IMetadataStorage & MetadataStorageFromBackupFileTransaction::getStorageFor
 }
 
 }
-
