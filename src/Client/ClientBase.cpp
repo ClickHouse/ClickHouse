@@ -18,7 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
 #include <Columns/ColumnString.h>
@@ -710,8 +710,8 @@ void ClientBase::adjustSettings()
         settings.input_format_values_allow_data_after_semicolon.changed = false;
     }
 
-    /// Do not limit pretty format output in case of --pager specified.
-    if (!pager.empty())
+    /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
+    if (!pager.empty() || !stdout_is_a_tty)
     {
         if (!global_context->getSettingsRef().output_format_pretty_max_rows.changed)
         {
