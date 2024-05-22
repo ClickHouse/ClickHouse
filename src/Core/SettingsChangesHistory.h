@@ -87,6 +87,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
 {
     {"24.5", {{"allow_deprecated_functions", true, false, "Allow usage of deprecated functions"},
               {"allow_experimental_join_condition", false, false, "Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y."},
+              {"input_format_tsv_crlf_end_of_line", false, false, "Enables reading of CRLF line endings with TSV formats"},
               {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
               {"cross_join_min_rows_to_compress", 0, 10000000, "A new setting."},
               {"cross_join_min_bytes_to_compress", 0, 1_GiB, "A new setting."},
