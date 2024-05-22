@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
+#include <unistd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -15,7 +16,7 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
-#include <unistd.h>
+#include <Common/tryGetFileNameByFileDescriptor.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -693,21 +694,12 @@ String FormatFactory::getFormatFromFileName(String file_name)
 
 std::optional<String> FormatFactory::tryGetFormatFromFileDescriptor(int fd)
 {
-#ifdef OS_LINUX
-    std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
-    char file_path[PATH_MAX] = {'\0'};
-    if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
-        return tryGetFormatFromFileName(file_path);
+    std::optional<String> file_name = tryGetFileNameFromFileDescriptor(fd);
+
+    if (file_name)
+        return tryGetFormatFromFileName(*file_name);
+
     return std::nullopt;
-#elif defined(OS_DARWIN)
-    char file_path[PATH_MAX] = {'\0'};
-    if (fcntl(fd, F_GETPATH, file_path) != -1)
-        return tryGetFormatFromFileName(file_path);
-    return std::nullopt;
-#else
-    (void)fd;
-    return std::nullopt;
-#endif
 }
 
 String FormatFactory::getFormatFromFileDescriptor(int fd)

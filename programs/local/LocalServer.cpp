@@ -607,7 +607,7 @@ void LocalServer::processConfig()
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
-    setDefaultFormatsFromConfiguration();
+    setDefaultFormatsAndCompressionFromConfiguration();
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
